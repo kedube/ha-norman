@@ -1,0 +1,55 @@
+# Changelog
+
+Notable changes for each tagged release. Versions correspond to git tags and to the
+`version` field in `custom_components/norman/manifest.json`. Add entries under
+**Unreleased** as part of each change; the release workflow rotates that section into a
+version heading and publishes it as the release's Highlights.
+
+## Unreleased
+- **Timeouts are handled.** A slow or absent hub used to surface as an unexpected error
+  with a traceback (aiohttp's timeout is not a `ClientError`); it is now a normal
+  connection error everywhere: setup retries, the config flow says "cannot connect", and
+  cover actions fail with a clear message.
+- **Shared web session.** The integration uses Home Assistant's aiohttp session instead of
+  creating (and sometimes leaking) its own.
+- **Config flow:** the hub's address is validated before connecting, the hub's own identity
+  (`ThingName`) is the entry's unique id so an address change is recognised as the same
+  hub, and a **Reconfigure** step changes the address in place.
+- **Covers keep the other rail where it is heading.** Commands that touch one rail send the
+  other rail's current target (then its current position) instead of assuming 100, and the
+  nudge actions are relative to the target so quick repeated nudges add up.
+- **Newly paired blinds appear without a restart** (the device list is re-read on every
+  notification reconnect), and a blind the hub stops reporting becomes unavailable.
+- **Notification stream parser** handles UTF-8 characters split across reads, braces inside
+  names, and never grows without bound; the periodic reconnect no longer goes through an
+  exception.
+- **Logging:** a dropped notification stream is logged once, and its recovery once, instead
+  of an error every 15 seconds.
+- **Devices:** the hub is a device; blinds link to it via `via_device`; entities use
+  `has_entity_name`.
+- **Diagnostics** export (hub address redacted) and `services.yaml` / translation entries for
+  the nudge actions so they show properly in the action picker.
+- **Hub traffic capture.** Every exchange with the hub is recorded below the parsing layer
+  (last 50, bodies clipped, plus the last full response per endpoint) and exported by
+  diagnostics as `hub_traffic` with the address and ThingName scrubbed. New
+  `norman.get_hub_data` action returns the live raw device list and status. Debug logging
+  now prints every request and response.
+- **Diagnostic sensors** per blind: battery voltage, last seen, and (disabled by default)
+  firmware version.
+- **Device removal:** a blind the hub no longer reports can be deleted from its device page.
+- **Legacy entries are re-keyed** from the typed address to the hub's identity on load, so
+  duplicate detection and reconfigure work for installs made before 0.11.
+- `hacs.json` declares Home Assistant 2026.3 as the minimum version.
+- **Repository:** CI (HACS, hassfest, Ruff, pytest), automated releases on every green push
+  to `main`, Dependabot, issue templates, a contributor guide, and reference docs under
+  `docs/`. Tests moved out of the shipped integration directory into `tests/` and now cover
+  setup, migration, config flow, covers, sensors, actions, the API client, the stream parser,
+  the traffic recorder, diagnostics, device removal, and brand serving.
+- **Brand icon and logo** (from the Norman wordmark) under `brand/`, served by Home Assistant
+  2026.3+ directly, and `icons.json` icons for every action.
+- Manifest now points at this repository; version scheme changed to `major.minor`
+  (`0.10` continues from the earlier `0.1.0`).
+
+## 0.1.0 — 2025-11-07
+- Initial release: local control of Norman blinds via the hub with push updates,
+  position and tilt, and the `nudge_position` / `nudge_tilt` actions.

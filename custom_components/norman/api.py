@@ -1,22 +1,35 @@
-"""API client for Norman window coverings."""
+"""API client for the Norman hub.
+
+The hub exposes a small unauthenticated JSON-over-HTTP API on the local network; the
+endpoints and payload shapes are documented in docs/NORMAN_API.md.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import codecs
+from collections import deque
 from collections.abc import AsyncIterator
-import contextlib
+from dataclasses import asdict, dataclass, field
+import itertools
 import json
 import logging
 import time
 from typing import Any
 
-import aiohttp
-from aiohttp import ClientResponse, ClientTimeout
-from aiohttp.client_exceptions import ClientError
-
+from aiohttp import ClientError, ClientSession, ClientTimeout
 from homeassistant.exceptions import HomeAssistantError
+from yarl import URL
 
-from .const import NOTIF_MAX_DURATION, READ_CHUNK_SIZE
+from .const import (
+    HUB_PORT,
+    NOTIF_MAX_BUFFER,
+    NOTIF_MAX_DURATION,
+    READ_CHUNK_SIZE,
+    REQUEST_TIMEOUT,
+    TRAFFIC_BODY_LIMIT,
+    TRAFFIC_MAX_EXCHANGES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,318 +38,419 @@ ENDPOINT_REGISTRATION = "/NM/v1/registration"
 ENDPOINT_GET_ALL_PERIPHERAL = "/NM/v1/GetAllPeripheral"
 ENDPOINT_STATUS = "/NM/v1/status"
 ENDPOINT_CONTROL = "/NM/v1/control"
+ENDPOINT_NOTIFICATION = "/NM/v1/notification"
 
 
 class NormanApiError(HomeAssistantError):
-    """Exception to indicate an API error occurred."""
+    """The hub answered, but with an error or an unparseable body."""
 
 
 class NormanConnectionError(HomeAssistantError):
-    """Exception to indicate a connection error occurred."""
+    """The hub could not be reached, or the request timed out."""
 
 
-class NormanPeriodicReconnectError(HomeAssistantError):
-    """Exception to indicate a period reconnection (not really an error)."""
+@dataclass(slots=True)
+class HubExchange:
+    """One recorded exchange with the hub: a request/response pair or a stream event."""
+
+    when: str  # ISO 8601, UTC
+    kind: str  # "request" or "stream"
+    endpoint: str
+    duration_ms: float | None = None
+    request: dict[str, Any] | None = None
+    status: int | None = None
+    response: str | None = None
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the exchange as plain data for diagnostics."""
+        return asdict(self)
+
+
+@dataclass
+class TrafficRecorder:
+    """Keep the most recent raw exchanges with the hub, below the parsing layer.
+
+    The coordinator's model drops every field it does not understand, so this is the only
+    place an unknown blind type's payload or an unexpected status field can be seen. It is
+    always on: the buffer is bounded and bodies are truncated, so the cost is a few hundred
+    kilobytes at most. Everything here is exported by diagnostics.
+    """
+
+    max_exchanges: int = TRAFFIC_MAX_EXCHANGES
+    body_limit: int = TRAFFIC_BODY_LIMIT
+    exchanges: deque[HubExchange] = field(init=False)
+    # Last complete raw response per endpoint, kept outside the ring buffer so a burst of
+    # notifications cannot push the device list out of the export.
+    latest_raw: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Size the ring buffer."""
+        self.exchanges = deque(maxlen=self.max_exchanges)
+
+    def _clip(self, body: str | None) -> str | None:
+        if body is None or len(body) <= self.body_limit:
+            return body
+        return f"{body[: self.body_limit]}… [{len(body) - self.body_limit} more bytes]"
+
+    def record(
+        self,
+        kind: str,
+        endpoint: str,
+        *,
+        request: dict[str, Any] | None = None,
+        status: int | None = None,
+        response: str | None = None,
+        error: str | None = None,
+        started: float | None = None,
+    ) -> None:
+        """Append an exchange; ``started`` is a ``time.monotonic()`` reading."""
+        if kind == "request" and response is not None and error is None:
+            self.latest_raw[endpoint] = response
+        self.exchanges.append(
+            HubExchange(
+                when=_utc_now_iso(),
+                kind=kind,
+                endpoint=endpoint,
+                duration_ms=(
+                    round((time.monotonic() - started) * 1000, 1) if started is not None else None
+                ),
+                request=request,
+                status=status,
+                response=self._clip(response),
+                error=error,
+            )
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return everything recorded, oldest exchange first."""
+        return {
+            "latest_raw": dict(self.latest_raw),
+            "exchanges": [exchange.as_dict() for exchange in self.exchanges],
+        }
+
+
+def _utc_now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+class JsonStreamParser:
+    """Incrementally split a byte stream into the top-level JSON objects it contains.
+
+    The notification endpoint is a long-poll that writes bare JSON objects back to back
+    (no framing, no newlines). Bytes are decoded incrementally so a multi-byte UTF-8
+    character split across two reads survives, and object boundaries are found with a
+    scanner that tracks string state, so braces inside names and nested objects do not
+    confuse the framing. Text outside any object is discarded.
+    """
+
+    def __init__(self, max_buffer: int = NOTIF_MAX_BUFFER) -> None:
+        """Initialize the parser."""
+        self._utf8 = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._max_buffer = max_buffer
+        self._buffer = ""
+        # Scanner state, carried across feeds so each character is examined once
+        self._pos = 0
+        self._depth = 0
+        self._in_string = False
+        self._escaped = False
+
+    def _reset(self) -> None:
+        self._buffer = ""
+        self._pos = 0
+        self._depth = 0
+        self._in_string = False
+        self._escaped = False
+
+    def feed(self, chunk: bytes) -> list[dict[str, Any]]:
+        """Consume a chunk of bytes and return every object it completed."""
+        self._buffer += self._utf8.decode(chunk)
+        objects: list[dict[str, Any]] = []
+
+        while self._pos < len(self._buffer):
+            char = self._buffer[self._pos]
+            self._pos += 1
+
+            if self._depth == 0:
+                if char == "{":
+                    # Drop whatever preceded this object; it cannot be part of one
+                    self._buffer = self._buffer[self._pos - 1 :]
+                    self._pos = 1
+                    self._depth = 1
+                continue
+
+            if self._in_string:
+                if self._escaped:
+                    self._escaped = False
+                elif char == "\\":
+                    self._escaped = True
+                elif char == '"':
+                    self._in_string = False
+            elif char == '"':
+                self._in_string = True
+            elif char == "{":
+                self._depth += 1
+            elif char == "}":
+                self._depth -= 1
+                if self._depth == 0:
+                    segment = self._buffer[: self._pos]
+                    self._buffer = self._buffer[self._pos :]
+                    self._pos = 0
+                    try:
+                        obj = json.loads(segment)
+                    except json.JSONDecodeError:
+                        _LOGGER.debug("Skipping unparseable notification data: %s", segment)
+                    else:
+                        if isinstance(obj, dict):
+                            objects.append(obj)
+
+        if self._depth == 0:
+            # Nothing pending; forget any trailing filler
+            self._reset()
+        elif len(self._buffer) > self._max_buffer:
+            _LOGGER.debug(
+                "Discarding %d bytes of unterminated notification data", len(self._buffer)
+            )
+            self._reset()
+
+        return objects
 
 
 class NormanApiClient:
-    """API client for Norman Hub."""
+    """API client for the Norman hub."""
 
-    def __init__(self, host: str) -> None:
+    def __init__(self, host: str, session: ClientSession) -> None:
         """Initialize the API client.
 
         Args:
-            host: IP address or hostname of the Norman hub
+            host: IP address or hostname of the Norman hub.
+            session: Shared aiohttp session (owned by Home Assistant, never closed here).
 
         """
         self.host = host
-        self.base_url = f"http://{host}:10123"
-        self._session = aiohttp.ClientSession()
+        self.base_url = URL.build(scheme="http", host=host, port=HUB_PORT)
+        self._session = session
         self._thing_name: str | None = None
-        self._notif_response: ClientResponse | None = None
+        self._task_ids = itertools.count(1)
+        self.traffic = TrafficRecorder()
 
-    async def async_validate_connection(self) -> bool:
-        """Test if we can connect to the Norman hub.
+    @property
+    def thing_name(self) -> str | None:
+        """Return the hub's ThingName, once registration has succeeded."""
+        return self._thing_name
 
-        Returns:
-            True if connection is successful
+    def _next_task_id(self) -> int:
+        """Return a request-scoped task id; the hub echoes it, so it only needs to vary."""
+        return next(self._task_ids) % 10000
+
+    async def _async_request(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST a JSON payload and return the decoded JSON object.
+
+        Every exchange, successful or not, is recorded in ``self.traffic`` and logged at
+        debug level (bodies truncated) for troubleshooting.
 
         Raises:
-            NormanConnectionError: If connection fails
+            NormanConnectionError: the hub could not be reached or timed out.
+            NormanApiError: the hub replied with an HTTP error, a non-JSON body, or a body
+                that is not a JSON object.
 
         """
+        started = time.monotonic()
+        status: int | None = None
+        text: str | None = None
         try:
-            await self._async_registration()
+            async with self._session.post(
+                self.base_url.with_path(endpoint),
+                json=payload,
+                timeout=ClientTimeout(total=REQUEST_TIMEOUT),
+            ) as response:
+                status = response.status
+                text = await response.text()
+        except TimeoutError as err:
+            # aiohttp's total timeout raises a bare TimeoutError, which is *not* a
+            # ClientError, so it needs its own clause or it escapes as an unexpected error.
+            error = f"Timed out talking to Norman hub at {self.host}"
+            self._record(endpoint, payload, status, text, error, started)
+            raise NormanConnectionError(error) from err
         except ClientError as err:
-            _LOGGER.error("Failed to connect to Norman hub at %s", self.host)
-            raise NormanConnectionError from err
-        else:
-            return True
+            error = f"Failed to connect to Norman hub at {self.host}: {err}"
+            self._record(endpoint, payload, status, text, error, started)
+            raise NormanConnectionError(error) from err
+
+        if status >= 400:
+            error = f"Hub returned HTTP {status} for {endpoint}"
+            self._record(endpoint, payload, status, text, error, started)
+            raise NormanApiError(error)
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as err:
+            error = f"Invalid JSON from Norman hub for {endpoint}"
+            self._record(endpoint, payload, status, text, error, started)
+            raise NormanApiError(error) from err
+        if not isinstance(data, dict):
+            error = f"Unexpected response shape from Norman hub for {endpoint}"
+            self._record(endpoint, payload, status, text, error, started)
+            raise NormanApiError(error)
+
+        self._record(endpoint, payload, status, text, None, started)
+        return data
+
+    def _record(
+        self,
+        endpoint: str,
+        payload: dict[str, Any],
+        status: int | None,
+        text: str | None,
+        error: str | None,
+        started: float,
+    ) -> None:
+        """Record an exchange and mirror it to the debug log."""
+        self.traffic.record(
+            "request",
+            endpoint,
+            request=payload,
+            status=status,
+            response=text,
+            error=error,
+            started=started,
+        )
+        _LOGGER.debug(
+            "POST %s %s -> %s %s%s",
+            endpoint,
+            payload,
+            status,
+            text[:500] if text else text,
+            f" ({error})" if error else "",
+        )
+
+    @staticmethod
+    def _raise_on_error_code(data: dict[str, Any], what: str) -> None:
+        """Raise NormanApiError when the hub's ``Error`` field is non-zero."""
+        if data.get("Error", 0) != 0:
+            raise NormanApiError(f"{what} failed with error code: {data.get('Error')}")
+
+    async def async_validate_connection(self) -> str | None:
+        """Register with the hub and return its ThingName.
+
+        Raises:
+            NormanConnectionError: If the hub cannot be reached.
+            NormanApiError: If the hub answers with an error.
+
+        """
+        data = await self._async_registration()
+        return data.get("ThingName")
 
     async def _async_registration(self) -> dict[str, Any]:
-        """Send registration request to get ThingName.
-
-        Returns:
-            Registration response data
-
-        Raises:
-            NormanApiError: If API returns an error
-
-        """
-        timestamp = int(time.time())
-        payload = {"Timestamp": timestamp}
-
-        try:
-            response = await self._session.post(
-                f"{self.base_url}{ENDPOINT_REGISTRATION}",
-                json=payload,
-                timeout=ClientTimeout(total=10),
-            )
-            response.raise_for_status()
-            data = await response.json()
-
-            if data.get("Error", 0) != 0:
-                raise NormanApiError(
-                    f"Registration failed with error code: {data.get('Error')}"
-                )
-
-            self._thing_name = data.get("ThingName")
-        except ClientError as err:
-            raise NormanConnectionError(
-                f"Failed to connect to Norman hub: {err}"
-            ) from err
-        except (json.JSONDecodeError, KeyError) as err:
-            raise NormanApiError(f"Invalid response from Norman hub: {err}") from err
-        else:
-            return data
+        """Send registration request to get ThingName."""
+        data = await self._async_request(ENDPOINT_REGISTRATION, {"Timestamp": int(time.time())})
+        self._raise_on_error_code(data, "Registration")
+        self._thing_name = data.get("ThingName")
+        return data
 
     async def async_get_devices(self) -> dict[str, Any]:
-        """Get list of all devices from the Norman hub.
-
-        Returns:
-            Dictionary with device information
-
-        Raises:
-            NormanApiError: If API returns an error
-            NormanConnectionError: If connection fails
-
-        """
-        # First ensure we have a ThingName
+        """Get the list of all devices (rooms, groups, peripherals) from the hub."""
+        # GetAllPeripheral needs the ThingName obtained during registration
         if not self._thing_name:
             await self._async_registration()
 
-        timestamp = int(time.time())
-        task_id = int(time.time() * 1000) % 10000  # Random task ID
-        payload: dict[str, Any] = {
-            "ThingName": self._thing_name,
-            "TaskID": task_id,
-            "Timestamp": timestamp,
-        }
-
-        try:
-            response = await self._session.post(
-                f"{self.base_url}{ENDPOINT_GET_ALL_PERIPHERAL}",
-                json=payload,
-                timeout=ClientTimeout(total=10),
-            )
-            response.raise_for_status()
-            data = await response.json()
-
-            status = data.get("status", {})
-            if status.get("code", 0) != 0:
-                error_msg = status.get("error", "Unknown error")
-                raise NormanApiError(f"GetAllPeripheral failed: {error_msg}")
-        except ClientError as err:
-            raise NormanConnectionError(
-                f"Failed to connect to Norman hub: {err}"
-            ) from err
-        except (json.JSONDecodeError, KeyError) as err:
-            raise NormanApiError(f"Invalid response from Norman hub: {err}") from err
-        else:
-            return data
+        data = await self._async_request(
+            ENDPOINT_GET_ALL_PERIPHERAL,
+            {
+                "ThingName": self._thing_name,
+                "TaskID": self._next_task_id(),
+                "Timestamp": int(time.time()),
+            },
+        )
+        status = data.get("status")
+        if isinstance(status, dict) and status.get("code", 0) != 0:
+            raise NormanApiError(f"GetAllPeripheral failed: {status.get('error', 'Unknown error')}")
+        return data
 
     async def async_get_status(self) -> dict[str, Any]:
-        """Get current status of all devices.
-
-        Returns:
-            Dictionary with device status information
-
-        Raises:
-            NormanApiError: If API returns an error
-            NormanConnectionError: If connection fails
-
-        """
-        timestamp = int(time.time())
-        payload = {"Timestamp": timestamp}
-
-        try:
-            response = await self._session.post(
-                f"{self.base_url}{ENDPOINT_STATUS}",
-                json=payload,
-                timeout=ClientTimeout(total=10),
-            )
-            response.raise_for_status()
-            data = await response.json()
-
-            if data.get("Error", 0) != 0:
-                raise NormanApiError(
-                    f"Status request failed with error code: {data.get('Error')}"
-                )
-        except ClientError as err:
-            raise NormanConnectionError(
-                f"Failed to connect to Norman hub: {err}"
-            ) from err
-        except (json.JSONDecodeError, KeyError) as err:
-            raise NormanApiError(f"Invalid response from Norman hub: {err}") from err
-        else:
-            return data
+        """Get the current status (positions, battery, firmware) of all devices."""
+        data = await self._async_request(ENDPOINT_STATUS, {"Timestamp": int(time.time())})
+        self._raise_on_error_code(data, "Status request")
+        return data
 
     async def async_set_position(
         self, device_id: int, bottom_rail_position: int, middle_rail_position: int
     ) -> None:
-        """Set cover position.
+        """Move a cover.
 
         Args:
-            device_id: ID of the Norman device
+            device_id: PeripheralUID of the Norman device
             bottom_rail_position: Bottom rail position (0=closed, 100=open)
             middle_rail_position: Middle rail position (0=closed, 100=open)
 
-        Raises:
-            NormanApiError: If API returns an error
-            NormanConnectionError: If connection fails
-
         """
-        timestamp = int(time.time())
-        task_id = int(time.time() * 1000) % 10000  # Random task ID
-        payload = {
-            "PeripheralUID": device_id,
-            "Timestamp": timestamp,
-            "TaskID": task_id,
-            "BottomRailPosition": bottom_rail_position,
-            "MiddleRailPosition": middle_rail_position,
-        }
-
-        try:
-            response = await self._session.post(
-                f"{self.base_url}{ENDPOINT_CONTROL}",
-                json=payload,
-                timeout=ClientTimeout(total=10),
-            )
-            response.raise_for_status()
-            data = await response.json()
-
-            if data.get("Error", 0) != 0:
-                raise NormanApiError(
-                    f"Control request failed with error code: {data.get('Error')}"
-                )
-
-        except ClientError as err:
-            raise NormanConnectionError(
-                f"Failed to connect to Norman hub: {err}"
-            ) from err
-        except (json.JSONDecodeError, KeyError) as err:
-            raise NormanApiError(f"Invalid response from Norman hub: {err}") from err
-
-    async def async_close(self) -> None:
-        """Close the API client session."""
-        if self._notif_response:
-            self._notif_response.close()
-            self._notif_response = None
-        if self._session:
-            await self._session.close()
+        data = await self._async_request(
+            ENDPOINT_CONTROL,
+            {
+                "PeripheralUID": device_id,
+                "Timestamp": int(time.time()),
+                "TaskID": self._next_task_id(),
+                "BottomRailPosition": bottom_rail_position,
+                "MiddleRailPosition": middle_rail_position,
+            },
+        )
+        self._raise_on_error_code(data, "Control request")
 
     async def async_listen_notifications(self) -> AsyncIterator[dict[str, Any]]:
-        """Listen for peripheral state change notifications via long-poll."""
-        url = f"{self.base_url}/NM/v1/notification"
-        timeout = ClientTimeout(total=None)
-        reconnect_task: asyncio.Task[None] | None = None
-        read_task: asyncio.Task[bytes] | None = None
+        """Yield peripheral state-change notifications from the hub's long-poll.
+
+        Returns normally when NOTIF_MAX_DURATION elapses (the caller should simply
+        reconnect) and raises NormanConnectionError if the hub closes the stream or the
+        connection fails.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + NOTIF_MAX_DURATION
+        parser = JsonStreamParser()
 
         try:
-            async with self._session.post(url, timeout=timeout) as response:
-                response.raise_for_status()
-                self._notif_response = response
-                buffer: str = ""
-                depth = 0
-
-                # Create a task to force reconnection after max duration
-                reconnect_task = asyncio.create_task(asyncio.sleep(NOTIF_MAX_DURATION))
-
+            async with self._session.post(
+                self.base_url.with_path(ENDPOINT_NOTIFICATION),
+                timeout=ClientTimeout(total=None),
+            ) as response:
+                if response.status >= 400:
+                    self.traffic.record(
+                        "stream",
+                        ENDPOINT_NOTIFICATION,
+                        status=response.status,
+                        error="refused",
+                    )
+                    raise NormanConnectionError(
+                        f"Notification stream refused with HTTP {response.status}"
+                    )
+                self.traffic.record("stream", ENDPOINT_NOTIFICATION, status=response.status)
+                content = response.content
                 while True:
-                    # Handle both reading data and periodic reconnection
-                    read_task = asyncio.create_task(
-                        response.content.read(READ_CHUNK_SIZE)
-                    )
-
-                    # Wait for either data to be read or the max duration to be reached
-                    done, pending = await asyncio.wait(
-                        [read_task, reconnect_task], return_when=asyncio.FIRST_COMPLETED
-                    )
-
-                    # If reconnect_task completed, force a reconnection
-                    if reconnect_task in done:
-                        _LOGGER.debug(
-                            "Max notification connection time reached (%s seconds)",
-                            NOTIF_MAX_DURATION,
-                        )
-                        for task in pending:
-                            task.cancel()
-                        # Trigger reconnect
-                        raise NormanPeriodicReconnectError
-
-                    # Get the read result
-                    chunk = await read_task
-
-                    if not chunk:
-                        # No more data, stream closed
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
                         break
-
-                    text = chunk.decode(errors="ignore")
-                    for char in text:
-                        if char == "{":
-                            depth += 1
-                            buffer += char
-                        elif char == "}":
-                            buffer += char
-                            depth -= 1
-                            if depth == 0:
-                                try:
-                                    obj = json.loads(buffer)
-                                except json.JSONDecodeError:
-                                    _LOGGER.debug(
-                                        "Failed to parse notification JSON: %s", buffer
-                                    )
-                                else:
-                                    # Skip initial acknowledgements without PeripheralList
-                                    if "PeripheralList" in obj:
-                                        yield obj
-                                buffer = ""
-                        elif depth > 0:
-                            buffer += char
-
+                    try:
+                        chunk = await asyncio.wait_for(
+                            content.read(READ_CHUNK_SIZE), timeout=remaining
+                        )
+                    except TimeoutError:
+                        break
+                    if not chunk:
+                        self.traffic.record("stream", ENDPOINT_NOTIFICATION, error="closed by hub")
+                        raise NormanConnectionError("Notification stream closed by hub")
+                    self.traffic.record(
+                        "stream",
+                        ENDPOINT_NOTIFICATION,
+                        response=chunk.decode(errors="replace"),
+                    )
+                    for obj in parser.feed(chunk):
+                        # The hub first acknowledges the subscription with an object that
+                        # has no PeripheralList; only real state changes carry one.
+                        if "PeripheralList" in obj:
+                            yield obj
         except ClientError as err:
-            raise NormanConnectionError(
-                f"Notification listener connection error: {err}"
-            ) from err
-        except asyncio.CancelledError:
-            _LOGGER.debug("Notification listener task was cancelled")
-            raise
-        finally:
-            # Clean up the response if it exists
-            if self._notif_response:
-                self._notif_response.close()
-                self._notif_response = None
+            raise NormanConnectionError(f"Notification listener connection error: {err}") from err
 
-            # Cancel helper tasks we created
-            if reconnect_task and not reconnect_task.done():
-                reconnect_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await reconnect_task
-
-            if read_task:
-                if not read_task.done():
-                    read_task.cancel()
-                # Always await the read_task in case a ClientConnectionError is raised
-                # Otherwise, we get a "Task exception was never retrieved"
-                with contextlib.suppress(asyncio.CancelledError, ClientError):
-                    await read_task
+        _LOGGER.debug(
+            "Max notification connection time reached (%s seconds); reconnecting",
+            NOTIF_MAX_DURATION,
+        )

@@ -1,26 +1,49 @@
 nudge_position:
+  name: Nudge position
+  description: Move a cover by a relative amount from where it is heading (or is).
   target:
     entity:
       integration: norman
       domain: cover
   fields:
     step:
-      description: The step (negative or positive) to nudge the cover position by.
-      example: 50
+      name: Step
+      description: Amount to move by, -100 to 100. Positive opens, negative closes.
+      example: 10
       required: true
-      type: integer
-      min: -100
-      max: 100
+      selector:
+        number:
+          min: -100
+          max: 100
+          mode: box
 nudge_tilt:
+  name: Nudge tilt
+  description: Adjust a cover's tilt by a relative amount from where it is heading (or is).
   target:
     entity:
       integration: norman
       domain: cover
+      supported_features:
+        - cover.CoverEntityFeature.SET_TILT_POSITION
   fields:
     step:
-      description: The step (negative or positive) to nudge the cover tilt by.
-      example: 50
+      name: Step
+      description: Amount to tilt by, -100 to 100. Direction depends on the blind; for SmartDrape, negative tilts left.
+      example: 10
       required: true
-      type: integer
-      min: -100
-      max: 100
+      selector:
+        number:
+          min: -100
+          max: 100
+          mode: box
+get_hub_data:
+  name: Get hub data
+  description: Read the hub's raw device list and status, exactly as the hub sends them. Returns a response; use it from Developer Tools or a script when reporting an unsupported blind.
+  fields:
+    config_entry_id:
+      name: Hub
+      description: Which Norman hub to read. Optional when only one is configured.
+      required: false
+      selector:
+        config_entry:
+          integration: norman

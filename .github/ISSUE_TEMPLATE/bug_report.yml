@@ -1,0 +1,84 @@
+name: Bug report
+description: Report a problem with the Norman integration.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough detail for us to reproduce the issue.
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.9.1"
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+      placeholder: "0.11"
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation method
+      options:
+        - HACS
+        - Manual copy
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: blind_type
+    attributes:
+      label: Blind type
+      description: Which kind of Norman covering is affected?
+      options:
+        - SmartDrape
+        - Top-down/bottom-up cellular
+        - Other / multiple (say which below)
+    validations:
+      required: true
+  - type: input
+    id: hub_firmware
+    attributes:
+      label: Hub firmware / blind firmware
+      description: Visible in the Norman app, or in a diagnostics export under `firmware_version`.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Tell us what you expected and what actually happened.
+      placeholder: A short summary of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste relevant Home Assistant logs (see the README's debug-logging section) with anything private removed.
+      render: shell
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics export
+      description: If this involves blind state, positions, or missing devices, attach a Home Assistant diagnostics export (the hub address is redacted automatically).
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that may help debug the issue.

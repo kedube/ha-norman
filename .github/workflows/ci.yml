@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: HACS validation
+        # Pinned by SHA (main @ 2026-06-08). HACS stopped cutting release tags after the
+        # 22.5.0 CalVer tag in 2022, so main is the only current reference -- do NOT "upgrade"
+        # to 22.5.0, which is four years older than this pin.
+        uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa
+        with:
+          category: integration
+
+  hassfest:
+    name: Hassfest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Run hassfest
+        # Pinned by SHA (master @ 2026-08-03). This repo is untagged, so Dependabot tracks
+        # the branch head.
+        uses: home-assistant/actions/hassfest@a7c616ce81ccda50150bf1595786c71b1883fabb
+
+  ruff:
+    name: Ruff
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+
+      - name: Run Ruff lint
+        run: python -m ruff check .
+
+      # Enabled once the repo was formatted in full, so this starts from a clean tree and only
+      # ever fails on newly-introduced drift.
+      - name: Check Ruff formatting
+        run: python -m ruff format --check .
+
+  pytest:
+    name: Pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          # Home Assistant 2026.9 and the matching pytest-homeassistant-custom-component
+          # require Python 3.14; on 3.13 pip would silently resolve a February 2026 release.
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+
+      - name: Run tests
+        run: python -m pytest -q
