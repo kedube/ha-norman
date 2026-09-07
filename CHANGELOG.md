@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.11 — 2026-09-07
 - **Timeouts are handled.** A slow or absent hub used to surface as an unexpected error
   with a traceback (aiohttp's timeout is not a `ClientError`); it is now a normal
   connection error everywhere: setup retries, the config flow says "cannot connect", and
