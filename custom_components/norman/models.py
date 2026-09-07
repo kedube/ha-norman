@@ -22,10 +22,10 @@ class NormanPeripheralData:
     middle_rail_position: int | None = None
     target_bottom_rail_position: int | None = None
     target_middle_rail_position: int | None = None
-    battery_level: float | None = None
+    battery_voltage: float | None = None
     firmware_version: str | None = None
     last_update: str | None = None
 
 
 # Represents all peripherals keyed by their ID
-NormanDevices = dict[int, NormanPeripheralData]
+type NormanDevices = dict[int, NormanPeripheralData]

@@ -1,26 +1,82 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "This Norman Hub is already configured",
-            "no_devices_found": "No devices found on the network",
-            "single_instance_allowed": "Already configured. Only a single configuration possible."
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Norman Hub",
+        "description": "Connect to your Norman Hub to control your blinds. The hub is reached directly on your local network; nothing goes through the cloud.",
+        "data": {
+          "host": "IP address or hostname"
         },
-        "error": {
-            "cannot_connect": "Failed to connect to the Norman Hub",
-            "invalid_response": "Invalid response received from API",
-            "unknown": "Unexpected error"
-        },
-        "step": {
-            "confirm": {
-                "description": "Do you want to start setup?"
-            },
-            "user": {
-                "data": {
-                    "host": "IP address or hostname"
-                },
-                "description": "Connect to your Norman Hub to control your devices.",
-                "title": "Connect to Norman Hub"
-            }
+        "data_description": {
+          "host": "The address of the Norman Hub on your network. Give it a fixed address in your router so it does not change."
         }
+      },
+      "reconfigure": {
+        "title": "Update Norman Hub address",
+        "description": "Enter the hub's new address. It must be the same hub this entry was set up with.",
+        "data": {
+          "host": "IP address or hostname"
+        },
+        "data_description": {
+          "host": "The address of the Norman Hub on your network."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Norman Hub",
+      "invalid_host": "Enter a valid IP address or hostname (no port or path)",
+      "invalid_response": "Invalid response received from the Norman Hub",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This Norman Hub is already configured",
+      "reconfigure_successful": "The hub address has been updated",
+      "wrong_hub": "That address belongs to a different Norman Hub"
     }
+  },
+  "services": {
+    "nudge_position": {
+      "name": "Nudge position",
+      "description": "Move a cover by a relative amount from where it is heading (or is).",
+      "fields": {
+        "step": {
+          "name": "Step",
+          "description": "Amount to move by, -100 to 100. Positive opens, negative closes."
+        }
+      }
+    },
+    "nudge_tilt": {
+      "name": "Nudge tilt",
+      "description": "Adjust a cover's tilt by a relative amount from where it is heading (or is).",
+      "fields": {
+        "step": {
+          "name": "Step",
+          "description": "Amount to tilt by, -100 to 100. Direction depends on the blind; for SmartDrape, negative tilts left."
+        }
+      }
+    },
+    "get_hub_data": {
+      "name": "Get hub data",
+      "description": "Read the hub's raw device list and status, exactly as the hub sends them. Returns a response; use it from Developer Tools or a script when reporting an unsupported blind.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "Which Norman hub to read. Optional when only one is configured."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_voltage": {
+        "name": "Battery voltage"
+      },
+      "last_seen": {
+        "name": "Last seen"
+      },
+      "firmware_version": {
+        "name": "Firmware version"
+      }
+    }
+  }
 }

@@ -1,2 +1,9 @@
--r requirements_dev.txt
-pytest-homeassistant-custom-component
+pytest>=8.2.0
+pytest-homeassistant-custom-component>=0.13.364
+# Used by tests/test_repo_consistency.py to parse services.yaml. Available transitively via
+# Home Assistant, but declared explicitly so the suite does not depend on a transitive pin.
+PyYAML>=6.0
+# Used by tests/test_repo_consistency.py to check the brand images. Also a Home Assistant
+# dependency, declared for the same reason.
+Pillow>=10.0
+ruff>=0.8.0

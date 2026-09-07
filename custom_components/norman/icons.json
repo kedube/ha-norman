@@ -1,0 +1,13 @@
+{
+  "services": {
+    "nudge_position": {
+      "service": "mdi:arrow-up-down"
+    },
+    "nudge_tilt": {
+      "service": "mdi:angle-acute"
+    },
+    "get_hub_data": {
+      "service": "mdi:file-download-outline"
+    }
+  }
+}

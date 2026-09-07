@@ -1,60 +1,73 @@
+# Home Assistant integration quality scale checklist. The manifest declares "custom" (the only
+# value Home Assistant honours for a custom integration); see QUALITY_SCALE.md for the reasoning
+# behind each status below.
 rules:
   # Bronze
-  action-setup: todo
-  appropriate-polling: todo
-  brands: todo
-  common-modules: todo
+  action-setup: done
+  appropriate-polling:
+    status: exempt
+    comment: Local push; the hub's notification stream drives refreshes.
+  brands: done
+  common-modules: done
   config-flow-test-coverage: done
-  config-flow: todo
-  dependency-transparency: todo
-  docs-actions: todo
-  docs-high-level-description: todo
-  docs-installation-instructions: todo
-  docs-removal-instructions: todo
-  entity-event-setup: todo
-  entity-unique-id: todo
-  has-entity-name: todo
-  runtime-data: todo
-  test-before-configure: todo
-  test-before-setup: todo
-  unique-config-entry: todo
+  config-flow: done
+  dependency-transparency: done
+  docs-actions: done
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
 
   # Silver
-  action-exceptions: todo
-  config-entry-unloading: todo
-  docs-configuration-parameters: todo
-  docs-installation-parameters: todo
-  entity-unavailable: todo
-  integration-owner: todo
-  log-when-unavailable: todo
-  parallel-updates: todo
-  reauthentication-flow: todo
-  test-coverage: todo
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: exempt
+    comment: No options flow; the only setting is the hub address.
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: The hub has no authentication.
+  test-coverage: done
 
   # Gold
-  devices: todo
-  diagnostics: todo
+  devices: done
+  diagnostics: done
   discovery-update-info: todo
   discovery: todo
-  docs-data-update: todo
-  docs-examples: todo
-  docs-known-limitations: todo
-  docs-supported-devices: todo
-  docs-supported-functions: todo
-  docs-troubleshooting: todo
-  docs-use-cases: todo
-  dynamic-devices: todo
-  entity-category: todo
-  entity-device-class: todo
-  entity-disabled-by-default: todo
-  entity-translations: todo
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices: done
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default: done
+  entity-translations: done
   exception-translations: todo
-  icon-translations: todo
-  reconfiguration-flow: todo
-  repair-issues: todo
-  stale-devices: todo
+  icon-translations:
+    status: exempt
+    comment: The cover device class provides the icons.
+  reconfiguration-flow: done
+  repair-issues:
+    status: exempt
+    comment: Nothing is user-fixable beyond the hub address, which reconfigure covers.
+  stale-devices: done
 
   # Platinum
-  async-dependency: todo
-  inject-websession: todo
+  async-dependency: done
+  inject-websession: done
   strict-typing: todo

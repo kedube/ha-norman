@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump (none = re-release current manifest version)"
+        required: true
+        default: "none"
+        type: choice
+        options:
+          - none
+          - minor
+          - major
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Bump manifest and publish release
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Skip stale workflow runs
+        id: head_check
+        env:
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          BUMP_INPUT: ${{ inputs.bump || 'none' }}
+        run: |
+          current_sha="$(git rev-parse origin/main)"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$BUMP_INPUT" = "none" ]; then
+              echo "release_action=existing" >> "$GITHUB_OUTPUT"
+            else
+              echo "release_action=bump" >> "$GITHUB_OUTPUT"
+            fi
+            echo "release_target=$current_sha" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$current_sha" = "$EXPECTED_SHA" ]; then
+            echo "release_action=bump" >> "$GITHUB_OUTPUT"
+            echo "release_target=$current_sha" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          previous_sha="$(git rev-parse "$current_sha^")"
+          latest_subject="$(git log -1 --format=%s "$current_sha")"
+          if [ "$previous_sha" = "$EXPECTED_SHA" ] && [[ "$latest_subject" == chore\(release\):*\ \[skip\ ci\] ]]; then
+            echo "release_action=existing" >> "$GITHUB_OUTPUT"
+            echo "release_target=$current_sha" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Skipping stale run for $EXPECTED_SHA because main is already at $current_sha."
+          echo "release_action=skip" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: steps.head_check.outputs.release_action != 'skip'
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Bump manifest version and rotate changelog
+        if: steps.head_check.outputs.release_action == 'bump'
+        id: bump
+        env:
+          BUMP_TYPE: ${{ inputs.bump || 'minor' }}
+        run: |
+          new_version="$(python .github/scripts/bump_manifest_version.py --bump "$BUMP_TYPE")"
+          python .github/scripts/update_changelog.py "$new_version"
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+
+      - name: Read existing manifest version
+        if: steps.head_check.outputs.release_action == 'existing'
+        id: current_version
+        run: |
+          new_version="$(python -c 'import json; print(json.load(open("custom_components/norman/manifest.json"))["version"])')"
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit release version
+        if: steps.head_check.outputs.release_action == 'bump'
+        id: commit_release
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/norman/manifest.json CHANGELOG.md
+          git commit -m "chore(release): $NEW_VERSION [skip ci]"
+          echo "release_target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Push release commit
+        if: steps.head_check.outputs.release_action == 'bump'
+        run: git push origin HEAD:main
+
+      # GitHub's auto-generated notes only list merged PRs, so direct-to-main releases came
+      # out empty. Build the body ourselves: Highlights from CHANGELOG.md (rotated from its
+      # Unreleased section during the bump) plus the commit list since the previous tag.
+      - name: Generate release notes
+        if: steps.head_check.outputs.release_action != 'skip'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version || steps.current_version.outputs.new_version }}
+        run: python .github/scripts/generate_release_notes.py "$NEW_VERSION" release_notes.md
+
+      - name: Create GitHub release
+        if: steps.head_check.outputs.release_action != 'skip'
+        uses: actions/github-script@v9
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version || steps.current_version.outputs.new_version }}
+          RELEASE_TARGET: ${{ steps.commit_release.outputs.release_target || steps.head_check.outputs.release_target }}
+        with:
+          script: |
+            const fs = require('fs')
+            const tag = process.env.NEW_VERSION
+            const target = process.env.RELEASE_TARGET
+            const body = fs.readFileSync('release_notes.md', 'utf8')
+            const { owner, repo } = context.repo
+
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag,
+              })
+              core.info(`Release ${tag} already exists; skipping creation.`)
+              return
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error
+              }
+            }
+
+            await github.rest.repos.createRelease({
+              owner,
+              repo,
+              tag_name: tag,
+              target_commitish: target,
+              name: tag,
+              body,
+            })
