@@ -16,6 +16,7 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 ## Contents
 
 - [Installation](#installation)
+- [Upgrading](#upgrading)
 - [Configuration](#configuration)
   - [Changing the hub address](#changing-the-hub-address)
   - [Removing the integration](#removing-the-integration)
@@ -37,7 +38,7 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 | Document | Contents |
 |---|---|
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
-| [docs/services.md](docs/services.md) | The `nudge_position` and `nudge_tilt` actions |
+| [docs/services.md](docs/services.md) | All four actions, and the hub verbs `send_hub_command` can send |
 | [docs/NORMAN_API.md](docs/NORMAN_API.md) | The hub's local API, for contributors |
 
 ## Installation
@@ -66,6 +67,52 @@ After restart, add the integration from Home Assistant:
 1. Copy `custom_components/norman` into your Home Assistant `config/custom_components` directory.
 2. Restart Home Assistant.
 3. Add the integration from **Settings > Devices & services > Add integration**.
+
+## Upgrading
+
+Every push to `main` publishes a release, so updates appear within a day or two of a change.
+The [changelog](CHANGELOG.md) lists what each version did, and the
+[Releases page](https://github.com/kedube/ha-norman/releases) carries the same notes.
+
+**Through HACS.** HACS checks for new releases on its own schedule and surfaces Norman as an
+update when one is available — as an update entity, and in the HACS panel itself.
+
+1. Open **HACS → Norman → Update**, or use Norman's update entity from
+   **Settings → Devices & services → Updates**.
+2. **Restart Home Assistant.** A downloaded update does nothing until the restart, because a
+   custom integration's files are only read at startup.
+3. Confirm the new version under **Settings → Devices & services → Norman**, or on the hub
+   device page.
+
+To check for a new release without waiting for HACS, use **HACS → ⋮ → Update information**.
+
+To move to a specific version instead of the newest, use **HACS → Norman → ⋮ → Redownload**
+and pick the version. That is also how to roll back.
+
+**Manual installs.** Replace `config/custom_components/norman` with the new copy — delete the
+old directory first rather than copying over it, so files removed upstream do not linger — then
+restart Home Assistant.
+
+### What to expect when you upgrade
+
+- **Your configuration is kept.** The hub address, entity ids, area assignments, custom names,
+  and enabled/disabled choices all live in Home Assistant's registries, not in the
+  integration's files.
+- **New entities may appear.** Several releases have added entities (rail sliders, buttons,
+  hub diagnostic sensors). New ones show up on the device page after the restart; ones marked
+  disabled by default have to be enabled by hand from the entity's settings.
+- **Names may change; entity ids do not.** When a release renames an entity, Home Assistant
+  updates the display name but keeps the entity id it generated on first registration, so
+  dashboards and automations keep working. A name you set yourself always wins.
+- **Migrations run once, automatically.** Entries created before 0.11 are re-keyed to the
+  hub's own identity, and the battery sensor's unique id was migrated in 0.15. Both happen
+  silently the first time the new version loads.
+- **Downgrading is safe** as far as the integration is concerned; entities added by a newer
+  version simply become unavailable and can be deleted.
+
+If an upgrade goes wrong, the log is the place to look
+([debug logging](#debug-logging)), and an [issue](https://github.com/kedube/ha-norman/issues)
+with the version you came from and the version you moved to is the fastest way to get it fixed.
 
 ## Configuration
 
@@ -118,23 +165,23 @@ Assistant.
 |---|---|
 | `current_position` | Bottom rail: 0 closed, 100 open |
 | `current_tilt_position` | Middle rail as tilt (for drapes; shades use the Middle rail cover instead): 0–100 |
+| `target_position`, `target_tilt` (attributes) | Where each rail is heading while the blind moves |
 
 Each cover is named for the rail it drives ("Living Drape Bottom rail", "Living Drape Middle
 rail"). Each rail also has a **position slider** (a `number` entity, 0–100% in steps of 10),
 which is often easier to place on a dashboard than a cover's own slider.
-| `target_position`, `target_tilt` (attributes) | Where each rail is heading while the blind moves |
 
-Each blind also has **buttons** for its favorite position, jog up, jog down, and run to top
-or bottom limit, plus diagnostic sensors for **battery** (percent),
-**last seen**, and, disabled by default, **signal strength** and **firmware version**; the hub
-has **MAC address**, **time zone**, and **Wi-Fi network** sensors, plus a **Wi-Fi signal**
-sensor that starts disabled. Full detail, including availability
-rules, is in [docs/entities.md](docs/entities.md).
+Each blind also has **buttons** for its favorite position, jog up, jog down, and run to top or
+bottom limit, plus diagnostic sensors for **battery** (percent), **last seen**, and, disabled
+by default, **signal strength** and **firmware version**. The hub gets its own device with
+**MAC address**, **time zone**, and **Wi-Fi network** sensors, plus a **Wi-Fi signal** sensor
+that starts disabled. Full detail, including availability rules, is in
+[docs/entities.md](docs/entities.md).
 
 ### Actions
 
-Alongside the standard cover actions, the integration provides two relative-move actions for
-automations and buttons, and one troubleshooting action:
+Alongside the standard cover actions, the integration provides four of its own — two
+relative-move actions for automations and buttons, and two for troubleshooting:
 
 - `norman.nudge_position` — move by `step` (positive opens, negative closes).
 - `norman.nudge_tilt` — tilt by `step` (direction depends on the blind; on SmartDrape,
@@ -235,7 +282,8 @@ issue; the mapping is a one-line change.
 
 - **No authentication on the hub.** That is the vendor protocol, not a choice of this
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
-- **Only two blind types are mapped**; see [Supported devices](#supported-devices).
+- **Only two blind types are mapped**, and only one of them to a Norman product name; see
+  [Supported devices](#supported-devices).
 - **No speed, direction, or limit-setting entities.** The hub has verbs for these; the
   limit-setting ones can be sent with `send_hub_command` (see
   [docs/services.md](docs/services.md#hub-verbs)), the rest have not been seen from the app.
@@ -308,8 +356,8 @@ Use [Reconfigure](#changing-the-hub-address).
 The integration supports Home Assistant's diagnostics export: **Settings → Devices &
 services → Norman → ⋮ → Download diagnostics**. It contains:
 
-- the last-known state of every blind (names, positions, targets, battery voltage, firmware)
-  and whether the last refresh succeeded;
+- the last-known state of every blind (names, positions, targets, battery percentage, signal,
+  both firmware versions) and whether the last refresh succeeded;
 - **`hub_traffic`**: a capture of the communication with the hub, taken below the parsing
   layer. `latest_raw` holds the last complete response from each endpoint (so the full device
   list and status are always there, including fields the integration does not understand), and
@@ -361,10 +409,12 @@ This repository is structured as a HACS-compatible custom integration repository
 - brand images (icon and logo) in `custom_components/norman/brand/`, which Home Assistant
   2026.3+ serves itself for the integrations list and device pages
 - a pytest suite under `tests/` that drives the integration against a fake hub at the HTTP
-  level (setup, unique-id migration, config flow, covers, sensors, actions, the notification
-  stream, the traffic recorder, diagnostics, device removal, brand image serving) and pins repo
-  metadata (translations, `services.yaml`, `icons.json`, brand image sizes, docs links) so it
-  cannot drift
+  level (setup, unique-id migration, config flow, covers, rail sliders, buttons, sensors,
+  actions, discovery, the notification stream, the traffic recorder, diagnostics, device
+  removal, brand image serving) and pins repo metadata (translations, exception keys,
+  `services.yaml`, `icons.json`, brand image sizes, docs links) so it cannot drift
+- `scripts/probe_hub_endpoints.py`, a read-only prober for finding hub endpoints nobody has
+  documented (see [CONTRIBUTING.md](CONTRIBUTING.md))
 - GitHub Actions for HACS validation, `hassfest`, Ruff, and pytest ([ci.yml](.github/workflows/ci.yml))
 - an automated release on every green push to `main` ([release.yml](.github/workflows/release.yml))
 - issue templates, a [contributing guide](CONTRIBUTING.md), a [changelog](CHANGELOG.md), and a

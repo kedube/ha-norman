@@ -1,8 +1,17 @@
 # Entities
 
-The integration creates one **cover** entity (two for two-rail blinds), a **position slider**
-per rail, five **buttons**, and four **diagnostic sensors** per peripheral the hub reports,
-plus one **device** per blind and one for the hub itself (with its own Wi-Fi signal sensor).
+Per blind the integration creates a **cover** (two for two-rail blinds), a **position slider**
+per rail, five **buttons**, and four **diagnostic sensors**, all on one **device**. The hub gets
+a device of its own carrying four diagnostic sensors.
+
+| | Per blind | On the hub |
+|---|---|---|
+| Cover | Bottom rail; Middle rail on two-rail blinds | — |
+| Number | Bottom rail position; Middle rail position on two-rail blinds | — |
+| Button | Favorite position, Jog up, Jog down, Run to top limit, Run to bottom limit | — |
+| Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
+
+\* disabled by default; enable from the entity's settings.
 
 ## Devices
 

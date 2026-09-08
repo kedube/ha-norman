@@ -38,19 +38,24 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
     `_async_request`, which is where transport and protocol errors are normalised.
   - `coordinator.py` — merges the hub's device list and status into `NormanPeripheralData`
     and runs the notification listener loop.
-  - `entity.py` — the base entity (device info, availability) and the dynamic-add helper
-    both platforms use.
-  - `cover.py` — the cover entities and the two nudge actions.
-  - `sensor.py` — the diagnostic sensors (battery voltage, last seen, firmware).
-  - `config_flow.py` — user and reconfigure steps.
+  - `entity.py` — the base entity (device info, availability), the `NormanRailMixin` that
+    holds the both-rails-in-every-command rule, and the dynamic-add helper every platform
+    uses. A platform that moves a blind should use the mixin rather than calling the API
+    directly, so the rail-fill logic stays in one place.
+  - `cover.py` — the cover entities (one per rail) and the two nudge actions.
+  - `number.py` — the per-rail position sliders.
+  - `button.py` — the per-blind hub verbs (favorite, jog, run to limit).
+  - `sensor.py` — the diagnostic sensors (battery, last seen, signal, firmware) and the
+    hub's own (MAC address, time zone, Wi-Fi network and signal).
+  - `config_flow.py` — user, zeroconf discovery, and reconfigure steps.
   - `services.py` — the integration-level `get_hub_data` and `send_hub_command` actions; the
     nudge actions live with the covers.
   - `diagnostics.py` — the export, including the raw `hub_traffic` capture.
 - `tests/` contains the pytest suite. Integration tests drive the real code against a fake hub
   registered on `aioclient_mock` (`tests/conftest.py`), so request payloads and error handling
   are exercised for real. `tests/test_repo_consistency.py` pins hand-edited metadata
-  (translations, `services.yaml`, `icons.json`, brand image sizes, manifest links, docs
-  links) that otherwise drifts.
+  (translations, exception translation keys, the observed-field catalogue, `services.yaml`,
+  `icons.json`, brand image sizes, manifest links, docs links) that otherwise drifts.
 - `.github/scripts/` contains the release helpers (version bump, changelog rotation, release
   notes), covered by `tests/test_release_scripts.py`.
 - `docs/` contains the user and contributor reference split out of the README. Keep the README
