@@ -94,6 +94,9 @@
   },
   "entity": {
     "cover": {
+      "bottom_rail": {
+        "name": "下樑"
+      },
       "middle_rail": {
         "name": "中樑"
       }

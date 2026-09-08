@@ -12,7 +12,7 @@ from homeassistant.components.number import (
 from homeassistant.components.number import (
     DOMAIN as NUMBER_DOMAIN,
 )
-from homeassistant.const import ATTR_ENTITY_ID, EntityCategory
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -58,9 +58,10 @@ async def test_sliders_report_each_rail(
 
     assert float(hass.states.get(middle_id).state) == 60  # MiddleRailPosition
 
-    # Configuration category, so the device page keeps its Controls group to the covers
+    # Uncategorised, so the sliders sit in the device page's Controls group beside the covers
     registry = er.async_get(hass)
-    assert registry.async_get(bottom_id).entity_category is EntityCategory.CONFIG
+    assert registry.async_get(bottom_id).entity_category is None
+    assert registry.async_get(middle_id).entity_category is None
     assert registry.async_get(bottom_id).disabled_by is None
 
 

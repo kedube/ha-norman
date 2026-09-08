@@ -20,7 +20,7 @@ from homeassistant.components.number import (
     NumberEntityDescription,
     NumberMode,
 )
-from homeassistant.const import PERCENTAGE, EntityCategory
+from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -95,9 +95,6 @@ class NormanNumber(NormanRailMixin, NumberEntity):
     _attr_native_step = POSITION_STEP
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_mode = NumberMode.SLIDER
-    # Configuration rather than a plain control: the cover entities are the primary way to
-    # drive a blind, and this keeps the device page's Controls group to the covers alone.
-    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
         self,

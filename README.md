@@ -119,8 +119,9 @@ Assistant.
 | `current_position` | Bottom rail: 0 closed, 100 open |
 | `current_tilt_position` | Middle rail as tilt (for drapes; shades use the Middle rail cover instead): 0–100 |
 
-Each rail also has a **position slider** (a `number` entity, 0–100% in steps of 10), which is
-often easier to place on a dashboard than a cover's own slider.
+Each cover is named for the rail it drives ("Living Drape Bottom rail", "Living Drape Middle
+rail"). Each rail also has a **position slider** (a `number` entity, 0–100% in steps of 10),
+which is often easier to place on a dashboard than a cover's own slider.
 | `target_position`, `target_tilt` (attributes) | Where each rail is heading while the blind moves |
 
 Each blind also has **buttons** for its favorite position, jog up, jog down, and run to top
