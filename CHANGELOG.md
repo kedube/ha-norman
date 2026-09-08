@@ -5,6 +5,35 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Stop.** Covers support `stop_cover` (and `stop_cover_tilt` on two-rail blinds), sending the
+  hub's `MotorStop` verb exactly as the Norman app does. Confirmed from a packet capture of the
+  app.
+- **Discovery.** The hub announces itself over mDNS (`_nien_made._tcp.local.`); Home Assistant
+  now offers it under Discovered, and an announcement from an already configured hub refreshes
+  its stored address, so a DHCP change heals itself.
+- **Battery as a percentage.** The hub's `BatteryVoltage` is 0–100; the sensor is now a
+  battery-class percentage. Existing `..._battery_voltage` entities are migrated in place.
+- **Blind types from the hub.** `ModuleType` 33 is a two-rail cover (position + tilt) and 32 a
+  single-rail shade (position only). Unknown types fall back to two-rail with one warning.
+- **Hub device details and radio sensors.** The hub device shows its model, firmware, and the
+  name from the app, and gets a Wi-Fi signal sensor; each blind gets a signal-strength sensor.
+  Both radio sensors are disabled by default.
+- **`norman.send_hub_command`** action posts arbitrary fields to the hub's control call for one
+  blind and returns the reply. The verbs the Norman app uses (fine-tune, limits, calibration)
+  are documented in `docs/services.md` and `docs/NORMAN_API.md`.
+- **Diagnostics redaction** now also scrubs the hub's location, Wi-Fi name, time zone, and
+  custom name inside raw bodies.
+- **Buttons per blind:** Favourite position, Jog up, Jog down, and (disabled by default) Run
+  to top limit and Run to bottom limit, sending the verbs captured from the Norman app. The
+  favourite verb is confirmed room-wide; its per-blind form is the hub's advertised one.
+- **Renames follow the Norman app.** The hub announces edits made in the app (`UpdateTime`
+  notifications); the integration re-reads the device list on room, blind, and hub edits and
+  updates device names in the registry. Names set in Home Assistant are left alone.
+- **Protocol reference** gained "Observed fields", "Control verbs", "Room-wide and hub-wide
+  control", "Configuration endpoints used by the app" (schedules, renames), and
+  "Discovery (mDNS)" sections from real-hub and Norman-app captures.
+
 ## 0.11 — 2026-09-07
 - **Timeouts are handled.** A slow or absent hub used to surface as an unexpected error
   with a traceback (aiohttp's timeout is not a `ClientError`); it is now a normal
@@ -31,7 +60,8 @@ version heading and publishes it as the release's Highlights.
   the nudge actions so they show properly in the action picker.
 - **Hub traffic capture.** Every exchange with the hub is recorded below the parsing layer
   (last 50, bodies clipped, plus the last full response per endpoint) and exported by
-  diagnostics as `hub_traffic` with the address and ThingName scrubbed. New
+  diagnostics as `hub_traffic` with the address, ThingName, hub location, Wi-Fi name, time
+  zone, and hub name scrubbed inside the raw bodies too. New
   `norman.get_hub_data` action returns the live raw device list and status. Debug logging
   now prints every request and response.
 - **Diagnostic sensors** per blind: battery voltage, last seen, and (disabled by default)

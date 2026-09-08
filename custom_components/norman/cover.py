@@ -25,7 +25,8 @@ from .const import (
     ATTR_STEP,
     ATTR_TARGET_POSITION,
     ATTR_TARGET_TILT,
-    COVER_TYPE_SMARTDRAPE,
+    COVER_TYPE_SINGLE_RAIL,
+    COVER_TYPE_TWO_RAIL,
     SERVICE_NUDGE_POSITION,
     SERVICE_NUDGE_TILT,
 )
@@ -72,13 +73,20 @@ def _clamp(value: int) -> int:
 
 
 class NormanCoverBase(NormanEntity, CoverEntity):
-    """Base class for Norman covers: a single bottom rail with position control."""
+    """Base class for Norman covers: a single bottom rail with position control.
+
+    Used directly for single-rail products (ModuleType 32): the hub still wants a middle
+    rail value in every command, and reports it as 0, so it is echoed back unchanged.
+    """
 
     # The cover is the device's primary entity, so it takes the device's name
     _attr_name = None
     _attr_device_class = CoverDeviceClass.BLIND
     _attr_supported_features = (
-        CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.SET_POSITION
+        CoverEntityFeature.OPEN
+        | CoverEntityFeature.CLOSE
+        | CoverEntityFeature.SET_POSITION
+        | CoverEntityFeature.STOP
     )
 
     def __init__(
@@ -149,6 +157,17 @@ class NormanCoverBase(NormanEntity, CoverEntity):
             bottom=position, middle=None, action="set position", value=position
         )
 
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        """Stop the motor where it is (the hub has one stop for both rails)."""
+        await self._async_stop()
+
+    async def _async_stop(self) -> None:
+        try:
+            await self.coordinator.api.async_stop(self._device_id)
+        except (NormanApiError, NormanConnectionError) as err:
+            raise HomeAssistantError(f"Failed to stop {self._device_name}: {err}") from err
+        await self.coordinator.async_request_refresh()
+
     async def async_nudge_position(self, step: int) -> None:
         """Move the cover by ``step`` relative to where it is heading (or is)."""
         new_pos = _clamp(self._target_or_current_bottom() + step)
@@ -179,16 +198,24 @@ class NormanCoverBase(NormanEntity, CoverEntity):
         await self.coordinator.async_request_refresh()
 
 
+class NormanShade(NormanCoverBase):
+    """A single-rail covering: position only."""
+
+    _attr_device_class = CoverDeviceClass.SHADE
+
+
 class NormanBlind(NormanCoverBase):
-    """A Norman blind with a middle rail, exposed as tilt (SmartDrape, top-down/bottom-up)."""
+    """A two-rail covering (ModuleType 33, SmartDrape, top-down/bottom-up): position + tilt."""
 
     _attr_supported_features = (
         CoverEntityFeature.OPEN
         | CoverEntityFeature.CLOSE
         | CoverEntityFeature.SET_POSITION
+        | CoverEntityFeature.STOP
         | CoverEntityFeature.OPEN_TILT
         | CoverEntityFeature.CLOSE_TILT
         | CoverEntityFeature.SET_TILT_POSITION
+        | CoverEntityFeature.STOP_TILT
     )
 
     @property
@@ -224,12 +251,19 @@ class NormanBlind(NormanCoverBase):
             value=tilt_position,
         )
 
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
+        """Stop the tilt: the same motor stop, since the hub has no per-rail stop."""
+        await self._async_stop()
+
     async def async_nudge_tilt(self, step: int) -> None:
         """Move the tilt by ``step`` relative to where it is heading (or is)."""
         new_tilt = _clamp(self._target_or_current_middle() + step)
         await self.async_set_cover_tilt_position(tilt_position=new_tilt)
 
 
-# Cover type -> entity class. Extend this (and the type detection in the coordinator) when
-# other Norman products are mapped; unknown types fall back to the two-rail blind.
-COVER_CLASSES: dict[str, type[NormanCoverBase]] = {COVER_TYPE_SMARTDRAPE: NormanBlind}
+# Cover type -> entity class. Types come from MODULE_TYPE_COVER_TYPES in const.py; extend
+# both when another Norman product is mapped. Unknown types fall back to the two-rail blind.
+COVER_CLASSES: dict[str, type[NormanCoverBase]] = {
+    COVER_TYPE_TWO_RAIL: NormanBlind,
+    COVER_TYPE_SINGLE_RAIL: NormanShade,
+}

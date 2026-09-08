@@ -68,21 +68,28 @@ After restart, add the integration from Home Assistant:
 
 ## Configuration
 
-The only setting is the hub's address.
+The only setting is the hub's address, and usually Home Assistant finds it for you.
+
+**Discovered.** The hub announces itself on the local network, so once the integration is
+installed a **Norman Hub (address)** card appears under **Settings → Devices & services →
+Discovered**. Click **Add**, confirm, and Home Assistant contacts the hub, reads its identity,
+and creates one cover entity per blind, named as in the Norman app. Discovery needs Home
+Assistant and the hub on the same network segment (mDNS does not cross routers or most VLANs).
+
+**By address.** If nothing is discovered:
 
 1. Add the integration (see [Installation](#installation)).
-2. Enter the hub's **IP address or hostname** (no port, no `http://`).
-3. Submit. Home Assistant contacts the hub, reads its identity, and creates one cover entity per
-   blind, named as in the Norman app.
-
-**Finding the hub's address.** Look in your router's client list for a device named after the
-hub, or check the Norman app's hub settings. Give the hub a **fixed address** (a DHCP
-reservation) in your router; if its address changes later, see the next section.
+2. Enter the hub's **IP address or hostname** (no port, no `http://`). Look in your router's
+   client list for a device named after the hub (its hostname is `Dexatek`), or check the Norman
+   app's hub settings.
+3. Submit.
 
 The hub identifies itself by a stable name, so re-adding the same hub by a different address
-updates the existing entry instead of creating a duplicate. Entries created by versions before
-0.11 are re-keyed to that name automatically on their next load. Several hubs can be added, each as
-its own entry.
+updates the existing entry instead of creating a duplicate, and a discovered announcement from a
+hub that is already set up refreshes its stored address rather than offering it again. That
+makes a DHCP address change self-healing; a **fixed address** (a DHCP reservation) in your router
+is still the simplest setup. Entries created by versions before 0.11 are re-keyed to the hub's
+name automatically on their next load. Several hubs can be added, each as its own entry.
 
 ### Changing the hub address
 
@@ -100,9 +107,10 @@ remove the download there too.
 
 ### Entities
 
-One [cover](https://www.home-assistant.io/integrations/cover/) entity per blind, with position
-**and** tilt control, diagnostic sensors, plus a device for each blind and for the hub. All position and tilt values
-are 0–100, with 0 closed and 100 open, as everywhere else in Home Assistant.
+One [cover](https://www.home-assistant.io/integrations/cover/) entity per blind, with position,
+tilt, and **stop**, diagnostic sensors, plus a device for each blind and for the hub. All
+position and tilt values are 0–100, with 0 closed and 100 open, as everywhere else in Home
+Assistant.
 
 | Entity property | Meaning |
 |---|---|
@@ -110,9 +118,11 @@ are 0–100, with 0 closed and 100 open, as everywhere else in Home Assistant.
 | `current_tilt_position` | Middle rail (vane tilt on SmartDrape): 0–100 |
 | `target_position`, `target_tilt` (attributes) | Where each rail is heading while the blind moves |
 
-Each blind also has diagnostic sensors for **battery voltage**, **last seen**, and (disabled by
-default) **firmware version**. Full detail, including availability rules, is in
-[docs/entities.md](docs/entities.md).
+Each blind also has **buttons** for its favourite position, jog up, jog down, and (disabled
+by default) run to top or bottom limit, plus diagnostic sensors for **battery** (percent),
+**last seen**, and, disabled by default, **signal strength** and **firmware version**; the hub
+has a **Wi-Fi signal** sensor, also disabled by default. Full detail, including availability
+rules, is in [docs/entities.md](docs/entities.md).
 
 ### Actions
 
@@ -124,6 +134,9 @@ automations and buttons, and one troubleshooting action:
   negative tilts left).
 - `norman.get_hub_data` — returns the hub's raw device list and status as a response, for
   bug reports and for adding support for new blind types.
+- `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for
+  one blind. The verbs the Norman app uses (fine-tune, run to a limit, set or clear limits,
+  calibrate) are documented and can be sent this way; they have no entity of their own yet.
 
 The nudges are relative to where the blind is **heading**, so repeated presses add up, and both
 clamp to 0–100. See [docs/services.md](docs/services.md).
@@ -180,33 +193,44 @@ actions:
 - **Reconnects.** The long-poll is recycled every 5 minutes (old connections go quiet), and
   re-established 15 seconds after any drop. Every reconnect re-reads the list of blinds, so a
   blind paired after setup shows up without a restart.
+- **Renames follow the app.** The hub also announces edits made in the Norman app; renaming a
+  blind, a room, or the hub there updates the matching device name in Home Assistant within a
+  second. A name you set in Home Assistant yourself is kept.
 - **Commands.** Each move is sent to the hub, then the status is re-read so the entity reflects
   the blind as it moves. The hub's move command always takes *both* rails, so the untouched rail
-  is sent back at its current target.
+  is sent back at its current target. Stop sends the hub's motor-stop verb, the same one the
+  Norman app's stop button sends.
+- **Discovery.** The hub announces itself over mDNS; Home Assistant offers it, and re-announcements
+  from a known hub update its address.
 
 The protocol itself is described in [docs/NORMAN_API.md](docs/NORMAN_API.md).
 
 ## Supported devices
 
-| Device | Status |
-|---|---|
-| Norman Hub | Required. The integration only talks to the hub. |
-| SmartDrape | Tested. Position + tilt. |
-| Top-down/bottom-up cellular and other two-rail blinds | Expected to work (same rail model) but untested. |
-| Single-rail blinds and shutters | Untested. They will appear with a tilt control that may do nothing. |
+| Device | Hub `ModuleType` | Exposed as |
+|---|---|---|
+| Norman Hub (`NienMadeHub`, firmware 6.x) | — | Required. The integration only talks to the hub. |
+| Two-rail coverings (SmartDrape, top-down/bottom-up) | 33 | Cover with position **and** tilt (the middle rail). Tested. |
+| Single-rail coverings (roller and honeycomb style) | 32 | Cover with position only, `shade` device class. Tested on a real hub. |
+| Anything else | other | Treated as two-rail, and a warning asks you to report the type. |
 
-Every blind is currently treated as a two-rail SmartDrape because the mapping from the hub's
-`ModuleType` to product types is unknown. If you have another Norman product, a
-[diagnostics export](#diagnostics) attached to an issue is the fastest way to get it supported.
+The type comes from the hub's `ModuleType`. If your blind shows the warning, or behaves
+differently from its type, run the `norman.get_hub_data` action and attach the response to an
+issue; the mapping is a one-line change.
 
 ## Known limitations
 
 - **No authentication on the hub.** That is the vendor protocol, not a choice of this
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
-- **Blind type is not detected**; see [Supported devices](#supported-devices).
-- **Battery** is a voltage sensor, not a percentage, because the voltage-to-charge curve is
-  unknown and differs per motor.
-- **No discovery.** The hub's address must be typed in; it is not found automatically.
+- **Only two blind types are mapped**; see [Supported devices](#supported-devices).
+- **No speed, direction, or limit-setting entities.** The hub has verbs for these; the
+  limit-setting ones can be sent with `send_hub_command` (see
+  [docs/services.md](docs/services.md#hub-verbs)), the rest have not been seen from the app.
+- **Favourite position is an extrapolation.** The app only sends it room-wide; the per-blind
+  button uses the form the hub advertises. Report it if it does nothing.
+- **Hub schedules are not exposed.** The hub stores its own sunrise/sunset and clock schedules;
+  the integration neither shows nor edits them, since Home Assistant automations do the same
+  job with more flexibility. Delete hub schedules that would fight your automations.
 - **Entity unique ids are per hub only.** The blind's id from the hub is used as-is, so two hubs
   that happen to reuse an id would collide. This has not been observed in practice.
 - **Opening/closing state** is not reported; the cover shows `open`/`closed` from its position
@@ -248,6 +272,11 @@ integration forces it immediately.
 Its entities go unavailable; delete the device from its device page (⋮ → Delete). The delete
 option is refused while the hub still reports the blind.
 
+**A blind logs "unknown ModuleType".**
+The hub reports a product type the integration has not seen. It is treated as a two-rail blind,
+which may give it a tilt control that does nothing. Run `norman.get_hub_data` and open an issue
+with the response and what the product is.
+
 **Open/close moves the tilt too (or vice versa).**
 The hub has no single-rail command, so the integration sends the untouched rail's current
 target along with the change. If the hub reports no target and no position for that rail, it
@@ -269,8 +298,9 @@ services → Norman → ⋮ → Download diagnostics**. It contains:
   `exchanges` holds the most recent 50 requests, responses, and notification-stream chunks with
   timestamps, HTTP status, duration, and any error.
 
-The hub's address and identity (its `ThingName`) are redacted everywhere, including inside the
-raw bodies. Everything else is blind state. Because the raw capture may contain fields nobody has
+The hub's address, identity (`ThingName`), location (`GeoLoc`), Wi-Fi network name, time zone,
+custom hub name, and network id are redacted everywhere, including inside the raw bodies; real
+hubs do send all of these. Everything else is blind state. Because the raw capture may contain fields nobody has
 seen yet, skim it before posting; then attach it to the issue. Reproduce the problem shortly
 before downloading, since the capture is the last 50 exchanges and is not kept across restarts.
 

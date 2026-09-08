@@ -8,15 +8,26 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
-from .const import COVER_TYPE_SMARTDRAPE, DOMAIN, RECONNECT_INTERVAL
-from .models import NormanDevices, NormanPeripheralData
+from .const import (
+    DEFAULT_COVER_TYPE,
+    DOMAIN,
+    MODULE_TYPE_COVER_TYPES,
+    RECONNECT_INTERVAL,
+)
+from .models import NormanDevices, NormanHubData, NormanPeripheralData
 
 _LOGGER = logging.getLogger(__name__)
 
 type NormanConfigEntry = ConfigEntry[NormanCoordinator]
+
+
+def hub_identifier(entry: ConfigEntry) -> str:
+    """Device-registry identifier of the hub device for ``entry``."""
+    return f"hub_{entry.entry_id}"
 
 
 class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
@@ -40,7 +51,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self.api = api
         # Registry id of the hub device, set by async_setup_entry once it is created
         self.hub_device_id: str | None = None
+        # What the hub says about itself; refreshed alongside the peripherals
+        self.hub = NormanHubData(model=api.hub_model, firmware_version=api.hub_firmware_version)
         self._device_info: dict[str, Any] = {}
+        self._unknown_module_types: set[int | None] = set()
         # True while the notification stream is known to be down, so that the outage is
         # logged once at error level rather than on every reconnect attempt.
         self._listener_offline = False
@@ -57,6 +71,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     if self._listener_offline:
                         self._listener_offline = False
                         _LOGGER.info("Norman hub notification stream restored")
+                    if self._structure_changed(notification):
+                        # A rename, room edit, or hub rename in the Norman app: re-read
+                        # the device list so names and rooms follow.
+                        self._device_info = {}
                     await self.async_refresh()
             except NormanConnectionError as err:
                 if not self._listener_offline:
@@ -78,6 +96,19 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             # that changed while the stream was down (or a newly paired blind) is picked up.
             self._device_info = {}
             await self.async_refresh()
+
+    @staticmethod
+    def _structure_changed(notification: dict[str, Any]) -> bool:
+        """Whether a notification says the room / blind / hub metadata changed.
+
+        ``UpdateTime`` carries one key per changed thing: ``room``, ``peripheral``,
+        ``device`` (the hub itself), or ``schedule``. Schedules are not modelled, so they
+        do not invalidate anything.
+        """
+        update = notification.get("UpdateTime")
+        if not isinstance(update, dict):
+            return False
+        return any(key != "schedule" for key in update)
 
     async def _async_update_data(self) -> NormanDevices:
         """Fetch data from API.
@@ -102,7 +133,63 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         except NormanApiError as err:
             raise UpdateFailed(f"Invalid response from Norman hub: {err}") from err
 
-        return self._process_data(self._device_info, status_data)
+        self._update_hub_data(self._device_info, status_data)
+        devices = self._process_data(self._device_info, status_data)
+        self._warn_about_unknown_module_types(devices)
+        self._sync_device_names(devices)
+        return devices
+
+    def _sync_device_names(self, devices: NormanDevices) -> None:
+        """Carry renames made in the Norman app into the device registry.
+
+        Devices are named when they are created and Home Assistant does not re-read
+        ``DeviceInfo`` afterwards, so the hub's names are pushed here. A name the user set
+        in Home Assistant (``name_by_user``) is untouched: it always takes precedence.
+        """
+        registry = dr.async_get(self.hass)
+        wanted = {str(device_id): data.name for device_id, data in devices.items()}
+        if self.hub_device_id and self.hub.custom_name:
+            wanted[hub_identifier(self.config_entry)] = self.hub.custom_name
+        # Devices are looked up through the entry rather than by identifier: identifiers
+        # are no longer unique across config entries in Home Assistant 2026.9.
+        for device in dr.async_entries_for_config_entry(registry, self.config_entry.entry_id):
+            for domain, identifier in device.identifiers:
+                name = wanted.get(identifier) if domain == DOMAIN else None
+                if name and device.name != name:
+                    registry.async_update_device(device.id, name=name)
+
+    def _update_hub_data(self, device_info: dict[str, Any], status_data: dict[str, Any]) -> None:
+        """Refresh the hub's own attributes from the two payloads."""
+        results = device_info.get("results")
+        if isinstance(results, dict):
+            self.hub.custom_name = results.get("CustomDeviceName") or self.hub.custom_name
+        self.hub.model = self.api.hub_model or self.hub.model
+        self.hub.firmware_version = self.api.hub_firmware_version or self.hub.firmware_version
+        rssi = status_data.get("WiFiRSSI")
+        self.hub.wifi_rssi = int(rssi) if isinstance(rssi, int | float) else None
+        ota = status_data.get("OTA")
+        self.hub.ota_in_progress = bool(ota) if ota is not None else None
+        pairing = status_data.get("PairingMode")
+        self.hub.pairing_mode = int(pairing) if isinstance(pairing, int) else None
+
+    def _warn_about_unknown_module_types(self, devices: NormanDevices) -> None:
+        """Log once per unknown ModuleType so owners can report it."""
+        for device in devices.values():
+            if (
+                device.module_type in MODULE_TYPE_COVER_TYPES
+                or device.module_type in self._unknown_module_types
+            ):
+                continue
+            self._unknown_module_types.add(device.module_type)
+            _LOGGER.warning(
+                "Norman peripheral %s (%s) reports unknown ModuleType %s/%s; treating it as a "
+                "two-rail blind. Please run the norman.get_hub_data action and open an issue "
+                "with the result so the type can be mapped",
+                device.id,
+                device.name,
+                device.module_type,
+                device.module_detail,
+            )
 
     @staticmethod
     def _process_data(device_info: dict[str, Any], status_data: dict[str, Any]) -> NormanDevices:
@@ -134,18 +221,17 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     if peripheral_uid is None:
                         continue
 
+                    module_type = _parse_int(peripheral.get("ModuleType"))
                     devices[peripheral_uid] = NormanPeripheralData(
                         id=peripheral_uid,
                         name=peripheral.get("PeripheralName") or f"Norman {peripheral_uid}",
-                        # TODO: derive the cover type from ModuleType once other kinds of
-                        # blinds have been mapped; everything is treated as SmartDrape.
-                        type=COVER_TYPE_SMARTDRAPE,
-                        room_id=room_id,
+                        type=MODULE_TYPE_COVER_TYPES.get(module_type, DEFAULT_COVER_TYPE),
+                        room_id=_parse_int(room_id),
                         room_name=room_name,
-                        group_id=group_id,
+                        group_id=_parse_int(group_id),
                         group_name=group_name,
-                        module_type=peripheral.get("ModuleType"),
-                        module_detail=peripheral.get("ModuleDetail"),
+                        module_type=module_type,
+                        module_detail=_parse_int(peripheral.get("ModuleDetail")),
                     )
 
         # Add status information
@@ -156,10 +242,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
             if peripheral_uid not in devices:
                 # Create minimal device if not found in device_info
+                module_type = _parse_int(peripheral.get("ModuleType"))
                 devices[peripheral_uid] = NormanPeripheralData(
                     id=peripheral_uid,
                     name=f"Norman {peripheral_uid}",
-                    type=COVER_TYPE_SMARTDRAPE,
+                    type=MODULE_TYPE_COVER_TYPES.get(module_type, DEFAULT_COVER_TYPE),
+                    module_type=module_type,
+                    module_detail=_parse_int(peripheral.get("ModuleDetail")),
                 )
 
             device = devices[peripheral_uid]
@@ -171,8 +260,11 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             device.target_middle_rail_position = _parse_position(
                 peripheral.get("TargetMiddleRailPosition")
             )
-            device.battery_voltage = peripheral.get("BatteryVoltage")
-            device.firmware_version = peripheral.get("FirmwareVersion")
+            # Despite its name the field is a 0-100 level on every hub seen so far
+            device.battery_level = _parse_position(peripheral.get("BatteryVoltage"))
+            device.signal_strength = _parse_int(peripheral.get("RssiMean"))
+            device.firmware_version = peripheral.get("FirmwareVersion") or None
+            device.rf_firmware_version = peripheral.get("RfFirmwareVersion") or None
             device.last_update = peripheral.get("Timestamp")
 
         return devices
@@ -180,6 +272,16 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
 def _parse_uid(raw: Any) -> int | None:
     """Coerce a PeripheralUID to int, or None if it is missing or malformed."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_int(raw: Any) -> int | None:
+    """Coerce a value the hub sends as int in one payload and str in another."""
     if raw is None or isinstance(raw, bool):
         return None
     try:

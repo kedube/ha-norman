@@ -68,12 +68,18 @@ def test_hacs_declares_a_minimum_home_assistant_version() -> None:
     assert minimum >= "2026.3.0"
 
 
-def test_sensor_translation_keys_are_translated() -> None:
-    """Every sensor description's translation_key needs a name in strings.json."""
-    from custom_components.norman.sensor import SENSORS
+def test_entity_translation_keys_are_translated() -> None:
+    """Every entity description's translation_key needs a name (and buttons an icon)."""
+    from custom_components.norman.button import BUTTONS
+    from custom_components.norman.sensor import HUB_SENSORS, SENSORS
 
-    names = _load(COMPONENT / "strings.json")["entity"]["sensor"]
-    assert {description.translation_key for description in SENSORS} == set(names)
+    strings = _load(COMPONENT / "strings.json")["entity"]
+    sensor_keys = {description.translation_key for description in (*SENSORS, *HUB_SENSORS)}
+    assert sensor_keys == set(strings["sensor"])
+    button_keys = {description.translation_key for description in BUTTONS}
+    assert button_keys == set(strings["button"])
+    icons = _load(COMPONENT / "icons.json")["entity"]["button"]
+    assert button_keys == set(icons)
 
 
 def test_release_workflow_targets_this_manifest() -> None:

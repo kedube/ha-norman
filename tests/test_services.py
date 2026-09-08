@@ -10,6 +10,7 @@ from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+import voluptuous as vol
 
 from custom_components.norman.const import DOMAIN
 
@@ -31,8 +32,11 @@ async def test_get_hub_data_returns_raw_payloads(
 
     response = await _get_hub_data(hass)
 
-    assert response["thing_name"] == HUB_THING_NAME
     assert response["devices"]["results"]["RoomList"][0]["RoomName"] == "Living Room"
+    # Home/network identifiers are blanked even in the live response
+    assert response["devices"]["results"]["GeoLoc"] == "**REDACTED**"
+    assert response["devices"]["results"]["ThingName"] == "**REDACTED**"
+    assert HUB_THING_NAME not in str(response)
     living = next(p for p in response["status"]["Peripherals"] if p["PeripheralUID"] == UID_LIVING)
     assert living["SomethingNew"] == 42
 
@@ -42,7 +46,7 @@ async def test_get_hub_data_accepts_an_explicit_entry(
 ) -> None:
     """The entry id selector targets a specific hub."""
     response = await _get_hub_data(hass, config_entry_id=init_integration.entry_id)
-    assert response["thing_name"] == HUB_THING_NAME
+    assert "Peripherals" in response["status"]
 
 
 async def test_get_hub_data_rejects_unknown_entry(
@@ -88,3 +92,60 @@ async def test_get_hub_data_reports_hub_failures(
     fake_hub.status_exc = aiohttp.ClientConnectionError("gone")
     with pytest.raises(HomeAssistantError, match="Could not read from Norman hub"):
         await _get_hub_data(hass)
+
+
+async def test_send_hub_command_posts_fields_and_returns_reply(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Arbitrary fields reach the control endpoint with the ids filled in; the reply comes back."""
+    fake_hub.control_response = {"Error": 0, "PeripheralUID": UID_LIVING, "MotorStop": 1}
+    status_calls = len(fake_hub.calls_to("/status"))
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        "send_hub_command",
+        {"peripheral_uid": str(UID_LIVING), "fields": {"MotorStop": 1}},
+        blocking=True,
+        return_response=True,
+    )
+
+    call = fake_hub.control_calls[-1]
+    assert call["PeripheralUID"] == UID_LIVING
+    assert call["MotorStop"] == 1
+    assert {"Timestamp", "TaskID"} <= set(call)
+    assert response["reply"]["MotorStop"] == 1
+    # A refresh follows so any resulting movement shows up
+    assert len(fake_hub.calls_to("/status")) == status_calls + 1
+
+
+async def test_send_hub_command_reports_rejection(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A non-zero Error from the hub fails the call with the hub's code."""
+    fake_hub.control_response = {"Error": 7}
+    with pytest.raises(HomeAssistantError, match="rejected the command.*error code: 7"):
+        await hass.services.async_call(
+            DOMAIN,
+            "send_hub_command",
+            {"peripheral_uid": UID_LIVING, "fields": {"MotorStop": 1}},
+            blocking=True,
+            return_response=True,
+        )
+
+
+async def test_send_hub_command_validates_input(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Missing or malformed fields never reach the hub."""
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN, "send_hub_command", {"fields": {"MotorStop": 1}}, blocking=True
+        )
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            "send_hub_command",
+            {"peripheral_uid": UID_LIVING, "fields": {"Nested": {"a": 1}}},
+            blocking=True,
+        )
+    assert fake_hub.control_calls == []

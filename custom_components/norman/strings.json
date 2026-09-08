@@ -1,5 +1,6 @@
 {
   "config": {
+    "flow_title": "Norman Hub ({host})",
     "step": {
       "user": {
         "title": "Connect to Norman Hub",
@@ -10,6 +11,10 @@
         "data_description": {
           "host": "The address of the Norman Hub on your network. Give it a fixed address in your router so it does not change."
         }
+      },
+      "zeroconf_confirm": {
+        "title": "Norman Hub found",
+        "description": "Add the Norman Hub at {host}? It was found on your local network and answered as a Norman hub."
       },
       "reconfigure": {
         "title": "Update Norman Hub address",
@@ -30,7 +35,10 @@
     },
     "abort": {
       "already_configured": "This Norman Hub is already configured",
+      "cannot_connect": "Failed to connect to the Norman Hub",
+      "invalid_response": "Invalid response received from the Norman Hub",
       "reconfigure_successful": "The hub address has been updated",
+      "unknown": "Unexpected error",
       "wrong_hub": "That address belongs to a different Norman Hub"
     }
   },
@@ -64,18 +72,59 @@
           "description": "Which Norman hub to read. Optional when only one is configured."
         }
       }
+    },
+    "send_hub_command": {
+      "name": "Send hub command",
+      "description": "Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. Sends the verbs the Norman app uses (fine-tune, limits, calibration, favourite) that have no entity yet. The blind will do whatever the hub makes of the fields.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "Which Norman hub to send to. Optional when only one is configured."
+        },
+        "peripheral_uid": {
+          "name": "Peripheral UID",
+          "description": "The blind's id as the hub reports it (the cover's unique id, or PeripheralUID in get_hub_data)."
+        },
+        "fields": {
+          "name": "Fields",
+          "description": "Extra JSON fields for the control call. PeripheralUID, Timestamp and TaskID are filled in automatically."
+        }
+      }
     }
   },
   "entity": {
+    "button": {
+      "favorite": {
+        "name": "Favourite position"
+      },
+      "jog_up": {
+        "name": "Jog up"
+      },
+      "jog_down": {
+        "name": "Jog down"
+      },
+      "run_to_top_limit": {
+        "name": "Run to top limit"
+      },
+      "run_to_bottom_limit": {
+        "name": "Run to bottom limit"
+      }
+    },
     "sensor": {
-      "battery_voltage": {
-        "name": "Battery voltage"
+      "battery_level": {
+        "name": "Battery"
+      },
+      "signal_strength": {
+        "name": "Signal strength"
       },
       "last_seen": {
         "name": "Last seen"
       },
       "firmware_version": {
         "name": "Firmware version"
+      },
+      "wifi_rssi": {
+        "name": "Wi-Fi signal"
       }
     }
   }

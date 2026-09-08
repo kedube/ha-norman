@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.util.network import is_host_valid
 import voluptuous as vol
 
@@ -27,6 +28,10 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Norman."""
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Initialize the flow."""
+        self._discovered_host: str | None = None
 
     async def _async_validate_host(self, host: str, errors: dict[str, str]) -> str | None:
         """Try to register with the hub at ``host``.
@@ -71,6 +76,43 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(STEP_USER_DATA_SCHEMA, user_input),
             errors=errors,
+        )
+
+    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> ConfigFlowResult:
+        """Handle a hub found by mDNS.
+
+        The hub announces ``NienMadeLocal._nien_made._tcp.local.`` on port 10123 with no TXT
+        record, so its identity has to be read from the hub itself. A hub that is already
+        configured has its stored address refreshed (which reloads the entry when it changed),
+        so a DHCP change heals itself the next time the hub announces.
+        """
+        host = discovery_info.host
+        errors: dict[str, str] = {}
+        unique_id = await self._async_validate_host(host, errors)
+        if unique_id is None:
+            return self.async_abort(reason=errors.get("base", "unknown"))
+
+        await self.async_set_unique_id(unique_id)
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+
+        self._discovered_host = host
+        self.context["title_placeholders"] = {"host": host}
+        return await self.async_step_zeroconf_confirm()
+
+    async def async_step_zeroconf_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask the user to confirm the discovered hub."""
+        host = self._discovered_host
+        assert host is not None
+        if user_input is not None:
+            return self.async_create_entry(
+                title=f"Norman Hub ({host})",
+                data={CONF_HOST: host},
+            )
+        return self.async_show_form(
+            step_id="zeroconf_confirm",
+            description_placeholders={"host": host},
         )
 
     async def async_step_reconfigure(

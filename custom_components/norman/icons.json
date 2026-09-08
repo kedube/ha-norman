@@ -1,4 +1,23 @@
 {
+  "entity": {
+    "button": {
+      "favorite": {
+        "default": "mdi:star"
+      },
+      "jog_up": {
+        "default": "mdi:arrow-up-bold"
+      },
+      "jog_down": {
+        "default": "mdi:arrow-down-bold"
+      },
+      "run_to_top_limit": {
+        "default": "mdi:arrow-collapse-up"
+      },
+      "run_to_bottom_limit": {
+        "default": "mdi:arrow-collapse-down"
+      }
+    }
+  },
   "services": {
     "nudge_position": {
       "service": "mdi:arrow-up-down"
@@ -8,6 +27,9 @@
     },
     "get_hub_data": {
       "service": "mdi:file-download-outline"
+    },
+    "send_hub_command": {
+      "service": "mdi:console-line"
     }
   }
 }

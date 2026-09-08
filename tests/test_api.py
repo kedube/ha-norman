@@ -245,8 +245,16 @@ def test_parser_caps_unterminated_buffer() -> None:
 async def test_listen_yields_only_state_changes_then_reports_eof(
     client: NormanApiClient, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    """The ack without PeripheralList is skipped; hub EOF is a connection error."""
-    body = '{"Error":0}{"PeripheralList":[{"PeripheralUID":1}]}{"PeripheralList":[]}'
+    """The ack is skipped; state changes and app edits are yielded; hub EOF is an error.
+
+    Real hubs send the ack as ``{"Error": "Success."}``, state changes as
+    ``{"Status": <ms>, "PeripheralList": [ids]}`` and edits made in the Norman app as
+    ``{"UpdateTime": {"room": <s>}, "Timestamp": <ms>}``.
+    """
+    body = (
+        '{"Error":"Success."}{"Status":1,"PeripheralList":[1]}'
+        '{"UpdateTime":{"room":2},"Timestamp":3}{"PeripheralList":[]}'
+    )
     aioclient_mock.post(NOTIFICATION, text=body)
 
     received = []
@@ -254,7 +262,11 @@ async def test_listen_yields_only_state_changes_then_reports_eof(
         async for notification in client.async_listen_notifications():
             received.append(notification)
 
-    assert received == [{"PeripheralList": [{"PeripheralUID": 1}]}, {"PeripheralList": []}]
+    assert received == [
+        {"Status": 1, "PeripheralList": [1]},
+        {"UpdateTime": {"room": 2}, "Timestamp": 3},
+        {"PeripheralList": []},
+    ]
 
 
 async def test_listen_returns_when_max_duration_elapses(
@@ -369,3 +381,42 @@ async def test_recorder_captures_stream_chunks(
     chunks = [e["response"] for e in client.traffic.as_dict()["exchanges"] if e["response"]]
     assert chunks == ['{"Error":0}{"PeripheralList":[]}']
     assert "/NM/v1/notification" not in client.traffic.as_dict()["latest_raw"]
+
+
+@pytest.mark.parametrize("error", [0, "0", "Success.", None])
+async def test_success_spellings_are_accepted(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker, error: object
+) -> None:
+    """The hub says 0 on most endpoints and "Success." on the stream ack; both are fine."""
+    aioclient_mock.post(STATUS, json={"Error": error, "Peripherals": []})
+    assert (await client.async_get_status())["Peripherals"] == []
+
+
+async def test_send_control_merges_fields(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Arbitrary fields are sent alongside the ids and the reply is returned."""
+    aioclient_mock.post(CONTROL, json={"Error": 0, "Echo": True})
+    reply = await client.async_send_control(7, {"MotorStop": 1})
+    assert reply["Echo"] is True
+    payload = aioclient_mock.mock_calls[0][2]
+    assert payload["PeripheralUID"] == 7
+    assert payload["MotorStop"] == 1
+    assert "TaskID" in payload
+
+
+async def test_registration_records_hub_identity(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Model and firmware from the registration reply are kept for the hub device."""
+    aioclient_mock.post(
+        REGISTRATION,
+        json={
+            "Error": 0,
+            "ThingName": HUB_THING_NAME,
+            "Model": "NienMadeHub",
+            "FirmwareVersion": "6.1.25",
+        },
+    )
+    await client.async_validate_connection()
+    assert (client.hub_model, client.hub_firmware_version) == ("NienMadeHub", "6.1.25")

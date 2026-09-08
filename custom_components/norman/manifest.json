@@ -1,14 +1,21 @@
 {
   "domain": "norman",
   "name": "Norman",
-  "codeowners": ["@kedube"],
+  "codeowners": [
+    "@kedube"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/kedube/ha-norman",
   "integration_type": "hub",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/kedube/ha-norman/issues",
-  "loggers": ["custom_components.norman"],
+  "loggers": [
+    "custom_components.norman"
+  ],
   "quality_scale": "custom",
   "requirements": [],
-  "version": "0.11"
+  "version": "0.11",
+  "zeroconf": [
+    "_nien_made._tcp.local."
+  ]
 }
