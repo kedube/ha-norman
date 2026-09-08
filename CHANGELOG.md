@@ -5,6 +5,39 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Protocol reference:** audited against the code and corrected throughout.
+  - The flow diagram showed only "cover action" for hub writes; the rail sliders and the five
+    buttons take the same path, and the buttons are the only in-integration sender of the jog
+    and run-to-limit verbs.
+  - `get_hub_data` was described as returning raw payloads — it redacts them — and the
+    diagnostics redaction was described as the host and `ThingName` when it covers ten keys.
+  - The error table listed only `"Error": 0` as success; the client also accepts `"0"`, an
+    absent field, and any `succ…` string. The notification stream's `"Success."` acknowledgement
+    was credited to the one code path that never sees it, and errors on that endpoint raise
+    `NormanConnectionError` rather than `NormanApiError`.
+  - The firmware rule is "`RfFirmwareVersion` when present", not "on single-rail blinds".
+  - Documented that the hub's MAC is not in any payload (it comes from ARP), that
+    `GetAllPeripheral` is cached while `status` is not, that requests are sequential, and that
+    the both-rails rule applies in both directions.
+  - Added the two missing sections to the table of contents.
+- **Documentation:** corrected the supported-devices claims. The integration was described as
+  tested only on SmartDrape, which understated it — motorized cellular shades (single-rail and
+  day/night) are what it runs on day to day, with SmartDrape the covering the tilt behaviour was
+  originally worked out on. Reworded to say what is actually tested, and to make clear that the
+  two `ModuleType` codes describe how many rails a motor has rather than any specific Norman
+  product, so any bottom-rail covering should work.
+- **The card reports its own version.** It reads the version from the `?v=` stamp on the URL
+  the integration registers, so there is no version constant in the JavaScript to fall behind
+  `manifest.json`, and it prints the build it actually loaded to the browser console. A
+  diagnostics download now compares the registered version against the integration's
+  (`version_matches`), which makes a browser running a cached older card obvious instead of
+  something to diagnose by eye. See
+  [docs/dashboard.md](docs/dashboard.md#checking-which-version-you-are-running).
+  A release-process test bumps the manifest with the real workflow script and asserts the
+  card's resource URL follows, so the automatic version bump on push can never leave the
+  card stamped with the previous release.
+
 ## 0.19 — 2026-09-08
 - **Dashboard card.** A **Norman Shades** Lovelace card, shipped with the integration and
   registered automatically: blinds grouped by room, each with its battery level and a

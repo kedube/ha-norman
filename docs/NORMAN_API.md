@@ -20,10 +20,12 @@ Read this before changing anything in [`api.py`](../custom_components/norman/api
   - [Control verbs](#control-verbs)
   - [Room-wide and hub-wide control](#room-wide-and-hub-wide-control)
   - [POST /NM/v1/notification](#post-nmv1notification)
+- [The complete endpoint surface](#the-complete-endpoint-surface)
 - [Configuration endpoints used by the app](#configuration-endpoints-used-by-the-app)
 - [Observed fields](#observed-fields)
 - [Error conventions](#error-conventions)
 - [How the integration uses the endpoints](#how-the-integration-uses-the-endpoints)
+- [Capturing traffic](#capturing-traffic)
 - [Security notes](#security-notes)
 
 ## Transport
@@ -186,19 +188,22 @@ Response:
 | `TargetMiddleRailPosition` | where the middle rail is heading | `target_tilt` attribute |
 | `BatteryVoltage` | a **percentage**, 0–100, despite the field name (see [Observed fields](#observed-fields)) | **Battery** sensor |
 | `RssiMean` | radio quality, unitless (0 or 34 seen) | opt-in **Signal strength** sensor |
-| `FirmwareVersion` | blind firmware | device `sw_version` and the opt-in **Firmware version** sensor, except on single-rail blinds where `RfFirmwareVersion` is shown instead |
+| `FirmwareVersion` | blind firmware | device `sw_version` and the opt-in **Firmware version** sensor, except when `RfFirmwareVersion` is also present, which is shown instead (only single-rail blinds have been seen to report both) |
 | `Timestamp` | last update; epoch seconds (as a number, or a string on some payloads) | **Last seen** sensor |
 
 Positions are coerced to integers and clamped to 0–100; an unusable value becomes `None`,
 which the entity reports as an unknown position. A peripheral that appears here but not in
-`GetAllPeripheral` still gets a cover entity, named `Norman <uid>`.
+`GetAllPeripheral` still gets a full set of entities (covers, sliders, buttons, sensors), named `Norman <uid>`, with its cover type taken from `ModuleType`.
 
 ### POST /NM/v1/control
 
 Moves a covering. The call **always takes both rails**; there is no way to move one and leave
 the other untouched, so the integration fills the untouched rail with its current target
-(falling back to its current position, then to 100). That is why `open_cover` on a
-SmartDrape sends the current tilt back along with the new position.
+(falling back to its current position, then to 100). It works in both directions: moving the
+bottom rail sends the middle rail's current target back with it, and moving the middle rail —
+whether through the **Middle rail** cover, the middle-rail slider, or a tilt command — sends the
+bottom rail's back. A capture therefore always shows both fields, even when the user touched
+only one.
 
 Request:
 
@@ -428,8 +433,8 @@ documented here must be catalogued and vice versa.
 
 | `ModuleType`/`ModuleDetail` | Firmware seen | Behaviour | Integration |
 |---|---|---|---|
-| 33 / 3 | 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); the reference hub's are day/night shades | primary cover (bottom rail, middle as tilt) + Middle rail cover |
-| 32 / 2 | 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only |
+| 33 / 3 | 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); the reference hub's are day/night cellular shades | primary cover (bottom rail, middle as tilt) + Middle rail cover; two position sliders |
+| 32 / 2 | 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only; one position slider |
 | other | | | two-rail by default, warning logged once |
 
 ### Notification stream, as observed
@@ -450,6 +455,17 @@ The hub uses two different shapes:
 | registration, status, control | `"Error": 0` | `"Error": <non-zero int>` |
 | GetAllPeripheral | `"status": {"code": 0}` | `"status": {"code": <non-zero>, "error": "<message>"}` |
 
+`_raise_on_error_code` accepts four spellings of success on the `Error` endpoints: `0`, the
+string `"0"`, an absent or `null` field, and any string beginning with `succ`
+(case-insensitive). Be equally permissive in new code — the hub demonstrably uses more than one
+spelling, and this list is only what has been observed.
+
+The notification stream is the exception: its opening `{"Error": "Success."}` acknowledgement
+never reaches `_raise_on_error_code` at all, because the listener yields only objects carrying
+`PeripheralList` or `UpdateTime` and drops everything else. An error *on that endpoint* surfaces
+as a `NormanConnectionError` (HTTP >= 400, or the hub closing the stream), not a
+`NormanApiError` — the one place the rule below does not hold.
+
 The client maps everything to two exceptions:
 
 - `NormanConnectionError` — the hub could not be reached: connection refused, DNS failure,
@@ -464,31 +480,57 @@ after the entity wraps them with context.
 ## How the integration uses the endpoints
 
 ```text
-setup ──► registration ──► GetAllPeripheral ──► status ──► entities created
+setup ──► registration ──► GetAllPeripheral ──► status ──► entities created ──► card served
                                                    ▲
 notification stream ──(PeripheralList, or UpdateTime: schedule)──┘  (refresh)
 notification stream ──(UpdateTime: room / peripheral / device)──► GetAllPeripheral + status
                                                                   (names pushed to devices)
 periodic reconnect (300 s) / disconnect (15 s) ──► GetAllPeripheral + status
-cover action ──► control (positions, or MotorStop) ──► status (request_refresh)
-get_hub_data action ──► GetAllPeripheral + status (raw, returned as the response)
+cover / number action ──► control (both positions) ──► status (request_refresh)
+cover stop ──► control (MotorStop) ──► status (request_refresh)
+button press ──► control (Favorite / jog / run-to-limit verb) ──► status (request_refresh)
+get_hub_data action ──► GetAllPeripheral + status (redacted, returned as the response)
 send_hub_command action ──► control (caller's fields) ──► status
 mDNS announcement ──► config flow ──► registration (identity) ──► offer, or refresh the address
 ```
+
+The hub's **MAC address is not in any payload**: no endpoint reports it. It is resolved from
+the local ARP table when the entry loads, so it is only available when Home Assistant shares a
+network segment with the hub. Do not go looking for it in a capture.
+
+The rail sliders (`number`) and the covers share one code path, so both send the same
+both-rails `control` call. The five buttons are the only place the integration sends a
+[control verb](#control-verbs) other than `MotorStop` without the user reaching for
+`send_hub_command`.
 
 There is no polling interval. If the notification stream cannot be established at all the
 integration still works for commands, and each command's follow-up `status` call keeps the
 state fresh, but external changes (remote, app) will not be reflected until the stream comes
 back. The listener logs one error when the stream drops and one info line when it recovers.
 
+**`GetAllPeripheral` is cached; `status` is not.** A refresh re-reads `status` every time but
+only calls `GetAllPeripheral` when the cached device list has been invalidated, which happens
+on the first refresh, on any listener reconnect (deliberate cycle or dropped stream), and on an
+`UpdateTime` notification naming `room`, `peripheral`, or `device`. That split matters when
+reading a capture: `status` is the hot path and carries positions and battery, while the
+heavier structural payload — names, rooms, module types, firmware — is fetched rarely. A
+`schedule` update does not invalidate anything, since schedules are not modelled.
+
+All requests are issued sequentially on one session; the integration never has two hub requests
+in flight, and it takes no lock, so nothing here says whether the hub tolerates concurrency.
+
 ## Capturing traffic
 
 `NormanApiClient.traffic` is a `TrafficRecorder`: every request/response pair and every
 notification-stream chunk is appended to a ring buffer (50 entries, bodies clipped to 16 KiB)
 before any parsing happens, and the last complete response per endpoint is kept whole in
-`latest_raw`. The diagnostics export publishes it as `hub_traffic` with the host and
-`ThingName` scrubbed. The `norman.get_hub_data` action returns live `GetAllPeripheral` and
-`status` payloads for the same purpose. When someone reports a new blind type, ask for either
+`latest_raw`. The diagnostics export publishes it as `hub_traffic`, redacted: the host, the config entry's
+unique id, and every key in `SENSITIVE_HUB_KEYS` (`ThingName`, `GeoLoc`, `Latitude`,
+`Longitude`, `WiFiSSID`, `NetworkID`, `TimeZone`, `CustomDeviceName`) are removed by key inside
+JSON bodies, and the host and `ThingName` are additionally replaced by value anywhere they
+appear in text. The export also carries a `frontend` block with the card's expected and
+registered versions. The `norman.get_hub_data` action returns live `GetAllPeripheral` and
+`status` payloads for the same purpose, with the same sensitive keys removed. When someone reports a new blind type, ask for either
 of these; the parsed model in `NormanPeripheralData` drops unknown fields and is not enough.
 
 Debug logging (`custom_components.norman.api: debug`) prints every exchange with the body
@@ -502,5 +544,6 @@ truncated to 500 characters.
 - The integration only ever connects *to* the hub; it opens no listening ports.
 - The host is validated as an IP address or hostname before use and the URL is built with
   `yarl` (so a value like `hub/../x` or `hub:80` cannot redirect requests elsewhere).
-- Diagnostics exports redact the hub address and ThingName. Positions and blind names are
-  included because they are what bug reports need.
+- Diagnostics exports redact the hub address, the entry's unique id, and the hub's identity,
+  location, Wi-Fi SSID, time zone and custom name (`SENSITIVE_HUB_KEYS`). The hub's own name is
+  redacted; **blind** names and positions are not, because they are what bug reports need.

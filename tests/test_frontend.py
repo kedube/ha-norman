@@ -207,7 +207,49 @@ async def test_diagnostics_report_the_card_version(
     assert report["registered_resources"] == [CARD_RESOURCE_URL]
 
 
+async def test_diagnostics_flag_a_stale_registered_card(hass: HomeAssistant) -> None:
+    """A resource left on an old ?v= is reported as a version mismatch.
+
+    This is the shape of the problem users actually hit: the card loads, but it is the
+    previous build, so behaviour does not match the release notes.
+    """
+    resources = FakeResources([{"id": "a", "url": f"{CARD_URL_PATH}?v=0.1"}])
+    hass.data["lovelace"] = MagicMock(resources=resources)
+
+    report = async_get_frontend_diagnostics(hass)
+
+    assert report["registered_versions"] == ["0.1"]
+    assert report["version_matches"] is False
+
+
+async def test_diagnostics_report_a_matching_version(
+    hass: HomeAssistant, lovelace: FakeResources
+) -> None:
+    """A card registered at the current version reports as matching."""
+    hass.http = MagicMock(async_register_static_paths=AsyncMock())
+    await async_register_card(hass)
+
+    report = async_get_frontend_diagnostics(hass)
+
+    assert report["registered_versions"] == [INTEGRATION_VERSION]
+    assert report["version_matches"] is True
+
+
+async def test_diagnostics_report_an_unstamped_resource(hass: HomeAssistant) -> None:
+    """A hand-added resource with no ?v= reports as unknown, not as a match."""
+    resources = FakeResources([{"id": "a", "url": CARD_URL_PATH}])
+    hass.data["lovelace"] = MagicMock(resources=resources)
+
+    report = async_get_frontend_diagnostics(hass)
+
+    assert report["registered_versions"] == ["unknown"]
+    assert report["version_matches"] is False
+
+
 async def test_diagnostics_without_lovelace(hass: HomeAssistant) -> None:
     """Diagnostics never fail just because Lovelace is not loaded."""
     hass.data.pop("lovelace", None)
-    assert async_get_frontend_diagnostics(hass)["registered_resources"] == []
+    report = async_get_frontend_diagnostics(hass)
+    assert report["registered_resources"] == []
+    # No card registered is not the same as a stale one, so this is None rather than False.
+    assert report["version_matches"] is None

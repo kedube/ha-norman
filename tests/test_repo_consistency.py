@@ -151,6 +151,52 @@ def test_card_registers_itself_in_the_picker() -> None:
     assert 'customElements.define("norman-shades-card"' in card
 
 
+def test_card_reads_its_version_from_the_resource_url() -> None:
+    """The card must derive its version from ?v=, never hardcode one.
+
+    A hardcoded version is a second place to bump at release time, and the release
+    workflow only touches manifest.json -- so it would silently drift and the console
+    banner would then misreport which build is actually loaded.
+    """
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+
+    assert 'searchParams.get("v")' in card, (
+        "the card must read its version from its own ?v= stamp "
+        "(new URL(import.meta.url).searchParams.get('v'))"
+    )
+
+    version = json.loads((COMPONENT / "manifest.json").read_text(encoding="utf-8"))["version"]
+    # A literal manifest version anywhere in the card is the drift this guards against.
+    assert f'"{version}"' not in card and f"'{version}'" not in card, (
+        f"the card hardcodes version {version}; derive it from the ?v= stamp instead"
+    )
+
+    assert "CARD_VERSION" in card, "the card should expose its version for the console banner"
+
+
+def test_docs_do_not_pin_a_card_version() -> None:
+    """No document may hardcode a ?v= stamp for the card resource.
+
+    The release workflow bumps only manifest.json, so a literal version in a doc is stale
+    from the next release onward -- and a wrong ?v= in a copied YAML-mode `resources:`
+    block serves the browser a URL that does not match the installed integration.
+    """
+    pinned: list[str] = []
+    for path in (REPO / "examples").rglob("*.yaml"):
+        pinned += [
+            f"{path.name}: {m}"
+            for m in re.findall(r"\?v=\d[\w.]*", path.read_text(encoding="utf-8"))
+        ]
+    for name in ("README.md", "docs/dashboard.md"):
+        text = (REPO / name).read_text(encoding="utf-8")
+        pinned += [f"{name}: {m}" for m in re.findall(r"\?v=\d[\w.]*", text)]
+
+    assert not pinned, (
+        "documentation pins a card version; use a <version> placeholder instead:\n  "
+        + "\n  ".join(pinned)
+    )
+
+
 def test_card_element_names_match_the_registration() -> None:
     """The element the card defines, the editor it asks for, and the picker type must agree."""
     from custom_components.norman.frontend import CARD_FILENAME

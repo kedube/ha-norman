@@ -34,7 +34,7 @@ The hub's `ModuleType` decides what kind of cover a blind gets:
 
 | `ModuleType` | Cover entities | Device class | Features |
 |---|---|---|---|
-| 33 | two-rail (day/night, top-down/bottom-up, SmartDrape): the **primary** cover, plus a **Middle rail** cover | `blind`, `shade` | primary: open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt. Middle rail: open, close, set position, stop |
+| 33 | two-rail (day/night cellular, top-down/bottom-up, SmartDrape): the **primary** cover, plus a **Middle rail** cover | `blind`, `shade` | primary: open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt. Middle rail: open, close, set position, stop |
 | 32 | single-rail (roller and honeycomb style) | `shade` | open, close, set position, stop |
 | other | treated as two-rail; a warning asks for a report | `blind` | as two-rail |
 
@@ -42,7 +42,8 @@ The hub's `ModuleType` decides what kind of cover a blind gets:
 **Middle rail**, so a blind called "Living Drape" has entities named "Living Drape Bottom rail"
 and "Living Drape Middle rail". The middle rail (`cover.<blind>_middle_rail`) is: on a
 day/night shade that is the second fabric, on a top-down/bottom-up shade the top rail, and on
-a SmartDrape the vane tilt. The primary cover also exposes the middle rail as *tilt*, which
+a SmartDrape the vane tilt. The integration does not need to know which of those it is: it
+drives the rail, and the product decides what the rail means. The primary cover also exposes the middle rail as *tilt*, which
 suits drapes; for shades, use the Middle rail cover, whose slider means the same thing it
 means in the Norman app. Both read the same hub values, so they never disagree. The
 `nudge_position` action works on either; on the Middle rail cover it nudges the middle rail.

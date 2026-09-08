@@ -103,6 +103,25 @@ entities:
   - sensor.living_drape_battery
 ```
 
+## Checking which version you are running
+
+The card takes its version from the URL the integration registers it at, so it always reports
+the build the browser actually loaded rather than a number compiled into the file. On load it
+prints one line to the browser console (⌥⌘I, or F12, then Console):
+
+```
+ NORMAN-SHADES-CARD  v0.19
+```
+
+That should match the **Version** shown on the Norman entry under **Settings → Devices &
+services**. If it is lower, the browser is running a cached copy — hard-refresh the page. If
+it says `unknown`, the resource was added by hand without the `?v=` stamp; the card still
+works, but it can no longer be cache-busted on upgrade, so re-register it with the stamp.
+
+A [diagnostics download](../README.md#diagnostics) reports the same comparison under
+`frontend`, as `integration_version`, `registered_versions`, and a `version_matches` flag —
+useful when attaching to an issue, since it does not depend on the reporter's browser.
+
 ## Troubleshooting
 
 **The card is not in the "Add card" list.** Hard-refresh the browser (⇧ and reload) — the
