@@ -7,3 +7,4 @@ PyYAML>=6.0
 # dependency, declared for the same reason.
 Pillow>=10.0
 ruff>=0.8.0
+getmac==0.9.5

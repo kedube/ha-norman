@@ -14,8 +14,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.norman.const import DOMAIN
 from custom_components.norman.sensor import parse_last_update
 
-from .conftest import FakeHub, settle
-from .const import UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
+from .conftest import HUB_MAC, FakeHub, settle
+from .const import HUB_SSID, UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
 
 
 def sensor_entity_id(hass: HomeAssistant, uid: int, key: str) -> str:
@@ -117,6 +117,25 @@ async def test_signal_and_wifi_sensors_are_opt_in(
     assert wifi.disabled_by is er.RegistryEntryDisabler.INTEGRATION
     assert wifi.original_device_class == "signal_strength"
     assert wifi.unit_of_measurement == "dBm"
+
+
+async def test_hub_identity_sensors(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
+    """The hub device carries its MAC, time zone, and Wi-Fi network as diagnostic sensors."""
+    registry = er.async_get(hass)
+    expected = {
+        "mac_address": HUB_MAC,
+        "time_zone": "America/New_York",
+        "wifi_ssid": HUB_SSID,
+    }
+    for key, value in expected.items():
+        entity_id = registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{init_integration.entry_id}_{key}"
+        )
+        assert entity_id, f"hub {key} sensor not registered"
+        entry = registry.async_get(entity_id)
+        assert entry.entity_category is EntityCategory.DIAGNOSTIC
+        assert entry.disabled_by is None
+        assert hass.states.get(entity_id).state == value
 
 
 async def test_missing_values_are_unknown(

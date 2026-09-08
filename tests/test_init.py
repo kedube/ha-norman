@@ -15,7 +15,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 
 from custom_components.norman.const import DOMAIN
 
-from .conftest import FakeHub, cover_entity_id, settle
+from .conftest import HUB_MAC, FakeHub, cover_entity_id, settle
 from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
 
 
@@ -39,6 +39,7 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     assert hub.sw_version == "6.1.25"
     assert hub.name == "ShadeAuto Hub"
     assert hub.configuration_url == f"{HUB_URL}"
+    assert hub.connections == {(dr.CONNECTION_NETWORK_MAC, HUB_MAC)}
 
     blind = devices.get((DOMAIN, str(UID_LIVING)))
     assert blind is not None

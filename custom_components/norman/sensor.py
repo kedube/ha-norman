@@ -112,6 +112,24 @@ class NormanHubSensorDescription(SensorEntityDescription):
 
 HUB_SENSORS: tuple[NormanHubSensorDescription, ...] = (
     NormanHubSensorDescription(
+        key="mac_address",
+        translation_key="mac_address",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda hub: hub.mac_address,
+    ),
+    NormanHubSensorDescription(
+        key="time_zone",
+        translation_key="time_zone",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda hub: hub.time_zone,
+    ),
+    NormanHubSensorDescription(
+        key="wifi_ssid",
+        translation_key="wifi_ssid",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda hub: hub.wifi_ssid,
+    ),
+    NormanHubSensorDescription(
         key="wifi_rssi",
         translation_key="wifi_rssi",
         device_class=SensorDeviceClass.SIGNAL_STRENGTH,

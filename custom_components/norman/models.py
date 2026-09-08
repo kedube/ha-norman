@@ -46,6 +46,9 @@ class NormanHubData:
     model: str | None = None  # "NienMadeHub" on the hubs seen so far
     firmware_version: str | None = None
     custom_name: str | None = None  # the name given in the Norman app
+    mac_address: str | None = None  # resolved from the network; the hub never reports it
+    time_zone: str | None = None  # IANA name, as configured in the app
+    wifi_ssid: str | None = None
     wifi_rssi: int | None = None  # dBm
     ota_in_progress: bool | None = None
     pairing_mode: int | None = None

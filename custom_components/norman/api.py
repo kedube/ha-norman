@@ -238,6 +238,7 @@ class NormanApiClient:
         # Hub identity from the registration reply, for the hub device
         self.hub_model: str | None = None
         self.hub_firmware_version: str | None = None
+        self.hub_wifi_ssid: str | None = None
 
     @property
     def thing_name(self) -> str | None:
@@ -359,6 +360,7 @@ class NormanApiClient:
         self._thing_name = data.get("ThingName")
         self.hub_model = data.get("Model") or self.hub_model
         self.hub_firmware_version = data.get("FirmwareVersion") or self.hub_firmware_version
+        self.hub_wifi_ssid = data.get("WiFiSSID") or self.hub_wifi_ssid
         return data
 
     async def async_get_devices(self) -> dict[str, Any]:

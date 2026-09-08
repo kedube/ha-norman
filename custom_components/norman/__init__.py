@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from functools import partial
 import logging
 
+from getmac import get_mac_address
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -18,6 +20,7 @@ from homeassistant.helpers import (
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.util.network import is_ip_address
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import DOMAIN, MANUFACTURER, PLATFORMS
@@ -53,11 +56,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
     coordinator = NormanCoordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    coordinator.hub.mac_address = await _async_resolve_mac(hass, entry.data[CONF_HOST])
 
     # The hub itself gets a device so every blind can hang off it as a via-device.
     hub_device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, hub_identifier(entry))},
+        connections=(
+            {(dr.CONNECTION_NETWORK_MAC, coordinator.hub.mac_address)}
+            if coordinator.hub.mac_address
+            else set()
+        ),
         manufacturer=MANUFACTURER,
         model=coordinator.hub.model or "Hub",
         sw_version=coordinator.hub.firmware_version,
@@ -74,6 +83,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_resolve_mac(hass: HomeAssistant, host: str) -> str | None:
+    """Look up the hub's MAC address on the local network.
+
+    No hub payload carries a MAC, so it is read from the ARP table (getmac), which works
+    only when Home Assistant is on the same network segment as the hub. Elsewhere it is
+    simply unknown; a failed lookup is never an error.
+    """
+    lookup = {"ip": host} if is_ip_address(host) else {"hostname": host}
+    try:
+        mac = await hass.async_add_executor_job(partial(get_mac_address, **lookup))
+    except Exception:  # noqa: BLE001 - getmac shells out; any failure means "unknown"
+        _LOGGER.debug("Could not resolve the MAC address of %s", host, exc_info=True)
+        return None
+    return dr.format_mac(mac) if mac else None
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bool:
