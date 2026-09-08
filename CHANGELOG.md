@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.20 — 2026-09-08
 - **Protocol reference:** audited against the code and corrected throughout.
   - The flow diagram showed only "cover action" for hub writes; the rail sliders and the five
     buttons take the same path, and the buttons are the only in-integration sender of the jog
