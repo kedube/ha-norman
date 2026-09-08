@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.19 — 2026-09-08
 - **Dashboard card.** A **Norman Shades** Lovelace card, shipped with the integration and
   registered automatically: blinds grouped by room, each with its battery level and a
   percentage slider per rail in steps of 10. It reads the entity registry rather than a
