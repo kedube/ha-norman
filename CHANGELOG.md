@@ -14,6 +14,9 @@ version heading and publishes it as the release's Highlights.
   shows `RfFirmwareVersion`; the device and firmware sensor now show that one (Den_1: 0.3.20,
   not 4.1.0.4), with both raw values as sensor attributes.
 - **Serial number** on each blind's device page (the hub's `PeripheralUID`).
+- **Hub diagnostics:** MAC address, time zone, and Wi-Fi network sensors on the hub device.
+  The hub never reports its MAC, so it is resolved from the local network (new `getmac`
+  requirement) and attached to the device as a network connection when found.
 
 ## 0.12 — 2026-09-08
 - **Stop.** Covers support `stop_cover` (and `stop_cover_tilt` on two-rail blinds), sending the

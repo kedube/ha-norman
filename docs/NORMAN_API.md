@@ -398,7 +398,9 @@ documented here must be catalogued and vice versa.
 | `ThingName` | registration, GetAllPeripheral | hub identity | **used** (config entry unique id); redacted |
 | `CustomDeviceName` | GetAllPeripheral | `ShadeAuto Hub` | **used** (hub device name); redacted |
 | `WiFiRSSI` | status | `-53` | **used** (Wi-Fi signal sensor) |
-| `WiFiSSID`, `GeoLoc` (`Latitude`/`Longitude`), `TimeZone`, `NetworkID` | registration, GetAllPeripheral | | not used; redacted |
+| `WiFiSSID` | registration | | **used** (Wi-Fi network sensor); redacted in diagnostics |
+| `TimeZone` | GetAllPeripheral | `America/New_York` | **used** (time zone sensor); redacted in diagnostics |
+| `GeoLoc` (`Latitude`/`Longitude`), `NetworkID` | registration, GetAllPeripheral | | not used; redacted |
 | `OTA`, `PairingMode`, `DeviceType`, `FirmwareId`, `FirmwareCode`, `TotalSegment`/`Segment`, `CleanPairing`, `StatusRequest`, `ReportBatteryLevel` | registration, status | `0`, `4`, `48` | not used. `PairingMode` reads `4` in registration and `0` in status; `OTA` was `1` in one registration reply while status said `0`. |
 | `SceneGroupList`, rooms' `SceneList` | GetAllPeripheral | `[]` | not used |
 | rooms' `Icon`, `Color`, `Sorting`; groups' `Sorting` | GetAllPeripheral | `"3"` | not used |

@@ -8,7 +8,7 @@ and one for the hub itself (with its own Wi-Fi signal sensor).
 
 | Device | Identifiers | Notes |
 |---|---|---|
-| Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address. |
+| Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address; the MAC address is attached as a network connection when it can be resolved (see below). |
 | Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is "Two-rail window covering" or "Single-rail window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
 
 The device page therefore mirrors the app's blind details: room (area), battery (sensor),
@@ -107,6 +107,17 @@ device class), also disabled by default.
 Sensor entity ids follow the same pattern as the cover with the sensor name appended, for
 example `sensor.living_room_living_drape_battery`. Installs that ran 0.11 keep their existing
 `..._battery_voltage` entity id; the entity is migrated in place.
+
+### Hub sensors
+
+The hub device has its own diagnostic sensors:
+
+| Sensor | Source | Default | Notes |
+|---|---|---|---|
+| MAC address | the local network (ARP), not the hub | enabled | The hub never reports its MAC. It is looked up when the entry loads, which only works when Home Assistant is on the same network segment as the hub; otherwise the sensor is unknown. When found it is also attached to the device as a network connection. |
+| Time zone | `TimeZone` in the device list | enabled | The IANA zone set in the Norman app; the hub uses it for its own schedules. |
+| Wi-Fi network | `WiFiSSID` in the registration reply | enabled | The network the hub is joined to. Diagnostics downloads still redact it. |
+| Wi-Fi signal | `WiFiRSSI` in status | disabled | dBm. |
 
 ## Removing a blind
 

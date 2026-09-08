@@ -41,6 +41,19 @@ from .const import (
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
+HUB_MAC = "3c:6a:9d:2c:a4:5c"
+
+
+@pytest.fixture(autouse=True)
+def _fake_arp() -> AsyncGenerator[None]:
+    """Answer the hub's MAC lookup without touching the real ARP table.
+
+    getmac shells out to ``arp``; in tests that is slow, environment-dependent, and for the
+    fixture address would return nothing. Yield the reference hub's real MAC instead.
+    """
+    with patch("custom_components.norman.get_mac_address", return_value=HUB_MAC):
+        yield
+
 
 @pytest.fixture(autouse=True)
 def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:

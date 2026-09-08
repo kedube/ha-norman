@@ -17,8 +17,15 @@ from custom_components.norman.const import COVER_TYPE_SINGLE_RAIL, COVER_TYPE_TW
 from custom_components.norman.coordinator import NormanCoordinator
 from custom_components.norman.entity import hub_identifier
 
-from .conftest import FakeHub, cover_entity_id, settle
-from .const import UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY, devices_payload, status_payload
+from .conftest import HUB_MAC, FakeHub, cover_entity_id, settle
+from .const import (
+    HUB_SSID,
+    UID_BEDROOM,
+    UID_LIVING,
+    UID_STATUS_ONLY,
+    devices_payload,
+    status_payload,
+)
 
 process = NormanCoordinator._process_data
 
@@ -141,6 +148,9 @@ async def test_hub_data_is_refreshed(
     assert hub.model == "NienMadeHub"
     assert hub.firmware_version == "6.1.25"
     assert hub.custom_name == "ShadeAuto Hub"
+    assert hub.mac_address == HUB_MAC
+    assert hub.time_zone == "America/New_York"
+    assert hub.wifi_ssid == HUB_SSID
     assert hub.wifi_rssi == -53
     assert hub.ota_in_progress is False
     assert hub.pairing_mode == 0

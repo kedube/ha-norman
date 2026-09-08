@@ -130,6 +130,15 @@
       },
       "wifi_rssi": {
         "name": "Wi-Fi signal"
+      },
+      "mac_address": {
+        "name": "MAC address"
+      },
+      "time_zone": {
+        "name": "Time zone"
+      },
+      "wifi_ssid": {
+        "name": "Wi-Fi network"
       }
     }
   }

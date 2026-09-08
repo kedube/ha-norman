@@ -167,8 +167,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         results = device_info.get("results")
         if isinstance(results, dict):
             self.hub.custom_name = results.get("CustomDeviceName") or self.hub.custom_name
+            self.hub.time_zone = results.get("TimeZone") or self.hub.time_zone
         self.hub.model = self.api.hub_model or self.hub.model
         self.hub.firmware_version = self.api.hub_firmware_version or self.hub.firmware_version
+        self.hub.wifi_ssid = self.api.hub_wifi_ssid or self.hub.wifi_ssid
         rssi = status_data.get("WiFiRSSI")
         self.hub.wifi_rssi = int(rssi) if isinstance(rssi, int | float) else None
         ota = status_data.get("OTA")

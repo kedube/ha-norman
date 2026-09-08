@@ -13,7 +13,9 @@
     "custom_components.norman"
   ],
   "quality_scale": "custom",
-  "requirements": [],
+  "requirements": [
+    "getmac==0.9.5"
+  ],
   "version": "0.15",
   "zeroconf": [
     "_nien_made._tcp.local."

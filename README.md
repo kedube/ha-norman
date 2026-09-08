@@ -122,7 +122,8 @@ Assistant.
 Each blind also has **buttons** for its favourite position, jog up, jog down, and run to top
 or bottom limit, plus diagnostic sensors for **battery** (percent),
 **last seen**, and, disabled by default, **signal strength** and **firmware version**; the hub
-has a **Wi-Fi signal** sensor, also disabled by default. Full detail, including availability
+has **MAC address**, **time zone**, and **Wi-Fi network** sensors, plus a **Wi-Fi signal**
+sensor that starts disabled. Full detail, including availability
 rules, is in [docs/entities.md](docs/entities.md).
 
 ### Actions
