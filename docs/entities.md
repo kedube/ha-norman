@@ -138,10 +138,7 @@ on the same push refreshes as the cover and are unavailable under the same condi
 | **Battery** | `BatteryVoltage` | A percentage, despite the hub's field name: every hub seen reports 0–100 and its registration calls the feature `ReportBatteryLevel`. Battery device class, so it shows the usual icons and can drive low-battery automations. |
 | **Last seen** | `Timestamp` | When the blind last reported to the hub. Accepts epoch seconds, epoch milliseconds, or ISO 8601 from the hub; anything else shows *unknown*. |
 | **Signal strength** | `RssiMean` | **Disabled by default.** A unitless radio-quality index from the hub (0 and 34 seen), not dBm. Useful for spotting a blind at the edge of range. |
-| **Firmware version** | `FirmwareVersion` | **Disabled by default**: the same value is already on the device page as `sw_version`. Enable it from the entity settings if you want history or automations on it. |
-
-The hub device has one sensor of its own, **Wi-Fi signal** (`WiFiRSSI`, dBm, signal-strength
-device class), also disabled by default.
+| **Firmware version** | `RfFirmwareVersion` on single-rail blinds, `FirmwareVersion` otherwise (see [Firmware version](#firmware-version)) | **Disabled by default**: the same value is already on the device page as `sw_version`. Enable it from the entity settings if you want history or automations on it. Carries both raw values as the `module_firmware` and `rf_firmware` attributes. |
 
 Sensor entity ids follow the same pattern as the cover with the sensor name appended, for
 example `sensor.living_room_living_drape_battery`. Installs that ran 0.11 keep their existing
@@ -168,9 +165,14 @@ back on the next refresh.
 ## Not exposed (yet)
 
 Seen in real hub payloads but not turned into entities, because their meaning or usefulness is
-not established: `PacketReceiveRate`, `StallCurrent`, `RfFirmwareVersion` (kept in diagnostics),
-and the hub's `OTA` and `PairingMode` flags. The hub's other control verbs (fine-tune up/down, run
-to a limit, set/clear limits, calibrate, and unconfirmed ones such as `Favorite` and
-`MotorSpeedAdjust`) can be sent with `norman.send_hub_command` but have no button or number
-entity yet. See [docs/NORMAN_API.md](NORMAN_API.md#observed-fields) and
-[docs/services.md](services.md#hub-verbs).
+not established: `PacketReceiveRate`, `StallCurrent`, and the hub's `OTA` and `PairingMode`
+flags.
+
+Of the hub's control verbs, fine-tune, run-to-limit, and favorite are [buttons](#buttons), and
+stop is on the covers. The ones still without an entity are the limit-setting family
+(`SetTopLimit`, `CleanTopLimit`, and their bottom and middle equivalents), `Calibration`, and
+the unconfirmed `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`,
+`SmartDialSwitch`, and the `RailSpacing` group. All can be sent with `norman.send_hub_command`;
+the limit and calibration ones change how a blind travels, so read
+[Hub verbs](services.md#hub-verbs) first. See also
+[docs/NORMAN_API.md](NORMAN_API.md#observed-fields).

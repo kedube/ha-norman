@@ -9,8 +9,14 @@ version heading and publishes it as the release's Highlights.
 - **Documentation:** the README gained an **Upgrading** section (HACS and manual steps, what is
   preserved across an upgrade, and what to expect when a release adds or renames entities), and
   the whole doc set was audited against the code. Corrected: a mangled entity table in the
-  README, a stale "battery is volts" claim and status example in the protocol reference, an
-  outdated module list in the contributing guide, and a self-contradictory quality-scale line.
+  README, a stale "battery is volts" claim and status example in the protocol reference, a
+  leftover line saying the hub had one sensor when it has four, a firmware-sensor row that
+  named the wrong field for single-rail blinds, several places still saying favorite and
+  jog "have no entity yet" (they have been buttons since 0.12) including the action's own
+  user-facing description in all seven languages, a claim that the limit verbs had never been
+  seen from the app when they were captured from it, an outdated module list in the
+  contributing guide, an incomplete test inventory, and a self-contradictory quality-scale
+  line.
 
 ## 0.17 — 2026-09-08
 - **Covers are named for their rail.** The primary cover is now "<blind> Bottom rail" rather
@@ -27,6 +33,10 @@ version heading and publishes it as the release's Highlights.
   middle-rail covers now sit next to each other at the top of the device page, with every
   button below the divider. The buttons gained the configuration entity category to achieve
   this; they remain enabled, but no longer appear on auto-generated dashboards.
+
+## 0.16 — 2026-09-08
+
+Version bump only; no user-facing changes.
 
 ## 0.15 — 2026-09-08
 - **Two-rail blinds are two covers.** Day/night and top-down/bottom-up shades have a second

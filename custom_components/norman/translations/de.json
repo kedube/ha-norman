@@ -75,7 +75,7 @@
     },
     "send_hub_command": {
       "name": "Hub-Befehl senden",
-      "description": "Erweitert. Sendet beliebige Felder per POST an den Control-Endpunkt des Hubs für ein Rollo und gibt die Antwort zurück. Für die Befehle der Norman-App (Feinjustierung, Endlagen, Kalibrierung, Favorit), die noch keine Entität haben. Das Rollo tut, was der Hub aus den Feldern macht.",
+      "description": "Erweitert. Sendet beliebige Felder per POST an den Control-Endpunkt des Hubs für ein Rollo und gibt die Antwort zurück. Für die Hub-Befehle ohne eigene Entität, etwa das Setzen oder Löschen einer Endlage und die Kalibrierung. Das Rollo tut, was der Hub aus den Feldern macht.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",

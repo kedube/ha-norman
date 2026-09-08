@@ -75,7 +75,7 @@
     },
     "send_hub_command": {
       "name": "Envoyer une commande au hub",
-      "description": "Avancé. Envoie des champs arbitraires en POST au point de terminaison control du hub pour un store et renvoie la réponse. Pour les commandes de l'application Norman (réglage fin, fins de course, calibrage, favori) qui n'ont pas encore d'entité. Le store fera ce que le hub déduit des champs.",
+      "description": "Avancé. Envoie des champs arbitraires en POST au point de terminaison control du hub pour un store et renvoie la réponse. Pour les commandes du hub sans entité dédiée, comme définir ou effacer une fin de course et le calibrage. Le store fera ce que le hub déduit des champs.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",

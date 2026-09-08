@@ -75,7 +75,7 @@
     },
     "send_hub_command": {
       "name": "Enviar comando al hub",
-      "description": "Avanzado. Envía campos arbitrarios por POST al punto de conexión control del hub para una persiana y devuelve la respuesta. Para los comandos que usa la app de Norman (ajuste fino, límites, calibración, favorito) que aún no tienen entidad. La persiana hará lo que el hub interprete de los campos.",
+      "description": "Avanzado. Envía campos arbitrarios por POST al punto de conexión control del hub para una persiana y devuelve la respuesta. Para los comandos del hub sin entidad propia, como fijar o borrar un límite y la calibración. La persiana hará lo que el hub interprete de los campos.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",

@@ -35,10 +35,14 @@ basis. This page explains the status of the ones that are not simply "done".
 ## What "done" means for the tests
 
 `test-coverage` is marked done on the basis that every code path with behaviour has a test:
-setup/unload/retry and the legacy unique-id migration, both config-flow steps and every error,
-every cover command and both nudge actions including clamping and target-following, the
-diagnostic sensors and their timestamp parsing, the `get_hub_data` action, device removal, the
-notification listener's reconnect and logging behaviour, the stream parser's edge cases, the
-traffic recorder's bounds and scrubbing, diagnostics, brand image serving, and the release
-scripts. Coverage is not measured numerically in CI; the suite is intentionally behaviour-
+setup/unload/retry and both unique-id migrations, all three config-flow steps (user, zeroconf
+discovery, reconfigure) and every error, every cover command and both nudge actions including
+clamping and target-following, the per-rail sliders, the verb buttons, the diagnostic sensors
+and their timestamp parsing, the `get_hub_data` and `send_hub_command` actions, device removal,
+the notification listener's reconnect, rename-following, and logging behaviour, the stream
+parser's edge cases, the traffic recorder's bounds and scrubbing, diagnostics, brand image
+serving, the endpoint prober's read-only guarantee, and the release scripts.
+`tests/test_repo_consistency.py` additionally pins hand-edited metadata (translations,
+exception keys, the observed-field catalogue, `services.yaml`, `icons.json`, brand image sizes,
+docs links) against the code. Coverage is not measured numerically in CI; the suite is intentionally behaviour-
 driven (a fake hub on `aioclient_mock`) rather than line-driven.

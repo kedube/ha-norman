@@ -75,7 +75,7 @@
     },
     "send_hub_command": {
       "name": "傳送 Hub 指令",
-      "description": "進階功能。對單一窗簾向 Hub 的 control 端點 POST 任意欄位並回傳回應。用於傳送 Norman App 使用但尚無實體的指令（微調、限位、校正、我的最愛）。窗簾的動作取決於 Hub 如何解讀這些欄位。",
+      "description": "進階功能。對單一窗簾向 Hub 的 control 端點 POST 任意欄位並回傳回應。用於沒有專屬實體的 Hub 指令，例如設定或清除限位與校正。窗簾的動作取決於 Hub 如何解讀這些欄位。",
       "fields": {
         "config_entry_id": {
           "name": "Hub",

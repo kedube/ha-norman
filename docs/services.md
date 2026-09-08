@@ -5,12 +5,12 @@ Beyond the standard [cover](https://www.home-assistant.io/integrations/cover/) a
 the tilt equivalents), the integration registers four actions of its own. The two nudge actions
 move a blind relative to where it is heading and target one or more `cover` entities from this
 integration; `get_hub_data` reads the hub's raw payloads for troubleshooting; `send_hub_command`
-sends the hub verbs that have no entity yet. All four appear in the automation editor's action
-picker.
+sends the hub verbs that have no entity of their own. All four appear in the automation
+editor's action picker.
 
-Several verbs that once needed `send_hub_command` now have entities of their own — favorite
-position, jog up and down, and run to either limit are [buttons](entities.md#buttons) — so
-reach for the action only for what is listed under [Hub verbs](#hub-verbs).
+Several verbs that once needed `send_hub_command` now have entities — favorite position, jog up
+and down, and run to either limit are [buttons](entities.md#buttons), and stop is on the covers
+— so reach for the action only for what is left under [Hub verbs](#hub-verbs).
 
 ## `norman.nudge_position`
 
