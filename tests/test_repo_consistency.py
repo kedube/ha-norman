@@ -134,6 +134,43 @@ def test_exception_translation_keys_exist() -> None:
         assert "{" in entry["message"] or key, key
 
 
+# ---- frontend card ---------------------------------------------------------------------
+
+
+def test_card_registers_itself_in_the_picker() -> None:
+    """The card must push itself onto window.customCards or it never appears in the picker.
+
+    A card that renders perfectly but is invisible in "Add card" is indistinguishable from a
+    broken install, and nothing else in the suite executes the JS.
+    """
+    from custom_components.norman.frontend import CARD_FILENAME
+
+    card = (COMPONENT / "www" / CARD_FILENAME).read_text(encoding="utf-8")
+    assert "window.customCards" in card, "the card never registers in the picker"
+    assert 'type: "norman-shades-card"' in card, "registered under the wrong type"
+    assert 'customElements.define("norman-shades-card"' in card
+
+
+def test_card_element_names_match_the_registration() -> None:
+    """The element the card defines, the editor it asks for, and the picker type must agree."""
+    from custom_components.norman.frontend import CARD_FILENAME
+
+    card = (COMPONENT / "www" / CARD_FILENAME).read_text(encoding="utf-8")
+    defined = set(re.findall(r'customElements\.define\("([a-z-]+)"', card))
+    assert defined == {"norman-shades-card", "norman-shades-card-editor"}
+    # getConfigElement must name an element that actually exists, or the visual editor 500s
+    (editor,) = re.findall(r'createElement\("([a-z-]+-editor)"\)', card)
+    assert editor in defined
+
+
+def test_card_file_is_served_from_the_registered_directory() -> None:
+    """The resource URL must point at a file that ships, or every dashboard 404s."""
+    from custom_components.norman.frontend import CARD_FILENAME, CARD_URL_PATH
+
+    assert (COMPONENT / "www" / CARD_FILENAME).is_file()
+    assert CARD_URL_PATH.endswith(CARD_FILENAME)
+
+
 def test_probe_script_refuses_write_endpoints() -> None:
     """The endpoint prober must never send anything that could change the hub.
 
@@ -352,6 +389,7 @@ DOCS = [
     "CHANGELOG.md",
     "QUALITY_SCALE.md",
     "docs/NORMAN_API.md",
+    "docs/dashboard.md",
     "docs/entities.md",
     "docs/services.md",
 ]
@@ -384,6 +422,47 @@ def test_documentation_links_resolve() -> None:
                 broken.append(f"{name}: {target}#{fragment}")
 
     assert not broken, "broken documentation links:\n  " + "\n  ".join(broken)
+
+
+def test_example_dashboard_is_valid_yaml() -> None:
+    """The example dashboard must parse and use the card's real options.
+
+    It is copied verbatim into people's dashboards, so a typo in an option name is a
+    silently ignored setting rather than an error they can see.
+    """
+    config = yaml.safe_load((REPO / "examples" / "dashboard.yaml").read_text(encoding="utf-8"))
+    assert config["views"], "the example dashboard has no views"
+
+    card_js = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    # Options the card reads, as `this._config.<name>`, plus `rooms` which it reads once
+    # into a local. Anything the example sets must be in that set.
+    supported = set(re.findall(r"_config\.(\w+)", card_js)) | {"type"}
+
+    used: set[str] = set()
+    for view in config["views"]:
+        cards = list(view.get("cards", []))
+        for section in view.get("sections", []):
+            cards.extend(section.get("cards", []))
+        for card in cards:
+            if card.get("type") == "custom:norman-shades-card":
+                used |= set(card)
+
+    assert used, "the example dashboard never uses the Norman card"
+    unknown = used - supported
+    assert not unknown, f"example dashboard sets options the card ignores: {sorted(unknown)}"
+
+
+def test_example_dashboard_entities_use_this_integration() -> None:
+    """Example entity ids must be in domains the integration actually provides.
+
+    A `light.` or `switch.` example would send someone hunting for an entity that this
+    integration never creates.
+    """
+    text = (REPO / "examples" / "dashboard.yaml").read_text(encoding="utf-8")
+    domains = {line.split(".")[0] for line in re.findall(r"entity:\s*([\w.]+)", text)}
+    assert domains <= {"cover", "number", "sensor", "button"}, (
+        f"example dashboard references unexpected domains: {sorted(domains)}"
+    )
 
 
 def test_readme_stays_browsable() -> None:

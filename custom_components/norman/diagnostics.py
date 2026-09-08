@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import SENSITIVE_HUB_KEYS
 from .coordinator import NormanConfigEntry
+from .frontend import async_get_frontend_diagnostics
 
 # The hub address maps the report to a home network; the hub's own payloads carry its
 # location, Wi-Fi name and identity (SENSITIVE_HUB_KEYS). All are redacted wherever they
@@ -60,6 +61,7 @@ async def async_get_config_entry_diagnostics(
             TO_REDACT,
         ),
         "last_update_success": coordinator.last_update_success,
+        "frontend": async_get_frontend_diagnostics(hass),
         "devices": {
             str(device_id): asdict(device) for device_id, device in (coordinator.data or {}).items()
         },

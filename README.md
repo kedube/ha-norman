@@ -22,6 +22,7 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
   - [Removing the integration](#removing-the-integration)
 - [What it provides](#what-it-provides)
   - [Entities](#entities)
+  - [Dashboard card](#dashboard-card)
   - [Actions](#actions)
   - [Automation ideas](#automation-ideas)
 - [How it works](#how-it-works)
@@ -37,6 +38,8 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 
 | Document | Contents |
 |---|---|
+| [docs/dashboard.md](docs/dashboard.md) | The bundled **Norman Shades** card, and building your own views |
+| [examples/dashboard.yaml](examples/dashboard.yaml) | A ready-made three-view dashboard to copy from |
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
 | [docs/services.md](docs/services.md) | All four actions, and the hub verbs `send_hub_command` can send |
 | [docs/NORMAN_API.md](docs/NORMAN_API.md) | The hub's local API, for contributors |
@@ -177,6 +180,16 @@ by default, **signal strength** and **firmware version**. The hub gets its own d
 **MAC address**, **time zone**, and **Wi-Fi network** sensors, plus a **Wi-Fi signal** sensor
 that starts disabled. Full detail, including availability rules, is in
 [docs/entities.md](docs/entities.md).
+
+### Dashboard card
+
+The integration ships a **Norman Shades** Lovelace card: every blind grouped by room, with its
+battery level and a percentage slider for each rail in steps of 10. It registers itself, so it
+is in the **Add card** picker with nothing to install and nothing to configure.
+
+Full detail, options, and how to build the same thing from Home Assistant's own cards are in
+[docs/dashboard.md](docs/dashboard.md). [examples/dashboard.yaml](examples/dashboard.yaml) is a
+complete dashboard you can paste into the raw configuration editor.
 
 ### Actions
 
@@ -406,6 +419,8 @@ capturing what you need; it is verbose while blinds are moving.
 This repository is structured as a HACS-compatible custom integration repository:
 
 - integration code under `custom_components/norman`
+- the Lovelace card in `custom_components/norman/www/`, served and auto-registered by
+  `frontend.py`
 - metadata in `custom_components/norman/manifest.json` and `hacs.json`
 - translations in `custom_components/norman/translations/`
 - brand images (icon and logo) in `custom_components/norman/brand/`, which Home Assistant

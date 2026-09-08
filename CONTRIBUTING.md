@@ -50,6 +50,15 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   - `config_flow.py` — user, zeroconf discovery, and reconfigure steps.
   - `services.py` — the integration-level `get_hub_data` and `send_hub_command` actions; the
     nudge actions live with the covers.
+  - `frontend.py` — serves `www/` and registers the Lovelace card as a dashboard resource,
+    repointing stale entries after an upgrade. Every failure here is logged and swallowed:
+    the card is a convenience and must never block setup.
+  - `www/norman-shades-card.js` — the card itself. Plain custom elements, no build step, so
+    the file that ships is the file that runs. It reads entities through the registry rather
+    than taking a configured list, so a new blind appears without editing the dashboard. The
+    card's JS is not executed by the test suite; `tests/test_repo_consistency.py` pins its
+    structure (picker registration, element names) and `tests/test_frontend.py` covers
+    serving and resource registration.
   - `diagnostics.py` — the export, including the raw `hub_traffic` capture.
 - `tests/` contains the pytest suite. Integration tests drive the real code against a fake hub
   registered on `aioclient_mock` (`tests/conftest.py`), so request payloads and error handling
@@ -61,6 +70,8 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
 - `docs/` contains the user and contributor reference split out of the README. Keep the README
   as the narrative landing page (install → configure → what you get → troubleshoot) and put
   detail here:
+  - [`docs/dashboard.md`](docs/dashboard.md) — the bundled card and its options, with a
+    worked dashboard in [`examples/dashboard.yaml`](examples/dashboard.yaml).
   - [`docs/entities.md`](docs/entities.md) — entities, devices, attributes, availability.
   - [`docs/services.md`](docs/services.md) — all four actions, and the hub verbs `send_hub_command` can send.
   - [`docs/NORMAN_API.md`](docs/NORMAN_API.md) — the hub protocol. Read it before changing

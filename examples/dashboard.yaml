@@ -1,0 +1,198 @@
+# Example Home Assistant dashboard for the Norman integration.
+#
+# Three views, in increasing order of how much you have to maintain by hand:
+#
+#   Shades        one Norman Shades card, everything grouped by room automatically
+#   By room       one card per room, for a dashboard where each room has its own section
+#   Details       built-in cards only, showing what the card is doing underneath
+#
+# HOW TO USE THIS FILE
+#
+# Storage-mode dashboards (the default, edited in the UI) cannot include a YAML file, so
+# copy the piece you want instead:
+#
+#   1. Open the dashboard, then Edit dashboard > three-dot menu > Raw configuration editor.
+#   2. Paste the `views:` entry you want, or the whole file to replace the dashboard.
+#   3. Save.
+#
+# YAML-mode dashboards can use this file as-is. In configuration.yaml:
+#
+#   lovelace:
+#     mode: yaml
+#     dashboards:
+#       lovelace-shades:
+#         mode: yaml
+#         title: Shades
+#         icon: mdi:blinds-horizontal
+#         show_in_sidebar: true
+#         filename: examples/dashboard.yaml
+#         # YAML mode cannot be given resources by an integration, so declare the card here.
+#         # The exact URL is logged at startup; ?v= must match your installed version.
+#     resources:
+#       - url: /norman/norman-shades-card.js?v=0.18
+#         type: module
+#
+# ENTITY IDS
+#
+# Every entity id below is an example using blind names from one hub. Yours are built from
+# your own blind names -- check Settings > Devices & services > Norman, or start typing in
+# any card editor. The Norman Shades card itself needs no entity ids at all: it finds your
+# blinds through the entity registry, so a newly paired blind appears without an edit here.
+
+title: Shades
+
+views:
+  # ---------------------------------------------------------------------------------
+  # 1. The whole house on one card. Nothing to configure and nothing to update when
+  #    blinds are added, renamed, or moved to a different area.
+  # ---------------------------------------------------------------------------------
+  - title: Shades
+    path: shades
+    icon: mdi:blinds-horizontal
+    cards:
+      - type: custom:norman-shades-card
+        title: Shades
+
+  # ---------------------------------------------------------------------------------
+  # 2. One card per room, using the `rooms:` filter. Useful when the dashboard is laid
+  #    out by room, or when you want a room in a specific column.
+  #
+  #    `rooms:` matches Home Assistant AREA names. The integration seeds areas from the
+  #    hub's room names on first setup, so these usually match the Norman app -- but if
+  #    you have renamed an area, use the Home Assistant name.
+  # ---------------------------------------------------------------------------------
+  - title: By room
+    path: shades-by-room
+    icon: mdi:home-floor-1
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: custom:norman-shades-card
+            title: Bedrooms
+            # Several rooms on one card; the order here is the order they appear.
+            rooms:
+              - Master Bedroom
+              - Front Bedroom
+            # Room headings are still useful when a card covers more than one room.
+            hide_room_names: false
+
+      - type: grid
+        cards:
+          - type: custom:norman-shades-card
+            title: Living areas
+            rooms:
+              - Living Room
+              - Den
+            hide_room_names: false
+
+      - type: grid
+        cards:
+          - type: custom:norman-shades-card
+            title: Office
+            rooms:
+              - Office
+            # One room per card makes the heading redundant.
+            hide_room_names: true
+            # Batteries have their own card in this view, below.
+            hide_battery: true
+
+          # Batteries for every blind in one place, sorted worst-first by the card's
+          # own thresholds (amber under 30%, red under 15%).
+          - type: entities
+            title: Batteries
+            entities:
+              - entity: sensor.master_bedroom_1_battery
+              - entity: sensor.master_bedroom_2_battery
+              - entity: sensor.front_bedroom_1_battery
+              - entity: sensor.den_1_battery
+              - entity: sensor.office_1_battery
+
+  # ---------------------------------------------------------------------------------
+  # 3. The same blinds using only Home Assistant's built-in cards. The Norman Shades
+  #    card is a convenience, not a requirement -- everything it does is a plain cover,
+  #    number, button, or sensor entity. Use this view as a starting point if you want
+  #    a layout the card does not offer.
+  # ---------------------------------------------------------------------------------
+  - title: Details
+    path: shades-detail
+    icon: mdi:tune-variant
+    type: sections
+    max_columns: 3
+    sections:
+      # A single-rail blind. The tile's cover-position feature gives a continuous
+      # slider; unlike the Norman card it is not restricted to 10% steps.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Den
+          - type: tile
+            entity: cover.den_1_bottom_rail
+            features:
+              - type: cover-open-close
+              - type: cover-position
+          - type: tile
+            entity: sensor.den_1_battery
+
+      # A two-rail (day/night) blind. Each rail is an independent cover, so it gets its
+      # own tile. Setting one rail past the other is rejected by the hub, which is why
+      # the integration sends both positions together.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Front Bedroom
+          - type: tile
+            entity: cover.front_bedroom_1_bottom_rail
+            features:
+              - type: cover-open-close
+              - type: cover-position
+          - type: tile
+            entity: cover.front_bedroom_1_middle_rail
+            features:
+              - type: cover-open-close
+              - type: cover-position
+
+      # The rail sliders as number entities -- these are what the Norman card writes to,
+      # and they enforce the 10% step. Any card that accepts a number entity works.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Rail positions
+          - type: entities
+            entities:
+              - entity: number.front_bedroom_1_bottom_rail_position
+                name: Front bedroom, bottom
+              - entity: number.front_bedroom_1_middle_rail_position
+                name: Front bedroom, middle
+              - entity: number.den_1_bottom_rail_position
+                name: Den
+
+          # Per-blind buttons. Favorite runs to the position stored in the motor; the
+          # jogs nudge a rail one step for fine adjustment.
+          - type: entities
+            title: Den controls
+            entities:
+              - entity: button.den_1_favorite_position
+              - entity: button.den_1_jog_up
+              - entity: button.den_1_jog_down
+              - entity: button.den_1_run_to_top_limit
+              - entity: button.den_1_run_to_bottom_limit
+
+      # The hub itself. These are diagnostic entities, so they are tucked away on the
+      # device page but work perfectly well on a dashboard.
+      #
+      # Wi-Fi signal and firmware version are disabled by default (they add noise for
+      # most people). To use them, enable them first on the hub's device page, or drop
+      # those two lines.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Hub
+          - type: entities
+            entities:
+              - entity: sensor.norman_hub_wi_fi_network
+              - entity: sensor.norman_hub_mac_address
+              - entity: sensor.norman_hub_time_zone
+              - entity: sensor.norman_hub_wi_fi_signal
+              - entity: sensor.norman_hub_firmware_version

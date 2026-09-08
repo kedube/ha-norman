@@ -5,6 +5,16 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Dashboard card.** A **Norman Shades** Lovelace card, shipped with the integration and
+  registered automatically: blinds grouped by room, each with its battery level and a
+  percentage slider per rail in steps of 10. It reads the entity registry rather than a
+  configured list, so newly paired blinds appear on their own. See
+  [docs/dashboard.md](docs/dashboard.md), and
+  [examples/dashboard.yaml](examples/dashboard.yaml) for a complete three-view dashboard to
+  copy from — the card on its own, a per-room layout, and the same blinds built from Home
+  Assistant's own cards.
+
 ## 0.18 — 2026-09-08
 - **Documentation:** the README gained an **Upgrading** section (HACS and manual steps, what is
   preserved across an upgrade, and what to expect when a release adds or renames entities), and
