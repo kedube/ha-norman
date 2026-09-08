@@ -14,7 +14,12 @@ version heading and publishes it as the release's Highlights.
   built. Entities are now matched on `translation_key`, with an entity-id fallback. The battery
   also gained a hover and screen-reader label, so its percentage cannot be mistaken for a rail
   position. Added `scripts/check_card.mjs`, which runs the card under Node against a realistic
-  `hass` object, plus two Python guards that pin the contract in CI.
+  `hass` object, plus Python guards that pin the contract in CI.
+- **Fixed: the card's open/stop/close only ever moved the bottom rail.** The buttons sat in the
+  blind's header and were hardcoded to the bottom-rail cover, so a two-rail blind had a middle
+  rail slider but no way to open or stop that rail — and pressing the buttons moved the bottom
+  rail instead. Each rail now carries its own **▲ ■ ▼**, targeting that rail's own cover, and
+  they are disabled when the blind is unavailable.
 
 ## 0.20 — 2026-09-08
 - **Protocol reference:** audited against the code and corrected throughout.

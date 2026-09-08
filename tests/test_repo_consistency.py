@@ -244,6 +244,23 @@ def test_card_matches_the_translation_keys_the_entities_use() -> None:
     )
 
 
+def test_card_controls_each_rail_independently() -> None:
+    """Open/stop/close must target the rail they sit on, not the blind's bottom rail.
+
+    The buttons originally lived in the blind header and were hardcoded to
+    ``blind.bottomCover``, so a two-rail blind had a middle-rail slider but no way to open
+    or stop that rail -- and the header buttons silently moved the bottom one instead.
+    """
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+
+    assert "entity_id: rail.coverId" in card, (
+        "the cover service calls must target rail.coverId so each rail controls itself"
+    )
+    assert "entity_id: blind.bottomCover" not in card, (
+        "a control still targets blind.bottomCover; the middle rail would move the wrong rail"
+    )
+
+
 def test_card_element_names_match_the_registration() -> None:
     """The element the card defines, the editor it asks for, and the picker type must agree."""
     from custom_components.norman.frontend import CARD_FILENAME
