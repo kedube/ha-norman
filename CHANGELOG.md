@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.18 — 2026-09-08
 - **Documentation:** the README gained an **Upgrading** section (HACS and manual steps, what is
   preserved across an upgrade, and what to expect when a release adds or renames entities), and
   the whole doc set was audited against the code. Corrected: a mangled entity table in the
