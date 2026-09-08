@@ -161,8 +161,10 @@ SENSITIVE_HUB_KEYS = frozenset(
 # Cover types, derived from the hub's ModuleType. Observed on real hubs:
 #   33 (ModuleDetail 3): two rails, the middle rail tracks 0-100 -> position + tilt
 #   32 (ModuleDetail 2): middle rail always 0 -> single rail, position only
-# Unknown types are treated as two-rail (the original SmartDrape assumption) and logged once
-# so the owner can report the hub payload.
+# Unknown types fall back to two-rail -- the safer default, since a two-rail blind driven as
+# single-rail would leave its middle rail unreachable -- and are logged once so the owner can
+# report the hub payload. Nothing here is product-specific: the codes describe how many rails
+# the motor has, not which Norman covering it is.
 # Motor verbs are fields on the control call; the Norman app sends 170 (0xAA) as the value
 # of every "do it now" verb (MotorStop, MotorFineTuneToUp/Down, SetMotorToTopLimit, ...) and 0
 # for configuration verbs (FindTop, SetTopLimit, Calibration, ...). Captured from the app.

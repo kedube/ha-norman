@@ -27,9 +27,12 @@
 #         show_in_sidebar: true
 #         filename: examples/dashboard.yaml
 #         # YAML mode cannot be given resources by an integration, so declare the card here.
-#         # The exact URL is logged at startup; ?v= must match your installed version.
 #     resources:
-#       - url: /norman/norman-shades-card.js?v=0.18
+#       # Replace <version> with your installed version -- the Version field on the Norman
+#       # entry under Settings > Devices & services. The exact URL is also logged at startup.
+#       # The card prints the version it loaded to the browser console, so a stale ?v= after
+#       # an upgrade is visible there (and in a diagnostics download) rather than silent.
+#       - url: /norman/norman-shades-card.js?v=<version>
 #         type: module
 #
 # ENTITY IDS

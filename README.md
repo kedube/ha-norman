@@ -283,20 +283,29 @@ shows. Error messages are translated as well.
 | Device | Hub `ModuleType` | Exposed as |
 |---|---|---|
 | Norman Hub (`NienMadeHub`, firmware 6.x) | — | Required. The integration only talks to the hub. |
-| Two-rail coverings (day/night, top-down/bottom-up, SmartDrape) | 33 | Two covers: the primary (bottom rail, with the middle rail also as tilt) and a **Middle rail** shade for the second fabric. Tested on day/night shades. |
-| Single-rail coverings (roller and honeycomb style) | 32 | Cover with position only, `shade` device class. Tested on a real hub. |
+| Two-rail coverings (day/night cellular, top-down/bottom-up, SmartDrape) | 33 | Two covers: the primary (bottom rail, with the middle rail also as tilt) and a **Middle rail** shade for the second fabric. |
+| Single-rail coverings (roller and honeycomb style) | 32 | Cover with position only, `shade` device class. |
 | Anything else | other | Treated as two-rail, and a warning asks you to report the type. |
 
-The type comes from the hub's `ModuleType`. If your blind shows the warning, or behaves
-differently from its type, run the `norman.get_hub_data` action and attach the response to an
-issue; the mapping is a one-line change.
+**Tested on:** motorized cellular shades, both single-rail and day/night, in day-to-day use;
+and SmartDrape, which is what the tilt behaviour was originally worked out on.
+
+The integration is not specific to those, though. It drives whatever the hub reports, so any
+Norman covering built around a bottom rail — with or without a middle rail — should work. What
+varies between products is the `ModuleType` code, and that is a one-line mapping.
+
+If your blind logs the unknown-type warning, or behaves differently from its type, run the
+`norman.get_hub_data` action and attach the response to an issue. Contributions of hub data for
+new covering types are welcome and are the main thing that broadens this table.
 
 ## Known limitations
 
 - **No authentication on the hub.** That is the vendor protocol, not a choice of this
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
-- **Only two blind types are mapped**, and only one of them to a Norman product name; see
-  [Supported devices](#supported-devices).
+- **Only two `ModuleType` codes are mapped** (32 single-rail, 33 two-rail), and neither is tied
+  to a specific Norman product name. Between them they cover the bottom-rail and
+  bottom-plus-middle-rail coverings; an unmapped code falls back to two-rail with a warning.
+  See [Supported devices](#supported-devices).
 - **No speed, direction, or limit-setting entities.** The limit-setting and calibration verbs
   were captured from the Norman app and can be sent with `send_hub_command` (see
   [docs/services.md](docs/services.md#hub-verbs)); they have no entity because they change how

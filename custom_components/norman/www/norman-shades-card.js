@@ -11,6 +11,12 @@
  * listed in the card configuration.
  */
 
+// The integration stamps its release version onto the resource URL as ?v= (the cache-bust),
+// so the card reports exactly which build the browser actually loaded rather than a constant
+// that can silently drift from manifest.json. "unknown" means the resource was added by hand
+// without the stamp -- which is also the state a stale browser cache leaves behind.
+const CARD_VERSION = new URL(import.meta.url).searchParams.get("v") || "unknown";
+
 const STEP = 10;
 const DOMAIN = "norman";
 
@@ -559,3 +565,12 @@ if (!window.customCards.some((card) => card.type === "norman-shades-card")) {
     documentationURL: "https://github.com/kedube/ha-norman/blob/main/docs/dashboard.md",
   });
 }
+
+// The loaded build, in the browser console. This is the only place a version mismatch is
+// visible from the browser side: if this does not match the integration version on the
+// Norman device page, the browser is running a cached copy of an older card.
+console.info(
+  `%c NORMAN-SHADES-CARD %c v${CARD_VERSION} `,
+  "color: #fff; background: #4a6572; font-weight: 700;",
+  "color: #4a6572; background: #fff; font-weight: 700;"
+);

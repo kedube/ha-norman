@@ -26,8 +26,14 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 # The card URL carries the integration version as a ``?v=`` cache-buster, so every release
-# invalidates a browser's cached copy without the user clearing anything. The manifest is
-# tiny and sits next to this file, so reading it at import time is cheap.
+# invalidates a browser's cached copy without the user clearing anything.
+#
+# manifest.json is the single source of this version: the release workflow bumps it and
+# nothing else, then tags the commit it created. Reading it here (it is tiny and sits next
+# to this file, so the import-time cost is trivial) means a release needs no matching edit
+# anywhere in the card, and the JavaScript reads the same value back off its own URL rather
+# than carrying a constant that could fall behind. A HACS upgrade is followed by a restart,
+# so this is re-read before the new card is ever served.
 INTEGRATION_VERSION: str = json.loads(
     (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
 )["version"]
@@ -139,6 +145,20 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         _LOGGER.exception("Norman could not auto-register the card resource")
 
 
+def _resource_version(url: str) -> str:
+    """The ``?v=`` stamp on a registered resource URL, or "unknown" without one.
+
+    This mirrors what the card itself does in the browser (it reads its version from the
+    same stamp), so the two can be compared directly.
+    """
+    _, _, query = url.partition("?")
+    for part in query.split("&"):
+        key, _, value = part.partition("=")
+        if key == "v":
+            return value or "unknown"
+    return "unknown"
+
+
 def async_get_frontend_diagnostics(hass: HomeAssistant) -> dict[str, object]:
     """Card-version info for the diagnostics export.
 
@@ -158,8 +178,15 @@ def async_get_frontend_diagnostics(hass: HomeAssistant) -> dict[str, object]:
             ]
         except Exception:  # noqa: BLE001 - diagnostics must never fail the export
             _LOGGER.debug("Could not read Lovelace resources for diagnostics")
+    # The registered URL is what the browser is told to fetch, so its ?v= is the version
+    # the card will report in its console banner. Comparing it here turns "the card looks
+    # wrong" into a single boolean in the diagnostics download.
+    versions = [_resource_version(url) for url in registered]
     return {
         "integration_version": INTEGRATION_VERSION,
         "expected_resource": CARD_RESOURCE_URL,
         "registered_resources": registered,
+        "registered_versions": versions,
+        # None (rather than True) when nothing is registered: there is no card to be stale.
+        "version_matches": all(v == INTEGRATION_VERSION for v in versions) if versions else None,
     }
