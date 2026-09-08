@@ -16,7 +16,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 from custom_components.norman.const import DOMAIN
 
 from .conftest import FakeHub, cover_entity_id, settle
-from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, UID_LIVING, UID_STATUS_ONLY
+from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
 
 
 async def test_setup_creates_devices_and_unloads_cleanly(
@@ -45,15 +45,22 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     assert blind.name == "Living Drape"
     assert blind.via_device_id == hub.id
     assert blind.sw_version == "0.5.3.8"
+    assert blind.serial_number == str(UID_LIVING)
     assert blind.model == "Two-rail window covering"
     assert blind.model_id == "33/3"
+
+    # A single-rail blind reports two versions; the app shows RfFirmwareVersion
+    shade = devices.get((DOMAIN, str(UID_BEDROOM)))
+    assert shade.sw_version == "0.3.20"
     # Reading DeviceEntry.suggested_area is deprecated; check the area it was placed in
     assert ar.async_get(hass).async_get_area(blind.area_id).name == "Living Room"
 
     entity_registry = er.async_get(hass)
     entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
     covers = sorted(e.unique_id for e in entries if e.domain == "cover")
-    assert covers == ["1001", "1002", "1003"]
+    # Two-rail blinds (and the untyped status-only one, treated as two-rail) get a
+    # middle-rail cover as well
+    assert covers == ["1001", "1001_middle", "1002", "1003", "1003_middle"]
     assert f"{entry.entry_id}_wifi_rssi" in {e.unique_id for e in entries}
     assert {e.domain for e in entries} == {"button", "cover", "sensor"}
     living = cover_entity_id(hass, UID_LIVING)

@@ -93,6 +93,11 @@
     }
   },
   "entity": {
+    "cover": {
+      "middle_rail": {
+        "name": "Middle rail"
+      }
+    },
     "button": {
       "favorite": {
         "name": "Favourite position"

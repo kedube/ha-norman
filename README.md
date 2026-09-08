@@ -107,15 +107,16 @@ remove the download there too.
 
 ### Entities
 
-One [cover](https://www.home-assistant.io/integrations/cover/) entity per blind, with position,
-tilt, and **stop**, diagnostic sensors, plus a device for each blind and for the hub. All
-position and tilt values are 0–100, with 0 closed and 100 open, as everywhere else in Home
+One [cover](https://www.home-assistant.io/integrations/cover/) entity per blind with position
+and **stop**, and for two-rail blinds (day/night, top-down/bottom-up) a second **Middle rail**
+cover for the other fabric, plus diagnostic sensors and a device for each blind and for the
+hub. All position values are 0–100, with 0 closed and 100 open, as everywhere else in Home
 Assistant.
 
 | Entity property | Meaning |
 |---|---|
 | `current_position` | Bottom rail: 0 closed, 100 open |
-| `current_tilt_position` | Middle rail (vane tilt on SmartDrape): 0–100 |
+| `current_tilt_position` | Middle rail as tilt (for drapes; shades use the Middle rail cover instead): 0–100 |
 | `target_position`, `target_tilt` (attributes) | Where each rail is heading while the blind moves |
 
 Each blind also has **buttons** for its favourite position, jog up, jog down, and run to top
@@ -210,7 +211,7 @@ The protocol itself is described in [docs/NORMAN_API.md](docs/NORMAN_API.md).
 | Device | Hub `ModuleType` | Exposed as |
 |---|---|---|
 | Norman Hub (`NienMadeHub`, firmware 6.x) | — | Required. The integration only talks to the hub. |
-| Two-rail coverings (SmartDrape, top-down/bottom-up) | 33 | Cover with position **and** tilt (the middle rail). Tested. |
+| Two-rail coverings (day/night, top-down/bottom-up, SmartDrape) | 33 | Two covers: the primary (bottom rail, with the middle rail also as tilt) and a **Middle rail** shade for the second fabric. Tested on day/night shades. |
 | Single-rail coverings (roller and honeycomb style) | 32 | Cover with position only, `shade` device class. Tested on a real hub. |
 | Anything else | other | Treated as two-rail, and a warning asks you to report the type. |
 

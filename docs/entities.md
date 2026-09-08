@@ -1,15 +1,18 @@
 # Entities
 
-The integration creates one **cover** entity, five **buttons**, and four **diagnostic
-sensors** per peripheral the hub reports, plus one **device** per blind and one for the hub
-itself (with its own Wi-Fi signal sensor).
+The integration creates one **cover** entity (two for two-rail blinds), five **buttons**,
+and four **diagnostic sensors** per peripheral the hub reports, plus one **device** per blind
+and one for the hub itself (with its own Wi-Fi signal sensor).
 
 ## Devices
 
 | Device | Identifiers | Notes |
 |---|---|---|
 | Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address. |
-| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is "Two-rail window covering" or "Single-rail window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the blind firmware; the suggested area is the hub's room name. |
+| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is "Two-rail window covering" or "Single-rail window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
+
+The device page therefore mirrors the app's blind details: room (area), battery (sensor),
+version, module type (model id), and serial number.
 
 Renaming a blind or the hub in the Norman app renames the device here too (the hub announces
 the edit and the integration re-reads the names). A name set in Home Assistant is kept; the
@@ -20,11 +23,19 @@ app's name shows underneath it as the device's original name. Room changes updat
 
 The hub's `ModuleType` decides what kind of cover a blind gets:
 
-| `ModuleType` | Cover | Device class | Features |
+| `ModuleType` | Cover entities | Device class | Features |
 |---|---|---|---|
-| 33 | two-rail (SmartDrape, top-down/bottom-up) | `blind` | open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt |
+| 33 | two-rail (day/night, top-down/bottom-up, SmartDrape): the **primary** cover, plus a **Middle rail** cover | `blind`, `shade` | primary: open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt. Middle rail: open, close, set position, stop |
 | 32 | single-rail (roller and honeycomb style) | `shade` | open, close, set position, stop |
 | other | treated as two-rail; a warning asks for a report | `blind` | as two-rail |
+
+**Two-rail blinds are two covers.** The primary cover (named after the device) is the bottom
+rail. The **Middle rail** cover (`cover.<blind>_middle_rail`) is the middle rail: on a
+day/night shade that is the second fabric, on a top-down/bottom-up shade the top rail, and on
+a SmartDrape the vane tilt. The primary cover also exposes the middle rail as *tilt*, which
+suits drapes; for shades, use the Middle rail cover, whose slider means the same thing it
+means in the Norman app. Both read the same hub values, so they never disagree. The
+`nudge_position` action works on either; on the Middle rail cover it nudges the middle rail.
 
 Entity ids are derived from the blind's name in the Norman app, prefixed with its area on Home
 Assistant 2026.9 and newer (`cover.living_room_living_drape` for a blind called "Living Drape" in
@@ -69,6 +80,14 @@ catches up with the motor.
 
 Errors follow the cover convention: a hub error or timeout fails the press with a message
 naming the verb and the blind.
+
+### Firmware version
+
+Single-rail blinds report two versions: `FirmwareVersion` (4.1.0.4 on every one seen) and
+`RfFirmwareVersion` (0.3.20). The Norman app shows the **Rf** one as the blind's version, so
+that is what the device's `sw_version` and the firmware sensor show; both raw values are on
+the sensor as the `module_firmware` and `rf_firmware` attributes. Two-rail blinds report only
+`FirmwareVersion`, which is shown as is.
 
 ## Diagnostic sensors
 

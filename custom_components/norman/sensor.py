@@ -98,7 +98,7 @@ SENSORS: tuple[NormanSensorDescription, ...] = (
         # Already shown on the device page as sw_version; the sensor is for people who
         # want to automate on it or keep history, so it is opt-in.
         entity_registry_enabled_default=False,
-        value_fn=lambda data: data.firmware_version,
+        value_fn=lambda data: data.display_firmware_version,
     ),
 )
 
@@ -186,3 +186,13 @@ class NormanSensor(NormanEntity, SensorEntity):
         """Return the value from the latest coordinator data."""
         data = self._data
         return self.entity_description.value_fn(data) if data else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """On the firmware sensor, both raw versions the hub reports."""
+        if self.entity_description.key != "firmware_version" or not (data := self._data):
+            return None
+        return {
+            "module_firmware": data.firmware_version,
+            "rf_firmware": data.rf_firmware_version,
+        }

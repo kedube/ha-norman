@@ -169,6 +169,85 @@ async def test_stop_failure_names_the_cover(
         await _call(hass, COVER_DOMAIN, SERVICE_STOP_COVER)
 
 
+def middle_rail_entity_id(hass: HomeAssistant, uid: int) -> str | None:
+    return er.async_get(hass).async_get_entity_id("cover", DOMAIN, f"{uid}_middle")
+
+
+async def test_two_rail_blinds_get_a_middle_rail_cover(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A two-rail blind is two covers: the device-named primary and a "Middle rail" shade.
+
+    Day/night and top-down/bottom-up shades have a second fabric on the middle rail and
+    the app shows two sliders; a single position+tilt cover hid the second one behind a
+    tilt control nobody recognised. Single-rail blinds have no middle rail and get none.
+    """
+    middle_id = middle_rail_entity_id(hass, UID_LIVING)
+    assert middle_id
+    assert middle_rail_entity_id(hass, UID_BEDROOM) is None
+
+    middle = hass.states.get(middle_id)
+    assert middle.attributes["friendly_name"] == "Living Drape Middle rail"
+    assert middle.attributes[ATTR_DEVICE_CLASS] == "shade"
+    assert middle.attributes[ATTR_CURRENT_POSITION] == 60  # MiddleRailPosition
+    assert middle.attributes["target_position"] == 60
+    assert ATTR_CURRENT_TILT_POSITION not in middle.attributes
+    assert middle.attributes[ATTR_SUPPORTED_FEATURES] == (
+        CoverEntityFeature.OPEN
+        | CoverEntityFeature.CLOSE
+        | CoverEntityFeature.SET_POSITION
+        | CoverEntityFeature.STOP
+    )
+
+
+@pytest.mark.parametrize(
+    ("service", "data", "expected"),
+    [
+        (SERVICE_OPEN_COVER, {}, (40, 100)),
+        (SERVICE_CLOSE_COVER, {}, (40, 0)),
+        (SERVICE_SET_COVER_POSITION, {ATTR_POSITION: 25}, (40, 25)),
+    ],
+)
+async def test_middle_rail_commands_move_only_the_middle_rail(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    service: str,
+    data: dict,
+    expected: tuple[int, int],
+) -> None:
+    """Middle-rail commands send the bottom rail back at its target and move the middle."""
+    await hass.services.async_call(
+        COVER_DOMAIN,
+        service,
+        {ATTR_ENTITY_ID: middle_rail_entity_id(hass, UID_LIVING), **data},
+        blocking=True,
+    )
+    assert _last_control(fake_hub) == (UID_LIVING, *expected)
+
+
+async def test_middle_rail_nudge_and_stop(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Nudging the middle-rail cover is relative to the middle rail; stop is the motor stop."""
+    middle_id = middle_rail_entity_id(hass, UID_LIVING)
+    fake_hub.set_position(UID_LIVING, target_middle=70)
+    await notifications.put({"PeripheralList": []})
+    await settle(hass)
+    await hass.services.async_call(
+        DOMAIN, "nudge_position", {ATTR_ENTITY_ID: middle_id, "step": -20}, blocking=True
+    )
+    assert _last_control(fake_hub) == (UID_LIVING, 40, 50)
+
+    await hass.services.async_call(
+        COVER_DOMAIN, SERVICE_STOP_COVER, {ATTR_ENTITY_ID: middle_id}, blocking=True
+    )
+    assert fake_hub.control_calls[-1][HUB_CMD_STOP] == HUB_COMMAND_TRIGGER
+
+
 async def test_commands_follow_the_target_while_moving(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,

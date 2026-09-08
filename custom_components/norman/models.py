@@ -24,9 +24,19 @@ class NormanPeripheralData:
     target_middle_rail_position: int | None = None
     battery_level: int | None = None  # percent; the hub calls the field BatteryVoltage
     signal_strength: int | None = None  # RssiMean, a unitless radio quality index
-    firmware_version: str | None = None
-    rf_firmware_version: str | None = None
+    firmware_version: str | None = None  # the hub's FirmwareVersion field
+    rf_firmware_version: str | None = None  # RfFirmwareVersion, single-rail blinds only
     last_update: str | None = None
+
+    @property
+    def display_firmware_version(self) -> str | None:
+        """The version the Norman app shows for this blind.
+
+        Single-rail blinds report two versions and the app shows ``RfFirmwareVersion``
+        (Den_1: app 0.3.20, hub FirmwareVersion 4.1.0.4). Two-rail blinds report only
+        ``FirmwareVersion``. So: the radio firmware when present, otherwise the only one.
+        """
+        return self.rf_firmware_version or self.firmware_version
 
 
 @dataclass
