@@ -86,7 +86,10 @@ async def test_entity_state_and_attributes(
     assert state.attributes["target_tilt"] == 60
     assert state.attributes[ATTR_DEVICE_CLASS] == "blind"
     assert state.attributes[ATTR_SUPPORTED_FEATURES] == ALL_FEATURES
-    assert state.attributes["friendly_name"] == "Living Drape"
+    # Each cover is named for its rail, not for the device, so a two-rail blind reads as
+    # "<blind> Bottom rail" and "<blind> Middle rail" rather than one entity taking the
+    # device name.
+    assert state.attributes["friendly_name"] == "Living Drape Bottom rail"
 
     bedroom = hass.states.get(cover_entity_id(hass, UID_BEDROOM))
     assert bedroom.state == CoverState.CLOSED
@@ -436,7 +439,7 @@ async def test_new_blind_is_added_after_reconnect(
 
     state = hass.states.get(cover_entity_id(hass, 2001))
     assert state is not None
-    assert state.attributes["friendly_name"] == "Hall Drape"
+    assert state.attributes["friendly_name"] == "Hall Drape Bottom rail"
     assert state.attributes[ATTR_CURRENT_POSITION] == 10
 
 

@@ -65,7 +65,7 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     assert f"{entry.entry_id}_wifi_rssi" in {e.unique_id for e in entries}
     assert {e.domain for e in entries} == {"button", "cover", "number", "sensor"}
     living = cover_entity_id(hass, UID_LIVING)
-    assert hass.states.get(living).attributes["friendly_name"] == "Living Drape"
+    assert hass.states.get(living).attributes["friendly_name"] == "Living Drape Bottom rail"
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()

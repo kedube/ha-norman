@@ -94,6 +94,9 @@
   },
   "entity": {
     "cover": {
+      "bottom_rail": {
+        "name": "Untere Schiene"
+      },
       "middle_rail": {
         "name": "Mittlere Schiene"
       }

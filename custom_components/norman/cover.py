@@ -79,6 +79,11 @@ class NormanCoverBase(NormanRailMixin, CoverEntity):
     rail value in every command, and reports it as 0, so it is echoed back unchanged.
     """
 
+    # Every cover is named for the rail it drives ("Bottom rail", "Middle rail") rather than
+    # taking the device's own name. On a two-rail blind that keeps the pair legible: "Living
+    # Drape Bottom rail" and "Living Drape Middle rail" instead of one entity called after
+    # the device and a second called Middle rail.
+    _attr_translation_key = "bottom_rail"
     _attr_device_class = CoverDeviceClass.BLIND
     _attr_supported_features = (
         CoverEntityFeature.OPEN
@@ -146,16 +151,14 @@ class NormanCoverBase(NormanRailMixin, CoverEntity):
 class NormanShade(NormanCoverBase):
     """A single-rail covering: position only."""
 
-    # The primary cover takes the device's name
-    _attr_name = None
+    _attr_translation_key = "bottom_rail"
     _attr_device_class = CoverDeviceClass.SHADE
 
 
 class NormanBlind(NormanCoverBase):
     """A two-rail covering (ModuleType 33, SmartDrape, top-down/bottom-up): position + tilt."""
 
-    # The primary cover takes the device's name
-    _attr_name = None
+    _attr_translation_key = "bottom_rail"
     _attr_supported_features = (
         CoverEntityFeature.OPEN
         | CoverEntityFeature.CLOSE

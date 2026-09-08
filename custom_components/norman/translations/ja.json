@@ -94,6 +94,9 @@
   },
   "entity": {
     "cover": {
+      "bottom_rail": {
+        "name": "ボトムレール"
+      },
       "middle_rail": {
         "name": "ミッドレール"
       }

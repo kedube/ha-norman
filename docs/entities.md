@@ -29,8 +29,9 @@ The hub's `ModuleType` decides what kind of cover a blind gets:
 | 32 | single-rail (roller and honeycomb style) | `shade` | open, close, set position, stop |
 | other | treated as two-rail; a warning asks for a report | `blind` | as two-rail |
 
-**Two-rail blinds are two covers.** The primary cover (named after the device) is the bottom
-rail. The **Middle rail** cover (`cover.<blind>_middle_rail`) is the middle rail: on a
+**Two-rail blinds are two covers.** Each is named for the rail it drives: **Bottom rail** and
+**Middle rail**, so a blind called "Living Drape" has entities named "Living Drape Bottom rail"
+and "Living Drape Middle rail". The middle rail (`cover.<blind>_middle_rail`) is: on a
 day/night shade that is the second fabric, on a top-down/bottom-up shade the top rail, and on
 a SmartDrape the vane tilt. The primary cover also exposes the middle rail as *tilt*, which
 suits drapes; for shades, use the Middle rail cover, whose slider means the same thing it
@@ -84,8 +85,8 @@ finer movement use the **Jog** buttons (the motor's own fine-tune) or the
 [`nudge_position`](services.md#normannudge_position) action, which takes any step from -100 to
 100.
 
-They carry the *configuration* entity category, like the buttons, so the device page's Controls
-group stays down to the covers themselves.
+They sit in the device page's **Controls** group beside the covers, so a two-rail blind shows
+its two covers and its two sliders together, with the buttons below the divider.
 
 ## Buttons
 

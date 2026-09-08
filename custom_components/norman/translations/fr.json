@@ -94,6 +94,9 @@
   },
   "entity": {
     "cover": {
+      "bottom_rail": {
+        "name": "Rail inférieur"
+      },
       "middle_rail": {
         "name": "Rail intermédiaire"
       }

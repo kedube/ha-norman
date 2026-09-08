@@ -6,6 +6,12 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 version heading and publishes it as the release's Highlights.
 
 ## Unreleased
+- **Covers are named for their rail.** The primary cover is now "<blind> Bottom rail" rather
+  than taking the device's name, so a two-rail blind's two covers read as a pair. Existing
+  entity ids are unchanged; only the display name moves.
+- **Position sliders sit with the covers.** The rail sliders are no longer in the
+  configuration category, so the device page's Controls group holds both covers and both
+  sliders.
 - **Position sliders.** Each rail gets a `number` entity, 0–100% in steps of 10, that reads and
   writes the same hub values as the cover. Home Assistant hides a cover's position slider in
   its more-info dialog; these render as sliders wherever you place them, and take a plain
