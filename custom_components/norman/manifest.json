@@ -14,7 +14,7 @@
   ],
   "quality_scale": "custom",
   "requirements": [],
-  "version": "0.11",
+  "version": "0.12",
   "zeroconf": [
     "_nien_made._tcp.local."
   ]
