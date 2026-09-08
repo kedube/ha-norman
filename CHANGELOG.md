@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.22 — 2026-09-08
 - **Fixed: the dashboard card found no middle rails and no batteries.** It identified entities
   by `unique_id`, which the *frontend* entity registry never sends — `_as_display_dict` carries
   only entity id, platform, area, device, icon, `translation_key` and a few flags. Reading a
