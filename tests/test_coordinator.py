@@ -158,6 +158,56 @@ def test_process_data_defaults_missing_names() -> None:
     assert process(info, {})[5].name == "Norman 5"
 
 
+async def test_undocumented_fields_are_logged_once_each(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A field the hub sends that nobody has documented is reported once, at debug level.
+
+    This is how a firmware change or an unmapped product surfaces: leave debug logging on
+    and the new field names appear on their own.
+    """
+    fake_hub.status["SolarChargeLevel"] = 42
+    fake_hub.peripheral_status(UID_LIVING)["VaneAngle"] = 17
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.norman.coordinator"):
+        await notifications.put({"PeripheralList": [UID_LIVING]})
+        await settle(hass)
+        await notifications.put({"PeripheralList": [UID_LIVING]})
+        await settle(hass)
+
+    messages = [r.getMessage() for r in caplog.records if "undocumented" in r.getMessage()]
+    assert sum("SolarChargeLevel" in m for m in messages) == 1
+    assert sum("VaneAngle" in m for m in messages) == 1
+    assert all(
+        record.levelno == logging.DEBUG
+        for record in caplog.records
+        if "undocumented" in record.getMessage()
+    )
+
+
+async def test_documented_fields_are_not_logged(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The fields real hubs send are all catalogued, so a healthy payload logs nothing.
+
+    If this fails, a field was added to the test payloads without adding it to
+    KNOWN_HUB_FIELDS / KNOWN_PERIPHERAL_FIELDS in const.py (and to docs/NORMAN_API.md).
+    """
+    with caplog.at_level(logging.DEBUG, logger="custom_components.norman.coordinator"):
+        await notifications.put({"PeripheralList": [UID_LIVING]})
+        await settle(hass)
+
+    assert not [r.getMessage() for r in caplog.records if "undocumented" in r.getMessage()]
+
+
 # ---- listener loop ---------------------------------------------------------------------
 
 

@@ -60,6 +60,17 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   - [`docs/services.md`](docs/services.md) — all four actions, and the hub verbs `send_hub_command` can send.
   - [`docs/NORMAN_API.md`](docs/NORMAN_API.md) — the hub protocol. Read it before changing
     `api.py` or `coordinator.py`.
+- `scripts/probe_hub_endpoints.py` looks for hub endpoints nobody has documented. It sends an
+  identity-only body (`ThingName`, `TaskID`, `Timestamp`) and refuses by name to send anything
+  that could write, so it cannot move a blind:
+
+  ```console
+  python3 scripts/probe_hub_endpoints.py <hub-ip>
+  ```
+
+  Anything it marks UNDOCUMENTED belongs in `docs/NORMAN_API.md`. To find undocumented
+  *fields* rather than endpoints, turn on debug logging and leave it running: the coordinator
+  reports every field outside the catalogue in `const.py`, once per name.
 
   `tests/test_repo_consistency.py` checks that every relative Markdown link resolves to a real
   file and heading, and that the README stays under 500 lines — if that trips, move the newest

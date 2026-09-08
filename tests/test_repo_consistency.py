@@ -82,6 +82,73 @@ def test_entity_translation_keys_are_translated() -> None:
     assert button_keys == set(icons)
 
 
+def test_observed_fields_are_catalogued() -> None:
+    """Every field named in the protocol reference's tables must be in the known-field sets.
+
+    The catalogue in const.py is what makes "undocumented field" logging meaningful: a field
+    documented in NORMAN_API.md but missing from the catalogue would be reported as new on
+    every install, and one added to the catalogue without documentation is invisible.
+    """
+    from custom_components.norman.const import KNOWN_HUB_FIELDS, KNOWN_PERIPHERAL_FIELDS
+
+    api_doc = (REPO / "docs" / "NORMAN_API.md").read_text(encoding="utf-8")
+    observed = api_doc.split("## Observed fields", 1)[1].split("## Error conventions", 1)[0]
+    documented = set(re.findall(r"`([A-Z][A-Za-z]+)`", observed))
+    known = KNOWN_HUB_FIELDS | KNOWN_PERIPHERAL_FIELDS
+    # Prose in that section also names cover types and endpoints; only check field-shaped
+    # names, i.e. ones that appear in a table row's first column.
+    fields = {
+        name
+        for row in observed.splitlines()
+        if row.startswith("|") and row.count("|") >= 3
+        for name in re.findall(r"`([A-Z][A-Za-z]+)`", row.split("|")[1])
+    }
+    missing = fields - known
+    assert not missing, (
+        f"documented in NORMAN_API.md but missing from const.py's known-field sets: "
+        f"{sorted(missing)}"
+    )
+    assert documented  # the section still parses
+
+
+def test_probe_script_refuses_write_endpoints() -> None:
+    """The endpoint prober must never send anything that could change the hub.
+
+    It is pointed at a live hub by hand, so its read-only guarantee is a safety property,
+    not a style preference.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "probe_hub_endpoints", REPO / "scripts" / "probe_hub_endpoints.py"
+    )
+    probe = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(probe)
+
+    for name in ("GetAllScene", "GetDeviceInfo", "registration", "status", "GetPairingMode"):
+        assert probe.is_read_only(name), f"{name} should be probeable"
+    for name in (
+        "control",
+        "notification",
+        "AddSchedule",
+        "DeleteSchedule",
+        "UpdateRoom",
+        "UpdatePeripheral",
+        "UpdateDeviceInfo",
+        "SetTopLimit",
+        "CleanBottomLimit",
+        "Calibration",
+        "MotorStop",
+        "PairPeripheral",
+        "FactoryReset",
+    ):
+        assert not probe.is_read_only(name), f"{name} must never be probed"
+
+    # Every name the script ships with must pass its own filter.
+    for name in (*probe.KNOWN, *probe.CANDIDATES):
+        assert probe.is_read_only(name), f"shipped candidate {name} is not read-only"
+
+
 def test_release_workflow_targets_this_manifest() -> None:
     """The release workflow hard-codes the manifest path; a domain rename must update it."""
     workflow = (REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
