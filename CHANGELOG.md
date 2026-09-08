@@ -5,6 +5,13 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Documentation:** the README gained an **Upgrading** section (HACS and manual steps, what is
+  preserved across an upgrade, and what to expect when a release adds or renames entities), and
+  the whole doc set was audited against the code. Corrected: a mangled entity table in the
+  README, a stale "battery is volts" claim and status example in the protocol reference, an
+  outdated module list in the contributing guide, and a self-contradictory quality-scale line.
+
 ## 0.17 — 2026-09-08
 - **Covers are named for their rail.** The primary cover is now "<blind> Bottom rail" rather
   than taking the device's name, so a two-rail blind's two covers read as a pair. Existing

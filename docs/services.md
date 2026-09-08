@@ -8,6 +8,10 @@ integration; `get_hub_data` reads the hub's raw payloads for troubleshooting; `s
 sends the hub verbs that have no entity yet. All four appear in the automation editor's action
 picker.
 
+Several verbs that once needed `send_hub_command` now have entities of their own — favorite
+position, jog up and down, and run to either limit are [buttons](entities.md#buttons) — so
+reach for the action only for what is listed under [Hub verbs](#hub-verbs).
+
 ## `norman.nudge_position`
 
 Move a cover by a relative amount.

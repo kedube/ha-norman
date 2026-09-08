@@ -169,9 +169,10 @@ Response:
       "MiddleRailPosition": 60,
       "TargetBottomRailPosition": 40,
       "TargetMiddleRailPosition": 60,
-      "BatteryVoltage": 12.4,
-      "FirmwareVersion": "1.2.3",
-      "Timestamp": "1700000000"
+      "BatteryVoltage": 73,
+      "RssiMean": 34,
+      "FirmwareVersion": "0.5.3.8",
+      "Timestamp": 1700000000
     }
   ]
 }
@@ -180,12 +181,13 @@ Response:
 | Field | Meaning | Exposed as |
 |---|---|---|
 | `BottomRailPosition` | 0 = closed, 100 = open | cover `current_position` |
-| `MiddleRailPosition` | 0–100; the tilt on SmartDrape, the middle rail on top-down/bottom-up blinds | cover `current_tilt_position` |
+| `MiddleRailPosition` | 0–100; the second fabric on a day/night shade, the top rail on top-down/bottom-up, the vane tilt on SmartDrape | the **Middle rail** cover's position, and the primary cover's `current_tilt_position` |
 | `TargetBottomRailPosition` | where the bottom rail is heading | `target_position` attribute |
 | `TargetMiddleRailPosition` | where the middle rail is heading | `target_tilt` attribute |
-| `BatteryVoltage` | volts (not a percentage) | **Battery voltage** sensor |
-| `FirmwareVersion` | blind firmware | device `sw_version` and the opt-in **Firmware version** sensor |
-| `Timestamp` | last update; epoch seconds as a string observed | **Last seen** sensor |
+| `BatteryVoltage` | a **percentage**, 0–100, despite the field name (see [Observed fields](#observed-fields)) | **Battery** sensor |
+| `RssiMean` | radio quality, unitless (0 or 34 seen) | opt-in **Signal strength** sensor |
+| `FirmwareVersion` | blind firmware | device `sw_version` and the opt-in **Firmware version** sensor, except on single-rail blinds where `RfFirmwareVersion` is shown instead |
+| `Timestamp` | last update; epoch seconds (as a number, or a string on some payloads) | **Last seen** sensor |
 
 Positions are coerced to integers and clamped to 0–100; an unusable value becomes `None`,
 which the entity reports as an unknown position. A peripheral that appears here but not in

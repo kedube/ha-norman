@@ -16,13 +16,11 @@ basis. This page explains the status of the ones that are not simply "done".
   integrations.
 - **Silver:** complete. `reauthentication-flow` is exempt because the hub has no
   authentication; `docs-configuration-parameters` because there is no options flow.
-- **Gold:** mostly done. Discovery is via mDNS (`_nien_made._tcp.local.`, confirmed from a
+- **Gold:** complete. Discovery is via mDNS (`_nien_made._tcp.local.`, confirmed from a
   capture of the Norman app); the announcement has no TXT record, so the flow reads the hub's
   identity over HTTP before offering or updating it. Every error the integration raises
   carries a translation key (`exceptions` in `strings.json`), so `exception-translations` is
-  done. Open item:
-  - (none at Gold) — action errors are plain English strings rather than
-    translation keys.
+  done, and so is the rest of Gold.
 - **Platinum:** `strict-typing` is not enforced (no mypy run in CI).
 
 ## Deliberate deviations
