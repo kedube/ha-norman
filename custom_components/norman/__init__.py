@@ -26,6 +26,7 @@ from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import DOMAIN, MANUFACTURER, PLATFORMS
 from .coordinator import NormanConfigEntry, NormanCoordinator
 from .entity import hub_identifier
+from .frontend import async_register_card
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,6 +83,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Serve and register the dashboard card. Best-effort: every entity works without it.
+    await async_register_card(hass)
     return True
 
 

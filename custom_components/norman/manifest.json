@@ -1,6 +1,10 @@
 {
   "domain": "norman",
   "name": "Norman",
+  "after_dependencies": [
+    "http",
+    "lovelace"
+  ],
   "codeowners": [
     "@kedube"
   ],

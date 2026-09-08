@@ -76,6 +76,9 @@ every cover whenever the hub reports a change, including changes made with a rem
 Norman app. It also refreshes after every command it sends and every time the long-poll is
 reconnected. See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
 
+The bundled [dashboard card](dashboard.md) puts all of this on one card, grouped by room;
+[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a complete dashboard using it.
+
 ## Position sliders
 
 | Entity | Rail | Range |
