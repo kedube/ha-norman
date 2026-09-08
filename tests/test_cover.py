@@ -165,8 +165,11 @@ async def test_stop_failure_names_the_cover(
 ) -> None:
     """A hub error on stop surfaces as a HomeAssistantError naming the blind."""
     fake_hub.control_response = {"Error": 3}
-    with pytest.raises(HomeAssistantError, match="Failed to stop Living Drape"):
+    with pytest.raises(HomeAssistantError, match="Failed to stop Living Drape") as excinfo:
         await _call(hass, COVER_DOMAIN, SERVICE_STOP_COVER)
+    # Raised with a translation key so the message can be localised
+    assert excinfo.value.translation_key == "stop_failed"
+    assert excinfo.value.translation_placeholders["name"] == "Living Drape"
 
 
 def middle_rail_entity_id(hass: HomeAssistant, uid: int) -> str | None:
@@ -185,6 +188,12 @@ async def test_two_rail_blinds_get_a_middle_rail_cover(
     middle_id = middle_rail_entity_id(hass, UID_LIVING)
     assert middle_id
     assert middle_rail_entity_id(hass, UID_BEDROOM) is None
+
+    # Both covers are uncategorised, so the device page groups them together above the
+    # divider; every button is categorised as configuration and sits below it.
+    registry = er.async_get(hass)
+    assert registry.async_get(middle_id).entity_category is None
+    assert registry.async_get(cover_entity_id(hass, UID_LIVING)).entity_category is None
 
     middle = hass.states.get(middle_id)
     assert middle.attributes["friendly_name"] == "Living Drape Middle rail"

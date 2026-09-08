@@ -116,7 +116,7 @@ clears a setting. These were captured from the Norman app, so they are known to 
 | `{MotorStop: 170}` | Stop the motor. This is what `cover.stop_cover` sends. | yes |
 | `{MotorFineTuneToUp: 170}` / `{MotorFineTuneToDown: 170}` | Jog a small step up or down. The **Jog** buttons. | yes |
 | `{SetMotorToTopLimit: 170}` / `{SetMotorToBottomLimit: 170}` | Run to the stored top or bottom limit. The **Run to … limit** buttons. | yes |
-| `{Favorite: 0}` | Go to the favourite position. The **Favourite position** button; confirmed room-wide, per-blind form extrapolated. | yes |
+| `{Favorite: 0}` | Go to the favorite position. The **Favorite position** button; confirmed room-wide, per-blind form extrapolated. | yes |
 | `{FindTop: 0}` | Re-sync to the top; the app sends it when entering and leaving limit setup. | yes |
 | `{SetTopLimit: 0}` / `{SetBottomLimit: 0}` | Store the **current** position as that limit. | changes the blind's travel |
 | `{CleanTopLimit: 0}` / `{CleanBottomLimit: 0}` | Clear a stored limit. | changes the blind's travel |
@@ -124,9 +124,9 @@ clears a setting. These were captured from the Norman app, so they are known to 
 
 Two more verbs are confirmed only in their **room-wide** form, which this action cannot send
 because it always addresses one blind: `{Switch: 1}` / `{Switch: 0}` opens or closes every
-blind in a room (or on the hub), and `{Favorite: 0}` sends a room to its favourite positions.
+blind in a room (or on the hub), and `{Favorite: 0}` sends a room to its favorite positions.
 The per-blind `Switch` form has not been captured; the per-blind `Favorite` form is what the
-Favourite position button sends. The rest of the vocabulary (`MotorSpeedAdjust`,
+Favorite position button sends. The rest of the vocabulary (`MotorSpeedAdjust`,
 `ReverseMotorDirection`, and others; see [docs/NORMAN_API.md](NORMAN_API.md#control-verbs))
 has not been seen from the app at all. If you confirm one, open an issue with the fields and
 the reply so it can get a proper entity.

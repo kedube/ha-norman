@@ -13,14 +13,12 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import (
     AddConfigEntryEntitiesCallback,
     async_get_current_platform,
 )
 import voluptuous as vol
 
-from .api import NormanApiError, NormanConnectionError
 from .const import (
     ATTR_STEP,
     ATTR_TARGET_POSITION,
@@ -31,7 +29,7 @@ from .const import (
     SERVICE_NUDGE_TILT,
 )
 from .coordinator import NormanConfigEntry, NormanCoordinator
-from .entity import NormanEntity, async_add_entities_for_new_devices
+from .entity import NormanRailMixin, async_add_entities_for_new_devices, clamp_position
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,12 +72,7 @@ async def async_setup_entry(
     )
 
 
-def _clamp(value: int) -> int:
-    """Clamp a position to the 0-100 range Home Assistant uses."""
-    return max(0, min(100, value))
-
-
-class NormanCoverBase(NormanEntity, CoverEntity):
+class NormanCoverBase(NormanRailMixin, CoverEntity):
     """Base class for Norman covers: a single bottom rail with position control.
 
     Used directly for single-rail products (ModuleType 32): the hub still wants a middle
@@ -125,28 +118,6 @@ class NormanCoverBase(NormanEntity, CoverEntity):
         data = self._data
         return {ATTR_TARGET_POSITION: data.target_bottom_rail_position if data else None}
 
-    def _target_or_current_bottom(self) -> int:
-        """Bottom rail value to send when a command leaves the bottom rail alone."""
-        data = self._data
-        if data is None:
-            return 100
-        if data.target_bottom_rail_position is not None:
-            return data.target_bottom_rail_position
-        if data.bottom_rail_position is not None:
-            return data.bottom_rail_position
-        return 100
-
-    def _target_or_current_middle(self) -> int:
-        """Middle rail value to send when a command leaves the middle rail alone."""
-        data = self._data
-        if data is None:
-            return 100
-        if data.target_middle_rail_position is not None:
-            return data.target_middle_rail_position
-        if data.middle_rail_position is not None:
-            return data.middle_rail_position
-        return 100
-
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover (bottom rail to 0), leaving the middle rail where it is."""
         await self._async_set_position(bottom=0, middle=None, action="close cover")
@@ -164,43 +135,12 @@ class NormanCoverBase(NormanEntity, CoverEntity):
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the motor where it is (the hub has one stop for both rails)."""
-        await self._async_stop()
-
-    async def _async_stop(self) -> None:
-        try:
-            await self.coordinator.api.async_stop(self._device_id)
-        except (NormanApiError, NormanConnectionError) as err:
-            raise HomeAssistantError(f"Failed to stop {self._device_name}: {err}") from err
-        await self.coordinator.async_request_refresh()
+        await self._async_stop_motor()
 
     async def async_nudge_position(self, step: int) -> None:
         """Move the cover by ``step`` relative to where it is heading (or is)."""
-        new_pos = _clamp(self._target_or_current_bottom() + step)
+        new_pos = clamp_position(self._target_or_current_bottom() + step)
         await self.async_set_cover_position(position=new_pos)
-
-    async def _async_set_position(
-        self,
-        bottom: int | None,
-        middle: int | None,
-        action: str,
-        value: int | None = None,
-    ) -> None:
-        """Send both rail positions to the hub; ``None`` keeps a rail where it is heading.
-
-        The hub's control call always takes both rails, so the untouched rail is sent its
-        current target (or current position when no target is known).
-        """
-        bottom_val = self._target_or_current_bottom() if bottom is None else _clamp(bottom)
-        middle_val = self._target_or_current_middle() if middle is None else _clamp(middle)
-
-        try:
-            await self.coordinator.api.async_set_position(self._device_id, bottom_val, middle_val)
-        except (NormanApiError, NormanConnectionError) as err:
-            detail = f" (value: {value})" if value is not None else ""
-            raise HomeAssistantError(
-                f"Failed to {action}{detail} for {self._device_name}: {err}"
-            ) from err
-        await self.coordinator.async_request_refresh()
 
 
 class NormanShade(NormanCoverBase):
@@ -262,11 +202,11 @@ class NormanBlind(NormanCoverBase):
 
     async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
         """Stop the tilt: the same motor stop, since the hub has no per-rail stop."""
-        await self._async_stop()
+        await self._async_stop_motor()
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Move the tilt by ``step`` relative to where it is heading (or is)."""
-        new_tilt = _clamp(self._target_or_current_middle() + step)
+        new_tilt = clamp_position(self._target_or_current_middle() + step)
         await self.async_set_cover_tilt_position(tilt_position=new_tilt)
 
 
@@ -321,7 +261,7 @@ class NormanMiddleRailCover(NormanCoverBase):
     async def async_nudge_position(self, step: int) -> None:
         """Move the middle rail by ``step`` relative to where it is heading (or is)."""
         await self.async_set_cover_position(
-            position=_clamp(self._target_or_current_middle() + step)
+            position=clamp_position(self._target_or_current_middle() + step)
         )
 
 

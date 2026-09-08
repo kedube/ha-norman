@@ -1,0 +1,179 @@
+{
+  "config": {
+    "flow_title": "Norman Hub ({host})",
+    "step": {
+      "user": {
+        "title": "Norman Hubに接続",
+        "description": "Norman Hubに接続してブラインドを操作します。Hubにはローカルネットワーク経由で直接接続し、クラウドは経由しません。",
+        "data": {
+          "host": "IPアドレスまたはホスト名"
+        },
+        "data_description": {
+          "host": "ネットワーク上のNorman Hubのアドレスです。変わらないようにルーターで固定アドレスを割り当ててください。"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Norman Hubが見つかりました",
+        "description": "{host} のNorman Hubを追加しますか？ローカルネットワークで見つかり、Norman Hubとして応答しました。"
+      },
+      "reconfigure": {
+        "title": "Norman Hubのアドレスを更新",
+        "description": "Hubの新しいアドレスを入力してください。このエントリを設定したときと同じHubである必要があります。",
+        "data": {
+          "host": "IPアドレスまたはホスト名"
+        },
+        "data_description": {
+          "host": "ネットワーク上のNorman Hubのアドレスです。"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Norman Hubに接続できませんでした",
+      "invalid_host": "有効なIPアドレスまたはホスト名を入力してください（ポートやパスは不要）",
+      "invalid_response": "Norman Hubから無効な応答を受信しました",
+      "unknown": "予期しないエラー"
+    },
+    "abort": {
+      "already_configured": "このNorman Hubはすでに設定されています",
+      "cannot_connect": "Norman Hubに接続できませんでした",
+      "invalid_response": "Norman Hubから無効な応答を受信しました",
+      "reconfigure_successful": "Hubのアドレスを更新しました",
+      "unknown": "予期しないエラー",
+      "wrong_hub": "そのアドレスは別のNorman Hubのものです"
+    }
+  },
+  "services": {
+    "nudge_position": {
+      "name": "位置を微調整",
+      "description": "カバーを現在の目標位置（または現在位置）から相対的に移動します。",
+      "fields": {
+        "step": {
+          "name": "ステップ",
+          "description": "移動量（-100〜100）。正の値で開き、負の値で閉じます。"
+        }
+      }
+    },
+    "nudge_tilt": {
+      "name": "チルトを微調整",
+      "description": "カバーのチルトを現在の目標（または現在値）から相対的に調整します。",
+      "fields": {
+        "step": {
+          "name": "ステップ",
+          "description": "チルト量（-100〜100）。方向はブラインドによって異なります。SmartDrapeでは負の値で左に傾きます。"
+        }
+      }
+    },
+    "get_hub_data": {
+      "name": "Hubデータを取得",
+      "description": "Hubが送信するそのままの製品リストとステータスを読み取ります。応答を返します。未対応のブラインドを報告するときに開発者ツールやスクリプトから使用してください。",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "読み取るNorman Hub。1台のみ設定されている場合は省略できます。"
+        }
+      }
+    },
+    "send_hub_command": {
+      "name": "Hubコマンドを送信",
+      "description": "上級者向け。1台のブラインドに対してHubのcontrolエンドポイントへ任意のフィールドをPOSTし、応答を返します。Normanアプリが使用するコマンド（微調整、リミット、キャリブレーション、お気に入り）のうち、まだエンティティのないものを送信します。ブラインドはHubがフィールドをどう解釈するかに従って動作します。",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "送信先のNorman Hub。1台のみ設定されている場合は省略できます。"
+        },
+        "peripheral_uid": {
+          "name": "Peripheral UID",
+          "description": "Hubが報告するブラインドのID（カバーのユニークID、またはget_hub_dataのPeripheralUID）。"
+        },
+        "fields": {
+          "name": "フィールド",
+          "description": "controlコールに追加するJSONフィールド。PeripheralUID、Timestamp、TaskIDは自動的に設定されます。"
+        }
+      }
+    }
+  },
+  "entity": {
+    "cover": {
+      "middle_rail": {
+        "name": "ミッドレール"
+      }
+    },
+    "number": {
+      "bottom_rail_position": {
+        "name": "ボトムレール位置"
+      },
+      "middle_rail_position": {
+        "name": "ミッドレール位置"
+      }
+    },
+    "button": {
+      "favorite": {
+        "name": "お気に入り位置"
+      },
+      "jog_up": {
+        "name": "上へ微調整"
+      },
+      "jog_down": {
+        "name": "下へ微調整"
+      },
+      "run_to_top_limit": {
+        "name": "上限位置へ移動"
+      },
+      "run_to_bottom_limit": {
+        "name": "下限位置へ移動"
+      }
+    },
+    "sensor": {
+      "battery_level": {
+        "name": "バッテリー"
+      },
+      "signal_strength": {
+        "name": "信号強度"
+      },
+      "last_seen": {
+        "name": "最終受信"
+      },
+      "firmware_version": {
+        "name": "ファームウェアバージョン"
+      },
+      "wifi_rssi": {
+        "name": "Wi-Fi信号"
+      },
+      "mac_address": {
+        "name": "MACアドレス"
+      },
+      "time_zone": {
+        "name": "タイムゾーン"
+      },
+      "wifi_ssid": {
+        "name": "Wi-Fiネットワーク"
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "{name} の {action} に失敗しました: {error}"
+    },
+    "stop_failed": {
+      "message": "{name} を停止できませんでした: {error}"
+    },
+    "button_failed": {
+      "message": "{name} に {command} を送信できませんでした: {error}"
+    },
+    "hub_read_failed": {
+      "message": "Norman Hub {hub} から読み取れませんでした: {error}"
+    },
+    "hub_command_rejected": {
+      "message": "Norman Hub {hub} が {uid} へのコマンドを拒否しました: {error}"
+    },
+    "unknown_entry": {
+      "message": "設定エントリID {entry_id} のNorman Hubはありません"
+    },
+    "multiple_hubs": {
+      "message": "{count} 台のNorman Hubが設定されています。{field} を指定してください"
+    },
+    "entry_not_loaded": {
+      "message": "Norman Hub {hub} は読み込まれていません"
+    }
+  }
+}

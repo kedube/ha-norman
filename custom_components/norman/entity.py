@@ -5,17 +5,24 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api import NormanApiError, NormanConnectionError
 from .const import COVER_TYPE_SINGLE_RAIL, COVER_TYPE_TWO_RAIL, DOMAIN, MANUFACTURER
 from .coordinator import NormanConfigEntry, NormanCoordinator, hub_identifier
 from .models import NormanPeripheralData
 
+# Model names follow the Norman app's product catalogue (its General_Display_* strings).
+# ModuleType 33 matches the app's dual-rail Cellular Shade (Japanese: "honeycomb screen,
+# twin, up/down"), which is what every type-33 blind on the reference hub is. ModuleType 32
+# has not been matched to a catalogue entry yet (Roller Shade, single Cellular Shade,
+# PerfectSheer, and Shutter are the candidates), so it keeps a descriptive name.
 COVER_TYPE_MODELS = {
-    COVER_TYPE_TWO_RAIL: "Two-rail window covering",
+    COVER_TYPE_TWO_RAIL: "Cellular Shade (dual rail)",
     COVER_TYPE_SINGLE_RAIL: "Single-rail window covering",
 }
 
@@ -77,6 +84,79 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
         """Unavailable when the hub is unreachable or no longer reports this peripheral."""
         # TODO: handle case where individual devices can go offline
         return super().available and self._device_id in self.coordinator.data
+
+
+def clamp_position(value: int) -> int:
+    """Clamp a rail position to the 0-100 range Home Assistant uses."""
+    return max(0, min(100, value))
+
+
+class NormanRailMixin(NormanEntity):
+    """Shared rail arithmetic for entities that move a blind.
+
+    The hub's control call always takes **both** rails, so any entity that moves one rail
+    has to send the other back unchanged. That rule, and the "target, then current, then
+    fully open" fallback it needs, lives here so the cover and number platforms cannot
+    drift apart.
+    """
+
+    def _target_or_current_bottom(self) -> int:
+        """Bottom rail value to send when a command leaves the bottom rail alone."""
+        data = self._data
+        if data is None:
+            return 100
+        for value in (data.target_bottom_rail_position, data.bottom_rail_position):
+            if value is not None:
+                return value
+        return 100
+
+    def _target_or_current_middle(self) -> int:
+        """Middle rail value to send when a command leaves the middle rail alone."""
+        data = self._data
+        if data is None:
+            return 100
+        for value in (data.target_middle_rail_position, data.middle_rail_position):
+            if value is not None:
+                return value
+        return 100
+
+    async def _async_set_position(
+        self,
+        bottom: int | None,
+        middle: int | None,
+        action: str,
+        value: int | None = None,
+    ) -> None:
+        """Send both rail positions to the hub; ``None`` keeps a rail where it is heading."""
+        bottom_val = self._target_or_current_bottom() if bottom is None else clamp_position(bottom)
+        middle_val = self._target_or_current_middle() if middle is None else clamp_position(middle)
+
+        try:
+            await self.coordinator.api.async_set_position(self._device_id, bottom_val, middle_val)
+        except (NormanApiError, NormanConnectionError) as err:
+            detail = f" (value: {value})" if value is not None else ""
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={
+                    "action": f"{action}{detail}",
+                    "name": self._device_name,
+                    "error": str(err),
+                },
+            ) from err
+        await self.coordinator.async_request_refresh()
+
+    async def _async_stop_motor(self) -> None:
+        """Stop the motor where it is (the hub has one stop per blind, not per rail)."""
+        try:
+            await self.coordinator.api.async_stop(self._device_id)
+        except (NormanApiError, NormanConnectionError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="stop_failed",
+                translation_placeholders={"name": self._device_name, "error": str(err)},
+            ) from err
+        await self.coordinator.async_request_refresh()
 
 
 class NormanHubEntity(CoordinatorEntity[NormanCoordinator]):

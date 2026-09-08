@@ -276,12 +276,12 @@ where every target in scope changed:
 | `{"Switch": 1}` | open every blind on the hub (both rails to 100) |
 | `{"Switch": 0}` | close every blind on the hub |
 | `{"Switch": 1, "RoomID": 29550}` / `{"Switch": 0, "RoomID": 29550}` | open / close every blind in the room |
-| `{"Favorite": 0, "RoomID": 24973}` | send every blind in the room to its stored favourite position |
+| `{"Favorite": 0, "RoomID": 24973}` | send every blind in the room to its stored favorite position |
 
 The hub echoes `Switch` / `Favorite` and `RoomID`. `Switch` and `Favorite` are also listed per
 blind in the registration reply, so the per-blind forms `{"Switch": 1, "PeripheralUID": …}`
 and `{"Favorite": 0, "PeripheralUID": …}` are the obvious extrapolation, but neither has been
-captured. The integration sends the per-blind `Favorite` form from the Favourite position
+captured. The integration sends the per-blind `Favorite` form from the Favorite position
 button (unverified until someone reports it moving a blind) and leaves `Switch` alone: Home
 Assistant's own cover groups and areas already fan out open/close.
 

@@ -1,15 +1,15 @@
 # Entities
 
-The integration creates one **cover** entity (two for two-rail blinds), five **buttons**,
-and four **diagnostic sensors** per peripheral the hub reports, plus one **device** per blind
-and one for the hub itself (with its own Wi-Fi signal sensor).
+The integration creates one **cover** entity (two for two-rail blinds), a **position slider**
+per rail, five **buttons**, and four **diagnostic sensors** per peripheral the hub reports,
+plus one **device** per blind and one for the hub itself (with its own Wi-Fi signal sensor).
 
 ## Devices
 
 | Device | Identifiers | Notes |
 |---|---|---|
 | Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address; the MAC address is attached as a network connection when it can be resolved (see below). |
-| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is "Two-rail window covering" or "Single-rail window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
+| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman product name where the type has been matched to the app's catalogue ("Cellular Shade (dual rail)" for `ModuleType` 33; single-rail types are still "Single-rail window covering" until matched) with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
 
 The device page therefore mirrors the app's blind details: room (area), battery (sensor),
 version, module type (model id), and serial number.
@@ -66,17 +66,46 @@ every cover whenever the hub reports a change, including changes made with a rem
 Norman app. It also refreshes after every command it sends and every time the long-poll is
 reconnected. See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
 
+## Position sliders
+
+| Entity | Rail | Range |
+|---|---|---|
+| Bottom rail position | `BottomRailPosition` | 0–100%, in steps of 10 |
+| Middle rail position | `MiddleRailPosition` | 0–100%, in steps of 10. Two-rail blinds only. |
+
+These are `number` entities and they read and write exactly what the covers do, so the two
+never disagree. They exist because Home Assistant renders a cover as up/stop/down buttons in
+most places and keeps its position slider in the more-info dialog, whereas a `number` renders
+as a slider wherever you put it — closer to the Norman app, and easier to drive from an
+automation or a voice assistant ("set the bedroom shade to 30").
+
+The 10% step is a usability choice, not a hub limit: the hub accepts any whole percentage. For
+finer movement use the **Jog** buttons (the motor's own fine-tune) or the
+[`nudge_position`](services.md#normannudge_position) action, which takes any step from -100 to
+100.
+
+They carry the *configuration* entity category, like the buttons, so the device page's Controls
+group stays down to the covers themselves.
+
 ## Buttons
 
 One press is one verb sent to the hub for that blind (see
 [docs/NORMAN_API.md](NORMAN_API.md#control-verbs)), followed by a status re-read so the cover
 catches up with the motor.
 
+All five are **enabled** but carry Home Assistant's *configuration* entity category. That is a
+layout choice rather than a statement about how often they are used: the device page lists
+uncategorised entities first, sorted by entity id, so leaving the buttons uncategorised placed
+them between a two-rail blind's two covers. With them categorised, the bottom-rail and
+middle-rail covers stay side by side at the top of the page and the buttons follow the
+divider. Being categorised also keeps them off auto-generated dashboards; add them to a
+dashboard by hand if you want them there.
+
 | Button | Hub verb | Notes |
 |---|---|---|
-| Favourite position | `Favorite: 0` | Moves to the favourite stored in the blind. The verb is confirmed room-wide from the app; the per-blind form is the hub's advertised one and has not been captured yet. If nothing happens on your blinds, open an issue. |
+| Favorite position | `Favorite: 0` | Moves to the favorite stored in the blind. The verb is confirmed room-wide from the app; the per-blind form is the hub's advertised one and has not been captured yet. If nothing happens on your blinds, open an issue. |
 | Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | A small motor step, the same as the app's limit-setup jog. Independent of position targets. |
-| Run to top limit / Run to bottom limit | `SetMotorToTopLimit` / `…BottomLimit: 170` | Drives the motor to the limit stored in the blind. Not the same as open/close, which go through the hub's position logic: these can still work when a blind's position tracking has drifted. Categorised as configuration, so they appear in the device page's configuration section rather than on the cover card. |
+| Run to top limit / Run to bottom limit | `SetMotorToTopLimit` / `…BottomLimit: 170` | Drives the motor to the limit stored in the blind. Not the same as open/close, which go through the hub's position logic: these can still work when a blind's position tracking has drifted. |
 
 Errors follow the cover convention: a hub error or timeout fails the press with a message
 naming the verb and the blind.

@@ -75,7 +75,7 @@
     },
     "send_hub_command": {
       "name": "Send hub command",
-      "description": "Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. Sends the verbs the Norman app uses (fine-tune, limits, calibration, favourite) that have no entity yet. The blind will do whatever the hub makes of the fields.",
+      "description": "Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. Sends the verbs the Norman app uses (fine-tune, limits, calibration, favorite) that have no entity yet. The blind will do whatever the hub makes of the fields.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
@@ -98,9 +98,17 @@
         "name": "Middle rail"
       }
     },
+    "number": {
+      "bottom_rail_position": {
+        "name": "Bottom rail position"
+      },
+      "middle_rail_position": {
+        "name": "Middle rail position"
+      }
+    },
     "button": {
       "favorite": {
-        "name": "Favourite position"
+        "name": "Favorite position"
       },
       "jog_up": {
         "name": "Jog up"
@@ -140,6 +148,32 @@
       "wifi_ssid": {
         "name": "Wi-Fi network"
       }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "Failed to {action} for {name}: {error}"
+    },
+    "stop_failed": {
+      "message": "Failed to stop {name}: {error}"
+    },
+    "button_failed": {
+      "message": "Failed to send {command} to {name}: {error}"
+    },
+    "hub_read_failed": {
+      "message": "Could not read from Norman hub {hub}: {error}"
+    },
+    "hub_command_rejected": {
+      "message": "Norman hub {hub} rejected the command for {uid}: {error}"
+    },
+    "unknown_entry": {
+      "message": "No Norman hub with config entry id {entry_id}"
+    },
+    "multiple_hubs": {
+      "message": "{count} Norman hubs are configured; pass {field}"
+    },
+    "entry_not_loaded": {
+      "message": "Norman hub {hub} is not loaded"
     }
   }
 }

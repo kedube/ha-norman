@@ -60,6 +60,16 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   - [`docs/services.md`](docs/services.md) — all four actions, and the hub verbs `send_hub_command` can send.
   - [`docs/NORMAN_API.md`](docs/NORMAN_API.md) — the hub protocol. Read it before changing
     `api.py` or `coordinator.py`.
+- `custom_components/norman/translations/` holds one file per language. `en.json` is the
+  source of truth and must match `strings.json` exactly. Japanese and both Chinese files use
+  the vocabulary of the Norman app itself (its language tables ship unencrypted in the app
+  bundle; Norman calls the middle rail 中樑 / ミッドレール, a favourite 我的最愛 / お気に入り,
+  and so on), so a user reading the app and Home Assistant side by side sees the same terms.
+  German, French, and Spanish have no Norman reference vocabulary and were written for this
+  integration; corrections from native speakers are welcome. Every file must contain every
+  key in `en.json`: `tests/test_repo_consistency.py` fails otherwise. Errors raised by the
+  integration are translated too, under `exceptions`; raise them with a `translation_key`
+  rather than an English string.
 - `scripts/probe_hub_endpoints.py` looks for hub endpoints nobody has documented. It sends an
   identity-only body (`ThingName`, `TaskID`, `Timestamp`) and refuses by name to send anything
   that could write, so it cannot move a blind:

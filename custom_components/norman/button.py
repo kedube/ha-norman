@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import NormanApiError, NormanConnectionError
 from .const import (
+    DOMAIN,
     HUB_CMD_FAVORITE,
     HUB_CMD_JOG_DOWN,
     HUB_CMD_JOG_UP,
@@ -38,26 +39,35 @@ class NormanButtonDescription(ButtonEntityDescription):
     fields: dict[str, Any]
 
 
+# Every button is EntityCategory.CONFIG. That is not a claim that they are rarely used --
+# favorite and jog are everyday controls -- but a layout decision: the device page groups
+# uncategorised entities first, then configuration, then diagnostics, and sorts by entity id
+# within a group. Leaving the buttons uncategorised put them between the two covers ("Middle
+# rail" sorts after "Jog up"), which reads as though the second cover belongs to the buttons.
+# With the buttons categorised, a two-rail blind shows its bottom-rail and middle-rail covers
+# together at the top, then the divider, then every button.
 BUTTONS: tuple[NormanButtonDescription, ...] = (
     NormanButtonDescription(
         key="favorite",
         translation_key="favorite",
+        entity_category=EntityCategory.CONFIG,
         fields={HUB_CMD_FAVORITE: HUB_COMMAND_SETTING},
     ),
     NormanButtonDescription(
         key="jog_up",
         translation_key="jog_up",
+        entity_category=EntityCategory.CONFIG,
         fields={HUB_CMD_JOG_UP: HUB_COMMAND_TRIGGER},
     ),
     NormanButtonDescription(
         key="jog_down",
         translation_key="jog_down",
+        entity_category=EntityCategory.CONFIG,
         fields={HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER},
     ),
     # Run-to-limit drives the motor to its stored mechanical limit, which is not the same
     # path as a position move: it can still work on a blind whose position tracking has
-    # drifted. So it is enabled, but categorised as configuration to keep it off the main
-    # card and in the device page's configuration section.
+    # drifted.
     NormanButtonDescription(
         key="run_to_top_limit",
         translation_key="run_to_top_limit",
@@ -112,6 +122,12 @@ class NormanButton(NormanEntity, ButtonEntity):
             )
         except (NormanApiError, NormanConnectionError) as err:
             raise HomeAssistantError(
-                f"Failed to send {self.entity_description.key} to {self._device_name}: {err}"
+                translation_domain=DOMAIN,
+                translation_key="button_failed",
+                translation_placeholders={
+                    "command": self.entity_description.key,
+                    "name": self._device_name,
+                    "error": str(err),
+                },
             ) from err
         await self.coordinator.async_request_refresh()

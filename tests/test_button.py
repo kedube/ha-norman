@@ -29,20 +29,20 @@ def _button(hass: HomeAssistant, uid: int, key: str) -> er.RegistryEntry:
 async def test_every_blind_gets_the_buttons(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """Both blind types get all five buttons, all enabled; the limit pair is configuration.
+    """Both blind types get all five buttons, all enabled and all in the config category.
 
-    Run-to-limit reaches the motor's stored limit rather than a position, so it can work
-    when position tracking has drifted -- it is a distinct capability, not a duplicate of
-    open/close, and is enabled for that reason.
+    The category is a layout decision, not a claim that the buttons are rarely used: the
+    device page sorts uncategorised entities together by entity id, which interleaved
+    "Middle rail" with the buttons. Categorising every button keeps a two-rail blind's two
+    covers adjacent at the top of the page.
     """
     for uid in (UID_LIVING, UID_BEDROOM):
         for description in BUTTONS:
             entry = _button(hass, uid, description.key)
-            limit = description.key.startswith("run_to")
-            assert (entry.entity_category == EntityCategory.CONFIG) is limit
+            assert entry.entity_category is EntityCategory.CONFIG, description.key
             assert entry.disabled_by is None, f"{description.key} should be enabled"
     state = hass.states.get(_button(hass, UID_LIVING, "favorite").entity_id)
-    assert state.attributes["friendly_name"] == "Living Drape Favourite position"
+    assert state.attributes["friendly_name"] == "Living Drape Favorite position"
     # Icons come from icons.json, whose coverage tests/test_repo_consistency.py pins
 
 

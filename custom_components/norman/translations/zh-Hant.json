@@ -1,0 +1,179 @@
+{
+  "config": {
+    "flow_title": "Norman Hub ({host})",
+    "step": {
+      "user": {
+        "title": "連線至 Norman Hub",
+        "description": "連線至您的 Norman Hub 以控制窗簾。Hub 透過區域網路直接連線，不經過雲端。",
+        "data": {
+          "host": "IP 位址或主機名稱"
+        },
+        "data_description": {
+          "host": "Norman Hub 在您網路上的位址。請在路由器中為它設定固定位址，以免變動。"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "找到 Norman Hub",
+        "description": "要新增位於 {host} 的 Norman Hub 嗎？它在您的區域網路上被找到，並以 Norman Hub 的身分回應。"
+      },
+      "reconfigure": {
+        "title": "更新 Norman Hub 位址",
+        "description": "輸入 Hub 的新位址。必須是設定此項目時所用的同一台 Hub。",
+        "data": {
+          "host": "IP 位址或主機名稱"
+        },
+        "data_description": {
+          "host": "Norman Hub 在您網路上的位址。"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "無法連線至 Norman Hub",
+      "invalid_host": "請輸入有效的 IP 位址或主機名稱（不含連接埠或路徑）",
+      "invalid_response": "從 Norman Hub 收到無效的回應",
+      "unknown": "未預期的錯誤"
+    },
+    "abort": {
+      "already_configured": "此 Norman Hub 已設定完成",
+      "cannot_connect": "無法連線至 Norman Hub",
+      "invalid_response": "從 Norman Hub 收到無效的回應",
+      "reconfigure_successful": "Hub 位址已更新",
+      "unknown": "未預期的錯誤",
+      "wrong_hub": "該位址屬於另一台 Norman Hub"
+    }
+  },
+  "services": {
+    "nudge_position": {
+      "name": "微調位置",
+      "description": "以相對量移動窗簾，相對於其目標位置（或目前位置）。",
+      "fields": {
+        "step": {
+          "name": "步進",
+          "description": "移動量，-100 至 100。正值開啟，負值關閉。"
+        }
+      }
+    },
+    "nudge_tilt": {
+      "name": "微調傾斜",
+      "description": "以相對量調整窗簾的傾斜，相對於其目標（或目前值）。",
+      "fields": {
+        "step": {
+          "name": "步進",
+          "description": "傾斜量，-100 至 100。方向依窗簾而異；SmartDrape 負值向左傾斜。"
+        }
+      }
+    },
+    "get_hub_data": {
+      "name": "取得 Hub 資料",
+      "description": "讀取 Hub 原始的裝置清單與狀態，與 Hub 傳送的內容完全相同。會回傳回應；回報不支援的窗簾時，請從開發者工具或指令碼使用。",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "要讀取的 Norman Hub。只設定一台時可省略。"
+        }
+      }
+    },
+    "send_hub_command": {
+      "name": "傳送 Hub 指令",
+      "description": "進階功能。對單一窗簾向 Hub 的 control 端點 POST 任意欄位並回傳回應。用於傳送 Norman App 使用但尚無實體的指令（微調、限位、校正、我的最愛）。窗簾的動作取決於 Hub 如何解讀這些欄位。",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "要傳送至的 Norman Hub。只設定一台時可省略。"
+        },
+        "peripheral_uid": {
+          "name": "Peripheral UID",
+          "description": "Hub 回報的窗簾 ID（窗簾實體的唯一 ID，或 get_hub_data 中的 PeripheralUID）。"
+        },
+        "fields": {
+          "name": "欄位",
+          "description": "control 呼叫的額外 JSON 欄位。PeripheralUID、Timestamp 與 TaskID 會自動填入。"
+        }
+      }
+    }
+  },
+  "entity": {
+    "cover": {
+      "middle_rail": {
+        "name": "中樑"
+      }
+    },
+    "number": {
+      "bottom_rail_position": {
+        "name": "下樑位置"
+      },
+      "middle_rail_position": {
+        "name": "中樑位置"
+      }
+    },
+    "button": {
+      "favorite": {
+        "name": "我的最愛位置"
+      },
+      "jog_up": {
+        "name": "向上微調"
+      },
+      "jog_down": {
+        "name": "向下微調"
+      },
+      "run_to_top_limit": {
+        "name": "移至上限位"
+      },
+      "run_to_bottom_limit": {
+        "name": "移至下限位"
+      }
+    },
+    "sensor": {
+      "battery_level": {
+        "name": "電量"
+      },
+      "signal_strength": {
+        "name": "訊號強度"
+      },
+      "last_seen": {
+        "name": "最後回報"
+      },
+      "firmware_version": {
+        "name": "韌體版本"
+      },
+      "wifi_rssi": {
+        "name": "Wi-Fi 訊號"
+      },
+      "mac_address": {
+        "name": "MAC 位址"
+      },
+      "time_zone": {
+        "name": "時區"
+      },
+      "wifi_ssid": {
+        "name": "Wi-Fi 網路"
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "{name} 執行「{action}」失敗：{error}"
+    },
+    "stop_failed": {
+      "message": "無法停止 {name}：{error}"
+    },
+    "button_failed": {
+      "message": "無法將 {command} 傳送至 {name}：{error}"
+    },
+    "hub_read_failed": {
+      "message": "無法從 Norman Hub {hub} 讀取：{error}"
+    },
+    "hub_command_rejected": {
+      "message": "Norman Hub {hub} 拒絕了對 {uid} 的指令：{error}"
+    },
+    "unknown_entry": {
+      "message": "沒有設定項目 ID 為 {entry_id} 的 Norman Hub"
+    },
+    "multiple_hubs": {
+      "message": "已設定 {count} 台 Norman Hub，請指定 {field}"
+    },
+    "entry_not_loaded": {
+      "message": "Norman Hub {hub} 尚未載入"
+    }
+  }
+}
