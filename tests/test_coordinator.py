@@ -8,12 +8,14 @@ from unittest.mock import patch
 
 import aiohttp
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.norman.api import NormanConnectionError
-from custom_components.norman.const import COVER_TYPE_SMARTDRAPE
+from custom_components.norman.const import COVER_TYPE_SINGLE_RAIL, COVER_TYPE_TWO_RAIL, DOMAIN
 from custom_components.norman.coordinator import NormanCoordinator
+from custom_components.norman.entity import hub_identifier
 
 from .conftest import FakeHub, cover_entity_id, settle
 from .const import UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY, devices_payload, status_payload
@@ -29,19 +31,24 @@ def test_process_data_merges_devices_and_status() -> None:
 
     living = devices[UID_LIVING]
     assert living.name == "Living Drape"
-    assert living.type == COVER_TYPE_SMARTDRAPE
+    assert living.type == COVER_TYPE_TWO_RAIL
     assert (living.room_id, living.room_name) == (1, "Living Room")
     assert (living.group_id, living.group_name) == (10, "Windows")
-    assert (living.module_type, living.module_detail) == (7, 2)
+    assert (living.module_type, living.module_detail) == (33, 3)  # strings coerced
     assert (living.bottom_rail_position, living.middle_rail_position) == (40, 60)
     assert (living.target_bottom_rail_position, living.target_middle_rail_position) == (40, 60)
-    assert living.battery_voltage == 12.4
-    assert living.firmware_version == "1.2.3"
-    assert living.last_update == "1700000000"
+    assert living.battery_level == 73
+    assert living.signal_strength == 34
+    assert living.firmware_version == "0.5.3.8"
+    assert living.rf_firmware_version is None
+    assert living.last_update == 1700000000
 
-    # String UIDs are coerced so the two payloads line up
-    assert devices[UID_BEDROOM].name == "Bedroom Drape"
-    assert devices[UID_BEDROOM].bottom_rail_position == 0
+    # String UIDs are coerced so the two payloads line up; ModuleType 32 is single-rail
+    bedroom = devices[UID_BEDROOM]
+    assert bedroom.name == "Bedroom Shade"
+    assert bedroom.type == COVER_TYPE_SINGLE_RAIL
+    assert bedroom.bottom_rail_position == 0
+    assert bedroom.rf_firmware_version == "0.3.20"
 
 
 def test_process_data_creates_placeholder_for_status_only_devices() -> None:
@@ -51,6 +58,8 @@ def test_process_data_creates_placeholder_for_status_only_devices() -> None:
     assert placeholder.name == f"Norman {UID_STATUS_ONLY}"
     assert placeholder.room_name is None
     assert placeholder.bottom_rail_position == 100
+    assert placeholder.module_type is None
+    assert placeholder.type == COVER_TYPE_TWO_RAIL  # the default for unknown types
 
 
 def test_process_data_skips_malformed_uids() -> None:
@@ -87,6 +96,56 @@ def test_process_data_tolerates_missing_sections(device_info: dict, status: dict
     assert process(device_info, status) == {}
 
 
+def test_battery_level_is_a_clamped_percentage() -> None:
+    """BatteryVoltage is a 0-100 level despite its name; junk becomes None."""
+    status = {
+        "Peripherals": [
+            {"PeripheralUID": 1, "BatteryVoltage": "85"},
+            {"PeripheralUID": 2, "BatteryVoltage": 130},
+            {"PeripheralUID": 3, "BatteryVoltage": "low"},
+        ]
+    }
+    devices = process({}, status)
+    assert [devices[i].battery_level for i in (1, 2, 3)] == [85, 100, None]
+
+
+async def test_unknown_module_type_is_warned_about_once(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A ModuleType the integration has not mapped is logged once, with the report hint."""
+
+    def unknown_type_warnings() -> list[str]:
+        # Setup happens in the fixture, so look at both the setup and call phases
+        records = [*caplog.get_records("setup"), *caplog.get_records("call")]
+        return [r.message for r in records if "unknown ModuleType" in r.message]
+
+    warnings = unknown_type_warnings()
+    assert len(warnings) == 1  # the status-only peripheral has no type at all
+    assert f"peripheral {UID_STATUS_ONLY}" in warnings[0]
+    assert "norman.get_hub_data" in warnings[0]
+
+    await notifications.put({"PeripheralList": [UID_STATUS_ONLY]})
+    await settle(hass)
+    assert len(unknown_type_warnings()) == 1
+
+
+async def test_hub_data_is_refreshed(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """The hub's own model, firmware, name, and Wi-Fi signal are read from the payloads."""
+    hub = init_integration.runtime_data.hub
+    assert hub.model == "NienMadeHub"
+    assert hub.firmware_version == "6.1.25"
+    assert hub.custom_name == "ShadeAuto Hub"
+    assert hub.wifi_rssi == -53
+    assert hub.ota_in_progress is False
+    assert hub.pairing_mode == 0
+
+
 def test_process_data_defaults_missing_names() -> None:
     """An empty PeripheralName falls back to a generated one."""
     info = {
@@ -117,6 +176,79 @@ async def test_notification_triggers_refresh(
 
     assert hass.states.get(cover_entity_id(hass, UID_LIVING)).attributes["current_position"] == 90
     assert len(fake_hub.calls_to("GetAllPeripheral")) == device_calls
+
+
+def _device(hass: HomeAssistant, entry: MockConfigEntry, identifier: str) -> dr.DeviceEntry:
+    """Find one of the entry's devices by identifier (registry lookups are deprecated in tests)."""
+    for device in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id):
+        if (DOMAIN, identifier) in device.identifiers:
+            return device
+    raise AssertionError(f"no device with identifier {identifier}")
+
+
+async def test_app_edits_re_read_the_device_list_and_rename_devices(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """An UpdateTime notification (a rename in the Norman app) re-reads names and applies them.
+
+    The hub sends ``{"UpdateTime": {"peripheral": ...}}`` (or ``room`` / ``device``) when
+    something is edited in the app; the device list is re-read and changed names are pushed
+    into the device registry, which Home Assistant would otherwise never revisit.
+    """
+    device_calls = len(fake_hub.calls_to("GetAllPeripheral"))
+    results = fake_hub.devices["results"]
+    results["CustomDeviceName"] = "Annisquam Shade Hub"
+    results["RoomList"][0]["GroupList"][0]["PeripheralList"][0]["PeripheralName"] = "Office_1"
+
+    await notifications.put({"UpdateTime": {"peripheral": 1788831865}, "Timestamp": 1})
+    await settle(hass)
+
+    assert len(fake_hub.calls_to("GetAllPeripheral")) == device_calls + 1
+    assert _device(hass, init_integration, str(UID_LIVING)).name == "Office_1"
+    hub_device = _device(hass, init_integration, hub_identifier(init_integration))
+    assert hub_device.name == "Annisquam Shade Hub"
+    assert init_integration.runtime_data.hub.custom_name == "Annisquam Shade Hub"
+
+
+async def test_user_renames_in_home_assistant_win_over_app_renames(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """A name set in Home Assistant is kept: only the hub-provided name is updated underneath."""
+    device = _device(hass, init_integration, str(UID_LIVING))
+    dr.async_get(hass).async_update_device(device.id, name_by_user="My Drape")
+    fake_hub.devices["results"]["RoomList"][0]["GroupList"][0]["PeripheralList"][0][
+        "PeripheralName"
+    ] = "Office_1"
+
+    await notifications.put({"UpdateTime": {"room": 1788830696}})
+    await settle(hass)
+
+    device = _device(hass, init_integration, str(UID_LIVING))
+    assert device.name == "Office_1"
+    assert device.name_by_user == "My Drape"
+
+
+async def test_schedule_edits_do_not_re_read_the_device_list(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Schedules are not modelled, so a schedule edit only triggers the usual status refresh."""
+    device_calls = len(fake_hub.calls_to("GetAllPeripheral"))
+    status_calls = len(fake_hub.calls_to("/status"))
+
+    await notifications.put({"UpdateTime": {"schedule": 1788830919}})
+    await settle(hass)
+
+    assert len(fake_hub.calls_to("GetAllPeripheral")) == device_calls
+    assert len(fake_hub.calls_to("/status")) == status_calls + 1
 
 
 async def test_periodic_reconnect_refreshes_device_list(

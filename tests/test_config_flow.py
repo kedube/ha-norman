@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from ipaddress import ip_address
 from unittest.mock import patch
 
 import aiohttp
-from homeassistant.config_entries import SOURCE_USER
+from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
@@ -226,3 +228,96 @@ async def test_reconfigure_errors(
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
     assert mock_config_entry.data[CONF_HOST] == HUB_HOST
+
+
+# ---- zeroconf discovery --------------------------------------------------------------------
+
+
+def _discovery(host: str = HUB_HOST) -> ZeroconfServiceInfo:
+    """What Home Assistant hands the flow for the hub's mDNS announcement (no TXT record)."""
+    return ZeroconfServiceInfo(
+        ip_address=ip_address(host),
+        ip_addresses=[ip_address(host)],
+        port=10123,
+        hostname="Dexatek.local.",
+        type="_nien_made._tcp.local.",
+        name="NienMadeLocal._nien_made._tcp.local.",
+        properties={},
+    )
+
+
+async def _start_zeroconf_flow(hass: HomeAssistant, host: str = HUB_HOST):
+    return await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_ZEROCONF}, data=_discovery(host)
+    )
+
+
+async def test_zeroconf_discovery_creates_entry_after_confirmation(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A discovered hub is validated, shown for confirmation, then added keyed by ThingName."""
+    aioclient_mock.post(REGISTRATION, json={"Error": 0, "ThingName": HUB_THING_NAME})
+
+    result = await _start_zeroconf_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "zeroconf_confirm"
+    assert result["description_placeholders"] == {"host": HUB_HOST}
+    assert aioclient_mock.call_count == 1  # validated before asking
+
+    flow = hass.config_entries.flow.async_get(result["flow_id"])
+    assert flow["context"]["title_placeholders"] == {"host": HUB_HOST}
+    assert flow["context"]["unique_id"] == HUB_THING_NAME
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input={})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == f"Norman Hub ({HUB_HOST})"
+    assert result["data"] == MOCK_CONFIG
+    assert result["result"].unique_id == HUB_THING_NAME
+
+
+async def test_zeroconf_discovery_of_known_hub_updates_host(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry
+) -> None:
+    """A configured hub announcing from a new address is not re-added; its address is refreshed."""
+    mock_config_entry.add_to_hass(hass)
+    aioclient_mock.post(
+        "http://192.168.1.99:10123/NM/v1/registration",
+        json={"Error": 0, "ThingName": HUB_THING_NAME},
+    )
+
+    result = await _start_zeroconf_flow(hass, "192.168.1.99")
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert mock_config_entry.data[CONF_HOST] == "192.168.1.99"
+
+
+@pytest.mark.parametrize(
+    ("mock_kwargs", "reason"),
+    [
+        ({"exc": aiohttp.ClientConnectionError("refused")}, "cannot_connect"),
+        ({"json": {"Error": 7}}, "invalid_response"),
+    ],
+)
+async def test_zeroconf_discovery_aborts_when_hub_does_not_answer(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_kwargs: dict, reason: str
+) -> None:
+    """Something answering on the service name but not as a hub is dropped, not offered."""
+    aioclient_mock.post(REGISTRATION, **mock_kwargs)
+
+    result = await _start_zeroconf_flow(hass)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == reason
+    assert not hass.config_entries.flow.async_progress()
+
+
+async def test_zeroconf_discovery_unknown_error_aborts(hass: HomeAssistant) -> None:
+    """An unexpected failure during discovery aborts with the generic reason."""
+    with patch(
+        "custom_components.norman.config_flow.NormanApiClient.async_validate_connection",
+        side_effect=RuntimeError("boom"),
+    ):
+        result = await _start_zeroconf_flow(hass)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "unknown"

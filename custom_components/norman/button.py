@@ -1,0 +1,117 @@
+"""Buttons for the hub verbs that have no cover equivalent."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import logging
+from typing import Any
+
+from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
+from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+from .api import NormanApiError, NormanConnectionError
+from .const import (
+    HUB_CMD_FAVORITE,
+    HUB_CMD_JOG_DOWN,
+    HUB_CMD_JOG_UP,
+    HUB_CMD_TO_BOTTOM_LIMIT,
+    HUB_CMD_TO_TOP_LIMIT,
+    HUB_COMMAND_SETTING,
+    HUB_COMMAND_TRIGGER,
+)
+from .coordinator import NormanConfigEntry, NormanCoordinator
+from .entity import NormanEntity, async_add_entities_for_new_devices
+
+_LOGGER = logging.getLogger(__name__)
+
+# Commands are not throttled; each press is one request.
+PARALLEL_UPDATES = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class NormanButtonDescription(ButtonEntityDescription):
+    """A button that sends one verb field to the hub's control call."""
+
+    fields: dict[str, Any]
+
+
+BUTTONS: tuple[NormanButtonDescription, ...] = (
+    NormanButtonDescription(
+        key="favorite",
+        translation_key="favorite",
+        fields={HUB_CMD_FAVORITE: HUB_COMMAND_SETTING},
+    ),
+    NormanButtonDescription(
+        key="jog_up",
+        translation_key="jog_up",
+        fields={HUB_CMD_JOG_UP: HUB_COMMAND_TRIGGER},
+    ),
+    NormanButtonDescription(
+        key="jog_down",
+        translation_key="jog_down",
+        fields={HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER},
+    ),
+    # Run-to-limit is what the app's limit-setup screen uses; open/close cover the everyday
+    # case, so these are configuration buttons that start disabled.
+    NormanButtonDescription(
+        key="run_to_top_limit",
+        translation_key="run_to_top_limit",
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+        fields={HUB_CMD_TO_TOP_LIMIT: HUB_COMMAND_TRIGGER},
+    ),
+    NormanButtonDescription(
+        key="run_to_bottom_limit",
+        translation_key="run_to_bottom_limit",
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+        fields={HUB_CMD_TO_BOTTOM_LIMIT: HUB_COMMAND_TRIGGER},
+    ),
+)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: NormanConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Set up the buttons for every blind, including ones paired later."""
+    coordinator = entry.runtime_data
+
+    def _buttons_for(device_id: int) -> list[NormanButton]:
+        return [NormanButton(coordinator, device_id, entry, description) for description in BUTTONS]
+
+    async_add_entities_for_new_devices(entry, async_add_entities, _buttons_for)
+
+
+class NormanButton(NormanEntity, ButtonEntity):
+    """One hub verb for one blind."""
+
+    entity_description: NormanButtonDescription
+
+    def __init__(
+        self,
+        coordinator: NormanCoordinator,
+        device_id: int,
+        entry: NormanConfigEntry,
+        description: NormanButtonDescription,
+    ) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator, device_id, entry)
+        self.entity_description = description
+        self._attr_unique_id = f"{device_id}_{description.key}"
+
+    async def async_press(self) -> None:
+        """Send the verb, then re-read the hub so the cover follows the motor."""
+        try:
+            await self.coordinator.api.async_send_control(
+                self._device_id, dict(self.entity_description.fields)
+            )
+        except (NormanApiError, NormanConnectionError) as err:
+            raise HomeAssistantError(
+                f"Failed to send {self.entity_description.key} to {self._device_name}: {err}"
+            ) from err
+        await self.coordinator.async_request_refresh()

@@ -47,3 +47,31 @@ get_hub_data:
       selector:
         config_entry:
           integration: norman
+send_hub_command:
+  name: Send hub command
+  description: Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. Sends the verbs the Norman app uses (fine-tune, limits, calibration, favourite) that have no entity yet. The blind will do whatever the hub makes of the fields.
+  fields:
+    config_entry_id:
+      name: Hub
+      description: Which Norman hub to send to. Optional when only one is configured.
+      required: false
+      selector:
+        config_entry:
+          integration: norman
+    peripheral_uid:
+      name: Peripheral UID
+      description: The blind's id as the hub reports it (the cover's unique id, or PeripheralUID in get_hub_data).
+      required: true
+      example: 58850
+      selector:
+        number:
+          min: 0
+          max: 4294967295
+          mode: box
+    fields:
+      name: Fields
+      description: Extra JSON fields for the control call. PeripheralUID, Timestamp and TaskID are filled in automatically.
+      required: true
+      example: '{"MotorStop": 1}'
+      selector:
+        object:

@@ -43,8 +43,8 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   - `cover.py` — the cover entities and the two nudge actions.
   - `sensor.py` — the diagnostic sensors (battery voltage, last seen, firmware).
   - `config_flow.py` — user and reconfigure steps.
-  - `services.py` — the integration-level `get_hub_data` action; the nudge actions live with
-    the covers.
+  - `services.py` — the integration-level `get_hub_data` and `send_hub_command` actions; the
+    nudge actions live with the covers.
   - `diagnostics.py` — the export, including the raw `hub_traffic` capture.
 - `tests/` contains the pytest suite. Integration tests drive the real code against a fake hub
   registered on `aioclient_mock` (`tests/conftest.py`), so request payloads and error handling
@@ -57,7 +57,7 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   as the narrative landing page (install → configure → what you get → troubleshoot) and put
   detail here:
   - [`docs/entities.md`](docs/entities.md) — entities, devices, attributes, availability.
-  - [`docs/services.md`](docs/services.md) — the nudge actions and `get_hub_data`.
+  - [`docs/services.md`](docs/services.md) — all four actions, and the hub verbs `send_hub_command` can send.
   - [`docs/NORMAN_API.md`](docs/NORMAN_API.md) — the hub protocol. Read it before changing
     `api.py` or `coordinator.py`.
 
@@ -77,19 +77,20 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
 
 ## Adding support for another Norman product
 
-Everything the hub reports is currently treated as a two-rail SmartDrape. To map another
-product:
+Two `ModuleType` values are mapped (33 two-rail, 32 single-rail); anything else is treated as
+two-rail with a warning. To map another product:
 
 1. Get the raw hub payloads with the product paired: run the `norman.get_hub_data` action
    from Developer tools, or take a [diagnostics export](README.md#diagnostics) and read
-   `hub_traffic.latest_raw`. Note the peripheral's `ModuleType` and `ModuleDetail` and any
-   fields the parsed model does not carry.
-2. Add a cover type constant in `const.py` and map the module type to it in
-   `NormanCoordinator._process_data`.
-3. Add an entity class in `cover.py` (subclass `NormanCoverBase` for single-rail products;
-   `NormanBlind` already covers two rails) and register it in `COVER_CLASSES`.
+   `hub_traffic.latest_raw`. Note the peripheral's `ModuleType` and `ModuleDetail` and how its
+   rails behave when it moves.
+2. Add the `ModuleType` to `MODULE_TYPE_COVER_TYPES` in `const.py`, adding a cover type
+   constant if neither existing one fits.
+3. If it needs new behaviour, add an entity class in `cover.py` (subclass `NormanCoverBase`)
+   and register it in `COVER_CLASSES`; add a model name in `entity.py`.
 4. Add the payload to `tests/const.py` and cover the new behaviour in `tests/test_cover.py`.
-5. Update the **Supported devices** table in the README.
+5. Update the **Supported devices** table in the README and the type tables in
+   `docs/entities.md` and `docs/NORMAN_API.md`.
 
 ## Pull requests
 

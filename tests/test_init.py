@@ -35,14 +35,18 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     hub = devices.get((DOMAIN, f"hub_{entry.entry_id}"))
     assert hub is not None
     assert hub.manufacturer == "Norman"
-    assert hub.model == "Hub"
+    assert hub.model == "NienMadeHub"
+    assert hub.sw_version == "6.1.25"
+    assert hub.name == "ShadeAuto Hub"
     assert hub.configuration_url == f"{HUB_URL}"
 
     blind = devices.get((DOMAIN, str(UID_LIVING)))
     assert blind is not None
     assert blind.name == "Living Drape"
     assert blind.via_device_id == hub.id
-    assert blind.sw_version == "1.2.3"
+    assert blind.sw_version == "0.5.3.8"
+    assert blind.model == "Two-rail window covering"
+    assert blind.model_id == "33/3"
     # Reading DeviceEntry.suggested_area is deprecated; check the area it was placed in
     assert ar.async_get(hass).async_get_area(blind.area_id).name == "Living Room"
 
@@ -50,7 +54,8 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
     covers = sorted(e.unique_id for e in entries if e.domain == "cover")
     assert covers == ["1001", "1002", "1003"]
-    assert {e.domain for e in entries} == {"cover", "sensor"}
+    assert f"{entry.entry_id}_wifi_rssi" in {e.unique_id for e in entries}
+    assert {e.domain for e in entries} == {"button", "cover", "sensor"}
     living = cover_entity_id(hass, UID_LIVING)
     assert hass.states.get(living).attributes["friendly_name"] == "Living Drape"
 

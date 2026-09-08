@@ -7,8 +7,15 @@ import logging
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import (
+    config_validation as cv,
+)
+from homeassistant.helpers import (
+    device_registry as dr,
+)
+from homeassistant.helpers import (
+    entity_registry as er,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 
@@ -41,6 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
         raise ConfigEntryNotReady(f"Failed to connect to Norman hub: {err}") from err
 
     _async_migrate_unique_id(hass, entry, thing_name)
+    await _async_migrate_entity_unique_ids(hass, entry)
 
     coordinator = NormanCoordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
@@ -51,8 +59,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, hub_identifier(entry))},
         manufacturer=MANUFACTURER,
-        model="Hub",
-        name=entry.title,
+        model=coordinator.hub.model or "Hub",
+        sw_version=coordinator.hub.firmware_version,
+        name=coordinator.hub.custom_name or entry.title,
         configuration_url=str(api.base_url),
     )
     coordinator.hub_device_id = hub_device.id
@@ -83,6 +92,28 @@ async def async_remove_config_entry_device(
     live = {(DOMAIN, str(uid)) for uid in entry.runtime_data.data}
     live.add((DOMAIN, hub_identifier(entry)))
     return not (device_entry.identifiers & live)
+
+
+# Entity unique-id suffixes renamed after release 0.11; old -> new
+_RENAMED_ENTITY_KEYS = {"_battery_voltage": "_battery_level"}
+
+
+async def _async_migrate_entity_unique_ids(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
+    """Keep entity ids and history when a sensor's unique id suffix is renamed.
+
+    0.11 shipped the battery level as ``<uid>_battery_voltage``; real hubs turned out to
+    report a percentage, so the sensor was renamed. Migrating the registry entry keeps the
+    entity id and the recorded history instead of creating a second entity.
+    """
+
+    @callback
+    def _migrate(entity_entry: er.RegistryEntry) -> dict[str, str] | None:
+        for old, new in _RENAMED_ENTITY_KEYS.items():
+            if entity_entry.unique_id.endswith(old):
+                return {"new_unique_id": entity_entry.unique_id.removesuffix(old) + new}
+        return None
+
+    await er.async_migrate_entries(hass, entry.entry_id, _migrate)
 
 
 @callback

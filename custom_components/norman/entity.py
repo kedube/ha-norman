@@ -10,14 +10,14 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER
-from .coordinator import NormanConfigEntry, NormanCoordinator
+from .const import COVER_TYPE_SINGLE_RAIL, COVER_TYPE_TWO_RAIL, DOMAIN, MANUFACTURER
+from .coordinator import NormanConfigEntry, NormanCoordinator, hub_identifier
 from .models import NormanPeripheralData
 
-
-def hub_identifier(entry: NormanConfigEntry) -> str:
-    """Return the device-registry identifier used for the hub device."""
-    return f"hub_{entry.entry_id}"
+COVER_TYPE_MODELS = {
+    COVER_TYPE_TWO_RAIL: "Two-rail window covering",
+    COVER_TYPE_SINGLE_RAIL: "Single-rail window covering",
+}
 
 
 def _via_hub(coordinator: NormanCoordinator, entry: NormanConfigEntry) -> dict:
@@ -53,7 +53,12 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
             identifiers={(DOMAIN, str(device_id))},
             name=self._device_name,
             manufacturer=MANUFACTURER,
-            model=f"Window Covering {device_data.module_type}",
+            model=COVER_TYPE_MODELS.get(device_data.type, "Window covering"),
+            model_id=(
+                f"{device_data.module_type}/{device_data.module_detail}"
+                if device_data.module_type is not None
+                else None
+            ),
             suggested_area=device_data.room_name or None,
             sw_version=device_data.firmware_version,
             **_via_hub(coordinator, entry),
@@ -69,6 +74,17 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
         """Unavailable when the hub is unreachable or no longer reports this peripheral."""
         # TODO: handle case where individual devices can go offline
         return super().available and self._device_id in self.coordinator.data
+
+
+class NormanHubEntity(CoordinatorEntity[NormanCoordinator]):
+    """An entity belonging to the hub itself."""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: NormanCoordinator, entry: NormanConfigEntry) -> None:
+        """Attach the entity to the hub device created at setup."""
+        super().__init__(coordinator)
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, hub_identifier(entry))})
 
 
 @callback

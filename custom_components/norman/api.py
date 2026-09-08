@@ -22,6 +22,8 @@ from homeassistant.exceptions import HomeAssistantError
 from yarl import URL
 
 from .const import (
+    HUB_CMD_STOP,
+    HUB_COMMAND_TRIGGER,
     HUB_PORT,
     NOTIF_MAX_BUFFER,
     NOTIF_MAX_DURATION,
@@ -233,6 +235,9 @@ class NormanApiClient:
         self._thing_name: str | None = None
         self._task_ids = itertools.count(1)
         self.traffic = TrafficRecorder()
+        # Hub identity from the registration reply, for the hub device
+        self.hub_model: str | None = None
+        self.hub_firmware_version: str | None = None
 
     @property
     def thing_name(self) -> str | None:
@@ -326,9 +331,15 @@ class NormanApiClient:
 
     @staticmethod
     def _raise_on_error_code(data: dict[str, Any], what: str) -> None:
-        """Raise NormanApiError when the hub's ``Error`` field is non-zero."""
-        if data.get("Error", 0) != 0:
-            raise NormanApiError(f"{what} failed with error code: {data.get('Error')}")
+        """Raise NormanApiError when the hub's ``Error`` field signals a failure.
+
+        The hub answers ``0`` on most endpoints but the string ``"Success."`` on the
+        notification acknowledgement, so both spellings of success are accepted.
+        """
+        error = data.get("Error", 0)
+        if error in (0, "0", None) or (isinstance(error, str) and error.lower().startswith("succ")):
+            return
+        raise NormanApiError(f"{what} failed with error code: {error}")
 
     async def async_validate_connection(self) -> str | None:
         """Register with the hub and return its ThingName.
@@ -346,6 +357,8 @@ class NormanApiClient:
         data = await self._async_request(ENDPOINT_REGISTRATION, {"Timestamp": int(time.time())})
         self._raise_on_error_code(data, "Registration")
         self._thing_name = data.get("ThingName")
+        self.hub_model = data.get("Model") or self.hub_model
+        self.hub_firmware_version = data.get("FirmwareVersion") or self.hub_firmware_version
         return data
 
     async def async_get_devices(self) -> dict[str, Any]:
@@ -384,17 +397,41 @@ class NormanApiClient:
             middle_rail_position: Middle rail position (0=closed, 100=open)
 
         """
+        await self.async_send_control(
+            device_id,
+            {
+                "BottomRailPosition": bottom_rail_position,
+                "MiddleRailPosition": middle_rail_position,
+            },
+        )
+
+    async def async_stop(self, device_id: int) -> None:
+        """Stop a cover's motor where it is.
+
+        Sends ``MotorStop: 170`` exactly as the Norman app does; the hub echoes the field
+        back and the blind's target positions catch up on the next status read.
+        """
+        await self.async_send_control(device_id, {HUB_CMD_STOP: HUB_COMMAND_TRIGGER})
+
+    async def async_send_control(self, device_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+        """POST arbitrary fields to the control endpoint for one peripheral.
+
+        ``PeripheralUID``, ``Timestamp`` and ``TaskID`` are filled in; ``fields`` is merged
+        on top. This is what ``async_set_position`` and ``async_stop`` use, and what the
+        ``send_hub_command`` action exposes for the other verbs the hub advertises (see
+        docs/NORMAN_API.md, "Control verbs"). Returns the hub's reply.
+        """
         data = await self._async_request(
             ENDPOINT_CONTROL,
             {
                 "PeripheralUID": device_id,
                 "Timestamp": int(time.time()),
                 "TaskID": self._next_task_id(),
-                "BottomRailPosition": bottom_rail_position,
-                "MiddleRailPosition": middle_rail_position,
+                **fields,
             },
         )
         self._raise_on_error_code(data, "Control request")
+        return data
 
     async def async_listen_notifications(self) -> AsyncIterator[dict[str, Any]]:
         """Yield peripheral state-change notifications from the hub's long-poll.
@@ -443,9 +480,11 @@ class NormanApiClient:
                         response=chunk.decode(errors="replace"),
                     )
                     for obj in parser.feed(chunk):
-                        # The hub first acknowledges the subscription with an object that
-                        # has no PeripheralList; only real state changes carry one.
-                        if "PeripheralList" in obj:
+                        # The hub first acknowledges the subscription with a bare Error
+                        # object. State changes carry PeripheralList (ids of the blinds
+                        # that moved); edits made in the Norman app carry UpdateTime
+                        # (which of room / peripheral / device / schedule changed).
+                        if "PeripheralList" in obj or "UpdateTime" in obj:
                             yield obj
         except ClientError as err:
             raise NormanConnectionError(f"Notification listener connection error: {err}") from err

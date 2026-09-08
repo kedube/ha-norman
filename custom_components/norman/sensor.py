@@ -14,14 +14,18 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory, UnitOfElectricPotential
+from homeassistant.const import (
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    EntityCategory,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .coordinator import NormanConfigEntry
-from .entity import NormanEntity, async_add_entities_for_new_devices
-from .models import NormanPeripheralData
+from .coordinator import NormanConfigEntry, NormanCoordinator
+from .entity import NormanEntity, NormanHubEntity, async_add_entities_for_new_devices
+from .models import NormanHubData, NormanPeripheralData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,14 +66,23 @@ class NormanSensorDescription(SensorEntityDescription):
 
 SENSORS: tuple[NormanSensorDescription, ...] = (
     NormanSensorDescription(
-        key="battery_voltage",
-        translation_key="battery_voltage",
-        device_class=SensorDeviceClass.VOLTAGE,
-        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        key="battery_level",
+        translation_key="battery_level",
+        device_class=SensorDeviceClass.BATTERY,
+        native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        suggested_display_precision=2,
-        value_fn=lambda data: data.battery_voltage,
+        value_fn=lambda data: data.battery_level,
+    ),
+    NormanSensorDescription(
+        key="signal_strength",
+        translation_key="signal_strength",
+        # RssiMean is a unitless quality index (0 or 34 seen), not dBm, so no device class
+        icon="mdi:signal",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda data: data.signal_strength,
     ),
     NormanSensorDescription(
         key="last_seen",
@@ -90,6 +103,27 @@ SENSORS: tuple[NormanSensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class NormanHubSensorDescription(SensorEntityDescription):
+    """Describes a sensor on the hub device."""
+
+    value_fn: Callable[[NormanHubData], Any]
+
+
+HUB_SENSORS: tuple[NormanHubSensorDescription, ...] = (
+    NormanHubSensorDescription(
+        key="wifi_rssi",
+        translation_key="wifi_rssi",
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda hub: hub.wifi_rssi,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: NormanConfigEntry,
@@ -98,10 +132,36 @@ async def async_setup_entry(
     """Set up Norman diagnostic sensors."""
     coordinator = entry.runtime_data
 
+    async_add_entities(
+        NormanHubSensor(coordinator, entry, description) for description in HUB_SENSORS
+    )
+
     def _sensors_for(device_id: int) -> list[NormanSensor]:
         return [NormanSensor(coordinator, device_id, entry, description) for description in SENSORS]
 
     async_add_entities_for_new_devices(entry, async_add_entities, _sensors_for)
+
+
+class NormanHubSensor(NormanHubEntity, SensorEntity):
+    """A value the hub reports about itself."""
+
+    entity_description: NormanHubSensorDescription
+
+    def __init__(
+        self,
+        coordinator: NormanCoordinator,
+        entry: NormanConfigEntry,
+        description: NormanHubSensorDescription,
+    ) -> None:
+        """Initialize the hub sensor."""
+        super().__init__(coordinator, entry)
+        self.entity_description = description
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+
+    @property
+    def native_value(self) -> Any:
+        """Return the value from the hub's latest status."""
+        return self.entity_description.value_fn(self.coordinator.hub)
 
 
 class NormanSensor(NormanEntity, SensorEntity):
@@ -111,7 +171,7 @@ class NormanSensor(NormanEntity, SensorEntity):
 
     def __init__(
         self,
-        coordinator: Any,
+        coordinator: NormanCoordinator,
         device_id: int,
         entry: NormanConfigEntry,
         description: NormanSensorDescription,

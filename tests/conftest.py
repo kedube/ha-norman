@@ -29,7 +29,15 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 from custom_components.norman.api import NormanApiClient
 from custom_components.norman.const import DOMAIN
 
-from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, MOCK_CONFIG, devices_payload, status_payload
+from .const import (
+    HUB_HOST,
+    HUB_THING_NAME,
+    HUB_URL,
+    MOCK_CONFIG,
+    REGISTRATION_RESPONSE,
+    devices_payload,
+    status_payload,
+)
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
@@ -70,10 +78,7 @@ class FakeHub:
         self._register()
 
     def _register(self) -> None:
-        self.mock.post(
-            f"{HUB_URL}/NM/v1/registration",
-            json={"Error": 0, "ThingName": HUB_THING_NAME},
-        )
+        self.mock.post(f"{HUB_URL}/NM/v1/registration", json=REGISTRATION_RESPONSE)
         self.mock.post(f"{HUB_URL}/NM/v1/GetAllPeripheral", side_effect=self._devices)
         self.mock.post(f"{HUB_URL}/NM/v1/status", side_effect=self._status)
         self.mock.post(f"{HUB_URL}/NM/v1/control", side_effect=self._control)

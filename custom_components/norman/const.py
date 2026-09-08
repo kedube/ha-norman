@@ -8,7 +8,7 @@ DOMAIN = "norman"
 MANUFACTURER = "Norman"
 
 # Platforms
-PLATFORMS = [Platform.COVER, Platform.SENSOR]
+PLATFORMS = [Platform.BUTTON, Platform.COVER, Platform.SENSOR]
 
 # The hub speaks plain HTTP on a fixed port on the local network; there is no TLS and no
 # authentication in the vendor protocol (see docs/NORMAN_API.md).
@@ -33,8 +33,49 @@ NOTIF_MAX_BUFFER = 64 * 1024
 TRAFFIC_MAX_EXCHANGES = 50
 TRAFFIC_BODY_LIMIT = 16 * 1024
 
-# Cover types
-COVER_TYPE_SMARTDRAPE = "smartdrape"  # Has position and tilt capabilities
+# Keys the hub sends that identify the home or network rather than a blind. Redacted from
+# diagnostics and from the get_hub_data response wherever they appear, including inside raw
+# bodies. Seen in real captures: GeoLoc carries the hub's latitude/longitude; WiFiSSID the
+# network name; ThingName and NetworkID identify the hub; CustomDeviceName is user-chosen.
+SENSITIVE_HUB_KEYS = frozenset(
+    {
+        "ThingName",
+        "GeoLoc",
+        "Latitude",
+        "Longitude",
+        "WiFiSSID",
+        "NetworkID",
+        "TimeZone",
+        "CustomDeviceName",
+    }
+)
+
+# Cover types, derived from the hub's ModuleType. Observed on real hubs:
+#   33 (ModuleDetail 3): two rails, the middle rail tracks 0-100 -> position + tilt
+#   32 (ModuleDetail 2): middle rail always 0 -> single rail, position only
+# Unknown types are treated as two-rail (the original SmartDrape assumption) and logged once
+# so the owner can report the hub payload.
+# Motor verbs are fields on the control call; the Norman app sends 170 (0xAA) as the value
+# of every "do it now" verb (MotorStop, MotorFineTuneToUp/Down, SetMotorToTopLimit, ...) and 0
+# for configuration verbs (FindTop, SetTopLimit, Calibration, ...). Captured from the app.
+HUB_COMMAND_TRIGGER = 170
+HUB_COMMAND_SETTING = 0
+HUB_CMD_STOP = "MotorStop"
+HUB_CMD_JOG_UP = "MotorFineTuneToUp"
+HUB_CMD_JOG_DOWN = "MotorFineTuneToDown"
+HUB_CMD_TO_TOP_LIMIT = "SetMotorToTopLimit"
+HUB_CMD_TO_BOTTOM_LIMIT = "SetMotorToBottomLimit"
+# Confirmed only in its room-wide form ({"Favorite": 0, "RoomID": ...}); the per-blind form
+# is the registration reply's advertised value and is the obvious extrapolation.
+HUB_CMD_FAVORITE = "Favorite"
+
+COVER_TYPE_TWO_RAIL = "two_rail"
+COVER_TYPE_SINGLE_RAIL = "single_rail"
+MODULE_TYPE_COVER_TYPES: dict[int, str] = {
+    32: COVER_TYPE_SINGLE_RAIL,
+    33: COVER_TYPE_TWO_RAIL,
+}
+DEFAULT_COVER_TYPE = COVER_TYPE_TWO_RAIL
 
 ATTR_TARGET_POSITION = "target_position"
 ATTR_TARGET_TILT = "target_tilt"
@@ -43,4 +84,7 @@ ATTR_STEP = "step"
 SERVICE_NUDGE_POSITION = "nudge_position"
 SERVICE_NUDGE_TILT = "nudge_tilt"
 SERVICE_GET_HUB_DATA = "get_hub_data"
+SERVICE_SEND_HUB_COMMAND = "send_hub_command"
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+ATTR_PERIPHERAL_UID = "peripheral_uid"
+ATTR_FIELDS = "fields"

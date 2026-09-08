@@ -1,11 +1,12 @@
 # Actions (services)
 
 Beyond the standard [cover](https://www.home-assistant.io/integrations/cover/) actions
-(`cover.open_cover`, `cover.close_cover`, `cover.set_cover_position`, the tilt equivalents),
-the integration registers three actions of its own. The two nudge actions move a blind
-relative to where it is heading and target one or more `cover` entities from this integration;
-`get_hub_data` reads the hub's raw payloads for troubleshooting. All three appear in the
-automation editor's action picker.
+(`cover.open_cover`, `cover.close_cover`, `cover.set_cover_position`, `cover.stop_cover`, and
+the tilt equivalents), the integration registers four actions of its own. The two nudge actions
+move a blind relative to where it is heading and target one or more `cover` entities from this
+integration; `get_hub_data` reads the hub's raw payloads for troubleshooting; `send_hub_command`
+sends the hub verbs that have no entity yet. All four appear in the automation editor's action
+picker.
 
 ## `norman.nudge_position`
 
@@ -29,8 +30,8 @@ data:
 
 ## `norman.nudge_tilt`
 
-Adjust a cover's tilt by a relative amount. Only offered for covers that support tilt (on the
-current hardware, all of them).
+Adjust a cover's tilt by a relative amount. Only acts on covers that support tilt (two-rail
+products); single-rail shades are skipped.
 
 | Field | Required | Range | Meaning |
 |---|---|---|---|
@@ -59,7 +60,6 @@ response includes every field, including ones the integration does not understan
 Response:
 
 ```yaml
-thing_name: NormanHub-ABC123
 devices:      # the GetAllPeripheral payload (rooms → groups → peripherals)
   status: {code: 0}
   results: {RoomList: [...]}
@@ -76,9 +76,60 @@ action: norman.get_hub_data
 response_variable: hub
 ```
 
-The response is not redacted (it is the live payload, and `thing_name` identifies your hub), so
-remove anything you would rather not share before posting it. The diagnostics download applies
-that redaction automatically; see the README's [Diagnostics](../README.md#diagnostics).
+The hub's identity, location (`GeoLoc`), Wi-Fi name, time zone, and custom name are blanked in
+the response, the same as in a diagnostics download; everything about the blinds is left as the
+hub sent it. Skim it before posting all the same, since the hub may send fields nobody has seen
+yet. See the README's [Diagnostics](../README.md#diagnostics).
+
+## `norman.send_hub_command`
+
+**Advanced.** POST arbitrary fields to the hub's control endpoint for one blind and return the
+hub's reply. `PeripheralUID`, `Timestamp`, and `TaskID` are filled in; your fields are merged on
+top. The blind will do whatever the hub makes of the fields, so use it deliberately. The verbs
+the Norman app is known to send are listed under [Hub verbs](#hub-verbs).
+
+| Field | Required | Meaning |
+|---|---|---|
+| `peripheral_uid` | yes | The blind's id: the cover entity's unique id, or `PeripheralUID` in `get_hub_data`. |
+| `fields` | yes | A flat object of extra fields (numbers, strings, booleans). |
+| `config_entry_id` | only with several hubs | Which hub. |
+
+```yaml
+action: norman.send_hub_command
+data:
+  peripheral_uid: 58850
+  fields:
+    MotorFineTuneToUp: 170
+response_variable: reply
+```
+
+A refresh follows every call so the covers pick up whatever moved. A non-zero `Error` in the
+reply fails the action with the code.
+
+### Hub verbs
+
+A verb is one extra field per call. `170` means "do it now" for motor verbs; `0` stores or
+clears a setting. These were captured from the Norman app, so they are known to work:
+
+| `fields` | Effect | Safe to try? |
+|---|---|---|
+| `{MotorStop: 170}` | Stop the motor. This is what `cover.stop_cover` sends. | yes |
+| `{MotorFineTuneToUp: 170}` / `{MotorFineTuneToDown: 170}` | Jog a small step up or down. The **Jog** buttons. | yes |
+| `{SetMotorToTopLimit: 170}` / `{SetMotorToBottomLimit: 170}` | Run to the stored top or bottom limit. The **Run to … limit** buttons. | yes |
+| `{Favorite: 0}` | Go to the favourite position. The **Favourite position** button; confirmed room-wide, per-blind form extrapolated. | yes |
+| `{FindTop: 0}` | Re-sync to the top; the app sends it when entering and leaving limit setup. | yes |
+| `{SetTopLimit: 0}` / `{SetBottomLimit: 0}` | Store the **current** position as that limit. | changes the blind's travel |
+| `{CleanTopLimit: 0}` / `{CleanBottomLimit: 0}` | Clear a stored limit. | changes the blind's travel |
+| `{Calibration: 0}` | Run the motor's calibration. | changes the blind's travel |
+
+Two more verbs are confirmed only in their **room-wide** form, which this action cannot send
+because it always addresses one blind: `{Switch: 1}` / `{Switch: 0}` opens or closes every
+blind in a room (or on the hub), and `{Favorite: 0}` sends a room to its favourite positions.
+The per-blind `Switch` form has not been captured; the per-blind `Favorite` form is what the
+Favourite position button sends. The rest of the vocabulary (`MotorSpeedAdjust`,
+`ReverseMotorDirection`, and others; see [docs/NORMAN_API.md](NORMAN_API.md#control-verbs))
+has not been seen from the app at all. If you confirm one, open an issue with the fields and
+the reply so it can get a proper entity.
 
 ## Errors
 
@@ -94,3 +145,6 @@ Timed out talking to Norman hub at 192.168.1.50`). Automations can catch this wi
   [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1control).
 - After each command the integration re-reads the hub's status. The blind reports its
   position as it moves, so `current_position` catches up over a few seconds.
+- `cover.stop_cover` and `cover.stop_cover_tilt` send the same motor stop, because the hub has
+  one stop per blind, not one per rail. After a stop the hub's target positions are wherever the
+  blind ended up, so a following nudge is relative to that.
