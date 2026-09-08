@@ -197,6 +197,53 @@ def test_docs_do_not_pin_a_card_version() -> None:
     )
 
 
+def test_card_identifies_entities_by_translation_key_not_unique_id() -> None:
+    """The card must not read ``unique_id`` from the frontend entity registry.
+
+    ``EntityRegistryEntry._as_display_dict`` (homeassistant/helpers/entity_registry.py)
+    sends only entity_id, platform, area/device/labels, icon, translation_key and a few
+    display flags. ``unique_id`` is never part of it, so reading it yields undefined for
+    every entity -- which silently drops the middle rail and the battery rather than
+    erroring. This regressed once; pin it.
+    """
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+
+    # Match a property *access*, not the word: the comment above the constants explains
+    # why unique_id is unusable and must stay.
+    reads = re.findall(r"[.\[]\s*[\"']?unique_id", card)
+    assert not reads, (
+        "the card reads unique_id, which the frontend entity registry never sends; "
+        "identify entities by translation_key instead"
+    )
+    assert "translation_key" in card, "the card should identify entities by translation_key"
+
+
+def test_card_matches_the_translation_keys_the_entities_use() -> None:
+    """Every key the card matches on must be one the integration actually sets.
+
+    A typo here fails the same silent way: the entity is simply never found.
+    """
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    strings = json.loads((COMPONENT / "strings.json").read_text(encoding="utf-8"))
+
+    declared = {
+        key for section in ("cover", "number", "sensor") for key in strings["entity"][section]
+    }
+    # The KEY_* constants are exactly what the card matches entities on.
+    matched = set(re.findall(r'^const KEY_\w+ = "(\w+)";', card, re.M))
+
+    assert matched, "no KEY_* constants found in the card"
+    unknown = matched - declared
+    assert not unknown, (
+        f"the card matches translation keys no entity declares: {sorted(unknown)}. "
+        f"Known keys: {sorted(declared)}"
+    )
+    # The middle rail is the one that regressed, so require it explicitly.
+    assert {"bottom_rail", "middle_rail"} <= matched, (
+        "the card must match both rail covers by translation key"
+    )
+
+
 def test_card_element_names_match_the_registration() -> None:
     """The element the card defines, the editor it asks for, and the picker type must agree."""
     from custom_components.norman.frontend import CARD_FILENAME
