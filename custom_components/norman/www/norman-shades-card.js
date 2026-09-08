@@ -295,8 +295,9 @@ class NormanShadesCard extends HTMLElement {
         font-variant-numeric: tabular-nums;
         font-size: 0.85rem;
       }
-      .buttons { display: flex; gap: 2px; }
-      .buttons ha-icon-button { --mdc-icon-button-size: 34px; --mdc-icon-size: 20px; }
+      .buttons { display: flex; gap: 0; flex: none; }
+      .buttons ha-icon-button { --mdc-icon-button-size: 32px; --mdc-icon-size: 19px; }
+      .buttons ha-icon-button[disabled] { opacity: 0.4; }
       .empty { padding: 16px; color: var(--secondary-text-color); }
     `;
 
@@ -397,23 +398,6 @@ class NormanShadesCard extends HTMLElement {
       head.appendChild(batteryEl);
     }
 
-    const buttons = document.createElement("div");
-    buttons.className = "buttons";
-    for (const [icon, service] of [
-      ["mdi:arrow-up", "open_cover"],
-      ["mdi:stop", "stop_cover"],
-      ["mdi:arrow-down", "close_cover"],
-    ]) {
-      const button = document.createElement("ha-icon-button");
-      const inner = document.createElement("ha-icon");
-      inner.setAttribute("icon", icon);
-      button.appendChild(inner);
-      button.addEventListener("click", () =>
-        this._hass.callService("cover", service, { entity_id: blind.bottomCover }),
-      );
-      buttons.appendChild(button);
-    }
-    head.appendChild(buttons);
     row.appendChild(head);
 
     const rails = this._railsOf(blind).map((rail) => this._buildRail(rail));
@@ -440,6 +424,32 @@ class NormanShadesCard extends HTMLElement {
     const value = document.createElement("div");
     value.className = "rail-value";
 
+    // Open / stop / close for THIS rail. Each rail is its own cover entity, so the middle
+    // rail of a two-rail blind gets the same controls as the bottom rail rather than the
+    // buttons silently driving the bottom one.
+    const buttons = document.createElement("div");
+    buttons.className = "buttons";
+    const railButtons = [];
+    for (const [icon, service, label] of [
+      ["mdi:arrow-up", "open_cover", "Open"],
+      ["mdi:stop", "stop_cover", "Stop"],
+      ["mdi:arrow-down", "close_cover", "Close"],
+    ]) {
+      const button = document.createElement("ha-icon-button");
+      const inner = document.createElement("ha-icon");
+      inner.setAttribute("icon", icon);
+      button.appendChild(inner);
+      button.title = `${label} ${rail.label.toLowerCase()}`;
+      button.setAttribute("aria-label", button.title);
+      if (rail.coverId) {
+        button.addEventListener("click", () =>
+          this._hass.callService("cover", service, { entity_id: rail.coverId }),
+        );
+      }
+      buttons.appendChild(button);
+      railButtons.push(button);
+    }
+
     const target = rail.numberId || rail.coverId;
     slider.addEventListener("pointerdown", () => this._dragging.add(target));
     slider.addEventListener("input", () => {
@@ -450,8 +460,8 @@ class NormanShadesCard extends HTMLElement {
       this._setRail(rail, clampToStep(slider.value));
     });
 
-    element.append(label, slider, value);
-    return { rail, element, slider, value };
+    element.append(label, slider, value, buttons);
+    return { rail, element, slider, value, buttons: railButtons };
   }
 
   /** Write a rail position, preferring the number entity so the 10% step is enforced. */
@@ -493,10 +503,12 @@ class NormanShadesCard extends HTMLElement {
         cell.batteryEl.setAttribute("aria-label", cell.batteryEl.title);
       }
 
-      for (const { rail, slider, value } of cell.rails) {
+      for (const { rail, slider, value, buttons } of cell.rails) {
         const target = rail.numberId || rail.coverId;
         const current = this._railValue(rail);
         slider.disabled = unavailable;
+        // A rail with no cover entity (a slider-only rail) has nothing to open or stop.
+        for (const button of buttons) button.disabled = unavailable || !rail.coverId;
         value.textContent = current === null ? "—" : `${Math.round(current)}%`;
         // Never move a slider the user is holding.
         if (!this._dragging.has(target)) {

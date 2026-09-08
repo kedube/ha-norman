@@ -28,7 +28,8 @@ const mk = (tag) => {
     className: "", classList: { add(){}, remove(){}, toggle(){} },
     appendChild(c){ this.children.push(c); return c; },
     append(...c){ this.children.push(...c); },
-    addEventListener(){}, setAttribute(k,v){ this.attrs[k]=v; }, getAttribute(k){ return this.attrs[k]; },
+    addEventListener(ev,fn){ (this._on ||= {})[ev] = fn; },
+    setAttribute(k,v){ this.attrs[k]=v; }, getAttribute(k){ return this.attrs[k]; },
     remove(){}, querySelector(){ return null; }, querySelectorAll(){ return []; },
     get firstChild(){ return this.children[0]; },
     get lastChild(){ return this.children[this.children.length-1]; },
@@ -107,6 +108,52 @@ check("rail values read from number entity", card._railValue(rails[0])===60 && c
 const rooms = card._roomsOf(blinds);
 check("groups into 2 rooms", rooms.length===2, JSON.stringify(rooms.map(r=>r[0])));
 check("rooms sorted alphabetically", rooms[0][0]==="Den" && rooms[1][0]==="Front Bedroom");
+
+// --- per-rail open/stop/close -------------------------------------------------------
+// Regression: the buttons used to live in the blind header and always targeted the bottom
+// rail, so a two-rail blind had no way to open or stop its middle rail from the card.
+const calls = [];
+hass.callService = (domain, service, data) => { calls.push([domain, service, data.entity_id]); };
+
+card._cells = [];   // normally set up by _render(); we call _buildBlind directly
+card._buildBlind(fb);
+card._buildBlind(den);
+const cellFb = card._cells.find(c => c.blind.deviceId === "d1");
+const cellDen = card._cells.find(c => c.blind.deviceId === "d2");
+
+check("two-rail: both rails built", cellFb?.rails.length === 2, String(cellFb?.rails.length));
+check("each rail has 3 buttons", cellFb?.rails.every(r => r.buttons?.length === 3),
+      JSON.stringify(cellFb?.rails.map(r => r.buttons?.length)));
+
+// Fire every button on the MIDDLE rail and confirm it targets the middle cover.
+const middle = cellFb.rails[1];
+for (const b of middle.buttons) b._on?.click?.();
+const middleTargets = calls.map(c => c[2]);
+check("middle rail buttons target the MIDDLE cover",
+      middleTargets.length === 3 && middleTargets.every(t => t === "cover.front_bedroom_1_middle_rail"),
+      JSON.stringify(calls));
+check("middle rail sends open/stop/close",
+      JSON.stringify(calls.map(c => c[1])) === JSON.stringify(["open_cover","stop_cover","close_cover"]),
+      JSON.stringify(calls.map(c => c[1])));
+
+calls.length = 0;
+const bottom = cellFb.rails[0];
+for (const b of bottom.buttons) b._on?.click?.();
+check("bottom rail buttons target the BOTTOM cover",
+      calls.length === 3 && calls.every(c => c[2] === "cover.front_bedroom_1_bottom_rail"),
+      JSON.stringify(calls));
+
+calls.length = 0;
+check("single-rail blind has one rail with buttons",
+      cellDen?.rails.length === 1 && cellDen.rails[0].buttons.length === 3);
+for (const b of cellDen.rails[0].buttons) b._on?.click?.();
+check("single-rail buttons target its own cover",
+      calls.length === 3 && calls.every(c => c[2] === "cover.den_1_bottom_rail"),
+      JSON.stringify(calls));
+
+check("buttons are labelled per rail",
+      middle.buttons[0].title === "open middle rail" || middle.buttons[0].title === "Open middle rail",
+      String(middle.buttons[0].title));
 
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);

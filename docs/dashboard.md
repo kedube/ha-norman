@@ -8,15 +8,15 @@ room with its battery level and a percentage slider per rail.
 │ Shades                                     │
 │                                            │
 │ MASTER BEDROOM                             │
-│ Master_Bedroom_1      🔋 100%   ▲ ■ ▼      │
-│   Bottom rail  ──────●────────────  60%    │
-│   Middle rail  ─────────────●─────  80%    │
-│ Master_Bedroom_2      🔋  74%   ▲ ■ ▼      │
-│   Bottom rail  ●────────────────    0%     │
+│ Master_Bedroom_1                   🔋 100% │
+│   Bottom rail  ────●──────  60%    ▲ ■ ▼   │
+│   Middle rail  ─────────●─  80%    ▲ ■ ▼   │
+│ Master_Bedroom_2                   🔋  74% │
+│   Bottom rail  ●──────────   0%    ▲ ■ ▼   │
 │                                            │
 │ DEN                                        │
-│ Den_1                 🔋  35%   ▲ ■ ▼      │
-│   Bottom rail  ──────────────●──  90%      │
+│ Den_1                              🔋  35% │
+│   Bottom rail  ──────────●  90%    ▲ ■ ▼   │
 └────────────────────────────────────────────┘
 ```
 
@@ -49,9 +49,8 @@ a different area in Home Assistant moves it on the card.
 | Room heading | The area name. Blinds with no area are grouped under "Unassigned". |
 | Blind name | Click it to open the usual more-info dialog. |
 | Battery | From the blind's battery sensor, with the icon following the level. Amber below 30%, red below 15%. |
-| ▲ ■ ▼ | Open, stop, close — the whole blind, via the bottom-rail cover. |
-| Bottom rail | Position slider, 0–100% in steps of 10. |
-| Middle rail | The same, on two-rail blinds (day/night, top-down/bottom-up) only. |
+| Bottom rail | Position slider, 0–100% in steps of 10, with **▲ ■ ▼** (open, stop, close) for that rail. |
+| Middle rail | The same row again, on two-rail blinds (day/night, top-down/bottom-up) only. Each rail's controls act on that rail alone. |
 
 A blind the hub has stopped reporting is dimmed and its sliders are disabled.
 
