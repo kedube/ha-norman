@@ -60,7 +60,10 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
                 else None
             ),
             suggested_area=device_data.room_name or None,
-            sw_version=device_data.firmware_version,
+            sw_version=device_data.display_firmware_version,
+            # The app's "Serial Number" is believed to be the PeripheralUID: no other
+            # per-blind identifier appears in any hub payload.
+            serial_number=str(device_id),
             **_via_hub(coordinator, entry),
         )
 

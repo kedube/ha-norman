@@ -5,6 +5,16 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Two-rail blinds are two covers.** Day/night and top-down/bottom-up shades have a second
+  fabric on the middle rail and the app shows two sliders; a single cover hid it behind a
+  tilt control. Each two-rail blind now also has a **Middle rail** cover with its own
+  position and stop. The primary cover keeps its tilt for drapes.
+- **Firmware version matches the app.** Single-rail blinds report two versions and the app
+  shows `RfFirmwareVersion`; the device and firmware sensor now show that one (Den_1: 0.3.20,
+  not 4.1.0.4), with both raw values as sensor attributes.
+- **Serial number** on each blind's device page (the hub's `PeripheralUID`).
+
 ## 0.12 — 2026-09-08
 - **Stop.** Covers support `stop_cover` (and `stop_cover_tilt` on two-rail blinds), sending the
   hub's `MotorStop` verb exactly as the Norman app does. Confirmed from a packet capture of the

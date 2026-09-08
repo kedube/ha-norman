@@ -50,8 +50,15 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
 
     def _covers_for(device_id: int) -> list[NormanCoverBase]:
-        cover_class = COVER_CLASSES.get(coordinator.data[device_id].type, NormanBlind)
-        return [cover_class(coordinator, device_id, entry)]
+        cover_type = coordinator.data[device_id].type
+        covers: list[NormanCoverBase] = [
+            COVER_CLASSES.get(cover_type, NormanBlind)(coordinator, device_id, entry)
+        ]
+        if cover_type != COVER_TYPE_SINGLE_RAIL:
+            # Day/night and top-down/bottom-up shades have a second fabric on the middle
+            # rail; the app shows two sliders, so it gets its own cover here as well.
+            covers.append(NormanMiddleRailCover(coordinator, device_id, entry))
+        return covers
 
     async_add_entities_for_new_devices(entry, async_add_entities, _covers_for)
 
@@ -79,8 +86,6 @@ class NormanCoverBase(NormanEntity, CoverEntity):
     rail value in every command, and reports it as 0, so it is echoed back unchanged.
     """
 
-    # The cover is the device's primary entity, so it takes the device's name
-    _attr_name = None
     _attr_device_class = CoverDeviceClass.BLIND
     _attr_supported_features = (
         CoverEntityFeature.OPEN
@@ -201,12 +206,16 @@ class NormanCoverBase(NormanEntity, CoverEntity):
 class NormanShade(NormanCoverBase):
     """A single-rail covering: position only."""
 
+    # The primary cover takes the device's name
+    _attr_name = None
     _attr_device_class = CoverDeviceClass.SHADE
 
 
 class NormanBlind(NormanCoverBase):
     """A two-rail covering (ModuleType 33, SmartDrape, top-down/bottom-up): position + tilt."""
 
+    # The primary cover takes the device's name
+    _attr_name = None
     _attr_supported_features = (
         CoverEntityFeature.OPEN
         | CoverEntityFeature.CLOSE
@@ -259,6 +268,61 @@ class NormanBlind(NormanCoverBase):
         """Move the tilt by ``step`` relative to where it is heading (or is)."""
         new_tilt = _clamp(self._target_or_current_middle() + step)
         await self.async_set_cover_tilt_position(tilt_position=new_tilt)
+
+
+class NormanMiddleRailCover(NormanCoverBase):
+    """The middle rail of a two-rail covering as a cover of its own.
+
+    On a day/night shade this is the second fabric; on a top-down/bottom-up shade it is the
+    top rail; on a SmartDrape it is the vane tilt, which the primary cover also exposes as
+    tilt. Position semantics match the primary: 0 closed, 100 open, as the hub reports.
+    """
+
+    _attr_translation_key = "middle_rail"
+    _attr_device_class = CoverDeviceClass.SHADE
+
+    def __init__(
+        self,
+        coordinator: NormanCoordinator,
+        device_id: int,
+        entry: NormanConfigEntry,
+    ) -> None:
+        """Initialize the middle-rail cover."""
+        super().__init__(coordinator, device_id, entry)
+        self._attr_unique_id = f"{device_id}_middle"
+
+    @property
+    def current_cover_position(self) -> int | None:
+        """Return the middle rail position."""
+        data = self._data
+        return data.middle_rail_position if data else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the middle rail's target."""
+        data = self._data
+        return {ATTR_TARGET_POSITION: data.target_middle_rail_position if data else None}
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        """Close the middle rail, leaving the bottom rail where it is heading."""
+        await self._async_set_position(bottom=None, middle=0, action="close middle rail")
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        """Open the middle rail, leaving the bottom rail where it is heading."""
+        await self._async_set_position(bottom=None, middle=100, action="open middle rail")
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        """Move the middle rail to a specific position."""
+        position = kwargs[ATTR_POSITION]
+        await self._async_set_position(
+            bottom=None, middle=position, action="set middle rail position", value=position
+        )
+
+    async def async_nudge_position(self, step: int) -> None:
+        """Move the middle rail by ``step`` relative to where it is heading (or is)."""
+        await self.async_set_cover_position(
+            position=_clamp(self._target_or_current_middle() + step)
+        )
 
 
 # Cover type -> entity class. Types come from MODULE_TYPE_COVER_TYPES in const.py; extend

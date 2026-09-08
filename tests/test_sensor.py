@@ -15,7 +15,7 @@ from custom_components.norman.const import DOMAIN
 from custom_components.norman.sensor import parse_last_update
 
 from .conftest import FakeHub, settle
-from .const import UID_LIVING, UID_STATUS_ONLY
+from .const import UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
 
 
 def sensor_entity_id(hass: HomeAssistant, uid: int, key: str) -> str:
@@ -73,6 +73,31 @@ async def test_firmware_sensor_is_opt_in(
     entry = er.async_get(hass).async_get(sensor_entity_id(hass, UID_LIVING, "firmware_version"))
     assert entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
     assert entry.entity_category is EntityCategory.DIAGNOSTIC
+
+
+async def test_firmware_sensor_shows_what_the_app_shows(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Single-rail blinds report two versions; the sensor matches the app (Rf), raw in attrs.
+
+    Den_1 shows 0.3.20 in the app while the hub's FirmwareVersion says 4.1.0.4; the app is
+    displaying RfFirmwareVersion. Two-rail blinds have only FirmwareVersion.
+    """
+    registry = er.async_get(hass)
+    for uid in (UID_LIVING, UID_BEDROOM):
+        entry_id = sensor_entity_id(hass, uid, "firmware_version")
+        registry.async_update_entity(entry_id, disabled_by=None)
+    await hass.config_entries.async_reload(init_integration.entry_id)
+    await hass.async_block_till_done()
+
+    shade = hass.states.get(sensor_entity_id(hass, UID_BEDROOM, "firmware_version"))
+    assert shade.state == "0.3.20"
+    assert shade.attributes["module_firmware"] == "4.1.0.4"
+    assert shade.attributes["rf_firmware"] == "0.3.20"
+
+    blind = hass.states.get(sensor_entity_id(hass, UID_LIVING, "firmware_version"))
+    assert blind.state == "0.5.3.8"
+    assert blind.attributes["rf_firmware"] is None
 
 
 async def test_signal_and_wifi_sensors_are_opt_in(

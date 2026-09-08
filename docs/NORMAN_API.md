@@ -408,13 +408,13 @@ documented here must be catalogued and vice versa.
 
 | Field | Where | Example | Used |
 |---|---|---|---|
-| `PeripheralUID`, `PeripheralName`, `RoomID`, `GroupID` | GetAllPeripheral (strings), status (ints) | | **used** |
+| `PeripheralUID`, `PeripheralName`, `RoomID`, `GroupID` | GetAllPeripheral (strings), status (ints) | | **used**. `PeripheralUID` is also exposed as the device's serial number: no other per-blind identifier appears in any payload, so it is the best candidate for the app's "Serial Number" |
 | `ModuleType` / `ModuleDetail` | both | `33`/`3`, `32`/`2` | **used** (cover type; see below) |
 | `BottomRailPosition`, `MiddleRailPosition`, `Target…` | status | 0–100 | **used** |
 | `BatteryVoltage` | status | `5` … `100` | **used** as a **percentage** (battery sensor) |
 | `RssiMean` | status | `0`, `34` | **used** (signal-strength sensor, unitless) |
-| `FirmwareVersion` | status | `0.5.3.8`, `4.1.0.4` | **used** |
-| `RfFirmwareVersion` | status (type 32 only) | `0.3.20` | kept in diagnostics |
+| `FirmwareVersion` | status | `0.5.3.8`, `4.1.0.4` | **used**; on type 33 it is the version the app shows |
+| `RfFirmwareVersion` | status (type 32 only) | `0.3.20` | **used**: this is the version the Norman app shows for single-rail blinds (Den_1: app 0.3.20, `FirmwareVersion` 4.1.0.4), so it takes precedence for the device's version |
 | `Timestamp` | status | epoch seconds | **used** (last-seen sensor) |
 | `PacketReceiveRate` | status | `0` | not used |
 | `StallCurrent` | status (type 33 only) | `4100` | not used |
@@ -424,7 +424,7 @@ documented here must be catalogued and vice versa.
 
 | `ModuleType`/`ModuleDetail` | Firmware seen | Behaviour | Integration |
 |---|---|---|---|
-| 33 / 3 | 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half) | two-rail cover, position + tilt |
+| 33 / 3 | 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); the reference hub's are day/night shades | primary cover (bottom rail, middle as tilt) + Middle rail cover |
 | 32 / 2 | 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only |
 | other | | | two-rail by default, warning logged once |
 
