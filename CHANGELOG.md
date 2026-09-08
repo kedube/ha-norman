@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.15 — 2026-09-08
 - **Two-rail blinds are two covers.** Day/night and top-down/bottom-up shades have a second
   fabric on the middle rail and the app shows two sliders; a single cover hid it behind a
   tilt control. Each two-rail blind now also has a **Middle rail** cover with its own
