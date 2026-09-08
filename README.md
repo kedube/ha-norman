@@ -189,8 +189,8 @@ relative-move actions for automations and buttons, and two for troubleshooting:
 - `norman.get_hub_data` — returns the hub's raw device list and status as a response, for
   bug reports and for adding support for new blind types.
 - `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for
-  one blind. The verbs the Norman app uses (fine-tune, run to a limit, set or clear limits,
-  calibrate) are documented and can be sent this way; they have no entity of their own yet.
+  one blind, for the verbs that have no entity of their own (setting or clearing a limit, and
+  calibration). Fine-tune, run-to-limit, and favorite are buttons; stop is on the covers.
 
 The nudges are relative to where the blind is **heading**, so repeated presses add up, and both
 clamp to 0–100. See [docs/services.md](docs/services.md).
@@ -284,9 +284,11 @@ issue; the mapping is a one-line change.
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
 - **Only two blind types are mapped**, and only one of them to a Norman product name; see
   [Supported devices](#supported-devices).
-- **No speed, direction, or limit-setting entities.** The hub has verbs for these; the
-  limit-setting ones can be sent with `send_hub_command` (see
-  [docs/services.md](docs/services.md#hub-verbs)), the rest have not been seen from the app.
+- **No speed, direction, or limit-setting entities.** The limit-setting and calibration verbs
+  were captured from the Norman app and can be sent with `send_hub_command` (see
+  [docs/services.md](docs/services.md#hub-verbs)); they have no entity because they change how
+  a blind travels. Motor speed and direction reversing live in the app's Engineering Settings
+  screen and have not been captured, so their syntax is unknown.
 - **Favorite position is an extrapolation.** The app only sends it room-wide; the per-blind
   button uses the form the hub advertises. Report it if it does nothing.
 - **Hub schedules are not exposed.** The hub stores its own sunrise/sunset and clock schedules;

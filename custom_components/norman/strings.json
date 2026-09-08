@@ -75,7 +75,7 @@
     },
     "send_hub_command": {
       "name": "Send hub command",
-      "description": "Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. Sends the verbs the Norman app uses (fine-tune, limits, calibration, favorite) that have no entity yet. The blind will do whatever the hub makes of the fields.",
+      "description": "Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. For the hub verbs that have no entity of their own, such as setting or clearing a limit and calibration. The blind will do whatever the hub makes of the fields.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",

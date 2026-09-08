@@ -75,7 +75,7 @@
     },
     "send_hub_command": {
       "name": "发送 Hub 命令",
-      "description": "高级功能。对单个窗帘向 Hub 的 control 端点 POST 任意字段并返回响应。用于发送 Norman 应用使用但尚无实体的命令（微调、限位、校准、我的最爱）。窗帘的动作取决于 Hub 如何解释这些字段。",
+      "description": "高级功能。对单个窗帘向 Hub 的 control 端点 POST 任意字段并返回响应。用于没有专属实体的 Hub 命令，例如设置或清除限位与校准。窗帘的动作取决于 Hub 如何解释这些字段。",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
