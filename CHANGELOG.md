@@ -5,6 +5,17 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Fixed: the dashboard card found no middle rails and no batteries.** It identified entities
+  by `unique_id`, which the *frontend* entity registry never sends — `_as_display_dict` carries
+  only entity id, platform, area, device, icon, `translation_key` and a few flags. Reading a
+  field that is not there fails silently, so two-rail blinds showed a single slider (and the one
+  they showed was the middle rail mislabelled as the bottom), and the battery icon was never
+  built. Entities are now matched on `translation_key`, with an entity-id fallback. The battery
+  also gained a hover and screen-reader label, so its percentage cannot be mistaken for a rail
+  position. Added `scripts/check_card.mjs`, which runs the card under Node against a realistic
+  `hass` object, plus two Python guards that pin the contract in CI.
+
 ## 0.20 — 2026-09-08
 - **Protocol reference:** audited against the code and corrected throughout.
   - The flow diagram showed only "cover action" for hub writes; the rail sliders and the five

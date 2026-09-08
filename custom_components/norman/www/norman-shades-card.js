@@ -20,10 +20,16 @@ const CARD_VERSION = new URL(import.meta.url).searchParams.get("v") || "unknown"
 const STEP = 10;
 const DOMAIN = "norman";
 
-// The bottom-rail cover is the blind's primary entity and its unique id is the bare
-// peripheral id; the middle rail appends "_middle". Sliders and sensors hang off the same
-// peripheral id, which is what lets the card assemble a blind from its parts.
-const MIDDLE_SUFFIX = "_middle";
+// Entities are identified by their translation key, which the entity registry sends to the
+// frontend as `tk`. NOT by unique_id: the registry's display payload
+// (EntityRegistryEntry._as_display_dict in homeassistant/helpers/entity_registry.py) carries
+// only entity_id, platform, area/device/labels, icon, translation_key and a few flags --
+// `unique_id` is never sent, so reading it yields undefined for every entity.
+const KEY_BOTTOM_RAIL = "bottom_rail";
+const KEY_MIDDLE_RAIL = "middle_rail";
+const KEY_BOTTOM_POSITION = "bottom_rail_position";
+const KEY_MIDDLE_POSITION = "middle_rail_position";
+const KEY_BATTERY = "battery_level";
 
 const clampToStep = (value) => {
   const clamped = Math.max(0, Math.min(100, Number(value) || 0));
@@ -128,16 +134,26 @@ class NormanShadesCard extends HTMLElement {
       if (entry.hidden_by || entry.disabled_by) continue;
 
       const [domain] = entityId.split(".");
-      const uniqueId = String(entry.unique_id ?? "");
+      // `translation_key` is the reliable discriminator; fall back to the entity id's
+      // suffix for anything that somehow lacks one (a user-renamed entity keeps its key,
+      // so this is belt-and-braces rather than a common path).
+      const key = entry.translation_key || "";
+      const idEndsWith = (suffix) => entityId.endsWith(suffix);
       const blind = blindFor(entry.device_id, entityId);
 
       if (domain === "cover") {
-        if (uniqueId.endsWith(MIDDLE_SUFFIX)) blind.middleCover = entityId;
-        else blind.bottomCover = entityId;
+        if (key === KEY_MIDDLE_RAIL || (!key && idEndsWith("_middle_rail"))) {
+          blind.middleCover = entityId;
+        } else if (key === KEY_BOTTOM_RAIL || !key) {
+          blind.bottomCover = entityId;
+        }
       } else if (domain === "number") {
-        if (uniqueId.endsWith("_middle_rail_position")) blind.middleNumber = entityId;
-        else if (uniqueId.endsWith("_bottom_rail_position")) blind.bottomNumber = entityId;
-      } else if (domain === "sensor" && uniqueId.endsWith("_battery_level")) {
+        if (key === KEY_MIDDLE_POSITION || (!key && idEndsWith("_middle_rail_position"))) {
+          blind.middleNumber = entityId;
+        } else if (key === KEY_BOTTOM_POSITION || (!key && idEndsWith("_bottom_rail_position"))) {
+          blind.bottomNumber = entityId;
+        }
+      } else if (domain === "sensor" && (key === KEY_BATTERY || idEndsWith("_battery"))) {
         blind.battery = entityId;
       }
     }
@@ -372,6 +388,11 @@ class NormanShadesCard extends HTMLElement {
       const icon = document.createElement("ha-icon");
       const text = document.createElement("span");
       batteryEl.append(icon, text);
+      // A bare "84%" next to a blind is ambiguous -- it reads as a position. The icon
+      // carries the meaning visually; the title and aria-label carry it for a screen
+      // reader and on hover.
+      batteryEl.title = "Battery";
+      batteryEl.setAttribute("role", "img");
       batteryEl.addEventListener("click", () => this._showMore(blind.battery));
       head.appendChild(batteryEl);
     }
@@ -466,7 +487,10 @@ class NormanShadesCard extends HTMLElement {
         const level = this._numberOf(cell.blind.battery);
         cell.batteryEl.className = `battery ${batteryClass(level)}`;
         cell.batteryEl.firstChild.setAttribute("icon", batteryIcon(level));
-        cell.batteryEl.lastChild.textContent = level === null ? "—" : `${Math.round(level)}%`;
+        const shown = level === null ? "—" : `${Math.round(level)}%`;
+        cell.batteryEl.lastChild.textContent = shown;
+        cell.batteryEl.title = level === null ? "Battery level unknown" : `Battery ${shown}`;
+        cell.batteryEl.setAttribute("aria-label", cell.batteryEl.title);
       }
 
       for (const { rail, slider, value } of cell.rails) {

@@ -72,6 +72,12 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   detail here:
   - [`docs/dashboard.md`](docs/dashboard.md) — the bundled card and its options, with a
     worked dashboard in [`examples/dashboard.yaml`](examples/dashboard.yaml).
+- `scripts/check_card.mjs` runs the Lovelace card under Node against a realistic `hass`
+  object (`node scripts/check_card.mjs`). The card reads the **frontend** entity registry,
+  which does not carry `unique_id` — only `translation_key` and a handful of display fields —
+  so a wrong field name there fails silently rather than erroring. Run it after touching
+  `www/norman-shades-card.js`; CI has no Node, so `tests/test_repo_consistency.py` pins the
+  same contract.
   - [`docs/entities.md`](docs/entities.md) — entities, devices, attributes, availability.
   - [`docs/services.md`](docs/services.md) — all four actions, and the hub verbs `send_hub_command` can send.
   - [`docs/NORMAN_API.md`](docs/NORMAN_API.md) — the hub protocol. Read it before changing
