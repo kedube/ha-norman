@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.17 — 2026-09-08
 - **Position sliders.** Each rail gets a `number` entity, 0–100% in steps of 10, that reads and
   writes the same hub values as the cover. Home Assistant hides a cover's position slider in
   its more-info dialog; these render as sliders wherever you place them, and take a plain
