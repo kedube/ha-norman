@@ -8,7 +8,7 @@ DOMAIN = "norman"
 MANUFACTURER = "Norman"
 
 # Platforms
-PLATFORMS = [Platform.BUTTON, Platform.COVER, Platform.SENSOR]
+PLATFORMS = [Platform.BUTTON, Platform.COVER, Platform.NUMBER, Platform.SENSOR]
 
 # The hub speaks plain HTTP on a fixed port on the local network; there is no TLS and no
 # authentication in the vendor protocol (see docs/NORMAN_API.md).

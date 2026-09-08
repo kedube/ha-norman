@@ -5,6 +5,16 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Position sliders.** Each rail gets a `number` entity, 0–100% in steps of 10, that reads and
+  writes the same hub values as the cover. Home Assistant hides a cover's position slider in
+  its more-info dialog; these render as sliders wherever you place them, and take a plain
+  percentage from an automation or a voice assistant.
+- **Device pages group the two covers together.** On a two-rail blind the bottom-rail and
+  middle-rail covers now sit next to each other at the top of the device page, with every
+  button below the divider. The buttons gained the configuration entity category to achieve
+  this; they remain enabled, but no longer appear on auto-generated dashboards.
+
 ## 0.15 — 2026-09-08
 - **Two-rail blinds are two covers.** Day/night and top-down/bottom-up shades have a second
   fabric on the middle rail and the app shows two sliders; a single cover hid it behind a
@@ -14,6 +24,14 @@ version heading and publishes it as the release's Highlights.
   shows `RfFirmwareVersion`; the device and firmware sensor now show that one (Den_1: 0.3.20,
   not 4.1.0.4), with both raw values as sensor attributes.
 - **Serial number** on each blind's device page (the hub's `PeripheralUID`).
+- **Translations:** Japanese, Traditional and Simplified Chinese (using the Norman app's own
+  vocabulary), German, French, and Spanish, for the config flow, actions, entity names, and
+  error messages.
+- **Translated errors.** Every error the integration raises now carries a translation key
+  (`exception-translations` on the quality scale is done).
+- **Product names from Norman's catalogue.** `ModuleType` 33 devices are now "Cellular Shade
+  (dual rail)", the app's own product name for dual-rail (day/night, top-down/bottom-up)
+  cellular shades. Single-rail types keep a descriptive name until they are matched.
 - **Hub diagnostics:** MAC address, time zone, and Wi-Fi network sensors on the hub device.
   The hub never reports its MAC, so it is resolved from the local network (new `getmac`
   requirement) and attached to the device as a network connection when found.
@@ -43,10 +61,10 @@ version heading and publishes it as the release's Highlights.
 - **Endpoint prober** (`scripts/probe_hub_endpoints.py`) finds hub endpoints nobody has
   documented. It is read-only by construction. Running it mapped the hub's complete endpoint
   surface and found two undocumented scene reads (`GetAllScene`, `GetAllSceneGroup`).
-- **Buttons per blind:** Favourite position, Jog up, Jog down, Run to top limit, and Run to
+- **Buttons per blind:** Favorite position, Jog up, Jog down, Run to top limit, and Run to
   bottom limit, sending the verbs captured from the Norman app. The limit pair is categorised
   as configuration; it drives the motor to its stored limit, which can still work when a
-  blind's position tracking has drifted. The favourite verb is confirmed room-wide; its
+  blind's position tracking has drifted. The favorite verb is confirmed room-wide; its
   per-blind form is the hub's advertised one.
 - **Renames follow the Norman app.** The hub announces edits made in the app (`UpdateTime`
   notifications); the integration re-reads the device list on room, blind, and hub edits and

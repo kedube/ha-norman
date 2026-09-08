@@ -53,8 +53,9 @@ async def test_get_hub_data_rejects_unknown_entry(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
     """A wrong id is a validation error, not a crash."""
-    with pytest.raises(ServiceValidationError, match="No Norman hub"):
+    with pytest.raises(ServiceValidationError, match="No Norman hub") as excinfo:
         await _get_hub_data(hass, config_entry_id="nope")
+    assert excinfo.value.translation_key == "unknown_entry"
 
 
 async def test_get_hub_data_requires_entry_id_with_several_hubs(

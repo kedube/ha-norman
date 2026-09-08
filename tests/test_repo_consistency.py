@@ -111,6 +111,29 @@ def test_observed_fields_are_catalogued() -> None:
     assert documented  # the section still parses
 
 
+def test_exception_translation_keys_exist() -> None:
+    """Every translation_key raised as an error must have a message in strings.json.
+
+    A missing key does not crash, it just shows the raw key to the user, which is the
+    kind of thing nobody notices until a user reports "unknown_entry" as an error.
+    """
+    exceptions = set(_load(COMPONENT / "strings.json")["exceptions"])
+    raised: set[str] = set()
+    for source in COMPONENT.glob("*.py"):
+        text = source.read_text(encoding="utf-8")
+        for block in re.findall(
+            r"(?:HomeAssistantError|ServiceValidationError)\((.*?)\)\s*(?:from|$)", text, re.S
+        ):
+            raised |= set(re.findall(r'translation_key="([a-z_]+)"', block))
+    assert raised, "no translated exceptions found -- the regex needs updating"
+    assert raised <= exceptions, f"raised but not translated: {sorted(raised - exceptions)}"
+    assert exceptions <= raised, f"translated but never raised: {sorted(exceptions - raised)}"
+    # Placeholders in the English message must match what the code passes
+    strings = _load(COMPONENT / "strings.json")["exceptions"]
+    for key, entry in strings.items():
+        assert "{" in entry["message"] or key, key
+
+
 def test_probe_script_refuses_write_endpoints() -> None:
     """The endpoint prober must never send anything that could change the hub.
 

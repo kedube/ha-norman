@@ -1,0 +1,179 @@
+{
+  "config": {
+    "flow_title": "Norman Hub ({host})",
+    "step": {
+      "user": {
+        "title": "连接到 Norman Hub",
+        "description": "连接到您的 Norman Hub 以控制窗帘。Hub 通过局域网直接连接，不经过云端。",
+        "data": {
+          "host": "IP 地址或主机名"
+        },
+        "data_description": {
+          "host": "Norman Hub 在您网络上的地址。请在路由器中为其设置固定地址，以免变动。"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "发现 Norman Hub",
+        "description": "要添加位于 {host} 的 Norman Hub 吗？它在您的局域网上被发现，并以 Norman Hub 的身份响应。"
+      },
+      "reconfigure": {
+        "title": "更新 Norman Hub 地址",
+        "description": "输入 Hub 的新地址。必须是设置此条目时所用的同一台 Hub。",
+        "data": {
+          "host": "IP 地址或主机名"
+        },
+        "data_description": {
+          "host": "Norman Hub 在您网络上的地址。"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "无法连接到 Norman Hub",
+      "invalid_host": "请输入有效的 IP 地址或主机名（不含端口或路径）",
+      "invalid_response": "从 Norman Hub 收到无效响应",
+      "unknown": "意外错误"
+    },
+    "abort": {
+      "already_configured": "此 Norman Hub 已配置",
+      "cannot_connect": "无法连接到 Norman Hub",
+      "invalid_response": "从 Norman Hub 收到无效响应",
+      "reconfigure_successful": "Hub 地址已更新",
+      "unknown": "意外错误",
+      "wrong_hub": "该地址属于另一台 Norman Hub"
+    }
+  },
+  "services": {
+    "nudge_position": {
+      "name": "微调位置",
+      "description": "以相对量移动窗帘，相对于其目标位置（或当前位置）。",
+      "fields": {
+        "step": {
+          "name": "步进",
+          "description": "移动量，-100 至 100。正值打开，负值关闭。"
+        }
+      }
+    },
+    "nudge_tilt": {
+      "name": "微调倾斜",
+      "description": "以相对量调整窗帘的倾斜，相对于其目标（或当前值）。",
+      "fields": {
+        "step": {
+          "name": "步进",
+          "description": "倾斜量，-100 至 100。方向因窗帘而异；SmartDrape 负值向左倾斜。"
+        }
+      }
+    },
+    "get_hub_data": {
+      "name": "获取 Hub 数据",
+      "description": "读取 Hub 原始的设备列表和状态，与 Hub 发送的内容完全相同。会返回响应；报告不支持的窗帘时，请从开发者工具或脚本中使用。",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "要读取的 Norman Hub。仅配置一台时可省略。"
+        }
+      }
+    },
+    "send_hub_command": {
+      "name": "发送 Hub 命令",
+      "description": "高级功能。对单个窗帘向 Hub 的 control 端点 POST 任意字段并返回响应。用于发送 Norman 应用使用但尚无实体的命令（微调、限位、校准、我的最爱）。窗帘的动作取决于 Hub 如何解释这些字段。",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "要发送到的 Norman Hub。仅配置一台时可省略。"
+        },
+        "peripheral_uid": {
+          "name": "Peripheral UID",
+          "description": "Hub 上报的窗帘 ID（窗帘实体的唯一 ID，或 get_hub_data 中的 PeripheralUID）。"
+        },
+        "fields": {
+          "name": "字段",
+          "description": "control 调用的额外 JSON 字段。PeripheralUID、Timestamp 和 TaskID 会自动填入。"
+        }
+      }
+    }
+  },
+  "entity": {
+    "cover": {
+      "middle_rail": {
+        "name": "中梁"
+      }
+    },
+    "number": {
+      "bottom_rail_position": {
+        "name": "下梁位置"
+      },
+      "middle_rail_position": {
+        "name": "中梁位置"
+      }
+    },
+    "button": {
+      "favorite": {
+        "name": "我的最爱位置"
+      },
+      "jog_up": {
+        "name": "向上微调"
+      },
+      "jog_down": {
+        "name": "向下微调"
+      },
+      "run_to_top_limit": {
+        "name": "移至上限位"
+      },
+      "run_to_bottom_limit": {
+        "name": "移至下限位"
+      }
+    },
+    "sensor": {
+      "battery_level": {
+        "name": "电量"
+      },
+      "signal_strength": {
+        "name": "信号强度"
+      },
+      "last_seen": {
+        "name": "最后上报"
+      },
+      "firmware_version": {
+        "name": "固件版本"
+      },
+      "wifi_rssi": {
+        "name": "Wi-Fi 信号"
+      },
+      "mac_address": {
+        "name": "MAC 地址"
+      },
+      "time_zone": {
+        "name": "时区"
+      },
+      "wifi_ssid": {
+        "name": "Wi-Fi 网络"
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "{name} 执行“{action}”失败：{error}"
+    },
+    "stop_failed": {
+      "message": "无法停止 {name}：{error}"
+    },
+    "button_failed": {
+      "message": "无法将 {command} 发送到 {name}：{error}"
+    },
+    "hub_read_failed": {
+      "message": "无法从 Norman Hub {hub} 读取：{error}"
+    },
+    "hub_command_rejected": {
+      "message": "Norman Hub {hub} 拒绝了对 {uid} 的命令：{error}"
+    },
+    "unknown_entry": {
+      "message": "没有配置条目 ID 为 {entry_id} 的 Norman Hub"
+    },
+    "multiple_hubs": {
+      "message": "已配置 {count} 台 Norman Hub，请指定 {field}"
+    },
+    "entry_not_loaded": {
+      "message": "Norman Hub {hub} 尚未加载"
+    }
+  }
+}

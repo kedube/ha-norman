@@ -40,15 +40,25 @@ def _resolve_entry(hass: HomeAssistant, call: ServiceCall) -> NormanConfigEntry:
     if entry_id := call.data.get(ATTR_CONFIG_ENTRY_ID):
         entry = hass.config_entries.async_get_entry(entry_id)
         if entry is None or entry.domain != DOMAIN:
-            raise ServiceValidationError(f"No Norman hub with config entry id {entry_id}")
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_entry",
+                translation_placeholders={"entry_id": str(entry_id)},
+            )
     elif len(entries) == 1:
         entry = entries[0]
     else:
         raise ServiceValidationError(
-            f"{len(entries)} Norman hubs are configured; pass {ATTR_CONFIG_ENTRY_ID}"
+            translation_domain=DOMAIN,
+            translation_key="multiple_hubs",
+            translation_placeholders={"count": str(len(entries)), "field": ATTR_CONFIG_ENTRY_ID},
         )
     if entry.state is not ConfigEntryState.LOADED:
-        raise ServiceValidationError(f"Norman hub {entry.title} is not loaded")
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="entry_not_loaded",
+            translation_placeholders={"hub": entry.title},
+        )
     return entry
 
 
@@ -66,7 +76,11 @@ async def _async_get_hub_data(call: ServiceCall) -> ServiceResponse:
         devices: dict[str, Any] = await api.async_get_devices()
         status: dict[str, Any] = await api.async_get_status()
     except (NormanConnectionError, NormanApiError) as err:
-        raise HomeAssistantError(f"Could not read from Norman hub {entry.title}: {err}") from err
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="hub_read_failed",
+            translation_placeholders={"hub": entry.title, "error": str(err)},
+        ) from err
     return async_redact_data({"devices": devices, "status": status}, SENSITIVE_HUB_KEYS)
 
 
@@ -74,7 +88,7 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
     """POST arbitrary fields to the hub's control endpoint for one peripheral.
 
     An advanced tool for probing commands the hub advertises but the integration does not
-    know how to send yet (``MotorStop``, limits, favourites, ...). The hub's reply is
+    know how to send yet (``MotorStop``, limits, favorites, ...). The hub's reply is
     returned so the outcome can be seen. The blind will do whatever the hub makes of it.
     """
     entry = _resolve_entry(call.hass, call)
@@ -85,7 +99,9 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
         reply = await api.async_send_control(uid, fields)
     except (NormanConnectionError, NormanApiError) as err:
         raise HomeAssistantError(
-            f"Norman hub {entry.title} rejected the command for {uid}: {err}"
+            translation_domain=DOMAIN,
+            translation_key="hub_command_rejected",
+            translation_placeholders={"hub": entry.title, "uid": str(uid), "error": str(err)},
         ) from err
     await entry.runtime_data.async_request_refresh()
     return {"reply": reply}

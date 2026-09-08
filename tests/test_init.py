@@ -47,7 +47,7 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     assert blind.via_device_id == hub.id
     assert blind.sw_version == "0.5.3.8"
     assert blind.serial_number == str(UID_LIVING)
-    assert blind.model == "Two-rail window covering"
+    assert blind.model == "Cellular Shade (dual rail)"
     assert blind.model_id == "33/3"
 
     # A single-rail blind reports two versions; the app shows RfFirmwareVersion
@@ -63,7 +63,7 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     # middle-rail cover as well
     assert covers == ["1001", "1001_middle", "1002", "1003", "1003_middle"]
     assert f"{entry.entry_id}_wifi_rssi" in {e.unique_id for e in entries}
-    assert {e.domain for e in entries} == {"button", "cover", "sensor"}
+    assert {e.domain for e in entries} == {"button", "cover", "number", "sensor"}
     living = cover_entity_id(hass, UID_LIVING)
     assert hass.states.get(living).attributes["friendly_name"] == "Living Drape"
 

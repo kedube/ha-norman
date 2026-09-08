@@ -1,0 +1,179 @@
+{
+  "config": {
+    "flow_title": "Norman Hub ({host})",
+    "step": {
+      "user": {
+        "title": "Se connecter au Norman Hub",
+        "description": "Connectez votre Norman Hub pour commander vos stores. Le hub est joint directement sur le réseau local ; rien ne passe par le cloud.",
+        "data": {
+          "host": "Adresse IP ou nom d'hôte"
+        },
+        "data_description": {
+          "host": "L'adresse du Norman Hub sur votre réseau. Attribuez-lui une adresse fixe dans votre routeur pour qu'elle ne change pas."
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Norman Hub détecté",
+        "description": "Ajouter le Norman Hub à l'adresse {host} ? Il a été détecté sur votre réseau local et a répondu comme un Norman Hub."
+      },
+      "reconfigure": {
+        "title": "Mettre à jour l'adresse du Norman Hub",
+        "description": "Saisissez la nouvelle adresse du hub. Il doit s'agir du même hub que celui utilisé pour configurer cette entrée.",
+        "data": {
+          "host": "Adresse IP ou nom d'hôte"
+        },
+        "data_description": {
+          "host": "L'adresse du Norman Hub sur votre réseau."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter au Norman Hub",
+      "invalid_host": "Saisissez une adresse IP ou un nom d'hôte valide (sans port ni chemin)",
+      "invalid_response": "Réponse invalide reçue du Norman Hub",
+      "unknown": "Erreur inattendue"
+    },
+    "abort": {
+      "already_configured": "Ce Norman Hub est déjà configuré",
+      "cannot_connect": "Impossible de se connecter au Norman Hub",
+      "invalid_response": "Réponse invalide reçue du Norman Hub",
+      "reconfigure_successful": "L'adresse du hub a été mise à jour",
+      "unknown": "Erreur inattendue",
+      "wrong_hub": "Cette adresse appartient à un autre Norman Hub"
+    }
+  },
+  "services": {
+    "nudge_position": {
+      "name": "Ajuster la position",
+      "description": "Déplace un store d'une valeur relative par rapport à sa cible (ou à sa position actuelle).",
+      "fields": {
+        "step": {
+          "name": "Pas",
+          "description": "Valeur du déplacement, de -100 à 100. Positif ouvre, négatif ferme."
+        }
+      }
+    },
+    "nudge_tilt": {
+      "name": "Ajuster l'inclinaison",
+      "description": "Ajuste l'inclinaison d'un store d'une valeur relative par rapport à sa cible (ou à sa valeur actuelle).",
+      "fields": {
+        "step": {
+          "name": "Pas",
+          "description": "Valeur d'inclinaison, de -100 à 100. Le sens dépend du store ; sur SmartDrape, une valeur négative incline vers la gauche."
+        }
+      }
+    },
+    "get_hub_data": {
+      "name": "Lire les données du hub",
+      "description": "Lit la liste brute des appareils et l'état du hub, exactement tels que le hub les envoie. Renvoie une réponse ; utilisez-la depuis les outils de développement ou un script pour signaler un store non pris en charge.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "Quel Norman Hub lire. Facultatif si un seul est configuré."
+        }
+      }
+    },
+    "send_hub_command": {
+      "name": "Envoyer une commande au hub",
+      "description": "Avancé. Envoie des champs arbitraires en POST au point de terminaison control du hub pour un store et renvoie la réponse. Pour les commandes de l'application Norman (réglage fin, fins de course, calibrage, favori) qui n'ont pas encore d'entité. Le store fera ce que le hub déduit des champs.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "À quel Norman Hub envoyer. Facultatif si un seul est configuré."
+        },
+        "peripheral_uid": {
+          "name": "Peripheral UID",
+          "description": "L'identifiant du store tel que le hub le signale (l'identifiant unique de l'entité cover, ou PeripheralUID dans get_hub_data)."
+        },
+        "fields": {
+          "name": "Champs",
+          "description": "Champs JSON supplémentaires pour l'appel control. PeripheralUID, Timestamp et TaskID sont renseignés automatiquement."
+        }
+      }
+    }
+  },
+  "entity": {
+    "cover": {
+      "middle_rail": {
+        "name": "Rail intermédiaire"
+      }
+    },
+    "number": {
+      "bottom_rail_position": {
+        "name": "Position du rail inférieur"
+      },
+      "middle_rail_position": {
+        "name": "Position du rail intermédiaire"
+      }
+    },
+    "button": {
+      "favorite": {
+        "name": "Position favorite"
+      },
+      "jog_up": {
+        "name": "Pas vers le haut"
+      },
+      "jog_down": {
+        "name": "Pas vers le bas"
+      },
+      "run_to_top_limit": {
+        "name": "Aller à la fin de course haute"
+      },
+      "run_to_bottom_limit": {
+        "name": "Aller à la fin de course basse"
+      }
+    },
+    "sensor": {
+      "battery_level": {
+        "name": "Batterie"
+      },
+      "signal_strength": {
+        "name": "Intensité du signal"
+      },
+      "last_seen": {
+        "name": "Dernier contact"
+      },
+      "firmware_version": {
+        "name": "Version du micrologiciel"
+      },
+      "wifi_rssi": {
+        "name": "Signal Wi-Fi"
+      },
+      "mac_address": {
+        "name": "Adresse MAC"
+      },
+      "time_zone": {
+        "name": "Fuseau horaire"
+      },
+      "wifi_ssid": {
+        "name": "Réseau Wi-Fi"
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "Échec de {action} pour {name} : {error}"
+    },
+    "stop_failed": {
+      "message": "Impossible d'arrêter {name} : {error}"
+    },
+    "button_failed": {
+      "message": "Impossible d'envoyer {command} à {name} : {error}"
+    },
+    "hub_read_failed": {
+      "message": "Impossible de lire le Norman Hub {hub} : {error}"
+    },
+    "hub_command_rejected": {
+      "message": "Le Norman Hub {hub} a rejeté la commande pour {uid} : {error}"
+    },
+    "unknown_entry": {
+      "message": "Aucun Norman Hub avec l'identifiant d'entrée de configuration {entry_id}"
+    },
+    "multiple_hubs": {
+      "message": "{count} Norman Hubs sont configurés ; indiquez {field}"
+    },
+    "entry_not_loaded": {
+      "message": "Le Norman Hub {hub} n'est pas chargé"
+    }
+  }
+}

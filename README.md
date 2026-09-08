@@ -24,6 +24,7 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
   - [Actions](#actions)
   - [Automation ideas](#automation-ideas)
 - [How it works](#how-it-works)
+- [Languages](#languages)
 - [Supported devices](#supported-devices)
 - [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
@@ -117,9 +118,12 @@ Assistant.
 |---|---|
 | `current_position` | Bottom rail: 0 closed, 100 open |
 | `current_tilt_position` | Middle rail as tilt (for drapes; shades use the Middle rail cover instead): 0–100 |
+
+Each rail also has a **position slider** (a `number` entity, 0–100% in steps of 10), which is
+often easier to place on a dashboard than a cover's own slider.
 | `target_position`, `target_tilt` (attributes) | Where each rail is heading while the blind moves |
 
-Each blind also has **buttons** for its favourite position, jog up, jog down, and run to top
+Each blind also has **buttons** for its favorite position, jog up, jog down, and run to top
 or bottom limit, plus diagnostic sensors for **battery** (percent),
 **last seen**, and, disabled by default, **signal strength** and **firmware version**; the hub
 has **MAC address**, **time zone**, and **Wi-Fi network** sensors, plus a **Wi-Fi signal**
@@ -207,6 +211,12 @@ actions:
 
 The protocol itself is described in [docs/NORMAN_API.md](docs/NORMAN_API.md).
 
+## Languages
+
+English, Japanese, Chinese (Traditional and Simplified), German, French, and Spanish. The
+Japanese and Chinese wording follows the Norman app's own, so entity names match what the app
+shows. Error messages are translated as well.
+
 ## Supported devices
 
 | Device | Hub `ModuleType` | Exposed as |
@@ -228,7 +238,7 @@ issue; the mapping is a one-line change.
 - **No speed, direction, or limit-setting entities.** The hub has verbs for these; the
   limit-setting ones can be sent with `send_hub_command` (see
   [docs/services.md](docs/services.md#hub-verbs)), the rest have not been seen from the app.
-- **Favourite position is an extrapolation.** The app only sends it room-wide; the per-blind
+- **Favorite position is an extrapolation.** The app only sends it room-wide; the per-blind
   button uses the form the hub advertises. Report it if it does nothing.
 - **Hub schedules are not exposed.** The hub stores its own sunrise/sunset and clock schedules;
   the integration neither shows nor edits them, since Home Assistant automations do the same

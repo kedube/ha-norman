@@ -1,0 +1,179 @@
+{
+  "config": {
+    "flow_title": "Norman Hub ({host})",
+    "step": {
+      "user": {
+        "title": "Mit Norman Hub verbinden",
+        "description": "Verbinde deinen Norman Hub, um deine Rollos zu steuern. Der Hub wird direkt im lokalen Netzwerk erreicht; nichts läuft über die Cloud.",
+        "data": {
+          "host": "IP-Adresse oder Hostname"
+        },
+        "data_description": {
+          "host": "Die Adresse des Norman Hub in deinem Netzwerk. Weise ihm im Router eine feste Adresse zu, damit sie sich nicht ändert."
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Norman Hub gefunden",
+        "description": "Den Norman Hub unter {host} hinzufügen? Er wurde im lokalen Netzwerk gefunden und hat sich als Norman Hub gemeldet."
+      },
+      "reconfigure": {
+        "title": "Adresse des Norman Hub aktualisieren",
+        "description": "Gib die neue Adresse des Hubs ein. Es muss derselbe Hub sein, mit dem dieser Eintrag eingerichtet wurde.",
+        "data": {
+          "host": "IP-Adresse oder Hostname"
+        },
+        "data_description": {
+          "host": "Die Adresse des Norman Hub in deinem Netzwerk."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Norman Hub fehlgeschlagen",
+      "invalid_host": "Gib eine gültige IP-Adresse oder einen Hostnamen ein (ohne Port oder Pfad)",
+      "invalid_response": "Ungültige Antwort vom Norman Hub erhalten",
+      "unknown": "Unerwarteter Fehler"
+    },
+    "abort": {
+      "already_configured": "Dieser Norman Hub ist bereits konfiguriert",
+      "cannot_connect": "Verbindung zum Norman Hub fehlgeschlagen",
+      "invalid_response": "Ungültige Antwort vom Norman Hub erhalten",
+      "reconfigure_successful": "Die Hub-Adresse wurde aktualisiert",
+      "unknown": "Unerwarteter Fehler",
+      "wrong_hub": "Diese Adresse gehört zu einem anderen Norman Hub"
+    }
+  },
+  "services": {
+    "nudge_position": {
+      "name": "Position anstoßen",
+      "description": "Bewegt ein Rollo um einen relativen Betrag, ausgehend von seinem Ziel (oder seiner aktuellen Position).",
+      "fields": {
+        "step": {
+          "name": "Schritt",
+          "description": "Betrag der Bewegung, -100 bis 100. Positiv öffnet, negativ schließt."
+        }
+      }
+    },
+    "nudge_tilt": {
+      "name": "Neigung anstoßen",
+      "description": "Passt die Neigung eines Rollos um einen relativen Betrag an, ausgehend von ihrem Ziel (oder aktuellen Wert).",
+      "fields": {
+        "step": {
+          "name": "Schritt",
+          "description": "Betrag der Neigung, -100 bis 100. Die Richtung hängt vom Rollo ab; bei SmartDrape neigt negativ nach links."
+        }
+      }
+    },
+    "get_hub_data": {
+      "name": "Hub-Daten abrufen",
+      "description": "Liest die rohe Geräteliste und den Status des Hubs, genau wie der Hub sie sendet. Gibt eine Antwort zurück; verwende dies aus den Entwicklerwerkzeugen oder einem Skript, um ein nicht unterstütztes Rollo zu melden.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "Welcher Norman Hub gelesen werden soll. Optional, wenn nur einer konfiguriert ist."
+        }
+      }
+    },
+    "send_hub_command": {
+      "name": "Hub-Befehl senden",
+      "description": "Erweitert. Sendet beliebige Felder per POST an den Control-Endpunkt des Hubs für ein Rollo und gibt die Antwort zurück. Für die Befehle der Norman-App (Feinjustierung, Endlagen, Kalibrierung, Favorit), die noch keine Entität haben. Das Rollo tut, was der Hub aus den Feldern macht.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "An welchen Norman Hub gesendet werden soll. Optional, wenn nur einer konfiguriert ist."
+        },
+        "peripheral_uid": {
+          "name": "Peripheral UID",
+          "description": "Die ID des Rollos, wie der Hub sie meldet (die eindeutige ID der Cover-Entität oder PeripheralUID in get_hub_data)."
+        },
+        "fields": {
+          "name": "Felder",
+          "description": "Zusätzliche JSON-Felder für den Control-Aufruf. PeripheralUID, Timestamp und TaskID werden automatisch ausgefüllt."
+        }
+      }
+    }
+  },
+  "entity": {
+    "cover": {
+      "middle_rail": {
+        "name": "Mittlere Schiene"
+      }
+    },
+    "number": {
+      "bottom_rail_position": {
+        "name": "Position der unteren Schiene"
+      },
+      "middle_rail_position": {
+        "name": "Position der mittleren Schiene"
+      }
+    },
+    "button": {
+      "favorite": {
+        "name": "Favoritenposition"
+      },
+      "jog_up": {
+        "name": "Schritt nach oben"
+      },
+      "jog_down": {
+        "name": "Schritt nach unten"
+      },
+      "run_to_top_limit": {
+        "name": "Zur oberen Endlage fahren"
+      },
+      "run_to_bottom_limit": {
+        "name": "Zur unteren Endlage fahren"
+      }
+    },
+    "sensor": {
+      "battery_level": {
+        "name": "Batterie"
+      },
+      "signal_strength": {
+        "name": "Signalstärke"
+      },
+      "last_seen": {
+        "name": "Zuletzt gesehen"
+      },
+      "firmware_version": {
+        "name": "Firmware-Version"
+      },
+      "wifi_rssi": {
+        "name": "WLAN-Signal"
+      },
+      "mac_address": {
+        "name": "MAC-Adresse"
+      },
+      "time_zone": {
+        "name": "Zeitzone"
+      },
+      "wifi_ssid": {
+        "name": "WLAN-Netzwerk"
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "{action} für {name} fehlgeschlagen: {error}"
+    },
+    "stop_failed": {
+      "message": "{name} konnte nicht gestoppt werden: {error}"
+    },
+    "button_failed": {
+      "message": "{command} konnte nicht an {name} gesendet werden: {error}"
+    },
+    "hub_read_failed": {
+      "message": "Norman Hub {hub} konnte nicht gelesen werden: {error}"
+    },
+    "hub_command_rejected": {
+      "message": "Norman Hub {hub} hat den Befehl für {uid} abgelehnt: {error}"
+    },
+    "unknown_entry": {
+      "message": "Kein Norman Hub mit der Konfigurationseintrags-ID {entry_id}"
+    },
+    "multiple_hubs": {
+      "message": "{count} Norman Hubs sind konfiguriert; gib {field} an"
+    },
+    "entry_not_loaded": {
+      "message": "Norman Hub {hub} ist nicht geladen"
+    }
+  }
+}
