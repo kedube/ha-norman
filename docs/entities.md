@@ -65,7 +65,7 @@ catches up with the motor.
 |---|---|---|
 | Favourite position | `Favorite: 0` | Moves to the favourite stored in the blind. The verb is confirmed room-wide from the app; the per-blind form is the hub's advertised one and has not been captured yet. If nothing happens on your blinds, open an issue. |
 | Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | A small motor step, the same as the app's limit-setup jog. Independent of position targets. |
-| Run to top limit / Run to bottom limit | `SetMotorToTopLimit` / `…BottomLimit: 170` | Runs to the stored limit. Configuration category, **disabled by default**, because open and close do the same for everyday use. |
+| Run to top limit / Run to bottom limit | `SetMotorToTopLimit` / `…BottomLimit: 170` | Drives the motor to the limit stored in the blind. Not the same as open/close, which go through the hub's position logic: these can still work when a blind's position tracking has drifted. Categorised as configuration, so they appear in the device page's configuration section rather than on the cover card. |
 
 Errors follow the cover convention: a hub error or timeout fails the press with a message
 naming the verb and the blind.

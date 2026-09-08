@@ -30,9 +30,11 @@ version heading and publishes it as the release's Highlights.
 - **Endpoint prober** (`scripts/probe_hub_endpoints.py`) finds hub endpoints nobody has
   documented. It is read-only by construction. Running it mapped the hub's complete endpoint
   surface and found two undocumented scene reads (`GetAllScene`, `GetAllSceneGroup`).
-- **Buttons per blind:** Favourite position, Jog up, Jog down, and (disabled by default) Run
-  to top limit and Run to bottom limit, sending the verbs captured from the Norman app. The
-  favourite verb is confirmed room-wide; its per-blind form is the hub's advertised one.
+- **Buttons per blind:** Favourite position, Jog up, Jog down, Run to top limit, and Run to
+  bottom limit, sending the verbs captured from the Norman app. The limit pair is categorised
+  as configuration; it drives the motor to its stored limit, which can still work when a
+  blind's position tracking has drifted. The favourite verb is confirmed room-wide; its
+  per-blind form is the hub's advertised one.
 - **Renames follow the Norman app.** The hub announces edits made in the app (`UpdateTime`
   notifications); the integration re-reads the device list on room, blind, and hub edits and
   updates device names in the registry. Names set in Home Assistant are left alone.

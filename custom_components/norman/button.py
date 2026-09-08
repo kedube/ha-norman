@@ -54,20 +54,20 @@ BUTTONS: tuple[NormanButtonDescription, ...] = (
         translation_key="jog_down",
         fields={HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER},
     ),
-    # Run-to-limit is what the app's limit-setup screen uses; open/close cover the everyday
-    # case, so these are configuration buttons that start disabled.
+    # Run-to-limit drives the motor to its stored mechanical limit, which is not the same
+    # path as a position move: it can still work on a blind whose position tracking has
+    # drifted. So it is enabled, but categorised as configuration to keep it off the main
+    # card and in the device page's configuration section.
     NormanButtonDescription(
         key="run_to_top_limit",
         translation_key="run_to_top_limit",
         entity_category=EntityCategory.CONFIG,
-        entity_registry_enabled_default=False,
         fields={HUB_CMD_TO_TOP_LIMIT: HUB_COMMAND_TRIGGER},
     ),
     NormanButtonDescription(
         key="run_to_bottom_limit",
         translation_key="run_to_bottom_limit",
         entity_category=EntityCategory.CONFIG,
-        entity_registry_enabled_default=False,
         fields={HUB_CMD_TO_BOTTOM_LIMIT: HUB_COMMAND_TRIGGER},
     ),
 )
