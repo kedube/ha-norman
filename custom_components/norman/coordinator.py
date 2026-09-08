@@ -15,6 +15,8 @@ from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
     DEFAULT_COVER_TYPE,
     DOMAIN,
+    KNOWN_HUB_FIELDS,
+    KNOWN_PERIPHERAL_FIELDS,
     MODULE_TYPE_COVER_TYPES,
     RECONNECT_INTERVAL,
 )
@@ -54,6 +56,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # What the hub says about itself; refreshed alongside the peripherals
         self.hub = NormanHubData(model=api.hub_model, firmware_version=api.hub_firmware_version)
         self._device_info: dict[str, Any] = {}
+        self._unknown_fields: set[tuple[str, str]] = set()
         self._unknown_module_types: set[int | None] = set()
         # True while the notification stream is known to be down, so that the outage is
         # logged once at error level rather than on every reconnect attempt.
@@ -133,6 +136,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         except NormanApiError as err:
             raise UpdateFailed(f"Invalid response from Norman hub: {err}") from err
 
+        self._log_unknown_fields(self._device_info, status_data)
         self._update_hub_data(self._device_info, status_data)
         devices = self._process_data(self._device_info, status_data)
         self._warn_about_unknown_module_types(devices)
@@ -171,6 +175,46 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self.hub.ota_in_progress = bool(ota) if ota is not None else None
         pairing = status_data.get("PairingMode")
         self.hub.pairing_mode = int(pairing) if isinstance(pairing, int) else None
+
+    def _log_unknown_fields(self, *payloads: dict[str, Any]) -> None:
+        """Note any field the hub sends that this integration has never seen.
+
+        The hub's protocol is reverse-engineered, so a firmware update or an unmapped
+        product can start sending fields nobody has documented. Each new name is logged once
+        per Home Assistant run at debug level (not warning: an unknown field is interesting,
+        not a problem) so that turning on debug logging for a while is enough to find them.
+        """
+        if not _LOGGER.isEnabledFor(logging.DEBUG):
+            return
+        for payload in payloads:
+            top = payload.get("results") if isinstance(payload.get("results"), dict) else payload
+            self._note_unknown("hub", KNOWN_HUB_FIELDS, top)
+            for peripheral in top.get("Peripherals") or []:
+                if isinstance(peripheral, dict):
+                    self._note_unknown("peripheral", KNOWN_PERIPHERAL_FIELDS, peripheral)
+            for room in top.get("RoomList") or []:
+                if not isinstance(room, dict):
+                    continue
+                for group in room.get("GroupList") or []:
+                    if not isinstance(group, dict):
+                        continue
+                    for peripheral in group.get("PeripheralList") or []:
+                        if isinstance(peripheral, dict):
+                            self._note_unknown("peripheral", KNOWN_PERIPHERAL_FIELDS, peripheral)
+
+    def _note_unknown(self, scope: str, known: frozenset[str], payload: dict[str, Any]) -> None:
+        """Log each field in ``payload`` that is not in ``known``, once per name."""
+        for field in payload:
+            if field in known or (scope, field) in self._unknown_fields:
+                continue
+            self._unknown_fields.add((scope, field))
+            _LOGGER.debug(
+                "Norman hub sent an undocumented %s field %r (value %r). Please open an issue "
+                "at https://github.com/kedube/ha-norman/issues so it can be documented",
+                scope,
+                field,
+                payload[field],
+            )
 
     def _warn_about_unknown_module_types(self, devices: NormanDevices) -> None:
         """Log once per unknown ModuleType so owners can report it."""

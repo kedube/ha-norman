@@ -37,6 +37,114 @@ TRAFFIC_BODY_LIMIT = 16 * 1024
 # diagnostics and from the get_hub_data response wherever they appear, including inside raw
 # bodies. Seen in real captures: GeoLoc carries the hub's latitude/longitude; WiFiSSID the
 # network name; ThingName and NetworkID identify the hub; CustomDeviceName is user-chosen.
+# Every field the hub has been observed to send, so anything outside these sets is new (a
+# firmware change, or a product nobody has captured). Logged once each at debug level by the
+# coordinator; see docs/NORMAN_API.md, "Observed fields". Membership here does NOT mean the
+# integration reads a field, only that its existence is accounted for.
+KNOWN_HUB_FIELDS = frozenset(
+    {
+        # identity and firmware
+        "ThingName",
+        "Model",
+        "FirmwareVersion",
+        "FirmwareId",
+        "FirmwareCode",
+        "DeviceType",
+        "CustomDeviceName",
+        # network and location
+        "WiFiSSID",
+        "WiFiRSSI",
+        "NetworkID",
+        "TimeZone",
+        "GeoLoc",
+        # state and housekeeping
+        "OTA",
+        "PairingMode",
+        "CleanPairing",
+        "StatusRequest",
+        "ReportBatteryLevel",
+        "TotalSegment",
+        "Segment",
+        "Error",
+        "Timestamp",
+        "RequestTimestamp",
+        "TaskID",
+        # nested inside GeoLoc / RoomList entries
+        "Latitude",
+        "Longitude",
+        "Icon",
+        "Color",
+        # payload containers
+        "Peripherals",
+        "RoomList",
+        "SceneGroupList",
+        "SceneList",
+        "ScheduleList",
+        "status",
+        "results",
+    }
+)
+
+KNOWN_PERIPHERAL_FIELDS = frozenset(
+    {
+        # identity and placement
+        "PeripheralUID",
+        "PeripheralName",
+        "RoomID",
+        "GroupID",
+        "GroupList",
+        "PeripheralList",
+        "RoomName",
+        "GroupName",
+        "Sorting",
+        "ModuleType",
+        "ModuleDetail",
+        # state
+        "BottomRailPosition",
+        "MiddleRailPosition",
+        "TargetBottomRailPosition",
+        "TargetMiddleRailPosition",
+        "BatteryVoltage",
+        "RssiMean",
+        "PacketReceiveRate",
+        "StallCurrent",
+        "FirmwareVersion",
+        "RfFirmwareVersion",
+        "Timestamp",
+        # the command vocabulary advertised by registration
+        "RequestModuleInfo",
+        "Switch",
+        "MotorStop",
+        "Favorite",
+        "Calibration",
+        "ConfigToScene",
+        "SetToScene",
+        "CleanAllScene",
+        "SetMotorToTopLimit",
+        "SetMotorToBottomLimit",
+        "MotorFineTuneToUp",
+        "MotorFineTuneToDown",
+        "SetTopLimit",
+        "CleanTopLimit",
+        "SetBottomLimit",
+        "CleanBottomLimit",
+        "SetMiddleLimit",
+        "CleanMiddleLimit",
+        "CleanRfPairing",
+        "CleanAllPosition",
+        "CleanErrorCode",
+        "MotorSpeedAdjust",
+        "ReverseMotorDirection",
+        "StopSensorSwitch",
+        "SmartDialSwitch",
+        "FindTop",
+        "RailSpacing",
+        "RailSpacingDefault",
+        "RailSpacingIncrease",
+        "RailSpacingDecrease",
+    }
+)
+
 SENSITIVE_HUB_KEYS = frozenset(
     {
         "ThingName",

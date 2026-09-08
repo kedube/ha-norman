@@ -244,6 +244,11 @@ in your router, make sure Home Assistant and the hub are on the same network (or
 and firewall allow the connection), and try `curl -X POST http://<hub-ip>:10123/NM/v1/status`
 from a machine on the same network; a JSON reply means the hub is reachable.
 
+**A blind or feature the integration does not support.**
+Turn on [debug logging](#debug-logging) and leave it for a day. Any field your hub sends that
+this integration has never seen is logged once with its value, which is usually all that is
+needed to add support. Attach those lines, or a `norman.get_hub_data` response, to an issue.
+
 **Setup fails with "Invalid response received from the Norman Hub".**
 Something answered on that address, but not with the hub's protocol (a different device, or an
 error from the hub itself). Double-check the address. If it is the hub, enable

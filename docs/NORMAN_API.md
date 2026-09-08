@@ -322,10 +322,26 @@ Response stream, as observed:
   are logged at debug level and skipped; an object that never closes is discarded once the
   buffer exceeds `NOTIF_MAX_BUFFER` (64 KiB).
 
+## The complete endpoint surface
+
+Eleven endpoints are known: the five the integration uses, and six more the app uses or a
+probe found. The hub answers **HTTP 404** for any other path, which makes probing reliable —
+`scripts/probe_hub_endpoints.py` sends an identity-only body to a list of candidate names and
+reports which answer (it refuses, by name, to send anything that could write). Running it
+against the reference hub with 43 candidates found exactly two undocumented endpoints, both
+scene reads, so the surface below is believed complete for firmware 6.1.25.
+
+```
+registration  GetAllPeripheral  status  control  notification      (the integration)
+GetAllSchedule  AddSchedule  DeleteSchedule                        (schedules, app only)
+UpdateRoom  UpdatePeripheral  UpdateDeviceInfo  GetDeviceInfo      (names, app only)
+GetAllScene  GetAllSceneGroup                                      (found by probing)
+```
+
 ## Configuration endpoints used by the app
 
-These were captured from the Norman app and are documented for completeness; the integration
-does not call any of them. All take `ThingName`, `Timestamp`, and `TaskID` in the body and
+These were captured from the Norman app or found by probing, and are documented for
+completeness; the integration does not call any of them. All take `ThingName`, `Timestamp`, and `TaskID` in the body and
 answer in the `{"status": {"code", "error"}, "results": {…}}` shape, echoing what was written.
 Each write is followed by an `UpdateTime` notification (above) and the app re-reads the
 matching list.
@@ -333,6 +349,8 @@ matching list.
 | Endpoint | Body (besides the common fields) | Effect |
 |---|---|---|
 | `GetAllSchedule` | — | `results.ScheduleList`: every schedule stored **on the hub**. |
+| `GetAllScene` | — | `results.RoomList`: `[{RoomID, SceneList}]`, one entry per room. Empty on every room of the reference hub, so a scene's shape is still unknown. Found by probing, not seen from the app. |
+| `GetAllSceneGroup` | — | `results.SceneGroupList`, empty on the reference hub. Found by probing. |
 | `AddSchedule` | `Conditions`, `Executions`, `ScheduleEnable` | Creates a schedule; the reply carries the hub-assigned `ScheduleID` (a UUID). |
 | `DeleteSchedule` | `ScheduleID` | Removes one. |
 | `UpdateRoom` | `RoomList: [{RoomID, RoomName, Icon, Color, Sorting}]` (all strings) | Renames / restyles rooms. |
@@ -364,6 +382,13 @@ Everything below comes from captures of a real hub (`NienMadeHub`, firmware 6.1.
 of two types). Only the fields marked **used** are read by the integration; the rest are kept
 verbatim in the diagnostics capture and are candidates for future features.
 
+This list is also **executable**: `KNOWN_HUB_FIELDS` and `KNOWN_PERIPHERAL_FIELDS` in
+`const.py` hold the same names, and the coordinator logs (at debug level, once per name) any
+field the hub sends that is missing from them. So a firmware update that adds a field, or a
+product nobody has captured, announces itself in the log rather than being silently dropped.
+`tests/test_repo_consistency.py` checks the two lists against each other, so a field
+documented here must be catalogued and vice versa.
+
 ### Hub level
 
 | Field | Where | Example | Used |
@@ -393,7 +418,7 @@ verbatim in the diagnostics capture and are candidates for future features.
 | `Timestamp` | status | epoch seconds | **used** (last-seen sensor) |
 | `PacketReceiveRate` | status | `0` | not used |
 | `StallCurrent` | status (type 33 only) | `4100` | not used |
-| `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`/`Down`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`(+`Default`/`Increase`/`Decrease`), `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. |
+| `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. |
 
 ### Cover types
 

@@ -24,6 +24,12 @@ version heading and publishes it as the release's Highlights.
   are documented in `docs/services.md` and `docs/NORMAN_API.md`.
 - **Diagnostics redaction** now also scrubs the hub's location, Wi-Fi name, time zone, and
   custom name inside raw bodies.
+- **Undocumented hub fields are reported.** The integration knows every field real hubs have
+  been seen to send; anything else is logged once per name at debug level, so a firmware
+  update or an unmapped product surfaces instead of being silently dropped.
+- **Endpoint prober** (`scripts/probe_hub_endpoints.py`) finds hub endpoints nobody has
+  documented. It is read-only by construction. Running it mapped the hub's complete endpoint
+  surface and found two undocumented scene reads (`GetAllScene`, `GetAllSceneGroup`).
 - **Buttons per blind:** Favourite position, Jog up, Jog down, and (disabled by default) Run
   to top limit and Run to bottom limit, sending the verbs captured from the Norman app. The
   favourite verb is confirmed room-wide; its per-blind form is the hub's advertised one.
