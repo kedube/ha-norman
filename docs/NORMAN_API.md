@@ -227,11 +227,16 @@ The hub acknowledges immediately, echoing the fields it accepted (`PeripheralUID
 positions, `TaskID`, `RequestTimestamp`) plus its own millisecond `Timestamp`. The blind then
 moves and the new position arrives through the notification stream and the next `status` call.
 
-`GroupID` is the blind's **remote-control group** — the button (1, 2, 4, ...) a paired Norman
-remote uses to address it, not a Home Assistant grouping. Blinds in one room have different
-`GroupID`s, and the same value repeats across rooms, so it is only meaningful together with
-`RoomID`. The integration parses it but exposes nothing: Home Assistant has areas and groups of
-its own, and the hub offers no way to command a group.
+`GroupID` is the blind's **address within its room** — the button (1, 2, 4, ...) a paired
+Norman remote uses for it. The same value repeats across rooms, so it is only meaningful with
+`RoomID`, and the pair `(RoomID, GroupID)` is **unique per blind** (verified across every blind
+on the reference hub).
+
+That pair is how the `Switch` and `Favorite` verbs address a single blind. They are **not**
+addressed by `PeripheralUID`: sending `{"Switch": 1, "RoomID": 29550, "GroupID": 1}` moved only
+the group-1 blind in that room and left group 2 untouched. The app sends `PeripheralUID`
+alongside as well, but the room/group pair is what selects the target — which is why an earlier
+test of `{"Favorite": 0, "PeripheralUID": …}` alone appeared to do nothing.
 
 The app also sends `RoomID` and `GroupID` with every move; the hub accepts moves without them,
 so the integration does not send them. For a single-rail blind (`ModuleType` 32) the app sends
@@ -253,9 +258,9 @@ observed. All of the following were captured from the Norman app:
 | Verb | Value | What the app does with it |
 |---|---|---|
 | `MotorStop` | 170 | Stop the motor where it is. **Used** by the integration for `stop_cover` and `stop_cover_tilt` (one motor, one stop). |
-| `SetMotorToTopLimit` | 170 | Run to the stored top limit. The app repeats it several times per second while the button is held. **Used** (Run to top limit button). |
-| `SetMotorToBottomLimit` | 170 | Run to the stored bottom limit; same repeat pattern. **Used** (Run to bottom limit button). |
-| `MotorFineTuneToUp` | 170 | Jog up a small step (limit-setting screen). **Used** (Jog up button). |
+| `SetMotorToTopLimit` | 170 | Drive toward the stored top limit **while held**: the app sends it every ~0.3 s for as long as its OPEN control is pressed, only inside the Shade Limit Setting screen. Not a one-shot move, so it has no button; `send_hub_command` can send it. |
+| `SetMotorToBottomLimit` | 170 | The same, downward. Also hold-to-run, also no button. |
+| `MotorFineTuneToUp` | 170 | Jog up one small step. Sent as discrete taps (the capture shows single sends as well as short bursts as the user nudges a rail), unlike the run-to-limit verbs' steady ~0.3 s repeat while held — which is why this one suits a button. Addressed by `PeripheralUID`, never by room/group. **Used** (Jog up button). |
 | `MotorFineTuneToDown` | 170 | Jog down a small step. **Used** (Jog down button). |
 | `FindTop` | 0 | Sent when opening the limit-setting screen and again when leaving it; presumably re-syncs the motor to its top. |
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
@@ -289,9 +294,21 @@ The hub-wide form is simply the bare verb with **no scope field at all** — no 
 all-rooms marker: `{"Switch": 0}`, `{"Switch": 1}`, `{"Favorite": 0}`. An omitted scope means
 "everything", not "nothing".
 
-Hub-wide `Favorite` reached every two-rail blind (all nine went to their stored 0/50) and left
-the four single-rail blinds untouched — they have no stored favorite, so this is the hub's
-behaviour rather than a partial failure.
+Hub-wide `Favorite` moved every two-rail blind to its stored 0/50. The four single-rail blinds
+did not move, but they were already sitting at bottom 100 when it fired, so that capture says
+nothing either way about them.
+
+A later per-blind capture of a **single-rail** shade settles it: the app sends all three verbs
+to it in exactly the same form as to a two-rail blind, addressed by `RoomID` + `GroupID`.
+
+```
+{"TaskID": 60730, "RoomID": 3961, "GroupID": 1, "Favorite": 0}
+{"TaskID": 60731, "RoomID": 3961, "GroupID": 1, "Switch": 0}
+{"TaskID": 60732, "RoomID": 3961, "GroupID": 1, "Switch": 1}
+```
+
+So none of the three verbs is conditioned on rail count, at any scope. On a single-rail blind
+`Switch` has only the bottom rail to set; the middle-rail half of the command is simply moot.
 
 | Body (plus `Timestamp`, `TaskID`) | Effect |
 |---|---|
@@ -316,11 +333,20 @@ still lit. Reading this from a capture alone is misleading -- a room that is alr
 `Switch` left the middle rail untouched. Stage a blind away from both rails' end positions
 before drawing conclusions.
 
-`norman.room_command` sends these three. The hub echoes `Switch` / `Favorite` and `RoomID`. `Switch` and `Favorite` are also listed per blind in the registration reply. The per-blind
-`Favorite` form is **confirmed**: `{"Favorite": 0, "PeripheralUID": 58850}` moves that blind
-alone to its stored favorite, verified twice against the reference hub from two different
-starting positions. It is what the **Favorite position** button sends. The per-blind
-`{"Switch": 1, "PeripheralUID": …}` form remains untested.
+`norman.room_command` sends these three. The hub echoes `Switch` / `Favorite` and `RoomID`.
+
+**Both verbs take three scopes, selected by which address fields are present:**
+
+| Scope | Address fields | Sent by |
+|---|---|---|
+| One blind | `RoomID` + `GroupID` (+ `PeripheralUID`, which the app includes) | a blind's own buttons |
+| One room | `RoomID` | a room screen |
+| Every blind | none | the **All Rooms** screen |
+
+All three were captured from the app. Note that `PeripheralUID` alone is **not** an address for
+these verbs: `{"Favorite": 0, "PeripheralUID": …}` does move the blind (the hub appears to fall
+back to it), but the app never sends that form, and it is not what selects the target when the
+room/group pair is present.
 
 **Beware when testing this: the reply says nothing about movement.** The hub answers
 `Error: 0` immediately and echoes the field, and then `status` keeps reporting the *old*
@@ -532,7 +558,7 @@ notification stream ──(UpdateTime: room / peripheral / device)──► GetA
 periodic reconnect (300 s) / disconnect (15 s) ──► GetAllPeripheral + status
 cover / number action ──► control (both positions) ──► status (request_refresh)
 cover stop ──► control (MotorStop) ──► status (request_refresh)
-button press ──► control (Favorite / jog / run-to-limit verb) ──► status (request_refresh)
+button press ──► control (Switch / Favorite by room+group, or jog by uid) ──► status (refresh)
 get_hub_data action ──► GetAllPeripheral + status (redacted, returned as the response)
 send_hub_command action ──► control (caller's fields) ──► status
 mDNS announcement ──► config flow ──► registration (identity) ──► offer, or refresh the address

@@ -142,12 +142,6 @@
       },
       "jog_down": {
         "name": "Jog down"
-      },
-      "run_to_top_limit": {
-        "name": "Run to top limit"
-      },
-      "run_to_bottom_limit": {
-        "name": "Run to bottom limit"
       }
     },
     "sensor": {
@@ -210,6 +204,9 @@
     },
     "command_needs_a_room": {
       "message": "{command} needs a room; only {commands} can be sent to the whole hub."
+    },
+    "button_needs_room": {
+      "message": "{command} needs {name}'s room and group from the hub, which have not been read yet."
     }
   }
 }

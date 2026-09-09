@@ -8,7 +8,7 @@ a device of its own carrying four diagnostic sensors.
 |---|---|---|
 | Cover | Bottom rail; Middle rail on two-rail blinds | — |
 | Number | Bottom rail position; Middle rail position on two-rail blinds | — |
-| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Run to top limit, Run to bottom limit | — |
+| Button | Best privacy, Best view, Favorite position, Jog up, Jog down | — |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
 
 \* disabled by default; enable from the entity's settings.
@@ -77,11 +77,11 @@ every cover whenever the hub reports a change, including changes made with a rem
 Norman app. It also refreshes after every command it sends and every time the long-poll is
 reconnected. See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
 
-**Best privacy** and **Best view** are the Norman app's room buttons, per blind: privacy puts
-the bottom rail at 0 and the middle rail at 100 (closed for privacy, sheer fabric still open),
-and view opens both. They send rail positions rather than the hub's `Switch` verb, which has
-only ever been observed room-wide — the result is the same. On a single-rail blind the middle
-value is ignored, so privacy simply closes it.
+**Best privacy** and **Best view** are the app's own buttons, per blind: privacy puts the
+bottom rail at 0 and the middle rail at 100 (closed for privacy, sheer fabric still open), and
+view opens both. They send the hub's `Switch` verb addressed at the single blind by its room
+and group, exactly as the app does, so the positions are the hub's rather than this
+integration's idea of them.
 
 The bundled [dashboard card](dashboard.md) puts all of this on one card, grouped by room;
 [`examples/dashboard.yaml`](../examples/dashboard.yaml) is a complete dashboard using it.
@@ -123,9 +123,9 @@ dashboard by hand if you want them there.
 
 | Button | Hub verb | Notes |
 |---|---|---|
-| Favorite position | `Favorite: 0` | Moves to the favorite stored in the blind. The verb is confirmed room-wide from the app; the per-blind form is the hub's advertised one and has not been captured yet. If nothing happens on your blinds, open an issue. |
-| Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | A small motor step, the same as the app's limit-setup jog. Independent of position targets. |
-| Run to top limit / Run to bottom limit | `SetMotorToTopLimit` / `…BottomLimit: 170` | Drives the motor to the limit stored in the blind. Not the same as open/close, which go through the hub's position logic: these can still work when a blind's position tracking has drifted. |
+| Best privacy / Best view | `Switch: 0` / `Switch: 1` | The app's own buttons, addressed at this blind by its room and group. Privacy is bottom rail 0 with the middle rail at 100; view opens both. |
+| Favorite position | `Favorite: 0` | Moves to the favorite stored in the blind, addressed the same way. Works on both rail types. |
+| Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | One small motor step, addressed by `PeripheralUID`. The app uses it while setting limits and as the Fine-tune step of calibration, tapping it repeatedly to inch a rail into place. Independent of position targets, and the hub reports no position change until the motor settles. |
 
 Errors follow the cover convention: a hub error or timeout fails the press with a message
 naming the verb and the blind.
@@ -178,7 +178,8 @@ Seen in real hub payloads but not turned into entities, because their meaning or
 not established: `PacketReceiveRate`, `StallCurrent`, and the hub's `OTA` and `PairingMode`
 flags.
 
-Of the hub's control verbs, fine-tune, run-to-limit, and favorite are [buttons](#buttons), and
+Of the hub's control verbs, fine-tune, favorite, and the two Switch positions are
+[buttons](#buttons), and
 stop is on the covers. The ones still without an entity are the limit-setting family
 (`SetTopLimit`, `CleanTopLimit`, and their bottom and middle equivalents), `Calibration`, and
 the unconfirmed `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`,

@@ -142,12 +142,6 @@
       },
       "jog_down": {
         "name": "Pas vers le bas"
-      },
-      "run_to_top_limit": {
-        "name": "Aller à la fin de course haute"
-      },
-      "run_to_bottom_limit": {
-        "name": "Aller à la fin de course basse"
       }
     },
     "sensor": {
@@ -210,6 +204,9 @@
     },
     "command_needs_a_room": {
       "message": "{command} nécessite une pièce ; seuls {commands} peuvent être envoyés à tout le hub."
+    },
+    "button_needs_room": {
+      "message": "{command} nécessite la pièce et le groupe de {name} depuis le hub, qui n'ont pas encore été lus."
     }
   }
 }

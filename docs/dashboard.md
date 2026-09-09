@@ -96,8 +96,8 @@ equivalent and is only reachable this way.
 
 ### The whole house
 
-`home_controls: true` puts open and close in the card's own header, moving **every** blind on
-the hub:
+`home_controls: true` puts the same three buttons in the card's own header, where they move
+**every** blind on the hub:
 
 ```yaml
 type: custom:norman-shades-card
@@ -105,15 +105,22 @@ title: Shades
 home_controls: true
 ```
 
+| Button | Does |
+|---|---|
+| Best privacy | Every blind: bottom rail to 0, middle rail to 100 |
+| Best view | Every blind: both rails to 100 |
+| Favorite | Every blind to its own stored favorite |
+
 Like the room presets these go through `norman.room_command`, but with no room at all — the hub
 treats a command with no scope as "everything", so it is one request for the house however many
-blinds you have. These are the same three buttons the app's own **All Rooms** screen sends:
-open is both rails to 100, close is the privacy position (bottom 0, middle 100), and favorite
-sends every blind to its stored position. Because they are the hub's own verbs this is not a
-fan-out and needs no room-name match.
+blinds you have. These are the same three buttons the app's own **All Rooms** screen sends.
+Because they are the hub's own verbs this is not a fan-out and needs no room-name match.
 
-Hub-wide favorite reaches only two-rail blinds; single-rail ones have no stored favorite and
-stay where they are.
+They deliberately carry the app's names rather than open/close arrows. **Best privacy** is not a
+close: it leaves the middle rail fully open, so a two-rail blind ends private but still lit.
+
+All three work on single-rail blinds as well as two-rail ones — a capture of the app driving a
+single-rail shade shows it sending the same three verbs unchanged.
 
 There is no house-wide **stop**: the hub's stop is per blind, so it would have to fan out over
 every cover, and a stop that lags the blinds it is stopping is worse than none. Use a room's
@@ -142,7 +149,7 @@ hide_battery: false        # hide the battery readings
 hide_room_names: false     # one flat list instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading
 room_presets: false        # add the app's Best privacy / Best view / Favorite buttons
-home_controls: false       # add open/close for every blind, in the card header
+home_controls: false       # the same three buttons for every blind, in the card header
 rooms:                     # only these areas, in this order
   - Master Bedroom
   - Den

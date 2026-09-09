@@ -5,13 +5,30 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **The card's whole-house buttons now carry the app's names.** `home_controls` already sent
+  Best privacy / Best view / Favorite, but presented them as open/close arrows — misleading,
+  since Best privacy leaves the middle rail fully open rather than putting both fabrics down.
+  They now match the room buttons in name, icon and order.
+- **Confirmed all three room/house verbs work on single-rail blinds.** A per-blind capture of a
+  single-rail shade shows the app sending `Switch 0`, `Switch 1` and `Favorite` to it in the
+  same `RoomID` + `GroupID` form it uses for two-rail blinds.
+
 ## 0.27 — 2026-09-09
-- **Per-blind Best privacy and Best view buttons.** Each blind already had a Favorite position
-  button; these complete the set, matching the three the Norman app offers per room. Privacy is
-  bottom rail 0 with the middle rail at 100 (closed for privacy, sheer fabric still open); view
-  opens both. They send those rail positions rather than the hub's `Switch` verb, which has only
-  ever been observed room-wide and hub-wide — same result, over the position path the covers
-  already use.
+- **Per-blind Best privacy and Best view buttons**, completing the set alongside Favorite
+  position and matching the three the Norman app offers.
+- **Removed the Run to top limit / Run to bottom limit buttons.** They were the wrong shape for
+  the verb: the app sends `SetMotorToTopLimit` every ~0.3 s for as long as its OPEN control is
+  *held*, and only inside the Shade Limit Setting screen — a single press is one pulse of a
+  hold-to-run signal, not a move. Best view and Best privacy reach the same end positions
+  through the hub's own verb, so the buttons were also redundant. `send_hub_command` can still
+  send the raw verbs.
+- **Corrected how `Switch` and `Favorite` address a single blind.** They take `RoomID` +
+  `GroupID`, not `PeripheralUID`: a capture of the app's per-blind buttons shows `GroupID: 1`
+  moving only the group-1 blind in that room and leaving group 2 untouched. `(RoomID, GroupID)`
+  is unique per blind on the hub. `GroupID` had been documented as a remote-control grouping
+  the integration exposes nothing for; it is in fact the per-blind address. All three buttons
+  now send the app's own payload.
 
 ## 0.26 — 2026-09-09
 - **House-wide control.** `norman.room_command` now takes an optional `room`: omit it and the

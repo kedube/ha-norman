@@ -142,12 +142,6 @@
       },
       "jog_down": {
         "name": "向下微调"
-      },
-      "run_to_top_limit": {
-        "name": "移至上限位"
-      },
-      "run_to_bottom_limit": {
-        "name": "移至下限位"
       }
     },
     "sensor": {
@@ -210,6 +204,9 @@
     },
     "command_needs_a_room": {
       "message": "{command} 需要指定房间；只有 {commands} 可以发送到整个中枢。"
+    },
+    "button_needs_room": {
+      "message": "{command} 需要从中枢获取 {name} 的房间和分组，但尚未读取。"
     }
   }
 }

@@ -12,7 +12,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.norman.button import BUTTONS
-from custom_components.norman.const import DOMAIN, HUB_COMMAND_SETTING, HUB_COMMAND_TRIGGER
+from custom_components.norman.const import DOMAIN, HUB_COMMAND_TRIGGER
 
 from .conftest import FakeHub
 from .const import UID_BEDROOM, UID_LIVING
@@ -35,12 +35,17 @@ async def test_every_blind_gets_the_buttons(
     device page sorts uncategorised entities together by entity id, which interleaved
     "Middle rail" with the buttons. Categorising every button keeps a two-rail blind's two
     covers adjacent at the top of the page.
+
+    Favorite included: single-rail blinds have a stored favorite too. A hub-wide Favorite
+    left them where they were in one capture, but they were already sitting at 100 -- no
+    movement was not evidence of no favorite.
     """
     for uid in (UID_LIVING, UID_BEDROOM):
         for description in BUTTONS:
             entry = _button(hass, uid, description.key)
             assert entry.entity_category is EntityCategory.CONFIG, description.key
             assert entry.disabled_by is None, f"{description.key} should be enabled"
+
     state = hass.states.get(_button(hass, UID_LIVING, "favorite").entity_id)
     assert state.attributes["friendly_name"] == "Living Drape Favorite position"
     # Icons come from icons.json, whose coverage tests/test_repo_consistency.py pins
@@ -49,7 +54,6 @@ async def test_every_blind_gets_the_buttons(
 @pytest.mark.parametrize(
     ("key", "verb", "value"),
     [
-        ("favorite", "Favorite", HUB_COMMAND_SETTING),
         ("jog_up", "MotorFineTuneToUp", HUB_COMMAND_TRIGGER),
         ("jog_down", "MotorFineTuneToDown", HUB_COMMAND_TRIGGER),
     ],
@@ -94,19 +98,65 @@ async def test_press_failure_names_the_button_and_blind(
         )
 
 
-async def test_privacy_and_view_send_the_captured_rail_positions(
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("best_privacy", {"Switch": 0}),
+        ("best_view", {"Switch": 1}),
+        ("favorite", {"Favorite": 0}),
+    ],
+)
+async def test_addressed_buttons_target_the_blind_by_room_and_group(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    key: str,
+    expected: dict[str, int],
+) -> None:
+    """Switch and Favorite are addressed by RoomID + GroupID, not by PeripheralUID alone.
+
+    Captured from the app's own per-blind buttons: sending GroupID 1 in a room moved only
+    the group-1 blind, leaving group 2 untouched. The pair is unique per blind.
+    """
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _button(hass, UID_LIVING, key).entity_id},
+        blocking=True,
+    )
+
+    call = fake_hub.control_calls[-1]
+    assert {k: call[k] for k in expected} == expected
+    # The room/group pair is what selects the blind.
+    assert call["RoomID"] == 1
+    assert call["GroupID"] == 10
+    # The app sends the uid alongside; harmless, and it keeps the payload identical to it.
+    assert call["PeripheralUID"] == UID_LIVING
+
+
+async def test_there_are_no_run_to_limit_buttons(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """The run-to-limit verbs are hold-to-run, so a button is the wrong shape for them.
+
+    The app sends SetMotorToTop/BottomLimit every ~0.3 s for as long as its OPEN/CLOSE
+    control is held, and only inside the Shade Limit Setting screen. A single press is one
+    pulse of that signal. Best view and Best privacy reach the same end positions through
+    the hub's own Switch verb; send_hub_command remains for the raw verbs.
+    """
+    assert not [d for d in BUTTONS if "limit" in d.key]
+
+
+async def test_jog_is_addressed_by_uid_not_room_and_group(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """Best privacy and Best view move the rails where the app's room buttons do.
+    """The motor verbs use PeripheralUID; only Switch and Favorite use room + group.
 
-    The hub's own Switch verb has only ever been captured room-wide or hub-wide, so these
-    send the position pair that command was observed to produce rather than guessing at a
-    per-blind Switch form.
+    Both forms appear in captures of the same app session, so this is a real distinction
+    rather than a style choice: MotorFineTuneToUp/Down were only ever sent with a
+    PeripheralUID and no scope fields at all.
     """
-    for key, expected in (
-        ("best_privacy", {"BottomRailPosition": 0, "MiddleRailPosition": 100}),
-        ("best_view", {"BottomRailPosition": 100, "MiddleRailPosition": 100}),
-    ):
+    for key in ("jog_up", "jog_down"):
         await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
@@ -115,6 +165,7 @@ async def test_privacy_and_view_send_the_captured_rail_positions(
         )
         call = fake_hub.control_calls[-1]
         assert call["PeripheralUID"] == UID_LIVING
-        assert {k: call[k] for k in expected} == expected, key
-        # Never the unverified per-blind Switch form.
-        assert "Switch" not in call
+        assert "RoomID" not in call
+        assert "GroupID" not in call
+
+    assert [d.addressed for d in BUTTONS if d.key.startswith("jog")] == [False, False]

@@ -472,14 +472,20 @@ class NormanShadesCard extends HTMLElement {
    * renamed, and the action reports the names it knows if one does not match.
    */
   /**
-   * Open / close every blind in the house, via the hub's own scope-less verb.
+   * The app's three buttons for the whole house, via the hub's own scope-less verb.
    *
    * Omitting RoomID entirely is what makes the hub treat a command as house-wide, so this
-   * is one request no matter how many blinds there are. These are the three buttons the
-   * app's own "All Rooms" screen sends, captured from it.
+   * is one request no matter how many blinds there are. These are the same three buttons
+   * the app's own "All Rooms" screen sends, captured from it.
    *
-   * Favorite reaches only two-rail blinds: single-rail ones have no stored favorite and
-   * stay where they are, which is the hub's behaviour, not a limitation here.
+   * They carry the app's names and icons rather than open/close arrows, because they are
+   * not open and close: "Best privacy" is bottom 0 with the middle rail fully OPEN, so a
+   * two-rail blind ends private but still lit. Labelling that as a plain "close" would
+   * promise both fabrics down, which is not what the hub does. The room buttons in
+   * _buildRoomPresets are the same three verbs scoped to one room, and match deliberately.
+   *
+   * Every verb here works on single-rail blinds too: a per-blind capture of a single-rail
+   * shade shows the app sending Switch 0, Switch 1 and Favorite to it unchanged.
    *
    * There is deliberately no house-wide Stop: the hub's stop is per blind, so it would
    * have to fan out over every cover, and a Stop that lags the blinds it is stopping is
@@ -490,9 +496,9 @@ class NormanShadesCard extends HTMLElement {
     controls.className = "buttons home-buttons";
 
     for (const [icon, command, label] of [
-      ["mdi:arrow-up", "best_view", "Open every blind"],
-      ["mdi:arrow-down", "best_privacy", "Close every blind"],
-      ["mdi:star", "favorite", "Every blind to its favorite"],
+      ["mdi:blinds-horizontal", "best_privacy", "Best privacy — every room"],
+      ["mdi:weather-sunny", "best_view", "Best view — every room"],
+      ["mdi:star", "favorite", "Favorite — every room"],
     ]) {
       const button = document.createElement("ha-icon-button");
       const inner = document.createElement("ha-icon");
@@ -713,7 +719,7 @@ class NormanShadesCardEditor extends HTMLElement {
       { key: "hide_room_names", label: "Hide room headings", type: "checkbox" },
       { key: "hide_room_controls", label: "Hide whole-room open/close", type: "checkbox" },
       { key: "room_presets", label: "Show the app's room buttons", type: "checkbox" },
-      { key: "home_controls", label: "Open/close the whole house", type: "checkbox" },
+      { key: "home_controls", label: "Show the app's buttons for the whole house", type: "checkbox" },
     ];
 
     for (const field of fields) {

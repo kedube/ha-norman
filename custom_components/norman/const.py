@@ -180,6 +180,12 @@ HUB_CMD_TO_BOTTOM_LIMIT = "SetMotorToBottomLimit"
 # Error 0 and keeps reporting the old position while the blind travels (~30 s on a large
 # shade), so a command that looks ignored may simply still be running.
 HUB_CMD_FAVORITE = "Favorite"
+# Switch is the open/close verb behind the app's Best View / Best Privacy buttons. It is
+# addressed by RoomID (a room), RoomID + GroupID (one blind), or nothing at all (the whole
+# hub) -- never by PeripheralUID alone. It sets BOTH rails: close is bottom 0 / middle 100.
+HUB_CMD_SWITCH = "Switch"
+HUB_SWITCH_OPEN = 1
+HUB_SWITCH_CLOSE = 0
 
 COVER_TYPE_TWO_RAIL = "two_rail"
 COVER_TYPE_SINGLE_RAIL = "single_rail"
