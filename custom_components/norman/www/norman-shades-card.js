@@ -188,17 +188,19 @@ class NormanShadesCard extends HTMLElement {
   /**
    * The heading to show: the configured title, else the hub's name.
    *
-   * A literal "Shades" is treated as unset. Until 0.30 `getStubConfig()` returned
-   * `title: "Shades"`, so every card added from the picker had that string written into
-   * its saved dashboard config -- it was the default, not a choice anyone made. Honouring
-   * it would mean the hub name only ever appeared for people who added a card after 0.30,
-   * which is the opposite of the point. Anyone who genuinely wants the word can set
-   * `title: Shades ` or any other spelling; `title: ""` still gives a blank heading.
+   * A configured `title` always wins, whatever it says -- including `""` for a blank
+   * heading. With no title the header names the hub, so a house with two hubs gets two
+   * cards you can tell apart; "Shades" is only the fallback for when no hub device can be
+   * found (an install with no Norman devices yet, or before the registry has loaded).
+   *
+   * Note that cards added from the picker before v0.30 have `title: "Shades"` saved in
+   * their dashboard config, because `getStubConfig()` used to supply it. Those keep saying
+   * "Shades" until the title is removed -- the card cannot tell a saved default from a
+   * deliberate choice, and second-guessing a configured title is worse than honouring one.
    */
   _headingText() {
     const configured = this._config.title;
-    if (configured !== undefined && configured !== "Shades") return configured;
-    return this._hubName() ?? "Shades";
+    return configured !== undefined ? configured : (this._hubName() ?? "Shades");
   }
 
   _hubName() {

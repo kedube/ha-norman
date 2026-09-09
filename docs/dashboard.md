@@ -24,8 +24,8 @@ The card header is named after your **hub** — the name it has in Home Assistan
 integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
 to override it, or `title: ""` for no heading text at all.
 
-A saved `title: Shades` is treated as unset, because that is what cards added before v0.30 got
-from the card picker automatically. If you want the literal word back, any other spelling works. It carries **Best privacy / Best
+If your card was added before v0.30 it may already have `title: Shades` saved in its config —
+the card picker used to supply that automatically. Remove the `title` line to get the hub name. It carries **Best privacy / Best
 view / Favorite** for the whole house, and each room heading carries open/stop/close plus the
 same three for that room.
 
