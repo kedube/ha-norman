@@ -6,6 +6,9 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 version heading and publishes it as the release's Highlights.
 
 ## 0.28 — 2026-09-09
+- **Fixed a dangling instruction in the example dashboard.** Its header ended "In
+  configuration.yaml:" with nothing after it — the YAML-mode snippet had been removed and the
+  sentence introducing it left behind. It now points at `docs/dashboard.md`, which covers it.
 - **Existing cards now pick up the hub name too.** v0.30 named the header after the hub only
   when no title was configured — but every card added from the picker before then had
   `title: "Shades"` written into its saved dashboard config automatically, so the feature

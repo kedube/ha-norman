@@ -9,8 +9,11 @@
 #   2. Paste the `views:` entry you want, or the whole file to replace the dashboard.
 #   3. Save.
 #
-# YAML-mode dashboards can use this file as-is. In configuration.yaml:
+# YAML-mode dashboards can use this file as-is, but must also declare the card themselves --
+# an integration cannot write to a YAML-mode resource list. See docs/dashboard.md ("Adding
+# it") for the resource entry and the exact URL, which is logged at startup.
 
+# The dashboard's own title and its view tab; the card below names your hub, not itself.
 title: Shades
 views:
   - title: Shades
