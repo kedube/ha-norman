@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.26 — 2026-09-09
 - **House-wide control.** `norman.room_command` now takes an optional `room`: omit it and the
   verb goes to every blind on the hub in a single request, which is how the hub reads a command
   with no scope. The card gained a matching `home_controls` option putting open and close in its
