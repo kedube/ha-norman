@@ -30,6 +30,18 @@ def test_bump_minor_rolls_over_to_major() -> None:
     assert bump_manifest_version._bump_minor("2.99") == "3.00"
 
 
+def test_bump_minor_walks_the_0_99_rollover() -> None:
+    """0.99 is the rollover the project actually reaches next.
+
+    The sequence has to run 0.98, 0.99, 1.00, 1.01 -- the minor keeps counting inside the
+    new major rather than restarting the 0.x line or jumping to 1.1.
+    """
+    assert bump_manifest_version._bump_minor("0.98") == "0.99"
+    assert bump_manifest_version._bump_minor("0.99") == "1.00"
+    assert bump_manifest_version._bump_minor("1.00") == "1.01"
+    assert bump_manifest_version._bump_minor("1.99") == "2.00"
+
+
 def test_bump_major() -> None:
     assert bump_manifest_version._bump_major("2.43") == "3.00"
 
