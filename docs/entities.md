@@ -13,6 +13,12 @@ a device of its own carrying four diagnostic sensors.
 
 \* disabled by default; enable from the entity's settings.
 
+<img src="../images/blind-device.png" alt="A two-rail blind's device page in Home Assistant, showing the Controls, Configuration and Diagnostic sections and the Activity timeline." width="820">
+
+*Everything in that table, on one blind's device page. **Controls** holds the covers and
+sliders, **Configuration** the five buttons, and **Diagnostic** the sensors — Home Assistant
+sorts them by the entity category each one declares.*
+
 ## Devices
 
 | Device | Identifiers | Notes |
@@ -155,6 +161,12 @@ example `sensor.living_room_living_drape_battery`. Installs that ran 0.11 keep t
 `..._battery_voltage` entity id; the entity is migrated in place.
 
 ### Hub sensors
+
+<img src="../images/hub-device.png" alt="The hub's device page, showing MAC address, time zone, Wi-Fi network and Wi-Fi signal under Diagnostic, and every blind under Connected devices." width="820">
+
+*The hub's own device. Every blind is listed under **Connected devices** because each one is
+linked to the hub with `via_device`, so removing the hub removes them together.*
+
 
 The hub device has its own diagnostic sensors:
 

@@ -4,31 +4,11 @@ The integration ships a Lovelace card, **Norman Shades**, that shows every blind
 room with its battery level and a position bar per rail, in the style of Home Assistant's own
 tile cards.
 
-```
-┌────────────────────────────────────────────────────────────┐
-│ ShadeAuto Hub              (🪟 Privacy) (☀ View) (★ Favorite) │
-│                                                            │
-│ MASTER BEDROOM     [▲ ■ ▼]  (🪟 Privacy) (☀ View) (★ Favorite) │
-│ ╭────────────────────────────────────────────────────────╮ │
-│ │ Master_Bedroom_1                              🔋 100%  │ │
-│ │ ┃Bottom rail ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░  60% ┃ [▲ ■ ▼] │ │
-│ │ ┃Middle rail ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  80% ┃ [▲ ■ ▼] │ │
-│ ├────────────────────────────────────────────────────────┤ │
-│ │ Master_Bedroom_2                              🔋  74%  │ │
-│ │ ┃Bottom rail ▓▓▓▓▓▓▓░░░░░░┆░░░░░░ 20% → 50% ┃ [▲ ■ ▼] │ │
-│ ╰────────────────────────────────────────────────────────╯ │
-│                                                            │
-│ DEN                [▲ ■ ▼]  (🪟 Privacy) (☀ View) (★ Favorite) │
-│ ╭────────────────────────────────────────────────────────╮ │
-│ │ Den_1                                         🔋  35%  │ │
-│ │ ┃Bottom rail ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░  90% ┃ [▲ ■ ▼] │ │
-│ ╰────────────────────────────────────────────────────────╯ │
-└────────────────────────────────────────────────────────────┘
-```
+<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub name and three preset chips in the header, then each room with its own open, stop and close pill and preset chips, and each blind showing a filled position bar per rail." width="820">
 
-Master_Bedroom_2 is on its way from 20% to 50%: the bar keeps filling as the blind travels,
-a faint marker (┆) shows where it is heading, and the stop button in its pill lights up until
-it arrives.
+*The card on a real hub. Every blind is at 100% here; a blind that is **moving** reads
+"20% → 50%" instead, with a faint marker at the target and its stop button highlighted, until
+it arrives.*
 
 The card header is named after your **hub** — the name it has in Home Assistant, which the
 integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
