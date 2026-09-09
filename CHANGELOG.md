@@ -9,11 +9,10 @@ version heading and publishes it as the release's Highlights.
 - **Fixed a dangling instruction in the example dashboard.** Its header ended "In
   configuration.yaml:" with nothing after it — the YAML-mode snippet had been removed and the
   sentence introducing it left behind. It now points at `docs/dashboard.md`, which covers it.
-- **Existing cards now pick up the hub name too.** v0.30 named the header after the hub only
-  when no title was configured — but every card added from the picker before then had
-  `title: "Shades"` written into its saved dashboard config automatically, so the feature
-  reached almost nobody. A saved `title: Shades` is now treated as the default it was, not as a
-  choice. Any other title, including `""`, is still honoured exactly as set.
+- **The card's heading follows the hub once the device registry loads**, rather than being
+  fixed at first render. A configured `title` always wins, whatever it says; remove it to get
+  the hub name. Cards added from the picker before v0.30 have `title: "Shades"` saved in their
+  config, so those need the title removed once.
 - **The card names your hub in its header** instead of saying "Shades". Two hubs now give two
   cards you can tell apart. An explicit `title` still wins, `title: ""` gives a blank heading,
   and "Shades" remains the fallback when no hub device can be found. The heading also follows a

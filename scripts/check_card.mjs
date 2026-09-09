@@ -340,11 +340,11 @@ check("an explicit empty title is respected",
   walk(c.shadowRoot);
   check("the header follows a hub rename", text === "Renamed Hub", String(text));
 }
-// Until 0.30 getStubConfig() returned title:"Shades", so every card added from the picker
-// has that string saved in its dashboard config. It was the default, not a choice -- so it
-// must not suppress the hub name, or the feature would only ever reach new cards.
-check("a saved default title of 'Shades' still shows the hub name",
-      headerTextOf({ title:"Shades" }) === "Norman Hub",
+// A configured title always wins, whatever it says. Cards added before v0.30 carry
+// title:"Shades" from the old getStubConfig(), and they keep it: the card cannot tell a
+// saved default from a deliberate choice, and overriding a configured title is worse.
+check("a configured title always wins, even 'Shades'",
+      headerTextOf({ title:"Shades" }) === "Shades",
       String(headerTextOf({ title:"Shades" })));
 // The heading must fill in once the device registry loads, not stay stuck at first render.
 {
