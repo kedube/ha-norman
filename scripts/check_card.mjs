@@ -283,9 +283,27 @@ home.children[2]._on?.click?.();
 check("home buttons call norman.room_command",
       homeCalls.length === 3 && homeCalls.every(c => c[0]==="norman" && c[1]==="room_command"),
       JSON.stringify(homeCalls));
-check("home controls send best_view / best_privacy / favorite",
-      JSON.stringify(homeCalls.map(c => c[2].command)) === JSON.stringify(["best_view","best_privacy","favorite"]),
+check("home controls send best_privacy / best_view / favorite",
+      JSON.stringify(homeCalls.map(c => c[2].command)) === JSON.stringify(["best_privacy","best_view","favorite"]),
       JSON.stringify(homeCalls.map(c => c[2].command)));
+// The house buttons are the room buttons at a wider scope, so they must present the same
+// three verbs in the same order -- a user who learns the room row can read the header row.
+const presetOrder = [];
+const orderCard = new Card();
+orderCard._hass = { ...hass, callService: (d,s2,data) => presetOrder.push(data.command) };
+orderCard.setConfig({ type:"custom:norman-shades-card" });
+orderCard._hass = { ...hass, callService: (d,s2,data) => presetOrder.push(data.command) };
+const presetRow = orderCard._buildRoomPresets("Den");
+[...presetRow.children].forEach(b => b._on?.click?.());
+check("house buttons match the room buttons in order",
+      JSON.stringify(presetOrder) === JSON.stringify(homeCalls.map(c => c[2].command)),
+      JSON.stringify(presetOrder));
+// They are the app's named presets, not open/close: a down arrow would promise both
+// fabrics down, but best_privacy leaves the middle rail fully open.
+const homeIcons = [...home.children].map(b => b.children[0]?.getAttribute?.("icon"));
+check("house buttons are not labelled as open/close arrows",
+      !homeIcons.includes("mdi:arrow-up") && !homeIcons.includes("mdi:arrow-down"),
+      JSON.stringify(homeIcons));
 // The absence of `room` is what makes it house-wide; sending one would scope it to a room.
 check("home controls omit the room entirely",
       homeCalls.every(c => !("room" in c[2])), JSON.stringify(homeCalls[0]?.[2]));

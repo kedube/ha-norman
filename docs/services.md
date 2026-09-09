@@ -86,8 +86,6 @@ data:
 ```
 
 All three commands work without a room — this is what the app's **All Rooms** screen sends.
-Note that hub-wide `favorite` reaches only two-rail blinds: single-rail ones have no stored
-favorite and stay where they are.
 
 `Switch` sets both rails to fixed positions; it is not a relative move and there is no
 room-wide way to reach an arbitrary percentage. For that, use the cover entities (or the card's
@@ -161,8 +159,8 @@ clears a setting. These were captured from the Norman app, so they are known to 
 |---|---|---|
 | `{MotorStop: 170}` | Stop the motor. This is what `cover.stop_cover` sends. | yes |
 | `{MotorFineTuneToUp: 170}` / `{MotorFineTuneToDown: 170}` | Jog a small step up or down. The **Jog** buttons. | yes |
-| `{SetMotorToTopLimit: 170}` / `{SetMotorToBottomLimit: 170}` | Run to the stored top or bottom limit. The **Run to … limit** buttons. | yes |
-| `{Favorite: 0}` | Go to the favorite position. The **Favorite position** button; confirmed both per-blind and room-wide. | yes |
+| `{SetMotorToTopLimit: 170}` / `{SetMotorToBottomLimit: 170}` | Drive toward the stored limit **while held** — the app repeats it every ~0.3 s inside its Shade Limit Setting screen. One call is a single pulse, so there is no button for it. | yes |
+| `{Favorite: 0}` | Go to the favorite position. The **Favorite position** button. Note the app addresses this by `RoomID` + `GroupID`, not `PeripheralUID` — pass those in `fields` to match it, or use [`norman.room_command`](#normanroom_command). | yes |
 | `{FindTop: 0}` | Re-sync to the top; the app sends it when entering and leaving limit setup. | yes |
 | `{SetTopLimit: 0}` / `{SetBottomLimit: 0}` | Store the **current** position as that limit. | changes the blind's travel |
 | `{CleanTopLimit: 0}` / `{CleanBottomLimit: 0}` | Clear a stored limit. | changes the blind's travel |

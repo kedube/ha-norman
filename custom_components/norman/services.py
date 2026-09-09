@@ -101,8 +101,14 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
     """POST arbitrary fields to the hub's control endpoint for one peripheral.
 
     An advanced tool for probing commands the hub advertises but the integration does not
-    know how to send yet (``MotorStop``, limits, favorites, ...). The hub's reply is
+    know how to send yet (limits, calibration, motor speed, ...). The hub's reply is
     returned so the outcome can be seen. The blind will do whatever the hub makes of it.
+
+    Note this always addresses by ``PeripheralUID``, which is right for the motor verbs but
+    **not** how the app targets ``Switch`` or ``Favorite`` -- those take ``RoomID`` +
+    ``GroupID`` (see docs/NORMAN_API.md). Pass those fields yourself to reproduce the app's
+    payload; they are merged in as given. ``norman.room_command`` already does this for the
+    three commands that need it.
     """
     entry = _resolve_entry(call.hass, call)
     api = entry.runtime_data.api

@@ -142,12 +142,6 @@
       },
       "jog_down": {
         "name": "Schritt nach unten"
-      },
-      "run_to_top_limit": {
-        "name": "Zur oberen Endlage fahren"
-      },
-      "run_to_bottom_limit": {
-        "name": "Zur unteren Endlage fahren"
       }
     },
     "sensor": {
@@ -210,6 +204,9 @@
     },
     "command_needs_a_room": {
       "message": "{command} benötigt einen Raum; nur {commands} können an den gesamten Hub gesendet werden."
+    },
+    "button_needs_room": {
+      "message": "{command} benötigt Raum und Gruppe von {name} vom Hub, die noch nicht gelesen wurden."
     }
   }
 }

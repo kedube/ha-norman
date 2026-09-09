@@ -18,10 +18,11 @@ from .const import (
     HUB_CMD_FAVORITE,
     HUB_CMD_JOG_DOWN,
     HUB_CMD_JOG_UP,
-    HUB_CMD_TO_BOTTOM_LIMIT,
-    HUB_CMD_TO_TOP_LIMIT,
+    HUB_CMD_SWITCH,
     HUB_COMMAND_SETTING,
     HUB_COMMAND_TRIGGER,
+    HUB_SWITCH_CLOSE,
+    HUB_SWITCH_OPEN,
 )
 from .coordinator import NormanConfigEntry, NormanCoordinator
 from .entity import NormanEntity, async_add_entities_for_new_devices
@@ -37,6 +38,9 @@ class NormanButtonDescription(ButtonEntityDescription):
     """A button that sends one verb field to the hub's control call."""
 
     fields: dict[str, Any]
+    # Switch and Favorite are addressed by RoomID + GroupID, not PeripheralUID; the motor
+    # verbs (jog, run-to-limit) take PeripheralUID as usual.
+    addressed: bool = False
 
 
 # Every button is EntityCategory.CONFIG. That is not a claim that they are rarely used --
@@ -47,30 +51,30 @@ class NormanButtonDescription(ButtonEntityDescription):
 # With the buttons categorised, a two-rail blind shows its bottom-rail and middle-rail covers
 # together at the top, then the divider, then every button.
 #
-# Best privacy and Best view are the app's room buttons, per blind. The hub's own `Switch`
-# verb has only ever been seen room-wide or hub-wide -- the app has no per-blind version and
-# `{"Switch": …, "PeripheralUID": …}` has never been captured -- so rather than guess at that
-# form these send the rail positions the captured room command produces:
-# privacy = bottom 0 / middle 100, view = both 100. Same result, over the position path the
-# covers already use. Single-rail blinds ignore the middle value, so both still work there.
+# Best privacy, Best view and Favorite are addressed by RoomID + GroupID rather than by
+# PeripheralUID -- that pair is unique per blind and is what the app's own per-blind buttons
+# send (captured). `addressed=True` marks the ones that need it.
 BUTTONS: tuple[NormanButtonDescription, ...] = (
     NormanButtonDescription(
         key="best_privacy",
         translation_key="best_privacy",
         entity_category=EntityCategory.CONFIG,
-        fields={"BottomRailPosition": 0, "MiddleRailPosition": 100},
+        fields={HUB_CMD_SWITCH: HUB_SWITCH_CLOSE},
+        addressed=True,
     ),
     NormanButtonDescription(
         key="best_view",
         translation_key="best_view",
         entity_category=EntityCategory.CONFIG,
-        fields={"BottomRailPosition": 100, "MiddleRailPosition": 100},
+        fields={HUB_CMD_SWITCH: HUB_SWITCH_OPEN},
+        addressed=True,
     ),
     NormanButtonDescription(
         key="favorite",
         translation_key="favorite",
         entity_category=EntityCategory.CONFIG,
         fields={HUB_CMD_FAVORITE: HUB_COMMAND_SETTING},
+        addressed=True,
     ),
     NormanButtonDescription(
         key="jog_up",
@@ -84,22 +88,15 @@ BUTTONS: tuple[NormanButtonDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         fields={HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER},
     ),
-    # Run-to-limit drives the motor to its stored mechanical limit, which is not the same
-    # path as a position move: it can still work on a blind whose position tracking has
-    # drifted.
-    NormanButtonDescription(
-        key="run_to_top_limit",
-        translation_key="run_to_top_limit",
-        entity_category=EntityCategory.CONFIG,
-        fields={HUB_CMD_TO_TOP_LIMIT: HUB_COMMAND_TRIGGER},
-    ),
-    NormanButtonDescription(
-        key="run_to_bottom_limit",
-        translation_key="run_to_bottom_limit",
-        entity_category=EntityCategory.CONFIG,
-        fields={HUB_CMD_TO_BOTTOM_LIMIT: HUB_COMMAND_TRIGGER},
-    ),
 )
+
+# There are no "run to top/bottom limit" buttons. `SetMotorToTopLimit` /
+# `SetMotorToBottomLimit` are not one-shot moves: the app sends them every ~0.3 s for as long
+# as its OPEN/CLOSE control is *held*, and only inside the Shade Limit Setting screen (the one
+# behind "contact your dealer if you are unfamiliar with this advanced feature"), interleaved
+# with jog, clean-limit and set-limit. A single press is one pulse of a hold-to-run signal, so
+# a button is both misleading and redundant: Best view and Best privacy reach the same end
+# positions through the hub's own verb. `send_hub_command` can still send them.
 
 
 async def async_setup_entry(
@@ -135,10 +132,24 @@ class NormanButton(NormanEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Send the verb, then re-read the hub so the cover follows the motor."""
+        fields = dict(self.entity_description.fields)
+        data = self._data
         try:
-            await self.coordinator.api.async_send_control(
-                self._device_id, dict(self.entity_description.fields)
-            )
+            if self.entity_description.addressed:
+                if data is None or data.room_id is None or data.group_id is None:
+                    raise HomeAssistantError(
+                        translation_domain=DOMAIN,
+                        translation_key="button_needs_room",
+                        translation_placeholders={
+                            "command": self.entity_description.key,
+                            "name": self._device_name,
+                        },
+                    )
+                await self.coordinator.api.async_send_blind_control(
+                    data.room_id, data.group_id, fields, self._device_id
+                )
+            else:
+                await self.coordinator.api.async_send_control(self._device_id, fields)
         except (NormanApiError, NormanConnectionError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

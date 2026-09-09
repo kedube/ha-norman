@@ -15,12 +15,6 @@
       },
       "jog_down": {
         "default": "mdi:arrow-down-bold"
-      },
-      "run_to_top_limit": {
-        "default": "mdi:arrow-collapse-up"
-      },
-      "run_to_bottom_limit": {
-        "default": "mdi:arrow-collapse-down"
       }
     }
   },

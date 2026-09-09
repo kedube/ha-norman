@@ -142,12 +142,6 @@
       },
       "jog_down": {
         "name": "下へ微調整"
-      },
-      "run_to_top_limit": {
-        "name": "上限位置へ移動"
-      },
-      "run_to_bottom_limit": {
-        "name": "下限位置へ移動"
       }
     },
     "sensor": {
@@ -210,6 +204,9 @@
     },
     "command_needs_a_room": {
       "message": "{command} には部屋の指定が必要です。ハブ全体に送信できるのは {commands} のみです。"
+    },
+    "button_needs_room": {
+      "message": "{command} にはハブから取得する {name} の部屋とグループが必要ですが、まだ読み込まれていません。"
     }
   }
 }

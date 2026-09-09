@@ -142,12 +142,6 @@
       },
       "jog_down": {
         "name": "Paso hacia abajo"
-      },
-      "run_to_top_limit": {
-        "name": "Ir al límite superior"
-      },
-      "run_to_bottom_limit": {
-        "name": "Ir al límite inferior"
       }
     },
     "sensor": {
@@ -210,6 +204,9 @@
     },
     "command_needs_a_room": {
       "message": "{command} necesita una habitación; solo {commands} pueden enviarse a todo el concentrador."
+    },
+    "button_needs_room": {
+      "message": "{command} necesita la habitación y el grupo de {name} del concentrador, que aún no se han leído."
     }
   }
 }

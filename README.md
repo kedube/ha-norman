@@ -175,8 +175,7 @@ rail"). Each rail also has a **position slider** (a `number` entity, 0–100% in
 which is often easier to place on a dashboard than a cover's own slider.
 
 Each blind also has **buttons** for best privacy, best view, its favorite position, jog up,
-jog down, and run to top or
-bottom limit, plus diagnostic sensors for **battery** (percent), **last seen**, and, disabled
+and jog down, plus diagnostic sensors for **battery** (percent), **last seen**, and, disabled
 by default, **signal strength** and **firmware version**. The hub gets its own device with
 **MAC address**, **time zone**, and **Wi-Fi network** sensors, plus a **Wi-Fi signal** sensor
 that starts disabled. Full detail, including availability rules, is in
@@ -207,7 +206,8 @@ troubleshooting:
   bug reports and for adding support for new blind types.
 - `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for
   one blind, for the verbs that have no entity of their own (setting or clearing a limit, and
-  calibration). Fine-tune, run-to-limit, and favorite are buttons; stop is on the covers.
+  calibration, and the run-to-limit verbs). Fine-tune, favorite, best privacy and best view
+  are buttons; stop is on the covers.
 
 The nudges are relative to where the blind is **heading**, so repeated presses add up, and both
 clamp to 0–100. See [docs/services.md](docs/services.md).

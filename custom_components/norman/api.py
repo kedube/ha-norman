@@ -435,6 +435,31 @@ class NormanApiClient:
         self._raise_on_error_code(data, "Control request")
         return data
 
+    async def async_send_blind_control(
+        self, room_id: int, group_id: int, fields: dict[str, Any], device_id: int | None = None
+    ) -> dict[str, Any]:
+        """POST a verb addressed at one blind by its room and group.
+
+        The ``Switch`` and ``Favorite`` verbs are **not** addressed by ``PeripheralUID``: the
+        app targets a single blind with ``RoomID`` + ``GroupID``, which is unique per blind
+        (``GroupID`` is the blind's remote-control button within its room). A
+        ``PeripheralUID`` is sent alongside when known, as the app does, but the pair is what
+        selects the blind -- captured from the app's per-blind Best Privacy / Best View /
+        Favorite buttons.
+        """
+        payload: dict[str, Any] = {
+            "RoomID": room_id,
+            "GroupID": group_id,
+            "Timestamp": int(time.time()),
+            "TaskID": self._next_task_id(),
+            **fields,
+        }
+        if device_id is not None:
+            payload["PeripheralUID"] = device_id
+        data = await self._async_request(ENDPOINT_CONTROL, payload)
+        self._raise_on_error_code(data, "Blind control request")
+        return data
+
     async def async_send_room_control(
         self, room_id: int | None, fields: dict[str, Any]
     ) -> dict[str, Any]:
