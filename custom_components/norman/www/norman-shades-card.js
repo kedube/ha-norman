@@ -31,6 +31,14 @@ const KEY_BOTTOM_POSITION = "bottom_rail_position";
 const KEY_MIDDLE_POSITION = "middle_rail_position";
 const KEY_BATTERY = "battery_level";
 
+// The Norman app's three presets, as chips. The short label is what is printed; the
+// title is the full name, used for the tooltip and for assistive technology.
+const PRESETS = [
+  { command: "best_privacy", icon: "mdi:blinds-horizontal", label: "Privacy", title: "Best privacy" },
+  { command: "best_view", icon: "mdi:weather-sunny", label: "View", title: "Best view" },
+  { command: "favorite", icon: "mdi:star", label: "Favorite", title: "Favorite" },
+];
+
 const clampToStep = (value) => {
   const clamped = Math.max(0, Math.min(100, Number(value) || 0));
   return Math.round(clamped / STEP) * STEP;
@@ -286,62 +294,77 @@ class NormanShadesCard extends HTMLElement {
   _render() {
     const style = document.createElement("style");
     style.textContent = `
-      ha-card { padding: 8px 0 12px; }
+      /* Colour tokens. Home Assistant exposes the RGB triplets of its palette, which is
+         what lets the fills and tints here be translucent -- so they sit correctly on any
+         theme, light or dark, rather than assuming a white card. */
+      :host {
+        --n-fg-rgb: var(--rgb-primary-text-color, 33, 33, 33);
+        --n-accent-rgb: var(--rgb-primary-color, 3, 169, 244);
+        --n-radius: 10px;
+        --n-control: 32px;
+      }
+      ha-card { padding: 4px 0 8px; }
+
+      /* Header: the hub's name, and the app's three whole-house presets. */
       .header {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 8px;
-        font-size: var(--ha-card-header-font-size, 24px);
-        font-weight: var(--ha-card-header-font-weight, 400);
+        gap: 6px 12px;
+        font-size: var(--ha-card-header-font-size, 22px);
+        font-weight: var(--ha-card-header-font-weight, 500);
         color: var(--ha-card-header-color, var(--primary-text-color));
-        padding: 12px 16px 8px;
+        padding: 12px 16px 6px;
       }
       .header-text {
-        flex: 1;
+        flex: 1 1 140px;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .home-buttons ha-icon-button { --mdc-icon-button-size: 34px; --mdc-icon-size: 21px; }
-      .room { padding: 4px 0 8px; }
+
+      /* Room: an uppercase heading with its controls; the blinds sit in a rounded group
+         beneath it so a room reads as one object, not a run of hairlines. */
+      .room { padding: 8px 12px 4px; }
       .room-name {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 8px;
-        font-size: 0.85rem;
+        gap: 6px 10px;
+        font-size: 0.78rem;
         font-weight: 600;
-        letter-spacing: 0.06em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--secondary-text-color);
-        padding: 10px 16px 4px;
+        padding: 4px 4px 8px;
       }
       .room-name-text {
-        flex: 1;
+        flex: 1 1 120px;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      /* The room's buttons sit slightly smaller than a rail's, so the heading stays a
-         heading and the per-rail controls remain the primary ones. */
-      .room-buttons ha-icon-button { --mdc-icon-button-size: 28px; --mdc-icon-size: 17px; }
-      .room-presets ha-icon-button { --mdc-icon-button-size: 28px; --mdc-icon-size: 16px; }
-      /* A hairline between the two groups: the left set fans out over Home Assistant's
-         cover entities, the right set sends the hub's own room verbs. */
-      .room-presets { border-left: 1px solid var(--divider-color); margin-left: 4px; padding-left: 4px; }
-      .blind {
-        padding: 8px 16px 10px;
-        border-top: 1px solid var(--divider-color);
+      .group {
+        border-radius: var(--n-radius);
+        background: rgba(var(--n-fg-rgb), 0.04);
+        overflow: hidden;
       }
-      .room .blind:first-of-type { border-top: none; }
+
+      /* Blind: name and battery on one line, then one bar per rail. */
+      .blind { padding: 10px 12px 12px; }
+      .blind + .blind { border-top: 1px solid rgba(var(--n-fg-rgb), 0.08); }
       .blind.unavailable { opacity: 0.5; }
       .blind-head {
         display: flex;
         align-items: center;
         gap: 8px;
-        margin-bottom: 2px;
+        margin-bottom: 8px;
       }
       .blind-name {
         flex: 1;
+        min-width: 0;
         font-weight: 500;
         cursor: pointer;
         overflow: hidden;
@@ -356,39 +379,135 @@ class NormanShadesCard extends HTMLElement {
         font-size: 0.8rem;
         color: var(--secondary-text-color);
         white-space: nowrap;
+        cursor: pointer;
       }
       .battery ha-icon { --mdc-icon-size: 18px; }
       .battery.low { color: var(--warning-color, #ff9800); }
       .battery.critical { color: var(--error-color, #f44336); }
+
+      /* Rail: a bar that carries its own label and value, plus a segmented open/stop/close.
+         The bar is drawn here and the real range input sits over it invisibly, so it is
+         still a native slider to the keyboard and to a screen reader. */
       .rail {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 3px 0;
+        gap: 8px;
       }
-      .rail-label {
-        width: 82px;
-        flex: none;
-        font-size: 0.8rem;
-        color: var(--secondary-text-color);
-      }
-      .rail input[type="range"] {
+      .rail + .rail { margin-top: 6px; }
+      .bar {
+        position: relative;
         flex: 1;
         min-width: 0;
-        accent-color: var(--primary-color);
+        height: var(--n-control);
+        border-radius: 8px;
+        background: rgba(var(--n-fg-rgb), 0.08);
+        overflow: hidden;
+      }
+      .bar:focus-within { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+      .bar.disabled { cursor: not-allowed; }
+      .bar-fill {
+        position: absolute;
+        top: 0; bottom: 0; left: 0;
+        width: 0;
+        background: rgba(var(--n-accent-rgb), 0.35);
+        transition: width 0.25s ease;
+      }
+      /* The handle: a short vertical bar at the fill's edge, as on a tile card. */
+      .bar-fill::after {
+        content: "";
+        position: absolute;
+        right: 0; top: 6px; bottom: 6px;
+        width: 3px;
+        border-radius: 2px;
+        background: var(--primary-color);
+      }
+      /* Where the blind is heading while it travels; the fill catches up over ~30 s. */
+      .bar-target {
+        position: absolute;
+        top: 4px; bottom: 4px;
+        width: 2px;
+        margin-left: -1px;
+        border-radius: 1px;
+        background: var(--primary-color);
+        opacity: 0;
+        transition: opacity 0.25s ease;
+      }
+      .bar.moving .bar-target { opacity: 0.55; }
+      .bar-label, .bar-value {
+        position: absolute;
+        top: 0; bottom: 0;
+        display: flex;
+        align-items: center;
+        pointer-events: none;
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+      .bar-label { left: 10px; color: var(--secondary-text-color); }
+      .bar-value {
+        right: 10px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 500;
+      }
+      .bar.moving .bar-value { color: var(--primary-color); }
+      .bar input[type="range"] {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        opacity: 0;
         cursor: pointer;
       }
-      .rail input[type="range"]:disabled { cursor: not-allowed; }
-      .rail-value {
-        width: 46px;
+      .bar input[type="range"]:disabled { cursor: not-allowed; }
+
+      /* A segmented pill: one control with three parts, not three loose buttons. */
+      .pill {
+        display: inline-flex;
         flex: none;
-        text-align: right;
-        font-variant-numeric: tabular-nums;
-        font-size: 0.85rem;
+        border-radius: 999px;
+        background: rgba(var(--n-fg-rgb), 0.06);
       }
-      .buttons { display: flex; gap: 0; flex: none; }
-      .buttons ha-icon-button { --mdc-icon-button-size: 32px; --mdc-icon-size: 19px; }
-      .buttons ha-icon-button[disabled] { opacity: 0.4; }
+      .pill ha-icon-button {
+        --mdc-icon-button-size: var(--n-control);
+        --mdc-icon-size: 18px;
+        color: var(--primary-text-color);
+      }
+      .pill ha-icon-button[disabled] { opacity: 0.35; }
+      .pill ha-icon-button.active { color: var(--primary-color); }
+
+      /* A labelled chip, for the app's presets: the word says what the icon cannot. */
+      .chips { display: inline-flex; flex: none; gap: 6px; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: var(--n-control);
+        padding: 0 11px 0 9px;
+        border: 1px solid rgba(var(--n-fg-rgb), 0.16);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--primary-text-color);
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: normal;
+        text-transform: none;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .chip ha-icon { --mdc-icon-size: 16px; color: var(--secondary-text-color); }
+      .chip:hover { background: rgba(var(--n-accent-rgb), 0.08); border-color: transparent; }
+      .chip:hover ha-icon { color: var(--primary-color); }
+      .chip:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+      /* Controls sit at the right of their heading and wrap beneath it when the width
+         runs out, keeping the name legible on a phone. */
+      .controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+      }
       .empty { padding: 16px; color: var(--secondary-text-color); }
     `;
 
@@ -483,18 +602,26 @@ class NormanShadesCard extends HTMLElement {
         text.textContent = roomName;
         label.appendChild(text);
 
+        // Both control sets share one container so they wrap under the heading together.
+        const controls = document.createElement("div");
+        controls.className = "controls";
         if (!this._config.hide_room_controls) {
-          label.appendChild(this._buildRoomControls(roomName, list));
+          controls.appendChild(this._buildRoomControls(roomName, list));
         }
         if (!this._config.hide_room_presets) {
-          label.appendChild(this._buildRoomPresets(roomName));
+          controls.appendChild(this._buildRoomPresets(roomName));
         }
+        if (controls.children.length) label.appendChild(controls);
         room.appendChild(label);
       }
 
+      // The room's blinds share one rounded group, so a room reads as one object.
+      const group = document.createElement("div");
+      group.className = "group";
       for (const blind of list) {
-        room.appendChild(this._buildBlind(blind));
+        group.appendChild(this._buildBlind(blind));
       }
+      room.appendChild(group);
       this._body.appendChild(room);
     }
   }
@@ -511,7 +638,7 @@ class NormanShadesCard extends HTMLElement {
    */
   _buildRoomControls(roomName, blinds) {
     const controls = document.createElement("div");
-    controls.className = "buttons room-buttons";
+    controls.className = "pill room-buttons";
 
     for (const [icon, service, label] of [
       ["mdi:arrow-up", "open_cover", "Open"],
@@ -577,49 +704,54 @@ class NormanShadesCard extends HTMLElement {
    */
   _buildHomeControls() {
     const controls = document.createElement("div");
-    controls.className = "buttons home-buttons";
-
-    for (const [icon, command, label] of [
-      ["mdi:blinds-horizontal", "best_privacy", "Best privacy — every room"],
-      ["mdi:weather-sunny", "best_view", "Best view — every room"],
-      ["mdi:star", "favorite", "Favorite — every room"],
-    ]) {
-      const button = document.createElement("ha-icon-button");
-      const inner = document.createElement("ha-icon");
-      inner.setAttribute("icon", icon);
-      button.appendChild(inner);
-      button.title = label;
-      button.setAttribute("aria-label", label);
-      button.addEventListener("click", () => {
-        // No `room`: the action omits RoomID, which the hub reads as every blind.
-        this._hass.callService("norman", "room_command", { command });
-      });
-      controls.appendChild(button);
+    controls.className = "chips home-buttons";
+    for (const preset of PRESETS) {
+      controls.appendChild(
+        this._buildChip(preset, `${preset.title} — every room`, () => {
+          // No `room`: the action omits RoomID, which the hub reads as every blind.
+          this._hass.callService("norman", "room_command", { command: preset.command });
+        }),
+      );
     }
     return controls;
   }
 
   _buildRoomPresets(roomName) {
     const presets = document.createElement("div");
-    presets.className = "buttons room-presets";
-
-    for (const [icon, command, label] of [
-      ["mdi:blinds-horizontal", "best_privacy", "Best privacy"],
-      ["mdi:weather-sunny", "best_view", "Best view"],
-      ["mdi:star", "favorite", "Favorite"],
-    ]) {
-      const button = document.createElement("ha-icon-button");
-      const inner = document.createElement("ha-icon");
-      inner.setAttribute("icon", icon);
-      button.appendChild(inner);
-      button.title = `${label} — ${roomName}`;
-      button.setAttribute("aria-label", button.title);
-      button.addEventListener("click", () => {
-        this._hass.callService("norman", "room_command", { room: roomName, command });
-      });
-      presets.appendChild(button);
+    presets.className = "chips room-presets";
+    for (const preset of PRESETS) {
+      presets.appendChild(
+        this._buildChip(preset, `${preset.title} — ${roomName}`, () => {
+          this._hass.callService("norman", "room_command", {
+            room: roomName,
+            command: preset.command,
+          });
+        }),
+      );
     }
     return presets;
+  }
+
+  /**
+   * A labelled chip: an icon and a short word.
+   *
+   * The presets had been bare icons, and "blinds-horizontal" does not say "privacy" to
+   * anyone who has not already learned it. A word does. The icon stays because it is what
+   * the eye lands on first when scanning a row of rooms for the same control.
+   */
+  _buildChip(preset, title, onClick) {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.type = "button";
+    const icon = document.createElement("ha-icon");
+    icon.setAttribute("icon", preset.icon);
+    const text = document.createElement("span");
+    text.textContent = preset.label;
+    chip.append(icon, text);
+    chip.title = title;
+    chip.setAttribute("aria-label", title);
+    chip.addEventListener("click", onClick);
+    return chip;
   }
 
   _buildBlind(blind) {
@@ -664,24 +796,39 @@ class NormanShadesCard extends HTMLElement {
     const element = document.createElement("div");
     element.className = "rail";
 
+    // The bar carries its own label and value, so the row is just bar + pill and the bar
+    // gets the width a slider needs. Layered back to front: fill, target marker, label
+    // and value, then the invisible range input that actually takes the pointer.
+    const bar = document.createElement("div");
+    bar.className = "bar";
+
+    const fill = document.createElement("div");
+    fill.className = "bar-fill";
+
+    const targetMark = document.createElement("div");
+    targetMark.className = "bar-target";
+
     const label = document.createElement("div");
-    label.className = "rail-label";
+    label.className = "bar-label";
     label.textContent = rail.label;
+
+    const value = document.createElement("div");
+    value.className = "bar-value";
 
     const slider = document.createElement("input");
     slider.type = "range";
     slider.min = "0";
     slider.max = "100";
     slider.step = String(STEP);
+    slider.setAttribute("aria-label", `${rail.label} position`);
 
-    const value = document.createElement("div");
-    value.className = "rail-value";
+    bar.append(fill, targetMark, label, value, slider);
 
     // Open / stop / close for THIS rail. Each rail is its own cover entity, so the middle
     // rail of a two-rail blind gets the same controls as the bottom rail rather than the
     // buttons silently driving the bottom one.
     const buttons = document.createElement("div");
-    buttons.className = "buttons";
+    buttons.className = "pill";
     const railButtons = [];
     for (const [icon, service, label] of [
       ["mdi:arrow-up", "open_cover", "Open"],
@@ -706,15 +853,25 @@ class NormanShadesCard extends HTMLElement {
     const target = rail.numberId || rail.coverId;
     slider.addEventListener("pointerdown", () => this._dragging.add(target));
     slider.addEventListener("input", () => {
-      value.textContent = `${clampToStep(slider.value)}%`;
+      // Follow the thumb while it is held, so the fill tracks the finger.
+      const chosen = clampToStep(slider.value);
+      value.textContent = `${chosen}%`;
+      fill.style.width = `${chosen}%`;
     });
     slider.addEventListener("change", () => {
       this._dragging.delete(target);
       this._setRail(rail, clampToStep(slider.value));
     });
 
-    element.append(label, slider, value, buttons);
-    return { rail, element, slider, value, buttons: railButtons };
+    element.append(bar, buttons);
+    return { rail, element, slider, value, buttons: railButtons, bar, fill, targetMark };
+  }
+
+  /** Where the hub says a rail is heading, or null if it does not say. */
+  _railTarget(rail) {
+    const cover = this._hass.states[rail.coverId];
+    const target = cover?.attributes?.target_position;
+    return target === undefined || target === null ? null : Number(target);
   }
 
   /** Write a rail position, preferring the number entity so the 10% step is enforced. */
@@ -756,16 +913,38 @@ class NormanShadesCard extends HTMLElement {
         cell.batteryEl.setAttribute("aria-label", cell.batteryEl.title);
       }
 
-      for (const { rail, slider, value, buttons } of cell.rails) {
-        const target = rail.numberId || rail.coverId;
+      for (const { rail, slider, value, buttons, bar, fill, targetMark } of cell.rails) {
+        const key = rail.numberId || rail.coverId;
         const current = this._railValue(rail);
+        const heading = this._railTarget(rail);
         slider.disabled = unavailable;
+        bar.classList.toggle("disabled", unavailable);
         // A rail with no cover entity (a slider-only rail) has nothing to open or stop.
         for (const button of buttons) button.disabled = unavailable || !rail.coverId;
-        value.textContent = current === null ? "—" : `${Math.round(current)}%`;
-        // Never move a slider the user is holding.
-        if (!this._dragging.has(target)) {
-          slider.value = String(clampToStep(current === null ? 0 : current));
+
+        // A blind takes up to ~30 s to travel, and the hub reports where it IS the whole
+        // way. The target tells the user the press registered: "40% → 80%", a ghost mark
+        // at 80, and the stop button lit -- until the two numbers meet. While a write is
+        // pending the chosen value is shown alone: the hub's target is still the old one.
+        const pending = this._pending.has(key);
+        const moving =
+          !pending && heading !== null && current !== null && Math.round(heading) !== Math.round(current);
+        bar.classList.toggle("moving", moving);
+        buttons[1]?.classList.toggle("active", moving);
+        if (current === null) {
+          value.textContent = "—";
+        } else if (moving) {
+          value.textContent = `${Math.round(current)}% → ${Math.round(heading)}%`;
+        } else {
+          value.textContent = `${Math.round(current)}%`;
+        }
+        if (moving) targetMark.style.left = `${Math.round(heading)}%`;
+
+        // Never move a slider (or its fill) the user is holding.
+        if (!this._dragging.has(key)) {
+          const shown = clampToStep(current === null ? 0 : current);
+          slider.value = String(shown);
+          fill.style.width = `${current === null ? 0 : Math.round(current)}%`;
         }
       }
     }

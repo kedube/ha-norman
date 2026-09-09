@@ -9,6 +9,17 @@ version heading and publishes it as the release's Highlights.
 - **Fixed a dangling instruction in the example dashboard.** Its header ended "In
   configuration.yaml:" with nothing after it — the YAML-mode snippet had been removed and the
   sentence introducing it left behind. It now points at `docs/dashboard.md`, which covers it.
+- **The card has been redesigned around Home Assistant's own tile idiom.** Each rail is now a
+  self-labelled bar — name on the left, percentage on the right, a fill behind them — with one
+  segmented ▲ ■ ▼ pill, instead of a native browser slider flanked by a label, a value and three
+  loose icon buttons. The app's presets are labelled chips (Privacy · View · Favorite) rather
+  than three bare icons, at both the room and the house. A room's blinds sit in one rounded
+  group. Every control is 32 px for touch, and control rows wrap beneath their heading on a
+  phone rather than squeezing the name out.
+- **A moving blind now says so.** A blind takes up to 30 s to travel and the hub reports where
+  it *is* the whole way, so a press used to look ignored. The bar now shows "40% → 80%", a
+  ghost marker at the target, and lights the stop button until the two numbers meet — all from
+  the `target_position` attribute the covers already exposed.
 - **The card's heading follows the hub once the device registry loads**, rather than being
   fixed at first render. A configured `title` always wins, whatever it says; remove it to get
   the hub name. Cards added from the picker before v0.30 have `title: "Shades"` saved in their
