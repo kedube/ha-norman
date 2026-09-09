@@ -1,33 +1,44 @@
 # Dashboard card
 
 The integration ships a Lovelace card, **Norman Shades**, that shows every blind grouped by
-room with its battery level and a percentage slider per rail.
+room with its battery level and a position bar per rail, in the style of Home Assistant's own
+tile cards.
 
 ```
-┌──────────────────────────────────────────────────┐
-│ ShadeAuto Hub                            🪟 ☀ ⭐  │
-│                                                  │
-│ MASTER BEDROOM                 ▲ ■ ▼   🪟 ☀ ⭐  │
-│ Master_Bedroom_1                         🔋 100% │
-│   Bottom rail  ────●──────  60%          ▲ ■ ▼   │
-│   Middle rail  ─────────●─  80%          ▲ ■ ▼   │
-│ Master_Bedroom_2                         🔋  74% │
-│   Bottom rail  ●──────────   0%          ▲ ■ ▼   │
-│                                                  │
-│ DEN                            ▲ ■ ▼   🪟 ☀ ⭐  │
-│ Den_1                                    🔋  35% │
-│   Bottom rail  ──────────●  90%          ▲ ■ ▼   │
-└──────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│ ShadeAuto Hub              (🪟 Privacy) (☀ View) (★ Favorite) │
+│                                                            │
+│ MASTER BEDROOM     [▲ ■ ▼]  (🪟 Privacy) (☀ View) (★ Favorite) │
+│ ╭────────────────────────────────────────────────────────╮ │
+│ │ Master_Bedroom_1                              🔋 100%  │ │
+│ │ ┃Bottom rail ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░  60% ┃ [▲ ■ ▼] │ │
+│ │ ┃Middle rail ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░  80% ┃ [▲ ■ ▼] │ │
+│ ├────────────────────────────────────────────────────────┤ │
+│ │ Master_Bedroom_2                              🔋  74%  │ │
+│ │ ┃Bottom rail ▓▓▓▓▓▓▓░░░░░░┆░░░░░░ 20% → 50% ┃ [▲ ■ ▼] │ │
+│ ╰────────────────────────────────────────────────────────╯ │
+│                                                            │
+│ DEN                [▲ ■ ▼]  (🪟 Privacy) (☀ View) (★ Favorite) │
+│ ╭────────────────────────────────────────────────────────╮ │
+│ │ Den_1                                         🔋  35%  │ │
+│ │ ┃Bottom rail ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░  90% ┃ [▲ ■ ▼] │ │
+│ ╰────────────────────────────────────────────────────────╯ │
+└────────────────────────────────────────────────────────────┘
 ```
+
+Master_Bedroom_2 is on its way from 20% to 50%: the bar keeps filling as the blind travels,
+a faint marker (┆) shows where it is heading, and the stop button in its pill lights up until
+it arrives.
 
 The card header is named after your **hub** — the name it has in Home Assistant, which the
 integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
 to override it, or `title: ""` for no heading text at all.
 
+The header carries **Privacy / View / Favorite** for the whole house, and each room heading
+carries open/stop/close plus the same three for that room.
+
 If your card was added before v0.30 it may already have `title: Shades` saved in its config —
-the card picker used to supply that automatically. Remove the `title` line to get the hub name. It carries **Best privacy / Best
-view / Favorite** for the whole house, and each room heading carries open/stop/close plus the
-same three for that room.
+the card picker used to supply that automatically. Remove the `title` line to get the hub name.
 
 [`examples/dashboard.yaml`](../examples/dashboard.yaml) is a minimal dashboard built on this
 card. Paste its view into your dashboard's raw configuration editor.
@@ -57,10 +68,11 @@ a different area in Home Assistant moves it on the card.
 | Room heading | The area name. Blinds with no area are grouped under "Unassigned". |
 | Blind name | Click it to open the usual more-info dialog. |
 | Battery | From the blind's battery sensor, with the icon following the level. Amber below 30%, red below 15%. |
-| Bottom rail | Position slider, 0–100% in steps of 10, with **▲ ■ ▼** (open, stop, close) for that rail. |
-| Middle rail | The same row again, on two-rail blinds (day/night, top-down/bottom-up) only. Each rail's controls act on that rail alone. |
+| Bottom rail | A position bar, 0–100% in steps of 10: tap or drag anywhere on it, or use the arrow keys once it has focus. The rail's name and its position are printed inside the bar. Beside it, one **▲ ■ ▼** pill (open, stop, close) for that rail. |
+| Middle rail | The same bar again, on two-rail blinds (day/night, top-down/bottom-up) only. Each rail's controls act on that rail alone. |
+| While moving | The bar reads "current → target" (for example "20% → 50%"), a marker sits at the target, and the stop button is highlighted. This comes from the cover's `target_position` attribute, so it needs no extra configuration. |
 
-A blind the hub has stopped reporting is dimmed and its sliders are disabled.
+A blind the hub has stopped reporting is dimmed and its bars are disabled.
 
 ### Whole-room control
 
@@ -92,11 +104,13 @@ type: custom:norman-shades-card
 hide_room_presets: true
 ```
 
-| Button | Does |
+They are labelled chips rather than bare icons, so a row of rooms scans without a legend:
+
+| Chip | Does |
 |---|---|
-| Best privacy | Bottom rail to 0, middle rail to 100 |
-| Best view | Both rails to 100 |
-| Favorite | The room's stored favorite position |
+| 🪟 **Privacy** (Best privacy) | Bottom rail to 0, middle rail to 100 |
+| ☀ **View** (Best view) | Both rails to 100 |
+| ★ **Favorite** | The room's stored favorite position |
 
 These send the hub's own room verbs through the
 [`norman.room_command`](services.md#normanroom_command) action — one request for the room, not

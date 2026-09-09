@@ -292,6 +292,78 @@ check("_build attaches presets by default", countPresetButtons({}) === 6,
 check("_build drops presets when hidden", countPresetButtons({ hide_room_presets:true }) === 0,
       String(countPresetButtons({ hide_room_presets:true })));
 
+// --- the redesigned rail bar ----------------------------------------------------------
+// The bar carries its own label and value, fills to the position, and while the blind
+// travels shows where it is heading. Every visual is driven from _patch, so a rail that
+// renders but never updates would pass the structural checks above and still be broken.
+{
+  const c = new Card();
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass;
+  c._render();
+  const cell = c._cells.find(x => x.blind.deviceId === "d1");
+  const [b, m] = cell.rails;
+  check("the bar carries the rail label inside it",
+        b.bar.children.some(ch => ch.className === "bar-label" && ch.textContent === "Bottom rail"));
+  check("the fill width follows the position", b.fill.style.width === "60%" && m.fill.style.width === "80%",
+        JSON.stringify([b.fill.style.width, m.fill.style.width]));
+  check("a rail at rest shows just its value", b.value.textContent === "60%", b.value.textContent);
+  check("a rail at rest is not marked moving", !b.bar._moving);
+
+  // The hub reports target_position ahead of current_position for the whole travel.
+  const travelling = { ...hass, states: { ...hass.states,
+    "cover.front_bedroom_1_bottom_rail": { state:"opening", attributes:{ current_position:60, target_position:100 } } } };
+  c.hass = travelling;
+  check("a moving rail shows current → target", b.value.textContent === "60% → 100%", b.value.textContent);
+  check("the target marker sits at the target", b.targetMark.style.left === "100%", String(b.targetMark.style.left));
+  check("the fill stays at the CURRENT position while moving", b.fill.style.width === "60%", b.fill.style.width);
+  // The middle rail is not moving and must be unaffected.
+  check("an idle rail beside a moving one is unchanged", m.value.textContent === "80%", m.value.textContent);
+
+  // A pending write shows the chosen value alone: the hub's target is still the old one,
+  // and "80% → 60%" would read as the blind going the wrong way.
+  c._pending.set("number.front_bedroom_1_bottom_rail_position", 30);
+  c._patch();
+  check("a pending write shows the chosen value, not an arrow", b.value.textContent === "30%", b.value.textContent);
+  c._pending.clear();
+
+  // Dragging: the fill must follow the thumb before the value is committed.
+  b.slider.value = "20";
+  b.slider._on.input();
+  check("dragging moves the fill with the thumb", b.fill.style.width === "20%", b.fill.style.width);
+}
+
+// --- presets are labelled chips -------------------------------------------------------
+{
+  const c = new Card();
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass;
+  const chips = [...c._buildRoomPresets("Den").children];
+  check("presets are buttons with a visible word",
+        chips.every(ch => ch.tagName === "button" && ch.children[1]?.textContent),
+        JSON.stringify(chips.map(ch => ch.children[1]?.textContent)));
+  check("preset words are Privacy / View / Favorite",
+        JSON.stringify(chips.map(ch => ch.children[1].textContent)) === JSON.stringify(["Privacy","View","Favorite"]));
+  check("chip tooltips carry the full name and the room",
+        chips[0].title === "Best privacy — Den", chips[0].title);
+  const home = [...c._buildHomeControls().children];
+  check("house chips say which scope they act on",
+        home.every(ch => String(ch.title).endsWith("every room")), JSON.stringify(home.map(ch => ch.title)));
+}
+
+// --- a room's blinds sit in one group -------------------------------------------------
+{
+  const c = new Card();
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass;
+  c._render();
+  let groups = 0, blindsInGroups = 0;
+  const walk = (el) => {
+    if (el?.className === "group") { groups++; blindsInGroups += el.children.length; }
+    (el?.children || []).forEach(walk);
+  };
+  walk(c.shadowRoot);
+  check("each room wraps its blinds in one group", groups === 2, String(groups));
+  check("every blind is inside a group", blindsInGroups === 2, String(blindsInGroups));
+}
+
 // --- the header names the hub -------------------------------------------------------
 const headerTextOf = (cfg, h = hass) => {
   const c = new Card();
