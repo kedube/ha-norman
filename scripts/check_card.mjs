@@ -340,6 +340,25 @@ check("an explicit empty title is respected",
   walk(c.shadowRoot);
   check("the header follows a hub rename", text === "Renamed Hub", String(text));
 }
+// Until 0.30 getStubConfig() returned title:"Shades", so every card added from the picker
+// has that string saved in its dashboard config. It was the default, not a choice -- so it
+// must not suppress the hub name, or the feature would only ever reach new cards.
+check("a saved default title of 'Shades' still shows the hub name",
+      headerTextOf({ title:"Shades" }) === "Norman Hub",
+      String(headerTextOf({ title:"Shades" })));
+// The heading must fill in once the device registry loads, not stay stuck at first render.
+{
+  const empty = { ...hass, devices: {} };
+  const c = new Card();
+  c._hass = empty; c.setConfig({ type:"custom:norman-shades-card" }); c.hass = empty;
+  let text = null;
+  const walk = (el) => { if (el?.className === "header-text") text = el.textContent; (el?.children||[]).forEach(walk); };
+  walk(c.shadowRoot);
+  check("before the registry loads the header falls back", text === "Shades", String(text));
+  c.hass = hass;
+  text = null; walk(c.shadowRoot);
+  check("the header fills in once devices arrive", text === "Norman Hub", String(text));
+}
 check("the stub config does not hardcode a title",
       Card.getStubConfig().title === undefined, JSON.stringify(Card.getStubConfig()));
 

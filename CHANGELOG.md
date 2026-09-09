@@ -6,6 +6,11 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 version heading and publishes it as the release's Highlights.
 
 ## 0.28 — 2026-09-09
+- **Existing cards now pick up the hub name too.** v0.30 named the header after the hub only
+  when no title was configured — but every card added from the picker before then had
+  `title: "Shades"` written into its saved dashboard config automatically, so the feature
+  reached almost nobody. A saved `title: Shades` is now treated as the default it was, not as a
+  choice. Any other title, including `""`, is still honoured exactly as set.
 - **The card names your hub in its header** instead of saying "Shades". Two hubs now give two
   cards you can tell apart. An explicit `title` still wins, `title: ""` gives a blank heading,
   and "Shades" remains the fallback when no hub device can be found. The heading also follows a
