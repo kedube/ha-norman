@@ -201,6 +201,9 @@
     },
     "room_command_failed": {
       "message": "中枢拒绝了房间 {room} 的 {command}：{error}"
+    },
+    "command_needs_a_room": {
+      "message": "{command} 需要指定房间；只有 {commands} 可以发送到整个中枢。"
     }
   }
 }

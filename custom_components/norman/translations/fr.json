@@ -201,6 +201,9 @@
     },
     "room_command_failed": {
       "message": "Le hub a rejeté {command} pour la pièce {room} : {error}"
+    },
+    "command_needs_a_room": {
+      "message": "{command} nécessite une pièce ; seuls {commands} peuvent être envoyés à tout le hub."
     }
   }
 }

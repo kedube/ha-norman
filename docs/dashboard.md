@@ -70,12 +70,56 @@ hide_room_controls: true
 The buttons live in the heading, so `hide_room_names: true` removes them too — there is
 nowhere left to put them.
 
-The hub has its own room-wide command, which the app's **Best Privacy** and **Best View**
-buttons send. It is not reachable from a dashboard card (it needs the hub's own `RoomID`) and
-it drives only the bottom rail, so the card goes through Home Assistant's cover service
-instead, reaching every rail. To send the hub's own version — including **Remote Favorite**,
-which has no Home Assistant equivalent — use the
-[`norman.room_command`](services.md#normanroom_command) action.
+These buttons fan out over Home Assistant's cover entities, so **close** puts *both* rails of a
+two-rail blind down. That is not the same as the Norman app's **Best Privacy**, which closes the
+bottom fabric while opening the sheer middle rail fully — private, but still lit.
+
+### The app's room buttons
+
+`room_presets: true` adds the app's own three, to the right of the open/stop/close:
+
+```yaml
+type: custom:norman-shades-card
+room_presets: true
+```
+
+| Button | Does |
+|---|---|
+| Best privacy | Bottom rail to 0, middle rail to 100 |
+| Best view | Both rails to 100 |
+| Favorite | The room's stored favorite position |
+
+These send the hub's own room verbs through the
+[`norman.room_command`](services.md#normanroom_command) action — one request for the room, not
+one per blind — so they behave exactly as the app does. Favorite has no Home Assistant
+equivalent and is only reachable this way.
+
+### The whole house
+
+`home_controls: true` puts open and close in the card's own header, moving **every** blind on
+the hub:
+
+```yaml
+type: custom:norman-shades-card
+title: Shades
+home_controls: true
+```
+
+Like the room presets these go through `norman.room_command`, but with no room at all — the hub
+treats a command with no scope as "everything", so it is one request for the house however many
+blinds you have. Open is both rails to 100; close is the privacy position (bottom 0, middle
+100). Both are the hub's own verbs, so this is not a fan-out and needs no room-name match.
+
+There is no house-wide **stop**: the hub's stop is per blind, so it would have to fan out over
+every cover, and a stop that lags the blinds it is stopping is worse than none. Use a room's
+stop instead.
+
+It is off by default, and the header is drawn for the buttons even if you set no title.
+
+The room presets are off by default because they match on the **hub's** room name while the card
+groups by Home Assistant **area**. The integration seeds areas from the hub's room names, so they agree
+out of the box; if you rename an area, the preset buttons for it will report that the room is
+unknown (and name the ones the hub does know).
 
 The sliders drive the integration's `number` entities, so they move in the same 10% steps as
 those entities and never disagree with the covers. While you drag a thumb the card holds it in
@@ -92,6 +136,8 @@ title: Shades              # omit for no header
 hide_battery: false        # hide the battery readings
 hide_room_names: false     # one flat list instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading
+room_presets: false        # add the app's Best privacy / Best view / Favorite buttons
+home_controls: false       # add open/close for every blind, in the card header
 rooms:                     # only these areas, in this order
   - Master Bedroom
   - Den
@@ -100,7 +146,7 @@ bottom_label: Bottom rail  # rename the rail rows
 middle_label: Middle rail
 ```
 
-`title`, `hide_battery`, `hide_room_names`, and `hide_room_controls` are also available in the card's visual editor.
+`title`, `hide_battery`, `hide_room_names`, `hide_room_controls`, `room_presets`, and `home_controls` are also available in the card's visual editor.
 
 ## Using the built-in cards instead
 

@@ -175,8 +175,10 @@ HUB_CMD_JOG_UP = "MotorFineTuneToUp"
 HUB_CMD_JOG_DOWN = "MotorFineTuneToDown"
 HUB_CMD_TO_TOP_LIMIT = "SetMotorToTopLimit"
 HUB_CMD_TO_BOTTOM_LIMIT = "SetMotorToBottomLimit"
-# Confirmed only in its room-wide form ({"Favorite": 0, "RoomID": ...}); the per-blind form
-# is the registration reply's advertised value and is the obvious extrapolation.
+# Confirmed in both forms against a real hub: {"Favorite": 0, "PeripheralUID": ...} moves one
+# blind to its stored favorite, and the RoomID form moves a whole room. Note the hub answers
+# Error 0 and keeps reporting the old position while the blind travels (~30 s on a large
+# shade), so a command that looks ignored may simply still be running.
 HUB_CMD_FAVORITE = "Favorite"
 
 COVER_TYPE_TWO_RAIL = "two_rail"
@@ -201,13 +203,20 @@ ATTR_COMMAND = "command"
 
 # The room-wide commands the Norman app's room screen offers, and the control fields each
 # sends. Captured from the app (docs/NORMAN_API.md, "Room-wide and hub-wide control"):
-# Switch drives the BOTTOM rail only and leaves the middle rail alone, which is what makes
-# "best privacy" meaningful on a day/night shade -- bottom closed, sheer middle still open.
+# Switch sets BOTH rails to a fixed pair: 0 -> bottom 0 / middle 100, 1 -> both 100. That is
+# what makes "best privacy" meaningful on a day/night shade -- the bottom fabric closes while
+# the sheer middle opens fully, so the room is private but still lit. Verified on hardware.
 ROOM_COMMANDS: dict[str, dict[str, int]] = {
     "best_privacy": {"Switch": 0},
     "best_view": {"Switch": 1},
     "favorite": {"Favorite": HUB_COMMAND_SETTING},
 }
+
+# The same verbs work with no RoomID at all, addressing every blind on the hub -- verified
+# for Switch against a real hub. Favorite is absent pending a capture: the app's "All Rooms"
+# screen very likely offers it, but the payload has not been seen, and an unverified command
+# that would move every blind in the house is not worth guessing at. Add it once captured.
+HUB_WIDE_COMMANDS: frozenset[str] = frozenset({"best_privacy", "best_view"})
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_PERIPHERAL_UID = "peripheral_uid"
 ATTR_FIELDS = "fields"

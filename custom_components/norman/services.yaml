@@ -44,9 +44,11 @@ room_command:
   fields:
     room:
       name: Room
-      description: The room's name as the hub knows it (the Norman app's room name).
+      description: >-
+        The room's name as the hub knows it (the Norman app's room name). Leave empty to
+        address every blind on the hub; only best_privacy and best_view work hub-wide.
       example: Office
-      required: true
+      required: false
       selector:
         text:
     command:

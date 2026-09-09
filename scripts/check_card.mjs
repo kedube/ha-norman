@@ -216,5 +216,99 @@ check("_build attaches none when opted out", countRoomButtons({ hide_room_contro
 check("hiding room headings also hides room controls",
       countRoomButtons({ hide_room_names:true }) === 0);
 
+// --- the app's room presets (opt-in via room_presets) --------------------------------
+calls.length = 0;
+const presetCard = new Card();
+presetCard._hass = hass;
+presetCard.setConfig({ type:"custom:norman-shades-card", room_presets:true });
+presetCard._hass = hass;
+const presets = presetCard._buildRoomPresets("Office");
+check("room presets render 3 buttons", presets.children.length === 3, String(presets.children.length));
+
+presets.children[0]._on?.click?.();
+check("privacy calls norman.room_command",
+      calls.length === 1 && calls[0][0] === "norman" && calls[0][1] === "room_command",
+      JSON.stringify(calls));
+
+// The service takes {room, command}, not entity_id -- these are hub room verbs.
+calls.length = 0;
+const svcCalls = [];
+presetCard._hass = { ...hass, callService: (d,s2,data) => svcCalls.push([d,s2,data]) };
+const p2 = presetCard._buildRoomPresets("Office");
+p2.children[0]._on?.click?.();
+p2.children[1]._on?.click?.();
+p2.children[2]._on?.click?.();
+check("presets send best_privacy / best_view / favorite for the room",
+      JSON.stringify(svcCalls.map(c => c[2].command)) ===
+        JSON.stringify(["best_privacy","best_view","favorite"]),
+      JSON.stringify(svcCalls.map(c => c[2])));
+check("presets pass the room name, not entity ids",
+      svcCalls.every(c => c[2].room === "Office" && !("entity_id" in c[2])),
+      JSON.stringify(svcCalls[0]?.[2]));
+
+// Off by default: it needs the room names to match the hub's, so it is opt-in.
+const noPresets = new Card();
+noPresets._hass = hass; noPresets.setConfig({ type:"custom:norman-shades-card" }); noPresets._hass = hass;
+check("room presets are OFF by default", !noPresets._config.room_presets);
+
+const countPresetButtons = (cfg) => {
+  const c = new Card();
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card", ...cfg }); c._hass = hass;
+  c._body = mk("body"); c._cells = [];
+  c._build(c._roomsOf(c._collectBlinds()));
+  let n = 0;
+  const walk = (el) => {
+    if (el?.className && String(el.className).includes("room-presets")) n += el.children.length;
+    (el?.children || []).forEach(walk);
+  };
+  walk(c._body);
+  return n;
+};
+check("_build attaches presets when enabled", countPresetButtons({ room_presets:true }) === 6,
+      String(countPresetButtons({ room_presets:true })));
+check("_build attaches no presets by default", countPresetButtons({}) === 0);
+
+// --- house-wide controls (opt-in via home_controls) ----------------------------------
+const homeCalls = [];
+const homeCard = new Card();
+homeCard._hass = { ...hass, callService: (d,s2,data) => homeCalls.push([d,s2,data]) };
+homeCard.setConfig({ type:"custom:norman-shades-card", home_controls:true });
+homeCard._hass = { ...hass, callService: (d,s2,data) => homeCalls.push([d,s2,data]) };
+const home = homeCard._buildHomeControls();
+check("home controls render 2 buttons (no stop)", home.children.length === 2, String(home.children.length));
+
+home.children[0]._on?.click?.();
+home.children[1]._on?.click?.();
+check("home open/close call norman.room_command",
+      homeCalls.length === 2 && homeCalls.every(c => c[0]==="norman" && c[1]==="room_command"),
+      JSON.stringify(homeCalls));
+check("home controls send best_view then best_privacy",
+      JSON.stringify(homeCalls.map(c => c[2].command)) === JSON.stringify(["best_view","best_privacy"]),
+      JSON.stringify(homeCalls.map(c => c[2].command)));
+// The absence of `room` is what makes it house-wide; sending one would scope it to a room.
+check("home controls omit the room entirely",
+      homeCalls.every(c => !("room" in c[2])), JSON.stringify(homeCalls[0]?.[2]));
+
+const noHome = new Card();
+noHome._hass = hass; noHome.setConfig({ type:"custom:norman-shades-card" }); noHome._hass = hass;
+check("home controls are OFF by default", !noHome._config.home_controls);
+
+// The header must appear for the buttons even when no title is configured.
+const headerButtons = (cfg) => {
+  const c = new Card();
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card", ...cfg }); c._hass = hass;
+  c._render();
+  let n = 0;
+  const walk = (el) => {
+    if (el?.className && String(el.className).includes("home-buttons")) n += el.children.length;
+    (el?.children || []).forEach(walk);
+  };
+  walk(c.shadowRoot);
+  return n;
+};
+check("home controls render with no title set", headerButtons({ home_controls:true }) === 2,
+      String(headerButtons({ home_controls:true })));
+check("no home controls by default", headerButtons({ title:"Shades" }) === 0);
+
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);

@@ -59,14 +59,14 @@ matter how many blinds the room holds — the same request the app sends.
 
 | Field | Required | Values | Meaning |
 |---|---|---|---|
-| `room` | yes | a room name | As the **hub** knows it (the Norman app's room name), matched case-insensitively. Not the Home Assistant area, which may have been renamed. |
+| `room` | no | a room name | As the **hub** knows it (the Norman app's room name), matched case-insensitively. Not the Home Assistant area, which may have been renamed. **Omit it to address every blind on the hub.** |
 | `command` | yes | `best_privacy`, `best_view`, `favorite` | Which of the app's buttons to press. |
 | `config_entry_id` | no | | Which hub, when more than one is set up. |
 
 | Command | Sends | Effect |
 |---|---|---|
-| `best_privacy` | `{"Switch": 0, "RoomID": …}` | Closes the **bottom** rail; the middle rail stays where it is. On a day/night shade that is the point: the room is private but the sheer fabric still lets light in. |
-| `best_view` | `{"Switch": 1, "RoomID": …}` | Opens the bottom rail. |
+| `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that is the point: the room is private behind the closed fabric, but the sheer middle is fully open so it still lets light in. |
+| `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. |
 | `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant has no equivalent, so this action is the only way to reach it for a whole room. |
 
 ```yaml
@@ -76,9 +76,21 @@ data:
   command: best_privacy
 ```
 
-Note that `Switch` drives the bottom rail **only**. It is not "open/close everything": to move
-both rails of a two-rail blind, use the cover entities (or the card's room controls, which fan
-out across every rail).
+Leave `room` out and the same verb goes to the whole hub — the hub reads a command with no
+scope as every blind:
+
+```yaml
+action: norman.room_command
+data:
+  command: best_view      # every blind in the house, in one request
+```
+
+`favorite` is refused hub-wide. The app has no such button and the form has never been
+observed; guessing at one that would move every blind in the house is not worth it.
+
+`Switch` sets both rails to fixed positions; it is not a relative move and there is no
+room-wide way to reach an arbitrary percentage. For that, use the cover entities (or the card's
+room controls, which fan out across every rail).
 
 ## `norman.get_hub_data`
 
@@ -149,7 +161,7 @@ clears a setting. These were captured from the Norman app, so they are known to 
 | `{MotorStop: 170}` | Stop the motor. This is what `cover.stop_cover` sends. | yes |
 | `{MotorFineTuneToUp: 170}` / `{MotorFineTuneToDown: 170}` | Jog a small step up or down. The **Jog** buttons. | yes |
 | `{SetMotorToTopLimit: 170}` / `{SetMotorToBottomLimit: 170}` | Run to the stored top or bottom limit. The **Run to … limit** buttons. | yes |
-| `{Favorite: 0}` | Go to the favorite position. The **Favorite position** button; confirmed room-wide, per-blind form extrapolated. | yes |
+| `{Favorite: 0}` | Go to the favorite position. The **Favorite position** button; confirmed both per-blind and room-wide. | yes |
 | `{FindTop: 0}` | Re-sync to the top; the app sends it when entering and leaving limit setup. | yes |
 | `{SetTopLimit: 0}` / `{SetBottomLimit: 0}` | Store the **current** position as that limit. | changes the blind's travel |
 | `{CleanTopLimit: 0}` / `{CleanBottomLimit: 0}` | Clear a stored limit. | changes the blind's travel |
@@ -159,7 +171,7 @@ Two more verbs are confirmed only in their **room-wide** form, which this action
 because it always addresses one blind: `{Switch: 1}` / `{Switch: 0}` opens or closes every
 blind in a room (or on the hub), and `{Favorite: 0}` sends a room to its favorite positions.
 The per-blind `Switch` form has not been captured; the per-blind `Favorite` form is what the
-Favorite position button sends. The rest of the vocabulary (`MotorSpeedAdjust`,
+the Favorite position button sends. The rest of the vocabulary (`MotorSpeedAdjust`,
 `ReverseMotorDirection`, and others; see [docs/NORMAN_API.md](NORMAN_API.md#control-verbs))
 has not been seen from the app at all. If you confirm one, open an issue with the fields and
 the reply so it can get a proper entity.

@@ -223,11 +223,21 @@ class NormanShadesCard extends HTMLElement {
     style.textContent = `
       ha-card { padding: 8px 0 12px; }
       .header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         font-size: var(--ha-card-header-font-size, 24px);
         font-weight: var(--ha-card-header-font-weight, 400);
         color: var(--ha-card-header-color, var(--primary-text-color));
         padding: 12px 16px 8px;
       }
+      .header-text {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .home-buttons ha-icon-button { --mdc-icon-button-size: 34px; --mdc-icon-size: 21px; }
       .room { padding: 4px 0 8px; }
       .room-name {
         display: flex;
@@ -249,6 +259,10 @@ class NormanShadesCard extends HTMLElement {
       /* The room's buttons sit slightly smaller than a rail's, so the heading stays a
          heading and the per-rail controls remain the primary ones. */
       .room-buttons ha-icon-button { --mdc-icon-button-size: 28px; --mdc-icon-size: 17px; }
+      .room-presets ha-icon-button { --mdc-icon-button-size: 28px; --mdc-icon-size: 16px; }
+      /* A hairline between the two groups: the left set fans out over Home Assistant's
+         cover entities, the right set sends the hub's own room verbs. */
+      .room-presets { border-left: 1px solid var(--divider-color); margin-left: 4px; padding-left: 4px; }
       .blind {
         padding: 8px 16px 10px;
         border-top: 1px solid var(--divider-color);
@@ -316,10 +330,20 @@ class NormanShadesCard extends HTMLElement {
     const card = document.createElement("ha-card");
     card.appendChild(style);
 
-    if (this._config.title) {
+    // The header doubles as the house-wide control row when `home_controls` is on. It needs
+    // somewhere to live, so it is drawn even without a title in that case.
+    if (this._config.title || this._config.home_controls) {
       const header = document.createElement("div");
       header.className = "header";
-      header.textContent = this._config.title;
+
+      const text = document.createElement("span");
+      text.className = "header-text";
+      text.textContent = this._config.title || "";
+      header.appendChild(text);
+
+      if (this._config.home_controls) {
+        header.appendChild(this._buildHomeControls());
+      }
       card.appendChild(header);
     }
 
@@ -382,6 +406,9 @@ class NormanShadesCard extends HTMLElement {
         if (!this._config.hide_room_controls) {
           label.appendChild(this._buildRoomControls(roomName, list));
         }
+        if (this._config.room_presets) {
+          label.appendChild(this._buildRoomPresets(roomName));
+        }
         room.appendChild(label);
       }
 
@@ -395,10 +422,12 @@ class NormanShadesCard extends HTMLElement {
   /**
    * Open / stop / close every rail of every blind in one room.
    *
-   * The hub has a native room-wide verb, but it is not reachable from a dashboard card (it
-   * needs the hub's own RoomID, which no entity exposes), and it only drives both rails
-   * fully open or closed. Calling the cover service with the room's entity ids does the
-   * same job through Home Assistant, and covers the middle rails too.
+   * This is NOT the hub's own room verb, and it is not the same as the Norman app's room
+   * buttons. Close here sends close_cover to every rail, so a two-rail blind ends at
+   * bottom 0 AND middle 0 -- both fabrics down. The app's "Best Privacy" is bottom 0 with
+   * middle 100: private, but the sheer fabric fully open so the room stays lit. The hub
+   * verb that does that needs its own RoomID, which no entity exposes, so it lives in the
+   * norman.room_command action instead (see docs/services.md).
    */
   _buildRoomControls(roomName, blinds) {
     const controls = document.createElement("div");
@@ -428,6 +457,76 @@ class NormanShadesCard extends HTMLElement {
       controls.appendChild(button);
     }
     return controls;
+  }
+
+  /**
+   * The Norman app's own room buttons, via the norman.room_command action.
+   *
+   * These are the hub's room-wide verbs, not a fan-out: one request moves the room, and
+   * the rail positions are the hub's own. "Privacy" is bottom 0 with the middle rail fully
+   * open, which the cover services above cannot express, and "favorite" has no Home
+   * Assistant equivalent at all.
+   *
+   * The action matches on the HUB's room name. The card groups by Home Assistant area,
+   * which the integration seeds from those names -- so they agree until an area is
+   * renamed, and the action reports the names it knows if one does not match.
+   */
+  /**
+   * Open / close every blind in the house, via the hub's own scope-less verb.
+   *
+   * Omitting RoomID entirely is what makes the hub treat a command as house-wide, so this
+   * is one request no matter how many blinds there are. Only the two Switch commands are
+   * offered: a hub-wide `Favorite` has never been observed, and guessing at a form that
+   * would move every blind in the house is not worth the risk -- the action refuses it.
+   *
+   * There is deliberately no house-wide Stop: the hub's stop is per blind, so it would
+   * have to fan out over every cover, and a Stop that lags the blinds it is stopping is
+   * worse than none. Use a room's Stop, which does fan out over a smaller set.
+   */
+  _buildHomeControls() {
+    const controls = document.createElement("div");
+    controls.className = "buttons home-buttons";
+
+    for (const [icon, command, label] of [
+      ["mdi:arrow-up", "best_view", "Open every blind"],
+      ["mdi:arrow-down", "best_privacy", "Close every blind"],
+    ]) {
+      const button = document.createElement("ha-icon-button");
+      const inner = document.createElement("ha-icon");
+      inner.setAttribute("icon", icon);
+      button.appendChild(inner);
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.addEventListener("click", () => {
+        // No `room`: the action omits RoomID, which the hub reads as every blind.
+        this._hass.callService("norman", "room_command", { command });
+      });
+      controls.appendChild(button);
+    }
+    return controls;
+  }
+
+  _buildRoomPresets(roomName) {
+    const presets = document.createElement("div");
+    presets.className = "buttons room-presets";
+
+    for (const [icon, command, label] of [
+      ["mdi:blinds-horizontal", "best_privacy", "Best privacy"],
+      ["mdi:weather-sunny", "best_view", "Best view"],
+      ["mdi:star", "favorite", "Favorite"],
+    ]) {
+      const button = document.createElement("ha-icon-button");
+      const inner = document.createElement("ha-icon");
+      inner.setAttribute("icon", icon);
+      button.appendChild(inner);
+      button.title = `${label} — ${roomName}`;
+      button.setAttribute("aria-label", button.title);
+      button.addEventListener("click", () => {
+        this._hass.callService("norman", "room_command", { room: roomName, command });
+      });
+      presets.appendChild(button);
+    }
+    return presets;
   }
 
   _buildBlind(blind) {
@@ -610,6 +709,8 @@ class NormanShadesCardEditor extends HTMLElement {
       { key: "hide_battery", label: "Hide battery levels", type: "checkbox" },
       { key: "hide_room_names", label: "Hide room headings", type: "checkbox" },
       { key: "hide_room_controls", label: "Hide whole-room open/close", type: "checkbox" },
+      { key: "room_presets", label: "Show the app's room buttons", type: "checkbox" },
+      { key: "home_controls", label: "Open/close the whole house", type: "checkbox" },
     ];
 
     for (const field of fields) {

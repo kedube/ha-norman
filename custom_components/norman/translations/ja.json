@@ -201,6 +201,9 @@
     },
     "room_command_failed": {
       "message": "ハブが部屋 {room} の {command} を拒否しました: {error}"
+    },
+    "command_needs_a_room": {
+      "message": "{command} には部屋の指定が必要です。ハブ全体に送信できるのは {commands} のみです。"
     }
   }
 }

@@ -5,6 +5,44 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **House-wide control.** `norman.room_command` now takes an optional `room`: omit it and the
+  verb goes to every blind on the hub in a single request, which is how the hub reads a command
+  with no scope. The card gained a matching `home_controls` option putting open and close in its
+  header. `favorite` is refused hub-wide — the app has no such button and the form has never
+  been observed, so it is not guessed at. Verified against a real hub: `{"Switch": 1}` with no
+  `RoomID` opened blinds in a room that had been left closed.
+- **New card option: `room_presets`.** Adds the Norman app's own three room buttons — Best
+  privacy, Best view, Favorite — to each room heading, sending the hub's room verbs through
+  `norman.room_command`. This reaches positions the card's own controls cannot: Best privacy is
+  bottom rail 0 with the middle rail fully open (private, but still lit), where the card's close
+  puts both rails down; and Favorite has no Home Assistant equivalent at all. Off by default,
+  because it matches the hub's room name while the card groups by Home Assistant area.
+- **Protocol reference corrected: `Switch` sets *both* rails.** It was documented as driving
+  the bottom rail only. Verified on hardware by staging a two-rail blind at 60/60 and 40/40:
+  `Switch: 0` targets bottom 0 / middle 100, and `Switch: 1` targets both 100. The earlier
+  reading came from a capture in which the middle rail already sat at 100, so it appeared not
+  to move — the reason the doc now says to stage a blind away from its end positions before
+  concluding anything about a verb.
+- **The per-blind Favorite position button is confirmed working.** It had been documented as an
+  unverified extrapolation since the Norman app only ever sends `Favorite` room-wide. Tested
+  against a real hub from two different starting positions: `{"Favorite": 0, "PeripheralUID": …}`
+  moves that blind alone to its stored favorite. Also documented the reason it is easy to
+  mistake for a no-op: the hub answers `Error: 0` immediately and then keeps reporting the old
+  position, target included, for the whole ~30 seconds a large shade takes to travel.
+- **Protocol reference:** audited against all four packet captures.
+  - `StallCurrent` was documented as always `4100`, and is not. It reads as a stall *threshold*
+    — the draw at which the motor decides it has hit an obstruction and stops — rather than a
+    measurement: it holds one value through a full open and close and at rest. Two blinds moved
+    from `4100` to `1240` between captures a day apart with no setting changed, one of them the
+    blind a `Calibration` had been run against, which is the likeliest cause.
+  - Documented the only non-zero error the hub has ever returned — `Error: 10`, for a
+    `PairingMode` request it would not accept — and that the HTTP status stays 200, so the code
+    is the only signal.
+  - Explained `GroupID`: it is the blind's remote-control button group, meaningful only with
+    `RoomID`, not a Home Assistant grouping.
+  - Noted that `PacketReceiveRate` has been `0` on every blind in every capture.
+
 ## 0.24 — 2026-09-09
 - **New action: `norman.room_command`.** Runs the Norman app's own room buttons —
   `best_privacy`, `best_view`, `favorite` — against every blind in a room, in a single request

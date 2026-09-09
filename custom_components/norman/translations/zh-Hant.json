@@ -201,6 +201,9 @@
     },
     "room_command_failed": {
       "message": "中樞拒絕了房間 {room} 的 {command}：{error}"
+    },
+    "command_needs_a_room": {
+      "message": "{command} 需要指定房間；只有 {commands} 可以傳送到整個中樞。"
     }
   }
 }
