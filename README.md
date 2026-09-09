@@ -1,6 +1,6 @@
 # Norman smart blinds for Home Assistant
 
-A custom Home Assistant integration for [Norman](https://www.normanshutters.com/) motorized
+A custom Home Assistant integration for [Norman](https://www.normanusa.com/) motorized
 window coverings. It talks to the **Norman Hub directly on your local network** — nothing goes
 through the cloud — and it is **push-based**: when a blind moves, whether from Home Assistant,
 a remote, or the Norman app, Home Assistant sees the change within a second or two.
