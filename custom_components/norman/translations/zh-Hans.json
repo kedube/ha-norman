@@ -128,6 +128,12 @@
       }
     },
     "button": {
+      "best_privacy": {
+        "name": "最佳隐私"
+      },
+      "best_view": {
+        "name": "最佳视野"
+      },
       "favorite": {
         "name": "我的最爱位置"
       },

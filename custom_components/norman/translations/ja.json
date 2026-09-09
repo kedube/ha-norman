@@ -128,6 +128,12 @@
       }
     },
     "button": {
+      "best_privacy": {
+        "name": "プライバシー重視"
+      },
+      "best_view": {
+        "name": "眺望重視"
+      },
       "favorite": {
         "name": "お気に入り位置"
       },

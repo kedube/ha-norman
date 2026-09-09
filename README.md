@@ -174,7 +174,8 @@ Each cover is named for the rail it drives ("Living Drape Bottom rail", "Living 
 rail"). Each rail also has a **position slider** (a `number` entity, 0–100% in steps of 10),
 which is often easier to place on a dashboard than a cover's own slider.
 
-Each blind also has **buttons** for its favorite position, jog up, jog down, and run to top or
+Each blind also has **buttons** for best privacy, best view, its favorite position, jog up,
+jog down, and run to top or
 bottom limit, plus diagnostic sensors for **battery** (percent), **last seen**, and, disabled
 by default, **signal strength** and **firmware version**. The hub gets its own device with
 **MAC address**, **time zone**, and **Wi-Fi network** sensors, plus a **Wi-Fi signal** sensor

@@ -29,7 +29,7 @@ def _button(hass: HomeAssistant, uid: int, key: str) -> er.RegistryEntry:
 async def test_every_blind_gets_the_buttons(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """Both blind types get all five buttons, all enabled and all in the config category.
+    """Both blind types get every button, all enabled and all in the config category.
 
     The category is a layout decision, not a claim that the buttons are rarely used: the
     device page sorts uncategorised entities together by entity id, which interleaved
@@ -92,3 +92,29 @@ async def test_press_failure_names_the_button_and_blind(
             {ATTR_ENTITY_ID: _button(hass, UID_LIVING, "jog_up").entity_id},
             blocking=True,
         )
+
+
+async def test_privacy_and_view_send_the_captured_rail_positions(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Best privacy and Best view move the rails where the app's room buttons do.
+
+    The hub's own Switch verb has only ever been captured room-wide or hub-wide, so these
+    send the position pair that command was observed to produce rather than guessing at a
+    per-blind Switch form.
+    """
+    for key, expected in (
+        ("best_privacy", {"BottomRailPosition": 0, "MiddleRailPosition": 100}),
+        ("best_view", {"BottomRailPosition": 100, "MiddleRailPosition": 100}),
+    ):
+        await hass.services.async_call(
+            BUTTON_DOMAIN,
+            SERVICE_PRESS,
+            {ATTR_ENTITY_ID: _button(hass, UID_LIVING, key).entity_id},
+            blocking=True,
+        )
+        call = fake_hub.control_calls[-1]
+        assert call["PeripheralUID"] == UID_LIVING
+        assert {k: call[k] for k in expected} == expected, key
+        # Never the unverified per-blind Switch form.
+        assert "Switch" not in call

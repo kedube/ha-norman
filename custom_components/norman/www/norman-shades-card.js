@@ -475,9 +475,11 @@ class NormanShadesCard extends HTMLElement {
    * Open / close every blind in the house, via the hub's own scope-less verb.
    *
    * Omitting RoomID entirely is what makes the hub treat a command as house-wide, so this
-   * is one request no matter how many blinds there are. Only the two Switch commands are
-   * offered: a hub-wide `Favorite` has never been observed, and guessing at a form that
-   * would move every blind in the house is not worth the risk -- the action refuses it.
+   * is one request no matter how many blinds there are. These are the three buttons the
+   * app's own "All Rooms" screen sends, captured from it.
+   *
+   * Favorite reaches only two-rail blinds: single-rail ones have no stored favorite and
+   * stay where they are, which is the hub's behaviour, not a limitation here.
    *
    * There is deliberately no house-wide Stop: the hub's stop is per blind, so it would
    * have to fan out over every cover, and a Stop that lags the blinds it is stopping is
@@ -490,6 +492,7 @@ class NormanShadesCard extends HTMLElement {
     for (const [icon, command, label] of [
       ["mdi:arrow-up", "best_view", "Open every blind"],
       ["mdi:arrow-down", "best_privacy", "Close every blind"],
+      ["mdi:star", "favorite", "Every blind to its favorite"],
     ]) {
       const button = document.createElement("ha-icon-button");
       const inner = document.createElement("ha-icon");
