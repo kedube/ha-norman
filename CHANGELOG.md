@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.27 — 2026-09-09
 - **Per-blind Best privacy and Best view buttons.** Each blind already had a Favorite position
   button; these complete the set, matching the three the Norman app offers per room. Privacy is
   bottom rail 0 with the middle rail at 100 (closed for privacy, sheer fabric still open); view
