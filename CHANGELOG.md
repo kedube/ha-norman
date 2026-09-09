@@ -9,6 +9,12 @@ version heading and publishes it as the release's Highlights.
 - **Fixed a dangling instruction in the example dashboard.** Its header ended "In
   configuration.yaml:" with nothing after it — the YAML-mode snippet had been removed and the
   sentence introducing it left behind. It now points at `docs/dashboard.md`, which covers it.
+- **Screenshots in the documentation.** The README leads with the card, and shows the
+  integration page after setup and a blind's device page; `docs/entities.md` gains the blind and
+  hub device pages; `docs/dashboard.md` replaces its ASCII sketch of the card with the real
+  thing. All four are downscaled from the original Retina captures (4.3 MB → 1.3 MB), since HACS
+  clones this repository onto every install. Tests check that every referenced image exists, has
+  alt text, and stays under 600 KB.
 - **The card has been redesigned around Home Assistant's own tile idiom.** Each rail is now a
   self-labelled bar — name on the left, percentage on the right, a fill behind them — with one
   segmented ▲ ■ ▼ pill, instead of a native browser slider flanked by a label, a value and three

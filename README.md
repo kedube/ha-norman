@@ -13,6 +13,11 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 [![Release](https://img.shields.io/github/v/release/kedube/ha-norman?sort=semver)](https://github.com/kedube/ha-norman/releases)
 
+<img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each rail a position bar with open, stop and close, and Privacy, View and Favorite buttons for each room and for the whole house." width="820">
+
+*The bundled **Norman Shades** card. It registers itself, finds your blinds, and needs no
+configuration.*
+
 ## Contents
 
 - [Installation](#installation)
@@ -142,6 +147,11 @@ makes a DHCP address change self-healing; a **fixed address** (a DHCP reservatio
 is still the simplest setup. Entries created by versions before 0.11 are re-keyed to the hub's
 name automatically on their next load. Several hubs can be added, each as its own entry.
 
+<img src="images/integration.png" alt="The Norman integration page listing one hub and its blinds, each showing its product type, room and entity count." width="820">
+
+*After setup. Every blind the hub knows about appears with the name and room it has in the
+Norman app, and its product type — no manual entity configuration.*
+
 ### Changing the hub address
 
 Open **Settings → Devices & services → Norman → ⋮ → Reconfigure** and enter the new address.
@@ -181,13 +191,19 @@ by default, **signal strength** and **firmware version**. The hub gets its own d
 that starts disabled. Full detail, including availability rules, is in
 [docs/entities.md](docs/entities.md).
 
+<img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, firmware version, last seen and signal strength." width="820">
+
+*A two-rail blind. Both rails get their own controls and slider; the five buttons sit under
+Configuration, and the model, firmware and serial number come from the hub.*
+
 ### Dashboard card
 
 The integration ships a **Norman Shades** Lovelace card: every blind grouped by room, with its
 battery level and a percentage slider for each rail in steps of 10. It registers itself, so it
 is in the **Add card** picker with nothing to install and nothing to configure.
 
-Full detail, options, and how to build the same thing from Home Assistant's own cards are in
+It is [pictured at the top of this page](#norman-smart-blinds-for-home-assistant). Full detail,
+options, and how to build the same thing from Home Assistant's own cards are in
 [docs/dashboard.md](docs/dashboard.md). [examples/dashboard.yaml](examples/dashboard.yaml) is a
 complete dashboard you can paste into the raw configuration editor.
 

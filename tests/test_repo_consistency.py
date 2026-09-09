@@ -609,6 +609,61 @@ def test_dashboard_doc_documents_every_card_option() -> None:
     assert not missing, "docs/dashboard.md does not document: " + ", ".join(missing)
 
 
+def test_documentation_images_exist_and_have_alt_text() -> None:
+    """Every image a document references must exist, and describe itself.
+
+    A broken image is silent on GitHub -- a small broken-image icon and nothing in any log --
+    so a renamed or moved file goes unnoticed. Alt text is checked at the same time because
+    a screenshot with none is invisible to anyone using a screen reader, and these carry
+    real information about what the integration provides.
+    """
+    docs = ["README.md", *(f"docs/{name}" for name in ("dashboard.md", "entities.md"))]
+    problems: list[str] = []
+    for name in docs:
+        text = (REPO / name).read_text(encoding="utf-8")
+        base = (REPO / name).parent
+        # Markdown ![alt](src) and the HTML <img> tags used for width control.
+        for alt, src in re.findall(r"!\[([^\]]*)\]\(([^)\s]+)\)", text):
+            # Remote images (the CI and release badges) are not this repository's to check.
+            if src.startswith(("http://", "https://")):
+                continue
+            if not (base / src).resolve().exists():
+                problems.append(f"{name}: missing image {src}")
+            elif not alt.strip():
+                problems.append(f"{name}: {src} has no alt text")
+        for tag in re.findall(r"<img\s[^>]*>", text):
+            src_match = re.search(r'src="([^"]+)"', tag)
+            alt_match = re.search(r'alt="([^"]*)"', tag)
+            if src_match is None:
+                problems.append(f"{name}: <img> with no src")
+                continue
+            src = src_match.group(1)
+            if src.startswith(("http://", "https://")):
+                continue
+            if not (base / src).resolve().exists():
+                problems.append(f"{name}: missing image {src}")
+            elif alt_match is None or not alt_match.group(1).strip():
+                problems.append(f"{name}: {src} has no alt text")
+    assert not problems, "documentation image problems:\n  " + "\n  ".join(problems)
+
+
+def test_documentation_images_are_not_oversized() -> None:
+    """Screenshots must stay small enough that cloning the repo is cheap.
+
+    HACS clones this repository onto every install, so a few untouched Retina captures
+    (4 MB for the set) is a real cost for something only ever viewed at about 900 px.
+    """
+    oversized = [
+        f"{image.relative_to(REPO)} is {image.stat().st_size // 1024} KB"
+        for image in sorted((REPO / "images").glob("*.png"))
+        if image.stat().st_size > 600 * 1024
+    ]
+    assert not oversized, (
+        "documentation images are too large; downscale them to about 1600 px wide:\n  "
+        + "\n  ".join(oversized)
+    )
+
+
 def test_example_dashboard_is_valid_yaml() -> None:
     """The example dashboard must parse and use the card's real options.
 
