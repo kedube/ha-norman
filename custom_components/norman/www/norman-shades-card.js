@@ -367,8 +367,9 @@ class NormanShadesCard extends HTMLElement {
       const room = document.createElement("div");
       room.className = "room";
 
-      // The heading carries the room's own open/stop/close when `room_controls` is on.
-      // It is skipped when headings are hidden, since there would be nothing to attach to.
+      // Each room heading carries its own open/stop/close, so a whole room moves in one
+      // press. Set `hide_room_controls: true` for plain headings. They are skipped when the
+      // headings themselves are hidden, since there would be nothing to attach them to.
       if (!this._config.hide_room_names) {
         const label = document.createElement("div");
         label.className = "room-name";
@@ -378,7 +379,7 @@ class NormanShadesCard extends HTMLElement {
         text.textContent = roomName;
         label.appendChild(text);
 
-        if (this._config.room_controls) {
+        if (!this._config.hide_room_controls) {
           label.appendChild(this._buildRoomControls(roomName, list));
         }
         room.appendChild(label);
@@ -608,7 +609,7 @@ class NormanShadesCardEditor extends HTMLElement {
       { key: "title", label: "Title", type: "text" },
       { key: "hide_battery", label: "Hide battery levels", type: "checkbox" },
       { key: "hide_room_names", label: "Hide room headings", type: "checkbox" },
-      { key: "room_controls", label: "Open/close a whole room", type: "checkbox" },
+      { key: "hide_room_controls", label: "Hide whole-room open/close", type: "checkbox" },
     ];
 
     for (const field of fields) {

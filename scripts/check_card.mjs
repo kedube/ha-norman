@@ -159,7 +159,7 @@ check("buttons are labelled per rail",
 calls.length = 0;
 const roomCard = new Card();
 roomCard._hass = hass;
-roomCard.setConfig({ type:"custom:norman-shades-card", room_controls:true });
+roomCard.setConfig({ type:"custom:norman-shades-card" });
 roomCard._hass = hass;
 roomCard._cells = [];
 const fbRoom = roomCard._buildRoomControls("Front Bedroom", [fb]);
@@ -191,10 +191,10 @@ check("room stop uses stop_cover", calls[0]?.[1] === "stop_cover");
 check("room buttons are labelled with the room name",
       String(fbRoom.children[0].title).includes("Front Bedroom"), String(fbRoom.children[0].title));
 
-// Off by default: the heading must stay a plain heading unless the option is set.
+// On by default: the user asked for whole-room control, so it must not need a setting.
 const plain = new Card();
 plain._hass = hass; plain.setConfig({ type:"custom:norman-shades-card" }); plain._hass = hass;
-check("room controls are OFF by default", !plain._config.room_controls);
+check("room controls are ON by default", !plain._config.hide_room_controls);
 
 // Full render path: the option must reach the heading through _build(), not just the builder.
 const countRoomButtons = (cfg) => {
@@ -210,11 +210,11 @@ const countRoomButtons = (cfg) => {
   walk(c._body);
   return n;
 };
-check("_build attaches room controls when enabled", countRoomButtons({ room_controls:true }) === 6,
-      String(countRoomButtons({ room_controls:true })));
-check("_build attaches none when disabled", countRoomButtons({}) === 0);
+check("_build attaches room controls by default", countRoomButtons({}) === 6,
+      String(countRoomButtons({})));
+check("_build attaches none when opted out", countRoomButtons({ hide_room_controls:true }) === 0);
 check("hiding room headings also hides room controls",
-      countRoomButtons({ room_controls:true, hide_room_names:true }) === 0);
+      countRoomButtons({ hide_room_names:true }) === 0);
 
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);

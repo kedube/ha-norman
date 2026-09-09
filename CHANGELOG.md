@@ -19,10 +19,10 @@ version heading and publishes it as the release's Highlights.
   send and the movement observed.
 - `scripts/parse_hub_capture.py` reassembles a packet capture of the hub into readable
   request/response pairs, for decoding verbs the integration does not yet know.
-- **New card option: `room_controls`.** Puts open/stop/close in each room heading, moving every
-  blind in that room at once — including the middle rails of two-rail blinds, so closing a room
-  closes both fabrics. One service call per press rather than one per blind. Off by default, and
-  available in the visual editor.
+- **Whole-room control on the card.** Each room heading carries its own open/stop/close, moving
+  every blind in that room at once — including the middle rails of two-rail blinds, so closing a
+  room closes both fabrics. One service call per press rather than one per blind. **On by
+  default**; set `hide_room_controls: true` (or use the visual editor) for plain headings.
 
 ## 0.22 — 2026-09-08
 - **Fixed: the dashboard card found no middle rails and no batteries.** It identified entities
