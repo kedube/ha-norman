@@ -384,6 +384,29 @@ async def test_single_rail_cover_echoes_middle_rail_and_ignores_tilt(
     assert not features & CoverEntityFeature.STOP_TILT
 
 
+async def test_each_cover_reports_its_device_class(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Device classes are picked per product, and nothing falls back to the base class.
+
+    ``COVER_CLASSES`` maps both known cover types, and an unmapped ModuleType is defaulted
+    to the two-rail type before it ever reaches the lookup -- so ``NormanCoverBase`` is
+    never instantiated and its BLIND device class is unreachable. This pins the classes
+    that users actually see, which no other test asserted.
+    """
+    from homeassistant.components.cover import CoverDeviceClass
+    from homeassistant.const import ATTR_DEVICE_CLASS
+
+    def device_class(entity_id: str) -> str | None:
+        return hass.states.get(entity_id).attributes.get(ATTR_DEVICE_CLASS)
+
+    # Two-rail blind: the bottom rail is a blind, its middle rail a shade.
+    assert device_class(cover_entity_id(hass, UID_LIVING)) == CoverDeviceClass.BLIND
+    assert device_class(middle_rail_entity_id(hass, UID_LIVING)) == CoverDeviceClass.SHADE
+    # Single-rail product: a shade, not a blind.
+    assert device_class(cover_entity_id(hass, UID_BEDROOM)) == CoverDeviceClass.SHADE
+
+
 async def test_nudge_tilt_requires_tilt_support(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:

@@ -152,8 +152,8 @@ async def _async_room_command(call: ServiceCall) -> None:
     equivalent.
 
     Omit ``room`` to address every blind on the hub: the hub accepts all three verbs with no
-    ``RoomID`` at all, which is what the app's own "All Rooms" screen sends. Hub-wide
-    ``favorite`` reaches only two-rail blinds; single-rail ones have no stored favorite.
+    ``RoomID`` at all, which is what the app's own "All Rooms" screen sends. All three reach
+    every blind whatever its rail count.
     """
     entry = _resolve_entry(call.hass, call)
     coordinator = entry.runtime_data

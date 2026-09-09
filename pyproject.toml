@@ -5,6 +5,11 @@ pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
+# Deliberately one behind the 3.14 the CI jobs run on. Bumping this to py314 makes ruff's
+# formatter rewrite `except (TypeError, ValueError):` into PEP 758's unparenthesized form,
+# which is a syntax error on 3.13 -- so the source would no longer even import for anyone
+# on an older interpreter, in exchange for nothing. Revisit once 3.13 is not worth
+# supporting; the CI jobs pin the runtime independently of this.
 target-version = "py313"
 src = ["custom_components", "tests"]
 

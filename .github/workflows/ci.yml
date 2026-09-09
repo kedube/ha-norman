@@ -13,6 +13,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   hacs:
     name: HACS
@@ -69,6 +72,50 @@ jobs:
       - name: Check Ruff formatting
         run: python -m ruff format --check .
 
+  mypy:
+    name: Mypy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+
+      # The integration checks clean today (quality scale, Platinum "strict-typing"). Running
+      # it here is what keeps that true: type errors are exactly the class of bug that reads
+      # fine in review and only shows up against a payload the hub sends once a year.
+      - name: Run mypy
+        run: python -m mypy custom_components/norman --ignore-missing-imports
+
+  card:
+    name: Card
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      # The card is 800 lines of JavaScript that no Python test can execute: the suite in
+      # tests/test_repo_consistency.py pins its structure by reading the source, but only
+      # this actually runs it. Without this job the card's checks pass or fail on whoever
+      # remembers to run them by hand.
+      - name: Run the card checks
+        run: node scripts/check_card.mjs
+
   pytest:
     name: Pytest
     runs-on: ubuntu-latest
@@ -91,3 +138,66 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+  # The weekly schedule exists to catch Home Assistant breaking this integration from the
+  # outside: requirements_test.txt tracks pytest-homeassistant-custom-component by lower
+  # bound, so a new Home Assistant release is picked up without any commit here. A scheduled
+  # run notifies nobody by default, though -- it just goes red in a tab nobody opens. This
+  # turns that into an issue, and only for the schedule: a failure on a push or a PR is
+  # already in front of whoever caused it.
+  report-scheduled-failure:
+    name: Report scheduled failure
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    needs: [hacs, hassfest, ruff, mypy, card, pytest]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Open or update an issue
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo
+            const url = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`
+            const label = 'ci-failure'
+            const title = 'Scheduled CI run failed'
+
+            // One issue for the whole outage: a weekly failure that persists should add a
+            // comment, not a new issue every Monday until someone looks.
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: label, per_page: 1,
+            })
+
+            const body = [
+              `The weekly scheduled CI run failed: ${url}`,
+              '',
+              'Nothing in this repository changed, so the most likely cause is a new Home',
+              'Assistant release: `requirements_test.txt` tracks',
+              '`pytest-homeassistant-custom-component` by lower bound, so CI picks up new',
+              'releases on its own.',
+            ].join('\n')
+
+            if (open.length) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: open[0].number, body,
+              })
+              core.info(`Commented on existing issue #${open[0].number}`)
+              return
+            }
+
+            // The label may not exist yet; create it rather than failing the step.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label })
+            } catch (error) {
+              if (error.status !== 404) throw error
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'd73a4a',
+                description: 'A scheduled CI run failed',
+              })
+            }
+
+            const { data: issue } = await github.rest.issues.create({
+              owner, repo, title, body, labels: [label],
+            })
+            core.info(`Opened issue #${issue.number}`)

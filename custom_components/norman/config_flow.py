@@ -104,7 +104,11 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Ask the user to confirm the discovered hub."""
         host = self._discovered_host
-        assert host is not None
+        if host is None:
+            # Only reachable if this step is entered without async_step_zeroconf having run
+            # (a resumed flow whose context was lost). An assert would be stripped under
+            # python -O and leave "Norman Hub (None)" as the entry title instead.
+            return self.async_abort(reason="unknown")
         if user_input is not None:
             return self.async_create_entry(
                 title=f"Norman Hub ({host})",

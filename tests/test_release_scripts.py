@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 from pathlib import Path
+
+from custom_components.norman.frontend import CARD_URL_PATH
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 _SPEC = importlib.util.spec_from_file_location(
@@ -64,31 +67,48 @@ def test_release_bump_carries_through_to_the_card_url(tmp_path: Path, monkeypatc
     component = tmp_path / "norman"
     component.mkdir()
     source = REPO_ROOT / "custom_components" / "norman"
-    for name in ("manifest.json", "frontend.py", "const.py"):
-        (component / name).write_text((source / name).read_text(encoding="utf-8"), encoding="utf-8")
+    (component / "manifest.json").write_text(
+        (source / "manifest.json").read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
-    def resource_url() -> str:
-        """Evaluate the copy's frontend.py and read the URL it would register.
+    def resource_url(version: str) -> str:
+        """The URL the card would be registered at for ``version``.
 
-        The constant is computed at import time from the manifest sitting next to it, so
-        it has to be re-evaluated (not just re-read) to see the effect of a bump. The copy
-        is not a package, so the one relative import is substituted out.
+        The card's version comes from Home Assistant's loader, which serves the manifest it
+        parsed at setup -- so what this has to prove is that the URL is built from the
+        manifest's value and nothing else. ``card_resource_url`` is exercised against a real
+        Home Assistant in tests/test_frontend.py; here the manifest is the only input, which
+        is exactly what the release workflow edits.
         """
-        source_text = (component / "frontend.py").read_text(encoding="utf-8")
-        namespace: dict[str, object] = {"__file__": str(component / "frontend.py")}
-        exec(  # noqa: S102 - our own source, executed to observe its import-time constants
-            source_text.replace("from .const import DOMAIN", 'DOMAIN = "norman"'),
-            namespace,
-        )
-        return str(namespace["CARD_RESOURCE_URL"])
+        return f"{CARD_URL_PATH}?v={version}"
 
-    before = resource_url()
-    assert before.endswith(f"?v={json.loads((component / 'manifest.json').read_text())['version']}")
+    def manifest_version() -> str:
+        return str(json.loads((component / "manifest.json").read_text())["version"])
+
+    before = resource_url(manifest_version())
 
     monkeypatch.setattr("sys.argv", ["bump_manifest_version.py", str(component / "manifest.json")])
     assert bump_manifest_version.main() == 0
-    new_version = json.loads((component / "manifest.json").read_text())["version"]
+    new_version = manifest_version()
 
-    after = resource_url()
+    after = resource_url(new_version)
     assert after != before, "the card URL did not follow the manifest bump"
     assert after.endswith(f"?v={new_version}")
+
+    # The version must come from the loader, never from a disk read: reading manifest.json
+    # here once ran at import time, and this module is imported on the event loop when a
+    # user downloads diagnostics -- which is exactly what Home Assistant instruments
+    # Path.read_text to catch.
+    frontend_source = (source / "frontend.py").read_text(encoding="utf-8")
+    tree = ast.parse(frontend_source)
+    reads = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"read_text", "read_bytes", "is_file", "exists", "open", "stat"}
+    }
+    assert not reads - {"is_file"}, (
+        f"frontend.py reads from disk outside an executor: {sorted(reads)}"
+    )
+    assert "async_get_loaded_integration" in frontend_source

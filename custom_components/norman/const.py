@@ -173,8 +173,10 @@ HUB_COMMAND_SETTING = 0
 HUB_CMD_STOP = "MotorStop"
 HUB_CMD_JOG_UP = "MotorFineTuneToUp"
 HUB_CMD_JOG_DOWN = "MotorFineTuneToDown"
-HUB_CMD_TO_TOP_LIMIT = "SetMotorToTopLimit"
-HUB_CMD_TO_BOTTOM_LIMIT = "SetMotorToBottomLimit"
+# SetMotorToTopLimit / SetMotorToBottomLimit deliberately have no constant here. They are
+# hold-to-run signals, not one-shot moves (the app repeats them every ~0.3 s while its
+# control is held), so nothing in the integration sends them; send_hub_command takes the
+# raw verb name for anyone who wants to. See docs/NORMAN_API.md, "Control verbs".
 # Confirmed in both forms against a real hub: {"Favorite": 0, "PeripheralUID": ...} moves one
 # blind to its stored favorite, and the RoomID form moves a whole room. Note the hub answers
 # Error 0 and keeps reporting the old position while the blind travels (~30 s on a large
@@ -220,8 +222,8 @@ ROOM_COMMANDS: dict[str, dict[str, int]] = {
 
 # All three verbs work with no RoomID at all, addressing every blind on the hub. This is what
 # the app's "All Rooms" screen sends, captured from it: the bare verb with no scope field.
-# Favorite reaches only the two-rail blinds -- single-rail ones have no stored favorite and
-# are left where they are.
+# None of the three is conditioned on rail count: a per-blind capture of a single-rail shade
+# shows the app sending Switch 0, Switch 1 and Favorite to it unchanged.
 HUB_WIDE_COMMANDS: frozenset[str] = frozenset(ROOM_COMMANDS)
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_PERIPHERAL_UID = "peripheral_uid"

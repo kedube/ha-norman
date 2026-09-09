@@ -17,6 +17,7 @@ from homeassistant.helpers.entity_platform import (
     AddConfigEntryEntitiesCallback,
     async_get_current_platform,
 )
+from homeassistant.helpers.typing import VolDictType
 import voluptuous as vol
 
 from .const import (
@@ -36,7 +37,9 @@ _LOGGER = logging.getLogger(__name__)
 # Entities are push-updated by the coordinator; commands are not throttled.
 PARALLEL_UPDATES = 0
 
-NUDGE_SCHEMA = {vol.Required(ATTR_STEP): vol.All(vol.Coerce(int), vol.Range(min=-100, max=100))}
+NUDGE_SCHEMA: VolDictType = {
+    vol.Required(ATTR_STEP): vol.All(vol.Coerce(int), vol.Range(min=-100, max=100))
+}
 
 
 async def async_setup_entry(

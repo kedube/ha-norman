@@ -81,8 +81,17 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
 
     @property
     def available(self) -> bool:
-        """Unavailable when the hub is unreachable or no longer reports this peripheral."""
-        # TODO: handle case where individual devices can go offline
+        """Unavailable when the hub is unreachable or no longer reports this peripheral.
+
+        A blind that is out of radio range or has a flat battery is not distinguishable
+        from a healthy one here: the hub keeps listing it in ``status`` with its last known
+        position, and the fields that might reveal the difference do not. ``RssiMean`` reads
+        0 on healthy two-rail blinds, and ``Timestamp`` is the last state *change*, so a
+        blind nobody has moved for a week looks identical to one that has dropped off.
+        Marking a blind unavailable on either would blank working entities, which is worse
+        than a stale position. So availability tracks only what the hub actually tells us:
+        the peripheral is gone from the payload entirely, or the hub itself is unreachable.
+        """
         return super().available and self._device_id in self.coordinator.data
 
 

@@ -8,21 +8,44 @@ after an upgrade. The JS itself is pinned structurally by ``test_repo_consistenc
 
 from __future__ import annotations
 
+import json
+import pathlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.core import HomeAssistant
+from homeassistant.loader import IntegrationNotLoaded, async_get_integration
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.norman.frontend import (
     CARD_FILENAME,
-    CARD_RESOURCE_URL,
     CARD_URL_PATH,
-    INTEGRATION_VERSION,
     async_get_frontend_diagnostics,
     async_register_card,
+    card_resource_url,
+    integration_version,
 )
+
+# The version and the resource URL come from Home Assistant's loader rather than a module
+# constant, so the manifest is read once here the same way the suite's other metadata tests
+# do -- keeping these tests correct across a release bump without editing them.
+VERSION = json.loads(
+    (
+        pathlib.Path(__file__).parent.parent / "custom_components" / "norman" / "manifest.json"
+    ).read_text(encoding="utf-8")
+)["version"]
+RESOURCE_URL = f"{CARD_URL_PATH}?v={VERSION}"
+
+
+@pytest.fixture(autouse=True)
+async def _loaded_integration(hass: HomeAssistant) -> None:
+    """Make ``async_get_loaded_integration`` resolve, as it does in a real install.
+
+    The card's version now comes from the loader's cached manifest instead of a disk read
+    on import, so these tests need the integration loaded to see a real version.
+    """
+    await async_get_integration(hass, "norman")
 
 
 class FakeResources:
@@ -65,6 +88,33 @@ def lovelace(hass: HomeAssistant) -> FakeResources:
     return resources
 
 
+async def test_version_comes_from_the_loader_not_the_disk(hass: HomeAssistant) -> None:
+    """The version is the manifest's, read through Home Assistant's cached loader.
+
+    Reading manifest.json here directly would be a blocking call on the event loop (Home
+    Assistant instruments Path.read_text to catch exactly that), and this module is imported
+    on the loop when a user downloads diagnostics.
+    """
+    assert integration_version(hass) == VERSION
+    assert card_resource_url(hass) == RESOURCE_URL
+
+
+async def test_version_falls_back_when_the_integration_is_not_loaded(
+    hass: HomeAssistant,
+) -> None:
+    """An unloaded integration yields "unknown" rather than raising.
+
+    The loader raises IntegrationNotLoaded, which must not escape into a diagnostics
+    download or into setup; a cosmetic ?v=unknown is the better failure.
+    """
+    with patch(
+        "custom_components.norman.frontend.async_get_loaded_integration",
+        side_effect=IntegrationNotLoaded("norman"),
+    ):
+        assert integration_version(hass) == "unknown"
+        assert card_resource_url(hass) == f"{CARD_URL_PATH}?v=unknown"
+
+
 async def test_card_is_served_and_registered(hass: HomeAssistant, lovelace: FakeResources) -> None:
     """The card file is served at a versioned URL and added to the resource list."""
     hass.http = MagicMock(async_register_static_paths=AsyncMock())
@@ -76,9 +126,9 @@ async def test_card_is_served_and_registered(hass: HomeAssistant, lovelace: Fake
     assert paths[0].path.endswith("/www")
     assert paths[0].cache_headers is True
 
-    assert lovelace.created == [{"res_type": "module", "url": CARD_RESOURCE_URL}]
+    assert lovelace.created == [{"res_type": "module", "url": RESOURCE_URL}]
     # The version stamp is what busts a browser's cache on upgrade
-    assert f"{CARD_URL_PATH}?v={INTEGRATION_VERSION}" == CARD_RESOURCE_URL
+    assert f"{CARD_URL_PATH}?v={VERSION}" == RESOURCE_URL
 
 
 async def test_registration_is_idempotent(hass: HomeAssistant, lovelace: FakeResources) -> None:
@@ -94,7 +144,7 @@ async def test_registration_is_idempotent(hass: HomeAssistant, lovelace: FakeRes
 
 async def test_an_already_registered_card_is_left_alone(hass: HomeAssistant) -> None:
     """A resource already carrying the current URL is not duplicated."""
-    resources = FakeResources([{"id": "a", "url": CARD_RESOURCE_URL}])
+    resources = FakeResources([{"id": "a", "url": RESOURCE_URL}])
     hass.data["lovelace"] = MagicMock(resources=resources)
     hass.http = MagicMock(async_register_static_paths=AsyncMock())
 
@@ -117,7 +167,7 @@ async def test_a_stale_version_is_repointed(hass: HomeAssistant) -> None:
 
     await async_register_card(hass)
 
-    assert resources.updated == [("a", {"url": CARD_RESOURCE_URL})]
+    assert resources.updated == [("a", {"url": RESOURCE_URL})]
     assert resources.created == []
 
 
@@ -125,7 +175,7 @@ async def test_duplicate_entries_are_removed(hass: HomeAssistant) -> None:
     """A hand-added resource alongside the auto-registered one is cleaned up."""
     resources = FakeResources(
         [
-            {"id": "a", "url": CARD_RESOURCE_URL},
+            {"id": "a", "url": RESOURCE_URL},
             {"id": "b", "url": CARD_URL_PATH},
             {"id": "c", "url": f"{CARD_URL_PATH}?v=0.1"},
         ]
@@ -148,7 +198,7 @@ async def test_yaml_mode_only_logs(hass: HomeAssistant, caplog: pytest.LogCaptur
     await async_register_card(hass)
 
     assert resources.created == []
-    assert CARD_RESOURCE_URL in caplog.text
+    assert RESOURCE_URL in caplog.text
 
 
 async def test_a_missing_card_file_does_not_register_anything(
@@ -202,9 +252,9 @@ async def test_diagnostics_report_the_card_version(
 
     report = async_get_frontend_diagnostics(hass)
 
-    assert report["integration_version"] == INTEGRATION_VERSION
-    assert report["expected_resource"] == CARD_RESOURCE_URL
-    assert report["registered_resources"] == [CARD_RESOURCE_URL]
+    assert report["integration_version"] == VERSION
+    assert report["expected_resource"] == RESOURCE_URL
+    assert report["registered_resources"] == [RESOURCE_URL]
 
 
 async def test_diagnostics_flag_a_stale_registered_card(hass: HomeAssistant) -> None:
@@ -231,7 +281,7 @@ async def test_diagnostics_report_a_matching_version(
 
     report = async_get_frontend_diagnostics(hass)
 
-    assert report["registered_versions"] == [INTEGRATION_VERSION]
+    assert report["registered_versions"] == [VERSION]
     assert report["version_matches"] is True
 
 

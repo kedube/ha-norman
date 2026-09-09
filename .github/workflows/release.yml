@@ -83,7 +83,11 @@ jobs:
         if: steps.head_check.outputs.release_action != 'skip'
         uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          # Only runs the three stdlib-only scripts in .github/scripts, so this does not need
+          # to match the 3.14 the test jobs use -- but keeping them equal means one version to
+          # bump instead of two, and no chance of the release path hitting syntax the tests
+          # never exercised.
+          python-version: '3.14'
 
       - name: Bump manifest version and rotate changelog
         if: steps.head_check.outputs.release_action == 'bump'

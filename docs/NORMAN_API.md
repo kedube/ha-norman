@@ -586,8 +586,12 @@ reading a capture: `status` is the hot path and carries positions and battery, w
 heavier structural payload — names, rooms, module types, firmware — is fetched rarely. A
 `schedule` update does not invalidate anything, since schedules are not modelled.
 
-All requests are issued sequentially on one session; the integration never has two hub requests
-in flight, and it takes no lock, so nothing here says whether the hub tolerates concurrency.
+Requests share one aiohttp session and the integration takes no lock, so it **can** have more
+than one in flight: `PARALLEL_UPDATES = 0` on every platform means Home Assistant does not
+serialise entity commands, and the notification listener's refreshes run concurrently with
+them. In practice this has caused no trouble — the hub echoes a per-request `TaskID`, which
+suggests it queues work rather than assuming one caller — but that is an observation, not a
+guarantee from the protocol, and nothing here has been stress-tested for it.
 
 ## Capturing traffic
 

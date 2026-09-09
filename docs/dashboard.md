@@ -5,7 +5,7 @@ room with its battery level and a percentage slider per rail.
 
 ```
 ┌──────────────────────────────────────────────────┐
-│ Shades                                   🪟 ☀ ⭐  │
+│ ShadeAuto Hub                            🪟 ☀ ⭐  │
 │                                                  │
 │ MASTER BEDROOM                 ▲ ■ ▼   🪟 ☀ ⭐  │
 │ Master_Bedroom_1                         🔋 100% │
@@ -20,8 +20,11 @@ room with its battery level and a percentage slider per rail.
 └──────────────────────────────────────────────────┘
 ```
 
-The card header carries **Best privacy / Best view / Favorite** for the whole house, and each
-room heading carries open/stop/close plus the same three for that room.
+The card header is named after your **hub** — the name it has in Home Assistant, which the
+integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
+to override it, or `title: ""` for no heading text at all. It carries **Best privacy / Best
+view / Favorite** for the whole house, and each room heading carries open/stop/close plus the
+same three for that room.
 
 [`examples/dashboard.yaml`](../examples/dashboard.yaml) is a minimal dashboard built on this
 card. Paste its view into your dashboard's raw configuration editor.
@@ -104,7 +107,6 @@ hub. To leave the header plain:
 
 ```yaml
 type: custom:norman-shades-card
-title: Shades
 hide_home_controls: true
 ```
 
@@ -147,7 +149,7 @@ Every option is optional; the card works with none of them.
 
 ```yaml
 type: custom:norman-shades-card
-title: Shades              # omit for no header
+title: Norman Hub          # omit to use the hub's own name
 hide_battery: false        # hide the battery readings
 hide_room_names: false     # one flat list instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading

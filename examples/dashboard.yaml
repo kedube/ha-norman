@@ -18,4 +18,4 @@ views:
     icon: mdi:blinds-horizontal
     cards:
       - type: custom:norman-shades-card
-        title: Shades
+        # No title: the card names your hub. Set one to override it.

@@ -534,6 +534,81 @@ def test_documentation_links_resolve() -> None:
     assert not broken, "broken documentation links:\n  " + "\n  ".join(broken)
 
 
+def test_entities_doc_lists_the_entities_that_exist() -> None:
+    """docs/entities.md names every entity, and only entities that exist.
+
+    The table is the first thing a user reads and the last thing anyone updates after
+    adding or removing an entity description. Comparing it to the descriptions themselves
+    is what keeps "five buttons" honest.
+    """
+    from custom_components.norman.button import BUTTONS
+    from custom_components.norman.number import NUMBERS
+    from custom_components.norman.sensor import HUB_SENSORS, SENSORS
+
+    text = (REPO / "docs" / "entities.md").read_text(encoding="utf-8")
+    strings = _load(COMPONENT / "strings.json")["entity"]
+
+    missing: list[str] = []
+    for platform, descriptions in (
+        ("button", BUTTONS),
+        ("number", NUMBERS),
+        ("sensor", (*SENSORS, *HUB_SENSORS)),
+    ):
+        for description in descriptions:
+            name = strings[platform][description.translation_key]["name"]
+            if name.lower() not in text.lower():
+                missing.append(f"{platform}.{description.translation_key} ({name})")
+    assert not missing, "docs/entities.md does not mention:\n  " + "\n  ".join(missing)
+
+    # The counts in the opening sentence, which is where a removed entity hides longest.
+    counts = {
+        "button": len(BUTTONS),
+        "diagnostic sensor": len(SENSORS),
+    }
+    words = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+    for noun, count in counts.items():
+        assert f"{words[count]} **{noun}s**" in text, (
+            f"docs/entities.md should say {words[count]} {noun}s; there are {count}"
+        )
+
+
+def test_entities_doc_marks_exactly_the_disabled_entities() -> None:
+    """The doc's ``*`` footnote must match ``entity_registry_enabled_default``.
+
+    A starred entity the user can see by default (or an unstarred one they cannot find)
+    sends people hunting through settings for something that is not there.
+    """
+    from custom_components.norman.sensor import HUB_SENSORS, SENSORS
+
+    text = (REPO / "docs" / "entities.md").read_text(encoding="utf-8")
+    strings = _load(COMPONENT / "strings.json")["entity"]["sensor"]
+
+    wrong: list[str] = []
+    for description in (*SENSORS, *HUB_SENSORS):
+        name = strings[description.translation_key]["name"]
+        disabled = description.entity_registry_enabled_default is False
+        starred = f"{name}\\*" in text
+        if disabled != starred:
+            wrong.append(
+                f"{description.translation_key}: disabled={disabled} but starred={starred}"
+            )
+    assert not wrong, "docs/entities.md star footnote is wrong for:\n  " + "\n  ".join(wrong)
+
+
+def test_dashboard_doc_documents_every_card_option() -> None:
+    """Every option the card's editor exposes must appear in docs/dashboard.md.
+
+    The card reads its options straight from the YAML, so an undocumented one is
+    invisible: there is no error and no hint that it exists.
+    """
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    text = (REPO / "docs" / "dashboard.md").read_text(encoding="utf-8")
+    options = set(re.findall(r'\{ key: "(\w+)"', card))
+    assert options, "no editor options found in the card"
+    missing = sorted(option for option in options if option not in text)
+    assert not missing, "docs/dashboard.md does not document: " + ", ".join(missing)
+
+
 def test_example_dashboard_is_valid_yaml() -> None:
     """The example dashboard must parse and use the card's real options.
 
