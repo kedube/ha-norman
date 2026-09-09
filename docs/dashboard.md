@@ -4,25 +4,27 @@ The integration ships a Lovelace card, **Norman Shades**, that shows every blind
 room with its battery level and a percentage slider per rail.
 
 ```
-┌────────────────────────────────────────────┐
-│ Shades                                     │
-│                                            │
-│ MASTER BEDROOM                     ▲ ■ ▼   │
-│ Master_Bedroom_1                   🔋 100% │
-│   Bottom rail  ────●──────  60%    ▲ ■ ▼   │
-│   Middle rail  ─────────●─  80%    ▲ ■ ▼   │
-│ Master_Bedroom_2                   🔋  74% │
-│   Bottom rail  ●──────────   0%    ▲ ■ ▼   │
-│                                            │
-│ DEN                                ▲ ■ ▼   │
-│ Den_1                              🔋  35% │
-│   Bottom rail  ──────────●  90%    ▲ ■ ▼   │
-└────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│ Shades                                   🪟 ☀ ⭐  │
+│                                                  │
+│ MASTER BEDROOM                 ▲ ■ ▼   🪟 ☀ ⭐  │
+│ Master_Bedroom_1                         🔋 100% │
+│   Bottom rail  ────●──────  60%          ▲ ■ ▼   │
+│   Middle rail  ─────────●─  80%          ▲ ■ ▼   │
+│ Master_Bedroom_2                         🔋  74% │
+│   Bottom rail  ●──────────   0%          ▲ ■ ▼   │
+│                                                  │
+│ DEN                            ▲ ■ ▼   🪟 ☀ ⭐  │
+│ Den_1                                    🔋  35% │
+│   Bottom rail  ──────────●  90%          ▲ ■ ▼   │
+└──────────────────────────────────────────────────┘
 ```
 
-[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a complete three-view dashboard
-built on this card — the whole house on one card, a per-room layout, and the same blinds using
-only built-in cards. Paste a view from it into your dashboard's raw configuration editor.
+The card header carries **Best privacy / Best view / Favorite** for the whole house, and each
+room heading carries open/stop/close plus the same three for that room.
+
+[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a minimal dashboard built on this
+card. Paste its view into your dashboard's raw configuration editor.
 
 ## Adding it
 
@@ -76,11 +78,12 @@ bottom fabric while opening the sheer middle rail fully — private, but still l
 
 ### The app's room buttons
 
-`room_presets: true` adds the app's own three, to the right of the open/stop/close:
+Each heading also carries the app's own three, to the right of the open/stop/close. For
+headings without them:
 
 ```yaml
 type: custom:norman-shades-card
-room_presets: true
+hide_room_presets: true
 ```
 
 | Button | Does |
@@ -96,13 +99,13 @@ equivalent and is only reachable this way.
 
 ### The whole house
 
-`home_controls: true` puts the same three buttons in the card's own header, where they move
-**every** blind on the hub:
+The same three buttons sit in the card's own header, where they move **every** blind on the
+hub. To leave the header plain:
 
 ```yaml
 type: custom:norman-shades-card
 title: Shades
-home_controls: true
+hide_home_controls: true
 ```
 
 | Button | Does |
@@ -126,12 +129,12 @@ There is no house-wide **stop**: the hub's stop is per blind, so it would have t
 every cover, and a stop that lags the blinds it is stopping is worse than none. Use a room's
 stop instead.
 
-It is off by default, and the header is drawn for the buttons even if you set no title.
+The header is drawn for these buttons even if you set no title.
 
-The room presets are off by default because they match on the **hub's** room name while the card
-groups by Home Assistant **area**. The integration seeds areas from the hub's room names, so they agree
-out of the box; if you rename an area, the preset buttons for it will report that the room is
-unknown (and name the ones the hub does know).
+The room presets match on the **hub's** room name while the card groups by Home Assistant
+**area**. The integration seeds areas from the hub's room names, so they agree out of the box; if
+you rename an area, the preset buttons for it will report that the room is unknown, and name the
+ones the hub does know. The house buttons carry no room at all, so nothing there can mismatch.
 
 The sliders drive the integration's `number` entities, so they move in the same 10% steps as
 those entities and never disagree with the covers. While you drag a thumb the card holds it in
@@ -148,8 +151,8 @@ title: Shades              # omit for no header
 hide_battery: false        # hide the battery readings
 hide_room_names: false     # one flat list instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading
-room_presets: false        # add the app's Best privacy / Best view / Favorite buttons
-home_controls: false       # the same three buttons for every blind, in the card header
+hide_room_presets: false   # remove the app's Best privacy / Best view / Favorite per room
+hide_home_controls: false  # remove the same three buttons for the whole house, in the header
 rooms:                     # only these areas, in this order
   - Master Bedroom
   - Den
@@ -158,7 +161,7 @@ bottom_label: Bottom rail  # rename the rail rows
 middle_label: Middle rail
 ```
 
-`title`, `hide_battery`, `hide_room_names`, `hide_room_controls`, `room_presets`, and `home_controls` are also available in the card's visual editor.
+`title`, `hide_battery`, `hide_room_names`, `hide_room_controls`, `hide_room_presets`, and `hide_home_controls` are also available in the card's visual editor.
 
 ## Using the built-in cards instead
 

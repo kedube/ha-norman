@@ -330,9 +330,9 @@ class NormanShadesCard extends HTMLElement {
     const card = document.createElement("ha-card");
     card.appendChild(style);
 
-    // The header doubles as the house-wide control row when `home_controls` is on. It needs
-    // somewhere to live, so it is drawn even without a title in that case.
-    if (this._config.title || this._config.home_controls) {
+    // The header doubles as the house-wide control row, which is on by default. It needs
+    // somewhere to live, so it is drawn even when no title is configured.
+    if (this._config.title || !this._config.hide_home_controls) {
       const header = document.createElement("div");
       header.className = "header";
 
@@ -341,7 +341,7 @@ class NormanShadesCard extends HTMLElement {
       text.textContent = this._config.title || "";
       header.appendChild(text);
 
-      if (this._config.home_controls) {
+      if (!this._config.hide_home_controls) {
         header.appendChild(this._buildHomeControls());
       }
       card.appendChild(header);
@@ -406,7 +406,7 @@ class NormanShadesCard extends HTMLElement {
         if (!this._config.hide_room_controls) {
           label.appendChild(this._buildRoomControls(roomName, list));
         }
-        if (this._config.room_presets) {
+        if (!this._config.hide_room_presets) {
           label.appendChild(this._buildRoomPresets(roomName));
         }
         room.appendChild(label);
@@ -469,7 +469,11 @@ class NormanShadesCard extends HTMLElement {
    *
    * The action matches on the HUB's room name. The card groups by Home Assistant area,
    * which the integration seeds from those names -- so they agree until an area is
-   * renamed, and the action reports the names it knows if one does not match.
+   * renamed, and the action reports the names it knows if one does not match. That
+   * mismatch is why these were once opt-in, which was the wrong trade: it hid the app's
+   * three buttons from everyone to spare the few who rename an area, and those few get a
+   * named error listing the rooms the hub does know. Set `hide_room_presets: true` to
+   * drop them.
    */
   /**
    * The app's three buttons for the whole house, via the hub's own scope-less verb.
@@ -718,8 +722,8 @@ class NormanShadesCardEditor extends HTMLElement {
       { key: "hide_battery", label: "Hide battery levels", type: "checkbox" },
       { key: "hide_room_names", label: "Hide room headings", type: "checkbox" },
       { key: "hide_room_controls", label: "Hide whole-room open/close", type: "checkbox" },
-      { key: "room_presets", label: "Show the app's room buttons", type: "checkbox" },
-      { key: "home_controls", label: "Show the app's buttons for the whole house", type: "checkbox" },
+      { key: "hide_room_presets", label: "Hide the app's room buttons", type: "checkbox" },
+      { key: "hide_home_controls", label: "Hide the app's whole-house buttons", type: "checkbox" },
     ];
 
     for (const field of fields) {
