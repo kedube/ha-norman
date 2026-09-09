@@ -638,6 +638,30 @@ def test_example_dashboard_is_valid_yaml() -> None:
     assert not unknown, f"example dashboard sets options the card ignores: {sorted(unknown)}"
 
 
+def test_example_dashboard_lets_the_card_name_itself() -> None:
+    """The example must not set the card's own ``title``.
+
+    The card names the header after the hub, but only when no title is configured -- and a
+    title copied out of this file is saved into the user's dashboard, where it silently
+    wins forever. That is exactly how the feature failed to reach anyone before: the card
+    picker used to supply ``title: "Shades"`` automatically.
+
+    The dashboard's own ``title`` and its views' titles are unrelated and stay as they are;
+    this is only about the card.
+    """
+    config = yaml.safe_load((REPO / "examples" / "dashboard.yaml").read_text(encoding="utf-8"))
+    for view in config["views"]:
+        cards = list(view.get("cards", []))
+        for section in view.get("sections", []):
+            cards.extend(section.get("cards", []))
+        for card in cards:
+            if card.get("type") == "custom:norman-shades-card":
+                assert "title" not in card, (
+                    "the example sets the card's title, which suppresses the hub name; "
+                    "leave it out so the card names the hub"
+                )
+
+
 def test_example_dashboard_entities_use_this_integration() -> None:
     """Example entity ids must be in domains the integration actually provides.
 
