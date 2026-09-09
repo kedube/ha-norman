@@ -22,7 +22,10 @@ room with its battery level and a percentage slider per rail.
 
 The card header is named after your **hub** — the name it has in Home Assistant, which the
 integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
-to override it, or `title: ""` for no heading text at all. It carries **Best privacy / Best
+to override it, or `title: ""` for no heading text at all.
+
+A saved `title: Shades` is treated as unset, because that is what cards added before v0.30 got
+from the card picker automatically. If you want the literal word back, any other spelling works. It carries **Best privacy / Best
 view / Favorite** for the whole house, and each room heading carries open/stop/close plus the
 same three for that room.
 

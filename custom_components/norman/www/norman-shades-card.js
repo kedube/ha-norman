@@ -185,6 +185,22 @@ class NormanShadesCard extends HTMLElement {
    * Returns null when there is no hub to name (no Norman devices at all, or every Norman
    * device has a cover), so the caller can fall back rather than print "null".
    */
+  /**
+   * The heading to show: the configured title, else the hub's name.
+   *
+   * A literal "Shades" is treated as unset. Until 0.30 `getStubConfig()` returned
+   * `title: "Shades"`, so every card added from the picker had that string written into
+   * its saved dashboard config -- it was the default, not a choice anyone made. Honouring
+   * it would mean the hub name only ever appeared for people who added a card after 0.30,
+   * which is the opposite of the point. Anyone who genuinely wants the word can set
+   * `title: Shades ` or any other spelling; `title: ""` still gives a blank heading.
+   */
+  _headingText() {
+    const configured = this._config.title;
+    if (configured !== undefined && configured !== "Shades") return configured;
+    return this._hubName() ?? "Shades";
+  }
+
   _hubName() {
     const hass = this._hass;
     if (!hass) return null;
@@ -382,9 +398,8 @@ class NormanShadesCard extends HTMLElement {
     //
     // With no configured title the header names the HUB rather than saying "Shades": a
     // house with two hubs gets two cards, and "Shades" twice tells the user nothing about
-    // which is which. An explicit `title` always wins, and "Shades" is only the last resort
-    // for when the hub cannot be identified.
-    const title = this._config.title ?? this._hubName() ?? "Shades";
+    // which is which. See _headingText for why a saved "Shades" counts as unset.
+    const title = this._headingText();
     if (title || !this._config.hide_home_controls) {
       const header = document.createElement("div");
       header.className = "header";
@@ -416,8 +431,8 @@ class NormanShadesCard extends HTMLElement {
 
     // The header names the hub when no title is configured, so it has to track a rename
     // (and the first load, where the device registry may arrive after the first render).
-    if (this._headerText && this._config.title === undefined) {
-      const title = this._hubName() ?? "Shades";
+    if (this._headerText) {
+      const title = this._headingText();
       if (this._headerText.textContent !== title) this._headerText.textContent = title;
     }
 
