@@ -195,6 +195,19 @@ SERVICE_NUDGE_POSITION = "nudge_position"
 SERVICE_NUDGE_TILT = "nudge_tilt"
 SERVICE_GET_HUB_DATA = "get_hub_data"
 SERVICE_SEND_HUB_COMMAND = "send_hub_command"
+SERVICE_ROOM_COMMAND = "room_command"
+ATTR_ROOM = "room"
+ATTR_COMMAND = "command"
+
+# The room-wide commands the Norman app's room screen offers, and the control fields each
+# sends. Captured from the app (docs/NORMAN_API.md, "Room-wide and hub-wide control"):
+# Switch drives the BOTTOM rail only and leaves the middle rail alone, which is what makes
+# "best privacy" meaningful on a day/night shade -- bottom closed, sheer middle still open.
+ROOM_COMMANDS: dict[str, dict[str, int]] = {
+    "best_privacy": {"Switch": 0},
+    "best_view": {"Switch": 1},
+    "favorite": {"Favorite": HUB_COMMAND_SETTING},
+}
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_PERIPHERAL_UID = "peripheral_uid"
 ATTR_FIELDS = "fields"

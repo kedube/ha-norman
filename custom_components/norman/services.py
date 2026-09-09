@@ -13,17 +13,29 @@ import voluptuous as vol
 
 from .api import NormanApiError, NormanConnectionError
 from .const import (
+    ATTR_COMMAND,
     ATTR_CONFIG_ENTRY_ID,
     ATTR_FIELDS,
     ATTR_PERIPHERAL_UID,
+    ATTR_ROOM,
     DOMAIN,
+    ROOM_COMMANDS,
     SENSITIVE_HUB_KEYS,
     SERVICE_GET_HUB_DATA,
+    SERVICE_ROOM_COMMAND,
     SERVICE_SEND_HUB_COMMAND,
 )
 from .coordinator import NormanConfigEntry
 
 GET_HUB_DATA_SCHEMA = vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string})
+
+ROOM_COMMAND_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Required(ATTR_ROOM): cv.string,
+        vol.Required(ATTR_COMMAND): vol.In(sorted(ROOM_COMMANDS)),
+    }
+)
 
 SEND_HUB_COMMAND_SCHEMA = vol.Schema(
     {
@@ -107,6 +119,50 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
     return {"reply": reply}
 
 
+async def _async_room_command(call: ServiceCall) -> None:
+    """Run one of the app's room-wide commands against every blind in a room.
+
+    These are the Norman app's own room buttons: ``best_privacy`` closes the bottom rail
+    and leaves the middle where it is, ``best_view`` opens the bottom rail, and
+    ``favorite`` sends the room to its stored favorite position. Each is a single request
+    to the hub, not one per blind, and ``favorite`` has no Home Assistant equivalent.
+    """
+    entry = _resolve_entry(call.hass, call)
+    coordinator = entry.runtime_data
+    wanted = str(call.data[ATTR_ROOM])
+
+    # Match the hub's own room names, case-insensitively; the areas Home Assistant seeded
+    # from them may since have been renamed, so the hub name is what counts here.
+    rooms = {
+        device.room_name: device.room_id
+        for device in coordinator.data.values()
+        if device.room_name and device.room_id is not None
+    }
+    room_id = next(
+        (rid for name, rid in rooms.items() if name.casefold() == wanted.casefold()), None
+    )
+    if room_id is None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="unknown_room",
+            translation_placeholders={
+                "room": wanted,
+                "rooms": ", ".join(sorted(rooms)) or "none",
+            },
+        )
+
+    command = str(call.data[ATTR_COMMAND])
+    try:
+        await coordinator.api.async_send_room_control(room_id, ROOM_COMMANDS[command])
+    except (NormanConnectionError, NormanApiError) as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="room_command_failed",
+            translation_placeholders={"room": wanted, "command": command, "error": str(err)},
+        ) from err
+    await coordinator.async_request_refresh()
+
+
 def async_setup_services(hass: HomeAssistant) -> None:
     """Register the integration's actions. Called once from async_setup."""
     hass.services.async_register(
@@ -115,6 +171,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
         _async_get_hub_data,
         schema=GET_HUB_DATA_SCHEMA,
         supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ROOM_COMMAND,
+        _async_room_command,
+        schema=ROOM_COMMAND_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN,

@@ -63,6 +63,24 @@
         }
       }
     },
+    "room_command": {
+      "name": "Raumbefehl",
+      "description": "Führt eine der Raumschaltflächen der Norman-App für alle Rollos eines Raums aus, in einer einzigen Anfrage an den Hub.",
+      "fields": {
+        "room": {
+          "name": "Raum",
+          "description": "Der Name des Raums, wie der Hub ihn kennt (der Raumname in der Norman-App)."
+        },
+        "command": {
+          "name": "Befehl",
+          "description": "best_privacy schließt die untere Schiene und lässt die mittlere Schiene unverändert; best_view öffnet die untere Schiene; favorite fährt den Raum auf seine gespeicherte Favoritenposition."
+        },
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "Welcher Hub, wenn mehrere eingerichtet sind."
+        }
+      }
+    },
     "get_hub_data": {
       "name": "Hub-Daten abrufen",
       "description": "Liest die rohe Geräteliste und den Status des Hubs, genau wie der Hub sie sendet. Gibt eine Antwort zurück; verwende dies aus den Entwicklerwerkzeugen oder einem Skript, um ein nicht unterstütztes Rollo zu melden.",
@@ -177,6 +195,12 @@
     },
     "entry_not_loaded": {
       "message": "Norman Hub {hub} ist nicht geladen"
+    },
+    "unknown_room": {
+      "message": "Kein Raum namens „{room}“ auf diesem Hub. Bekannte Räume: {rooms}."
+    },
+    "room_command_failed": {
+      "message": "Der Hub hat {command} für den Raum {room} abgelehnt: {error}"
     }
   }
 }

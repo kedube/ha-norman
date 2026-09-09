@@ -230,6 +230,9 @@ class NormanShadesCard extends HTMLElement {
       }
       .room { padding: 4px 0 8px; }
       .room-name {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         font-size: 0.85rem;
         font-weight: 600;
         letter-spacing: 0.06em;
@@ -237,6 +240,15 @@ class NormanShadesCard extends HTMLElement {
         color: var(--secondary-text-color);
         padding: 10px 16px 4px;
       }
+      .room-name-text {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* The room's buttons sit slightly smaller than a rail's, so the heading stays a
+         heading and the per-rail controls remain the primary ones. */
+      .room-buttons ha-icon-button { --mdc-icon-button-size: 28px; --mdc-icon-size: 17px; }
       .blind {
         padding: 8px 16px 10px;
         border-top: 1px solid var(--divider-color);
@@ -355,10 +367,20 @@ class NormanShadesCard extends HTMLElement {
       const room = document.createElement("div");
       room.className = "room";
 
+      // The heading carries the room's own open/stop/close when `room_controls` is on.
+      // It is skipped when headings are hidden, since there would be nothing to attach to.
       if (!this._config.hide_room_names) {
         const label = document.createElement("div");
         label.className = "room-name";
-        label.textContent = roomName;
+
+        const text = document.createElement("span");
+        text.className = "room-name-text";
+        text.textContent = roomName;
+        label.appendChild(text);
+
+        if (this._config.room_controls) {
+          label.appendChild(this._buildRoomControls(roomName, list));
+        }
         room.appendChild(label);
       }
 
@@ -367,6 +389,44 @@ class NormanShadesCard extends HTMLElement {
       }
       this._body.appendChild(room);
     }
+  }
+
+  /**
+   * Open / stop / close every rail of every blind in one room.
+   *
+   * The hub has a native room-wide verb, but it is not reachable from a dashboard card (it
+   * needs the hub's own RoomID, which no entity exposes), and it only drives both rails
+   * fully open or closed. Calling the cover service with the room's entity ids does the
+   * same job through Home Assistant, and covers the middle rails too.
+   */
+  _buildRoomControls(roomName, blinds) {
+    const controls = document.createElement("div");
+    controls.className = "buttons room-buttons";
+
+    for (const [icon, service, label] of [
+      ["mdi:arrow-up", "open_cover", "Open"],
+      ["mdi:stop", "stop_cover", "Stop"],
+      ["mdi:arrow-down", "close_cover", "Close"],
+    ]) {
+      const button = document.createElement("ha-icon-button");
+      const inner = document.createElement("ha-icon");
+      inner.setAttribute("icon", icon);
+      button.appendChild(inner);
+      button.title = `${label} every blind in ${roomName}`;
+      button.setAttribute("aria-label", button.title);
+      button.addEventListener("click", () => {
+        // Every rail in the room: the bottom rails, plus the middle rails of two-rail
+        // blinds. One service call with a list, not one call per entity.
+        const entityId = [];
+        for (const blind of blinds) {
+          if (blind.bottomCover) entityId.push(blind.bottomCover);
+          if (blind.middleCover) entityId.push(blind.middleCover);
+        }
+        if (entityId.length) this._hass.callService("cover", service, { entity_id: entityId });
+      });
+      controls.appendChild(button);
+    }
+    return controls;
   }
 
   _buildBlind(blind) {
@@ -548,6 +608,7 @@ class NormanShadesCardEditor extends HTMLElement {
       { key: "title", label: "Title", type: "text" },
       { key: "hide_battery", label: "Hide battery levels", type: "checkbox" },
       { key: "hide_room_names", label: "Hide room headings", type: "checkbox" },
+      { key: "room_controls", label: "Open/close a whole room", type: "checkbox" },
     ];
 
     for (const field of fields) {

@@ -63,6 +63,24 @@
         }
       }
     },
+    "room_command": {
+      "name": "房間命令",
+      "description": "對房間內所有窗飾執行 Norman 應用程式的房間按鈕，只需向中樞發送一次請求。",
+      "fields": {
+        "room": {
+          "name": "房間",
+          "description": "中樞所知的房間名稱（Norman 應用程式中的房間名稱）。"
+        },
+        "command": {
+          "name": "命令",
+          "description": "best_privacy 關閉底軌並保持中軌不變；best_view 打開底軌；favorite 將房間移至其儲存的收藏位置。"
+        },
+        "config_entry_id": {
+          "name": "中樞",
+          "description": "設定了多個中樞時，使用哪一個。"
+        }
+      }
+    },
     "get_hub_data": {
       "name": "取得 Hub 資料",
       "description": "讀取 Hub 原始的裝置清單與狀態，與 Hub 傳送的內容完全相同。會回傳回應；回報不支援的窗簾時，請從開發者工具或指令碼使用。",
@@ -177,6 +195,12 @@
     },
     "entry_not_loaded": {
       "message": "Norman Hub {hub} 尚未載入"
+    },
+    "unknown_room": {
+      "message": "此中樞上沒有名為「{room}」的房間。已知房間：{rooms}。"
+    },
+    "room_command_failed": {
+      "message": "中樞拒絕了房間 {room} 的 {command}：{error}"
     }
   }
 }

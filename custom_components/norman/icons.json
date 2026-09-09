@@ -25,6 +25,9 @@
     "nudge_tilt": {
       "service": "mdi:angle-acute"
     },
+    "room_command": {
+      "service": "mdi:home-lightbulb-outline"
+    },
     "get_hub_data": {
       "service": "mdi:file-download-outline"
     },

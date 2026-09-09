@@ -193,12 +193,15 @@ complete dashboard you can paste into the raw configuration editor.
 
 ### Actions
 
-Alongside the standard cover actions, the integration provides four of its own — two
-relative-move actions for automations and buttons, and two for troubleshooting:
+Alongside the standard cover actions, the integration provides five of its own — two
+relative-move actions for automations and buttons, one room-wide action, and two for
+troubleshooting:
 
 - `norman.nudge_position` — move by `step` (positive opens, negative closes).
 - `norman.nudge_tilt` — tilt by `step` (direction depends on the blind; on SmartDrape,
   negative tilts left).
+- `norman.room_command` — run one of the Norman app's own room buttons (`best_privacy`,
+  `best_view`, `favorite`) against every blind in a room, in one request to the hub.
 - `norman.get_hub_data` — returns the hub's raw device list and status as a response, for
   bug reports and for adding support for new blind types.
 - `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for

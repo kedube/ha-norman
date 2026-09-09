@@ -63,6 +63,24 @@
         }
       }
     },
+    "room_command": {
+      "name": "Commande de pièce",
+      "description": "Exécute l'un des boutons de pièce de l'application Norman sur tous les stores d'une pièce, en une seule requête vers le hub.",
+      "fields": {
+        "room": {
+          "name": "Pièce",
+          "description": "Le nom de la pièce tel que le hub le connaît (le nom dans l'application Norman)."
+        },
+        "command": {
+          "name": "Commande",
+          "description": "best_privacy ferme le rail inférieur et laisse le rail central en place ; best_view ouvre le rail inférieur ; favorite envoie la pièce à sa position favorite enregistrée."
+        },
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "Quel hub, lorsque plusieurs sont configurés."
+        }
+      }
+    },
     "get_hub_data": {
       "name": "Lire les données du hub",
       "description": "Lit la liste brute des appareils et l'état du hub, exactement tels que le hub les envoie. Renvoie une réponse ; utilisez-la depuis les outils de développement ou un script pour signaler un store non pris en charge.",
@@ -177,6 +195,12 @@
     },
     "entry_not_loaded": {
       "message": "Le Norman Hub {hub} n'est pas chargé"
+    },
+    "unknown_room": {
+      "message": "Aucune pièce nommée « {room} » sur ce hub. Pièces connues : {rooms}."
+    },
+    "room_command_failed": {
+      "message": "Le hub a rejeté {command} pour la pièce {room} : {error}"
     }
   }
 }
