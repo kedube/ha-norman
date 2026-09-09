@@ -5,13 +5,21 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Per-blind Best privacy and Best view buttons.** Each blind already had a Favorite position
+  button; these complete the set, matching the three the Norman app offers per room. Privacy is
+  bottom rail 0 with the middle rail at 100 (closed for privacy, sheer fabric still open); view
+  opens both. They send those rail positions rather than the hub's `Switch` verb, which has only
+  ever been observed room-wide and hub-wide — same result, over the position path the covers
+  already use.
+
 ## 0.26 — 2026-09-09
 - **House-wide control.** `norman.room_command` now takes an optional `room`: omit it and the
-  verb goes to every blind on the hub in a single request, which is how the hub reads a command
-  with no scope. The card gained a matching `home_controls` option putting open and close in its
-  header. `favorite` is refused hub-wide — the app has no such button and the form has never
-  been observed, so it is not guessed at. Verified against a real hub: `{"Switch": 1}` with no
-  `RoomID` opened blinds in a room that had been left closed.
+  verb goes to every blind on the hub in a single request. All three commands work this way —
+  captured from the app's own **All Rooms** screen, where the payload turns out to be the bare
+  verb with no scope field at all. The card gained a matching `home_controls` option putting
+  open, close and favorite in its header. Hub-wide favorite reaches only two-rail blinds;
+  single-rail ones have no stored favorite.
 - **New card option: `room_presets`.** Adds the Norman app's own three room buttons — Best
   privacy, Best view, Favorite — to each room heading, sending the hub's room verbs through
   `norman.room_command`. This reaches positions the card's own controls cannot: Best privacy is

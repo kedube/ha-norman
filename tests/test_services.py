@@ -255,18 +255,17 @@ async def test_room_command_without_a_room_addresses_the_whole_hub(
     assert "PeripheralUID" not in call
 
 
-async def test_hub_wide_favorite_is_refused(
+async def test_hub_wide_favorite_sends_the_bare_verb(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """favorite has no observed hub-wide form, so it is refused rather than guessed at.
+    """Favorite works hub-wide too, as the bare verb with no scope field.
 
-    Sending an unverified form to every blind in the house is the worst case to get wrong.
+    Captured from the app's "All Rooms" screen. Every command the app offers per room it
+    also offers for the whole house, so all three are allowed without a room.
     """
-    before = len(fake_hub.control_calls)
-    with pytest.raises(ServiceValidationError) as err:
-        await hass.services.async_call(
-            DOMAIN, "room_command", {"command": "favorite"}, blocking=True
-        )
+    await hass.services.async_call(DOMAIN, "room_command", {"command": "favorite"}, blocking=True)
 
-    assert "favorite" in str(err.value)
-    assert len(fake_hub.control_calls) == before  # nothing was sent
+    call = fake_hub.control_calls[-1]
+    assert call["Favorite"] == 0
+    assert "RoomID" not in call
+    assert "PeripheralUID" not in call

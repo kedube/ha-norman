@@ -275,15 +275,16 @@ homeCard._hass = { ...hass, callService: (d,s2,data) => homeCalls.push([d,s2,dat
 homeCard.setConfig({ type:"custom:norman-shades-card", home_controls:true });
 homeCard._hass = { ...hass, callService: (d,s2,data) => homeCalls.push([d,s2,data]) };
 const home = homeCard._buildHomeControls();
-check("home controls render 2 buttons (no stop)", home.children.length === 2, String(home.children.length));
+check("home controls render 3 buttons (no stop)", home.children.length === 3, String(home.children.length));
 
 home.children[0]._on?.click?.();
 home.children[1]._on?.click?.();
-check("home open/close call norman.room_command",
-      homeCalls.length === 2 && homeCalls.every(c => c[0]==="norman" && c[1]==="room_command"),
+home.children[2]._on?.click?.();
+check("home buttons call norman.room_command",
+      homeCalls.length === 3 && homeCalls.every(c => c[0]==="norman" && c[1]==="room_command"),
       JSON.stringify(homeCalls));
-check("home controls send best_view then best_privacy",
-      JSON.stringify(homeCalls.map(c => c[2].command)) === JSON.stringify(["best_view","best_privacy"]),
+check("home controls send best_view / best_privacy / favorite",
+      JSON.stringify(homeCalls.map(c => c[2].command)) === JSON.stringify(["best_view","best_privacy","favorite"]),
       JSON.stringify(homeCalls.map(c => c[2].command)));
 // The absence of `room` is what makes it house-wide; sending one would scope it to a room.
 check("home controls omit the room entirely",
@@ -306,7 +307,7 @@ const headerButtons = (cfg) => {
   walk(c.shadowRoot);
   return n;
 };
-check("home controls render with no title set", headerButtons({ home_controls:true }) === 2,
+check("home controls render with no title set", headerButtons({ home_controls:true }) === 3,
       String(headerButtons({ home_controls:true })));
 check("no home controls by default", headerButtons({ title:"Shades" }) === 0);
 

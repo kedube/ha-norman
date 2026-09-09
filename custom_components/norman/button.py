@@ -46,7 +46,26 @@ class NormanButtonDescription(ButtonEntityDescription):
 # rail" sorts after "Jog up"), which reads as though the second cover belongs to the buttons.
 # With the buttons categorised, a two-rail blind shows its bottom-rail and middle-rail covers
 # together at the top, then the divider, then every button.
+#
+# Best privacy and Best view are the app's room buttons, per blind. The hub's own `Switch`
+# verb has only ever been seen room-wide or hub-wide -- the app has no per-blind version and
+# `{"Switch": …, "PeripheralUID": …}` has never been captured -- so rather than guess at that
+# form these send the rail positions the captured room command produces:
+# privacy = bottom 0 / middle 100, view = both 100. Same result, over the position path the
+# covers already use. Single-rail blinds ignore the middle value, so both still work there.
 BUTTONS: tuple[NormanButtonDescription, ...] = (
+    NormanButtonDescription(
+        key="best_privacy",
+        translation_key="best_privacy",
+        entity_category=EntityCategory.CONFIG,
+        fields={"BottomRailPosition": 0, "MiddleRailPosition": 100},
+    ),
+    NormanButtonDescription(
+        key="best_view",
+        translation_key="best_view",
+        entity_category=EntityCategory.CONFIG,
+        fields={"BottomRailPosition": 100, "MiddleRailPosition": 100},
+    ),
     NormanButtonDescription(
         key="favorite",
         translation_key="favorite",

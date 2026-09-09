@@ -107,8 +107,13 @@ home_controls: true
 
 Like the room presets these go through `norman.room_command`, but with no room at all — the hub
 treats a command with no scope as "everything", so it is one request for the house however many
-blinds you have. Open is both rails to 100; close is the privacy position (bottom 0, middle
-100). Both are the hub's own verbs, so this is not a fan-out and needs no room-name match.
+blinds you have. These are the same three buttons the app's own **All Rooms** screen sends:
+open is both rails to 100, close is the privacy position (bottom 0, middle 100), and favorite
+sends every blind to its stored position. Because they are the hub's own verbs this is not a
+fan-out and needs no room-name match.
+
+Hub-wide favorite reaches only two-rail blinds; single-rail ones have no stored favorite and
+stay where they are.
 
 There is no house-wide **stop**: the hub's stop is per blind, so it would have to fan out over
 every cover, and a stop that lags the blinds it is stopping is worse than none. Use a room's

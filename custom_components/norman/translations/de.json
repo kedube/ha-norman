@@ -128,6 +128,12 @@
       }
     },
     "button": {
+      "best_privacy": {
+        "name": "Beste Privatsphäre"
+      },
+      "best_view": {
+        "name": "Beste Aussicht"
+      },
       "favorite": {
         "name": "Favoritenposition"
       },

@@ -212,11 +212,11 @@ ROOM_COMMANDS: dict[str, dict[str, int]] = {
     "favorite": {"Favorite": HUB_COMMAND_SETTING},
 }
 
-# The same verbs work with no RoomID at all, addressing every blind on the hub -- verified
-# for Switch against a real hub. Favorite is absent pending a capture: the app's "All Rooms"
-# screen very likely offers it, but the payload has not been seen, and an unverified command
-# that would move every blind in the house is not worth guessing at. Add it once captured.
-HUB_WIDE_COMMANDS: frozenset[str] = frozenset({"best_privacy", "best_view"})
+# All three verbs work with no RoomID at all, addressing every blind on the hub. This is what
+# the app's "All Rooms" screen sends, captured from it: the bare verb with no scope field.
+# Favorite reaches only the two-rail blinds -- single-rail ones have no stored favorite and
+# are left where they are.
+HUB_WIDE_COMMANDS: frozenset[str] = frozenset(ROOM_COMMANDS)
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_PERIPHERAL_UID = "peripheral_uid"
 ATTR_FIELDS = "fields"

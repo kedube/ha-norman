@@ -145,9 +145,9 @@ async def _async_room_command(call: ServiceCall) -> None:
     single request to the hub, not one per blind, and ``favorite`` has no Home Assistant
     equivalent.
 
-    Omit ``room`` to address every blind on the hub: the hub accepts the same verbs with no
-    ``RoomID`` at all. ``favorite`` is not offered hub-wide -- the app has no such button
-    and it has never been observed, so it is refused rather than guessed at.
+    Omit ``room`` to address every blind on the hub: the hub accepts all three verbs with no
+    ``RoomID`` at all, which is what the app's own "All Rooms" screen sends. Hub-wide
+    ``favorite`` reaches only two-rail blinds; single-rail ones have no stored favorite.
     """
     entry = _resolve_entry(call.hass, call)
     coordinator = entry.runtime_data

@@ -281,15 +281,17 @@ and clean verbs change how a blind behaves and may need a physical recalibration
 ### Room-wide and hub-wide control
 
 Two verbs work **without** `PeripheralUID`, addressing every blind in a room or on the hub in
-one request. The **room** forms were captured from the app. The **hub-wide** forms (no `RoomID` at all)
-have not been captured, but the app does have the screen that would send them: its hub main page
-carries an **All Rooms** header (`Hub_Main_Page_Header_All_Rooms`) above the room list, and the
-three room buttons are shared labels (`General_Best_Privacy`, `General_Best_View`,
-`General_Remote_Favorite`) rather than per-room strings. `{"Switch": 1}` with no `RoomID` was
-verified directly against the hub: it moved blinds in a room that had been left closed while
-every other room was already open. A hub-wide `Favorite` is presumed to work the same way but
-has not been captured or tested, so `norman.room_command` refuses it rather than sending an
-unverified command to every blind in the house.
+one request. Both scopes are captured from the app: the **room** forms from a room screen, and
+the **hub-wide** forms from the **All Rooms** header on the app's hub main page
+(`Hub_Main_Page_Header_All_Rooms`), which offers the same three buttons for the whole house.
+
+The hub-wide form is simply the bare verb with **no scope field at all** — no `RoomID`, no
+all-rooms marker: `{"Switch": 0}`, `{"Switch": 1}`, `{"Favorite": 0}`. An omitted scope means
+"everything", not "nothing".
+
+Hub-wide `Favorite` reached every two-rail blind (all nine went to their stored 0/50) and left
+the four single-rail blinds untouched — they have no stored favorite, so this is the hub's
+behaviour rather than a partial failure.
 
 | Body (plus `Timestamp`, `TaskID`) | Effect |
 |---|---|

@@ -85,8 +85,9 @@ data:
   command: best_view      # every blind in the house, in one request
 ```
 
-`favorite` is refused hub-wide. The app has no such button and the form has never been
-observed; guessing at one that would move every blind in the house is not worth it.
+All three commands work without a room — this is what the app's **All Rooms** screen sends.
+Note that hub-wide `favorite` reaches only two-rail blinds: single-rail ones have no stored
+favorite and stay where they are.
 
 `Switch` sets both rails to fixed positions; it is not a relative move and there is no
 room-wide way to reach an arbitrary percentage. For that, use the cover entities (or the card's

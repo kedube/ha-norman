@@ -8,7 +8,7 @@ a device of its own carrying four diagnostic sensors.
 |---|---|---|
 | Cover | Bottom rail; Middle rail on two-rail blinds | — |
 | Number | Bottom rail position; Middle rail position on two-rail blinds | — |
-| Button | Favorite position, Jog up, Jog down, Run to top limit, Run to bottom limit | — |
+| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Run to top limit, Run to bottom limit | — |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
 
 \* disabled by default; enable from the entity's settings.
@@ -76,6 +76,12 @@ There is no polling interval. The integration holds a long-poll open to the hub 
 every cover whenever the hub reports a change, including changes made with a remote or the
 Norman app. It also refreshes after every command it sends and every time the long-poll is
 reconnected. See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
+
+**Best privacy** and **Best view** are the Norman app's room buttons, per blind: privacy puts
+the bottom rail at 0 and the middle rail at 100 (closed for privacy, sheer fabric still open),
+and view opens both. They send rail positions rather than the hub's `Switch` verb, which has
+only ever been observed room-wide — the result is the same. On a single-rail blind the middle
+value is ignored, so privacy simply closes it.
 
 The bundled [dashboard card](dashboard.md) puts all of this on one card, grouped by room;
 [`examples/dashboard.yaml`](../examples/dashboard.yaml) is a complete dashboard using it.
