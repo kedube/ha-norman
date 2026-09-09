@@ -9,6 +9,10 @@ version heading and publishes it as the release's Highlights.
 - **Fixed a dangling instruction in the example dashboard.** Its header ended "In
   configuration.yaml:" with nothing after it — the YAML-mode snippet had been removed and the
   sentence introducing it left behind. It now points at `docs/dashboard.md`, which covers it.
+- **Clearer attribution.** The README now states that roughly 80% of the original code has been
+  rewritten and which parts are new, and a `NOTICE` file records the Apache-2.0 attribution to
+  Keito Uchiyama's `keito/home-assistant-norman` properly. A test keeps the credit from being
+  lost in a future edit.
 - **Screenshots in the documentation.** The README leads with the card, and shows the
   integration page after setup and a blind's device page; `docs/entities.md` gains the blind and
   hub device pages; `docs/dashboard.md` replaces its ASCII sketch of the card with the real
