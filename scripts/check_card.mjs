@@ -264,15 +264,16 @@ const countPresetButtons = (cfg) => {
   walk(c._body);
   return n;
 };
-check("_build attaches presets when enabled", countPresetButtons({ room_presets:true }) === 6,
-      String(countPresetButtons({ room_presets:true })));
-check("_build attaches no presets by default", countPresetButtons({}) === 0);
+check("_build attaches presets by default", countPresetButtons({}) === 6,
+      String(countPresetButtons({})));
+check("_build drops presets when hidden", countPresetButtons({ hide_room_presets:true }) === 0,
+      String(countPresetButtons({ hide_room_presets:true })));
 
 // --- house-wide controls (opt-in via home_controls) ----------------------------------
 const homeCalls = [];
 const homeCard = new Card();
 homeCard._hass = { ...hass, callService: (d,s2,data) => homeCalls.push([d,s2,data]) };
-homeCard.setConfig({ type:"custom:norman-shades-card", home_controls:true });
+homeCard.setConfig({ type:"custom:norman-shades-card" });
 homeCard._hass = { ...hass, callService: (d,s2,data) => homeCalls.push([d,s2,data]) };
 const home = homeCard._buildHomeControls();
 check("home controls render 3 buttons (no stop)", home.children.length === 3, String(home.children.length));
@@ -310,7 +311,8 @@ check("home controls omit the room entirely",
 
 const noHome = new Card();
 noHome._hass = hass; noHome.setConfig({ type:"custom:norman-shades-card" }); noHome._hass = hass;
-check("home controls are OFF by default", !noHome._config.home_controls);
+// The user asked for these buttons, so they ship on; hide_* is the escape hatch.
+check("home controls are ON by default", !noHome._config.hide_home_controls);
 
 // The header must appear for the buttons even when no title is configured.
 const headerButtons = (cfg) => {
@@ -325,9 +327,13 @@ const headerButtons = (cfg) => {
   walk(c.shadowRoot);
   return n;
 };
-check("home controls render with no title set", headerButtons({ home_controls:true }) === 3,
-      String(headerButtons({ home_controls:true })));
-check("no home controls by default", headerButtons({ title:"Shades" }) === 0);
+check("home controls render with no title set", headerButtons({}) === 3,
+      String(headerButtons({})));
+check("home controls render alongside a title", headerButtons({ title:"Shades" }) === 3,
+      String(headerButtons({ title:"Shades" })));
+check("home controls drop out when hidden",
+      headerButtons({ hide_home_controls:true }) === 0,
+      String(headerButtons({ hide_home_controls:true })));
 
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);
