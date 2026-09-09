@@ -477,5 +477,9 @@ Version history: each push to `main` publishes a tagged release with generated n
 For interoperability; no vendor code is included. This project is unaffiliated with Norman.
 Use at your own risk; it may void your warranty.
 
-Originally written by [Keito Uchiyama](https://github.com/keito); see the
-[license](LICENSE).
+Originally written by [Keito Uchiyama](https://github.com/keito). Roughly 80% of the code has
+since been rewritten: the API client, the update coordinator, and every entity platform beyond
+`cover` are new, as are the dashboard card, the actions, the diagnostics, the translations, and
+the test suite. What remains closest to the original is the data model and the cover entity's
+method structure. Licensed under Apache 2.0 either way — see the [license](LICENSE) and
+[NOTICE](NOTICE).

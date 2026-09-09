@@ -609,6 +609,22 @@ def test_dashboard_doc_documents_every_card_option() -> None:
     assert not missing, "docs/dashboard.md does not document: " + ", ".join(missing)
 
 
+def test_upstream_attribution_is_present() -> None:
+    """The Apache-2.0 attribution to the original author must survive edits.
+
+    This project is a derivative of keito/home-assistant-norman. Most of the code has been
+    rewritten, but the obligation to credit the original does not scale with how much was
+    replaced -- so the credit is pinned here rather than left to whoever next tidies the
+    README.
+    """
+    for name in ("README.md", "NOTICE"):
+        text = (REPO / name).read_text(encoding="utf-8")
+        assert "Keito Uchiyama" in text, f"{name} no longer credits the original author"
+    notice = (REPO / "NOTICE").read_text(encoding="utf-8")
+    assert "keito/home-assistant-norman" in notice, "NOTICE should name the upstream repository"
+    assert "Apache License" in notice, "NOTICE should name the licence the original was under"
+
+
 def test_documentation_images_exist_and_have_alt_text() -> None:
     """Every image a document references must exist, and describe itself.
 

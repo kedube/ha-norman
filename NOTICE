@@ -1,0 +1,21 @@
+Norman smart blinds for Home Assistant
+Copyright 2026 Katherine Dubé
+
+This product includes software originally developed by Keito Uchiyama
+(https://github.com/keito/home-assistant-norman), Copyright 2025 Keito Uchiyama,
+licensed under the Apache License, Version 2.0.
+
+Roughly 80% of that original code has since been rewritten. The API client, the
+update coordinator, and every entity platform other than `cover` are new work, as
+are the dashboard card, the actions, the diagnostics, the translations, and the
+test suite. The data model and the cover entity's method structure remain closest
+to the original.
+
+Licensed under the Apache License, Version 2.0; you may not use this file except
+in compliance with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+"Norman" is a trademark of Norman Window Fashions. This project is an unofficial,
+independent work and is not affiliated with, endorsed by, or sponsored by Norman.
+The name is used only to identify the hardware the integration interoperates with.
