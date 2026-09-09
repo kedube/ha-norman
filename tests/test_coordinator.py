@@ -103,6 +103,72 @@ def test_process_data_tolerates_missing_sections(device_info: dict, status: dict
     assert process(device_info, status) == {}
 
 
+@pytest.mark.parametrize(
+    ("device_info", "status"),
+    [
+        # A list replaced by a scalar, at each level of the nesting.
+        ({"results": {"RoomList": "nope"}}, {}),
+        ({"results": {"RoomList": [{"GroupList": "nope"}]}}, {}),
+        ({"results": {"RoomList": [{"GroupList": [{"PeripheralList": "nope"}]}]}}, {}),
+        ({}, {"Peripherals": "nope"}),
+        # A list whose *entries* are not objects, at each level.
+        ({"results": {"RoomList": ["nope"]}}, {}),
+        ({"results": {"RoomList": [{"GroupList": ["nope"]}]}}, {}),
+        ({"results": {"RoomList": [{"GroupList": [{"PeripheralList": ["nope"]}]}]}}, {}),
+        ({}, {"Peripherals": ["nope"]}),
+    ],
+)
+def test_process_data_survives_wrongly_typed_sections(device_info: dict, status: dict) -> None:
+    """A section of the wrong type is skipped, not fatal.
+
+    These all used to raise AttributeError straight out of ``_async_update_data``. Home
+    Assistant catches that, but only by logging a stack trace and marking every entity on
+    the hub unavailable -- so one malformed record took the whole house offline.
+    """
+    assert process(device_info, status) == {}
+
+
+def test_process_data_keeps_good_records_alongside_malformed_ones() -> None:
+    """One unreadable peripheral must not cost the user the blinds either side of it.
+
+    This is the property that matters in practice: skipping bad data is only an improvement
+    over failing if the *rest* of the payload still produces working entities.
+    """
+    devices = process(
+        {
+            "results": {
+                "RoomList": [
+                    "not-a-room",
+                    {
+                        "RoomID": 7,
+                        "RoomName": "Den",
+                        "GroupList": [
+                            "not-a-group",
+                            {
+                                "GroupID": 1,
+                                "PeripheralList": [
+                                    "not-a-peripheral",
+                                    {
+                                        "PeripheralUID": 42,
+                                        "PeripheralName": "Good blind",
+                                        "ModuleType": 33,
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ]
+            }
+        },
+        {"Peripherals": ["not-a-peripheral", {"PeripheralUID": 42, "BottomRailPosition": 60}]},
+    )
+
+    assert list(devices) == [42]
+    assert devices[42].name == "Good blind"
+    assert devices[42].room_name == "Den"
+    assert devices[42].bottom_rail_position == 60
+
+
 def test_battery_level_is_a_clamped_percentage() -> None:
     """BatteryVoltage is a 0-100 level despite its name; junk becomes None."""
     status = {
@@ -324,6 +390,40 @@ async def test_periodic_reconnect_refreshes_device_list(
     await settle(hass)
 
     assert len(fake_hub.calls_to("GetAllPeripheral")) == device_calls + 1
+
+
+async def test_listener_survives_an_unexpected_error(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An error that is not a connection drop must not kill the listener for good.
+
+    The listener task is the only thing that refreshes state (there is no polling
+    interval), so an exception escaping its loop would leave the integration loaded and
+    apparently healthy while silently never updating again. It has to log and carry on.
+    """
+    caplog.set_level(logging.DEBUG, logger="custom_components.norman")
+
+    with patch("custom_components.norman.coordinator.RECONNECT_INTERVAL", 0):
+        await notifications.put(RuntimeError("something nobody predicted"))
+        await settle(hass)
+
+        assert any(
+            r.levelno == logging.ERROR and "Unexpected error" in r.message for r in caplog.records
+        ), "the unexpected error should be logged"
+
+        # The point of the test: the listener is still running and still delivering.
+        device_calls = len(fake_hub.calls_to("GetAllPeripheral"))
+        await notifications.put({"PeripheralList": []})
+        await settle(hass)
+
+    assert len(fake_hub.calls_to("GetAllPeripheral")) >= device_calls, (
+        "the listener stopped consuming notifications after an unexpected error"
+    )
+    assert init_integration.runtime_data.last_update_success
 
 
 async def test_stream_outage_is_logged_once_and_recovery_announced(

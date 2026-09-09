@@ -90,6 +90,18 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 else:
                     _LOGGER.debug("Notification listener still down: %s", err)
                 await asyncio.sleep(RECONNECT_INTERVAL)
+            except Exception:  # noqa: BLE001 - the listener must outlive any single failure
+                # There is no polling fallback (update_interval is None), so this task is the
+                # only thing that ever refreshes state. Letting an unexpected error escape the
+                # loop would leave the integration loaded and apparently healthy while it
+                # silently stopped updating for good -- a far worse failure than a logged
+                # exception and a retry. async_refresh() is inside the try above and reaches
+                # the device registry, so this is not merely theoretical.
+                _LOGGER.exception(
+                    "Unexpected error in the Norman notification listener; retrying in %s seconds",
+                    RECONNECT_INTERVAL,
+                )
+                await asyncio.sleep(RECONNECT_INTERVAL)
             else:
                 # The stream was cycled on purpose after NOTIF_MAX_DURATION; reconnect
                 # right away.
@@ -189,7 +201,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         if not _LOGGER.isEnabledFor(logging.DEBUG):
             return
         for payload in payloads:
-            top = payload.get("results") if isinstance(payload.get("results"), dict) else payload
+            results = payload.get("results")
+            top: dict[str, Any] = results if isinstance(results, dict) else payload
             self._note_unknown("hub", KNOWN_HUB_FIELDS, top)
             for peripheral in top.get("Peripherals") or []:
                 if isinstance(peripheral, dict):
@@ -254,15 +267,15 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # Process device information (names, room, group)
         results = device_info.get("results")
         room_list = results.get("RoomList") if isinstance(results, dict) else None
-        for room in room_list or []:
+        for room in _dicts(room_list):
             room_id = room.get("RoomID")
             room_name = room.get("RoomName", "")
 
-            for group in room.get("GroupList") or []:
+            for group in _dicts(room.get("GroupList")):
                 group_id = group.get("GroupID")
                 group_name = group.get("GroupName", "")
 
-                for peripheral in group.get("PeripheralList") or []:
+                for peripheral in _dicts(group.get("PeripheralList")):
                     peripheral_uid = _parse_uid(peripheral.get("PeripheralUID"))
                     if peripheral_uid is None:
                         continue
@@ -271,7 +284,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     devices[peripheral_uid] = NormanPeripheralData(
                         id=peripheral_uid,
                         name=peripheral.get("PeripheralName") or f"Norman {peripheral_uid}",
-                        type=MODULE_TYPE_COVER_TYPES.get(module_type, DEFAULT_COVER_TYPE),
+                        type=_cover_type(module_type),
                         room_id=_parse_int(room_id),
                         room_name=room_name,
                         group_id=_parse_int(group_id),
@@ -281,7 +294,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     )
 
         # Add status information
-        for peripheral in status_data.get("Peripherals") or []:
+        for peripheral in _dicts(status_data.get("Peripherals")):
             peripheral_uid = _parse_uid(peripheral.get("PeripheralUID"))
             if peripheral_uid is None:
                 continue
@@ -292,7 +305,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 devices[peripheral_uid] = NormanPeripheralData(
                     id=peripheral_uid,
                     name=f"Norman {peripheral_uid}",
-                    type=MODULE_TYPE_COVER_TYPES.get(module_type, DEFAULT_COVER_TYPE),
+                    type=_cover_type(module_type),
                     module_type=module_type,
                     module_detail=_parse_int(peripheral.get("ModuleDetail")),
                 )
@@ -316,31 +329,49 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         return devices
 
 
-def _parse_uid(raw: Any) -> int | None:
-    """Coerce a PeripheralUID to int, or None if it is missing or malformed."""
-    if raw is None or isinstance(raw, bool):
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
+def _cover_type(module_type: int | None) -> str:
+    """The cover type for a ModuleType, defaulting when it is unknown or missing."""
+    if module_type is None:
+        return DEFAULT_COVER_TYPE
+    return MODULE_TYPE_COVER_TYPES.get(module_type, DEFAULT_COVER_TYPE)
+
+
+def _dicts(raw: Any) -> list[dict[str, Any]]:
+    """The dict entries of ``raw``, or an empty list if it is not a list of dicts.
+
+    The hub's payloads are reverse-engineered and unvalidated, so a firmware change (or a
+    partial write) can put a string, a null, or a scalar where a list of objects belongs.
+    Reaching ``.get()`` on one of those raises AttributeError out of ``_async_update_data``,
+    which Home Assistant catches -- but only by logging a stack trace and marking EVERY
+    entity on the hub unavailable, for what may be one malformed record among twenty.
+    Skipping what cannot be read keeps the rest of the house working, and matches the
+    isinstance guards ``_log_unknown_fields`` already applies to the same structures.
+    """
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, dict)]
 
 
 def _parse_int(raw: Any) -> int | None:
-    """Coerce a value the hub sends as int in one payload and str in another."""
+    """Coerce a value the hub sends as int in one payload and str in another.
+
+    ``bool`` is rejected explicitly: it is an ``int`` subclass, so a stray ``true`` would
+    otherwise become 1 and read as a real id or position.
+    """
     if raw is None or isinstance(raw, bool):
         return None
     try:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+# A PeripheralUID parses exactly like any other hub int; the alias keeps the call sites
+# reading as what they are without a second identical implementation to keep in step.
+_parse_uid = _parse_int
 
 
 def _parse_position(raw: Any) -> int | None:
     """Coerce a rail position to an int clamped to 0-100, or None if unusable."""
-    if raw is None or isinstance(raw, bool):
-        return None
-    try:
-        return max(0, min(100, int(raw)))
-    except (TypeError, ValueError):
-        return None
+    value = _parse_int(raw)
+    return None if value is None else max(0, min(100, value))

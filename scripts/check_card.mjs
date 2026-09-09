@@ -99,6 +99,29 @@ check("single-rail: no middle cover", den?.middleCover===null, String(den?.middl
 check("single-rail: no middle slider", den?.middleNumber===null, String(den?.middleNumber));
 check("single-rail: battery found", den?.battery==="sensor.den_1_battery", String(den?.battery));
 
+// A sensor whose entity id ends in "_battery" but whose translation key says it is
+// something else must NOT be taken as the battery. The key is the authority; the id is
+// only a fallback for an entity that somehow has no key. This branch once matched on the
+// id unconditionally, unlike every other branch, so a "last seen" sensor a user had
+// renamed to *_battery would have displaced the real reading.
+{
+  const reg = {
+    "cover.imposter_bottom_rail": { platform:"norman", device_id:"d9", translation_key:"bottom_rail" },
+    "sensor.imposter_battery":    { platform:"norman", device_id:"d9", translation_key:"battery_level" },
+    // Same device, id ends in _battery, but it is really the last-seen sensor.
+    "sensor.decoy_battery":       { platform:"norman", device_id:"d9", translation_key:"last_seen" },
+  };
+  const c = new Card();
+  const h = { ...hass, entities: reg, devices: { d9: { name:"Imposter", area_id:"a1" } },
+              states: { "cover.imposter_bottom_rail": { state:"open", attributes:{ current_position:50 } },
+                        "sensor.imposter_battery": { state:"77" },
+                        "sensor.decoy_battery": { state:"2020-01-01T00:00:00Z" } } };
+  c._hass = h; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = h;
+  const [only] = c._collectBlinds();
+  check("a non-battery sensor ending in _battery is not taken as the battery",
+        only?.battery === "sensor.imposter_battery", String(only?.battery));
+}
+
 const rails = card._railsOf(fb);
 check("two-rail renders TWO rail rows", rails.length===2, JSON.stringify(rails.map(r=>r.label)));
 check("rail labels are Bottom/Middle", rails[0].label==="Bottom rail" && rails[1].label==="Middle rail");
@@ -268,6 +291,57 @@ check("_build attaches presets by default", countPresetButtons({}) === 6,
       String(countPresetButtons({})));
 check("_build drops presets when hidden", countPresetButtons({ hide_room_presets:true }) === 0,
       String(countPresetButtons({ hide_room_presets:true })));
+
+// --- the header names the hub -------------------------------------------------------
+const headerTextOf = (cfg, h = hass) => {
+  const c = new Card();
+  c._hass = h; c.setConfig({ type:"custom:norman-shades-card", ...cfg }); c._hass = h;
+  c._render();
+  let found = null;
+  const walk = (el) => {
+    if (el?.className === "header-text") found = el.textContent;
+    (el?.children || []).forEach(walk);
+  };
+  walk(c.shadowRoot);
+  return found;
+};
+
+{
+  const c = new Card(); c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass;
+  check("_hubName returns the hub device's name", c._hubName() === "Norman Hub", String(c._hubName()));
+}
+check("with no title the header shows the hub name",
+      headerTextOf({}) === "Norman Hub", String(headerTextOf({})));
+check("an explicit title still wins",
+      headerTextOf({ title:"Upstairs" }) === "Upstairs", String(headerTextOf({ title:"Upstairs" })));
+// A user who deliberately blanks the title should get a blank header, not the hub name.
+check("an explicit empty title is respected",
+      headerTextOf({ title:"" }) === "", JSON.stringify(headerTextOf({ title:"" })));
+// name_by_user is what Home Assistant shows everywhere else, so it must win here too.
+{
+  const renamed = { ...hass, devices: { ...hass.devices, hub:{ name:"Norman Hub", name_by_user:"Hallway Hub", area_id:null } } };
+  check("a user-renamed hub wins over the app's name",
+        headerTextOf({}, renamed) === "Hallway Hub", String(headerTextOf({}, renamed)));
+}
+// No hub device (an older install, or entities still loading) must not print "null".
+{
+  const noHub = { ...hass, devices: { d1:hass.devices.d1, d2:hass.devices.d2 } };
+  check("with no hub device the header falls back to Shades",
+        headerTextOf({}, noHub) === "Shades", String(headerTextOf({}, noHub)));
+}
+// The header is built once, so a later rename has to be patched in by _update.
+{
+  const c = new Card(); c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass;
+  c._render();
+  const renamed = { ...hass, devices: { ...hass.devices, hub:{ name:"Renamed Hub", area_id:null } } };
+  c.hass = renamed;
+  let text = null;
+  const walk = (el) => { if (el?.className === "header-text") text = el.textContent; (el?.children||[]).forEach(walk); };
+  walk(c.shadowRoot);
+  check("the header follows a hub rename", text === "Renamed Hub", String(text));
+}
+check("the stub config does not hardcode a title",
+      Card.getStubConfig().title === undefined, JSON.stringify(Card.getStubConfig()));
 
 // --- house-wide controls (opt-in via home_controls) ----------------------------------
 const homeCalls = [];

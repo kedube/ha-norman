@@ -39,7 +39,7 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 | Document | Contents |
 |---|---|
 | [docs/dashboard.md](docs/dashboard.md) | The bundled **Norman Shades** card, and building your own views |
-| [examples/dashboard.yaml](examples/dashboard.yaml) | A ready-made three-view dashboard to copy from |
+| [examples/dashboard.yaml](examples/dashboard.yaml) | A ready-made dashboard view to copy from |
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
 | [docs/services.md](docs/services.md) | All four actions, and the hub verbs `send_hub_command` can send |
 | [docs/NORMAN_API.md](docs/NORMAN_API.md) | The hub's local API, for contributors |

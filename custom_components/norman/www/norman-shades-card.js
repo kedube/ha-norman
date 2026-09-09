@@ -57,7 +57,9 @@ class NormanShadesCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { type: "custom:norman-shades-card", title: "Shades" };
+    // No title: the card then names the hub itself. Baking in "Shades" here would mean
+    // every card added from the picker carried a hardcoded title the user had to clear.
+    return { type: "custom:norman-shades-card" };
   }
 
   constructor() {
@@ -73,6 +75,8 @@ class NormanShadesCard extends HTMLElement {
     // Values written optimistically, so the label reads what the user chose immediately
     // rather than waiting for the hub to confirm. Cleared when the state catches up.
     this._pending = new Map();
+    // The header's text node, when the header is drawn (see _update).
+    this._headerText = null;
   }
 
   setConfig(config) {
@@ -153,13 +157,56 @@ class NormanShadesCard extends HTMLElement {
         } else if (key === KEY_BOTTOM_POSITION || (!key && idEndsWith("_bottom_rail_position"))) {
           blind.bottomNumber = entityId;
         }
-      } else if (domain === "sensor" && (key === KEY_BATTERY || idEndsWith("_battery"))) {
+      } else if (
+        domain === "sensor" &&
+        (key === KEY_BATTERY || (!key && idEndsWith("_battery")))
+      ) {
+        // The `!key` guard matters here as much as on the rails: without it, any Norman
+        // sensor whose entity id happens to end in "_battery" is claimed as the battery
+        // even when its translation key says otherwise (a user-renamed entity keeps its
+        // key, so the key is the authority and the id is only a fallback).
         blind.battery = entityId;
       }
     }
 
     // A device with no cover is the hub, not a blind.
     return [...blinds.values()].filter((blind) => blind.bottomCover);
+  }
+
+  /**
+   * The hub's name, as Home Assistant has it.
+   *
+   * The hub is the one Norman device with entities but no cover -- it carries the MAC
+   * address, Wi-Fi and time-zone sensors. Its name is what the user set in Home Assistant,
+   * falling back to the name the integration took from the Norman app, so the card header
+   * reads as their hub rather than a generic word. `name_by_user` wins, matching how Home
+   * Assistant shows the device everywhere else.
+   *
+   * Returns null when there is no hub to name (no Norman devices at all, or every Norman
+   * device has a cover), so the caller can fall back rather than print "null".
+   */
+  _hubName() {
+    const hass = this._hass;
+    if (!hass) return null;
+
+    const registry = hass.entities || {};
+    const devices = hass.devices || {};
+    const withCovers = new Set();
+    const norman = new Set();
+
+    for (const [entityId, entry] of Object.entries(registry)) {
+      if (entry.platform !== DOMAIN || !entry.device_id) continue;
+      norman.add(entry.device_id);
+      if (entityId.startsWith("cover.")) withCovers.add(entry.device_id);
+    }
+
+    for (const deviceId of norman) {
+      if (withCovers.has(deviceId)) continue;
+      const device = devices[deviceId];
+      const name = device && (device.name_by_user || device.name);
+      if (name) return name;
+    }
+    return null;
   }
 
   _roomsOf(blinds) {
@@ -332,13 +379,22 @@ class NormanShadesCard extends HTMLElement {
 
     // The header doubles as the house-wide control row, which is on by default. It needs
     // somewhere to live, so it is drawn even when no title is configured.
-    if (this._config.title || !this._config.hide_home_controls) {
+    //
+    // With no configured title the header names the HUB rather than saying "Shades": a
+    // house with two hubs gets two cards, and "Shades" twice tells the user nothing about
+    // which is which. An explicit `title` always wins, and "Shades" is only the last resort
+    // for when the hub cannot be identified.
+    const title = this._config.title ?? this._hubName() ?? "Shades";
+    if (title || !this._config.hide_home_controls) {
       const header = document.createElement("div");
       header.className = "header";
 
       const text = document.createElement("span");
       text.className = "header-text";
-      text.textContent = this._config.title || "";
+      text.textContent = title;
+      // Kept so the heading can follow a hub rename, or fill in once the device registry
+      // has loaded -- _render() runs once, but the hub's name can arrive or change later.
+      this._headerText = text;
       header.appendChild(text);
 
       if (!this._config.hide_home_controls) {
@@ -357,6 +413,13 @@ class NormanShadesCard extends HTMLElement {
 
   _update() {
     if (!this._body || !this._hass) return;
+
+    // The header names the hub when no title is configured, so it has to track a rename
+    // (and the first load, where the device registry may arrive after the first render).
+    if (this._headerText && this._config.title === undefined) {
+      const title = this._hubName() ?? "Shades";
+      if (this._headerText.textContent !== title) this._headerText.textContent = title;
+    }
 
     const blinds = this._collectBlinds();
     const rooms = this._roomsOf(blinds);

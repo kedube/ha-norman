@@ -6,6 +6,48 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 version heading and publishes it as the release's Highlights.
 
 ## 0.28 — 2026-09-09
+- **The card names your hub in its header** instead of saying "Shades". Two hubs now give two
+  cards you can tell apart. An explicit `title` still wins, `title: ""` gives a blank heading,
+  and "Shades" remains the fallback when no hub device can be found. The heading also follows a
+  hub rename rather than being fixed at first render.
+- **Fixed a blocking file read on the event loop.** `frontend.py` read `manifest.json` at import
+  time to get the card's version. Home Assistant instruments `Path.read_text` precisely to catch
+  that, and this module is imported on the event loop when a user downloads diagnostics. The
+  version now comes from Home Assistant's loader, which has already parsed and cached the same
+  manifest, so there is no disk access at all. A test walks the module's AST to keep it that way.
+- **A failing scheduled CI run now opens an issue.** The weekly run exists to catch a new Home
+  Assistant release breaking the integration from the outside, but a red scheduled run notifies
+  nobody. It now files one issue per outage (commenting on it rather than opening another if it
+  keeps failing), and only for the schedule.
+- **A malformed hub payload no longer takes every blind offline.** Where the hub sends a list
+  of objects, `_process_data` assumed it got one: a string, a scalar, or a list of non-objects
+  in any of the four nesting levels raised `AttributeError` out of the coordinator, which Home
+  Assistant catches only by logging a stack trace and marking **every** entity unavailable —
+  for what may be one bad record among twenty. Unreadable records are now skipped and the rest
+  of the house keeps working.
+- **The notification listener now survives an unexpected error.** It caught only connection
+  drops, so anything else escaped its loop and ended the task for good. Because there is no
+  polling fallback, that left the integration loaded and apparently healthy while it silently
+  stopped updating forever. It now logs and retries, like a dropped connection.
+- **`strict-typing` complete (quality scale, Platinum).** The integration now checks clean
+  under mypy, and a CI job keeps it that way.
+- **Replaced an `assert` in the config flow** with an explicit abort: `python -O` strips
+  asserts, which would have produced an entry titled "Norman Hub (None)".
+- **Corrected the protocol reference on concurrency.** It claimed the integration never has two
+  hub requests in flight; `PARALLEL_UPDATES = 0` and the background listener mean it can.
+- **The card's checks now run in CI.** `scripts/check_card.mjs` executes the card against a
+  realistic `hass` object, and nothing ran it automatically — 800 lines of JavaScript were
+  verified only when someone remembered to. It is now a CI job alongside ruff and pytest.
+- **New guards against the documentation going stale**: `docs/entities.md` is checked against
+  the entity descriptions that actually exist (names, counts, and which entities are disabled
+  by default), and every card option the editor exposes must appear in `docs/dashboard.md`.
+- **Removed two unused constants**, `HUB_CMD_TO_TOP_LIMIT` and `HUB_CMD_TO_BOTTOM_LIMIT`, left
+  behind when the run-to-limit buttons were dropped. A comment records why they are absent.
+- **Fixed the card mistaking another sensor for the battery.** The battery was matched on
+  either its translation key *or* an entity id ending in `_battery`, unlike every other
+  entity, which only falls back to the id when the key is missing. A Norman sensor a user had
+  renamed to end in `_battery` could therefore displace the real reading. Now guarded like
+  the rest, with a regression test.
 - **The app's Best privacy / Best view / Favorite buttons now ship on by default**, per room and
   for the whole house. They were opt-in behind `room_presets` / `home_controls`, which meant a
   fresh card showed neither and you had to find a YAML key to get them. Opting out is now

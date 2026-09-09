@@ -14,38 +14,58 @@ without the card.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
+from homeassistant.loader import IntegrationNotLoaded, async_get_loaded_integration
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-
-# The card URL carries the integration version as a ``?v=`` cache-buster, so every release
-# invalidates a browser's cached copy without the user clearing anything.
-#
-# manifest.json is the single source of this version: the release workflow bumps it and
-# nothing else, then tags the commit it created. Reading it here (it is tiny and sits next
-# to this file, so the import-time cost is trivial) means a release needs no matching edit
-# anywhere in the card, and the JavaScript reads the same value back off its own URL rather
-# than carrying a constant that could fall behind. A HACS upgrade is followed by a restart,
-# so this is re-read before the new card is ever served.
-INTEGRATION_VERSION: str = json.loads(
-    (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
-)["version"]
 
 CARD_FILENAME = "norman-shades-card.js"
 # The integration's www/ directory is served at /norman/, so everything in it gets a stable
 # URL from a single mount.
 WWW_URL_BASE = f"/{DOMAIN}"
 CARD_URL_PATH = f"{WWW_URL_BASE}/{CARD_FILENAME}"
-CARD_RESOURCE_URL = f"{CARD_URL_PATH}?v={INTEGRATION_VERSION}"
 
 _REGISTERED_KEY = f"{DOMAIN}_frontend_registered"
+
+
+def integration_version(hass: HomeAssistant) -> str:
+    """The version from manifest.json, as Home Assistant already parsed it.
+
+    manifest.json is the single source of this version: the release workflow bumps it and
+    nothing else, then tags the commit it created. Home Assistant loads and caches that
+    manifest when it sets the integration up, so asking the loader costs nothing and --
+    unlike reading the file here -- touches no disk.
+
+    That matters: this module is imported on the event loop when a user downloads
+    diagnostics, and Home Assistant instruments ``Path.read_text`` precisely to catch
+    blocking calls made there. Doing the read at import time put it wherever the first
+    import happened to land.
+
+    Falls back to "unknown" rather than raising if the integration is not loaded (the
+    loader raises in that case). Registering a card at ``?v=unknown`` is a cosmetic loss;
+    an exception out of the diagnostics export or of setup is not.
+    """
+    try:
+        return async_get_loaded_integration(hass, DOMAIN).version or "unknown"
+    except IntegrationNotLoaded:
+        _LOGGER.debug("Norman integration not loaded; card version unknown")
+        return "unknown"
+
+
+def card_resource_url(hass: HomeAssistant) -> str:
+    """The URL the card is registered at, carrying the version as a ``?v=`` cache-buster.
+
+    Every release therefore invalidates a browser's cached copy without the user clearing
+    anything, and the JavaScript reads the same value back off its own URL rather than
+    carrying a constant that could fall behind.
+    """
+    return f"{CARD_URL_PATH}?v={integration_version(hass)}"
 
 
 async def async_register_card(hass: HomeAssistant) -> None:
@@ -91,6 +111,7 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
     to add it. In storage mode the resource is created, and any entry left over from an
     earlier version is repointed at the new URL rather than left to load a stale module.
     """
+    resource_url = card_resource_url(hass)
     lovelace = hass.data.get("lovelace")
     resources = getattr(lovelace, "resources", None)
     if resources is None:
@@ -110,7 +131,7 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         _LOGGER.info(
             "The Norman shades card is served at %s. Add it under Settings > Dashboards > "
             "Resources (or your YAML `resources:`) as a JavaScript module.",
-            CARD_RESOURCE_URL,
+            resource_url,
         )
         return
 
@@ -119,7 +140,7 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         for item in resources.async_items()
         if isinstance(item, dict) and str(item.get("url", "")).startswith(CARD_URL_PATH)
     ]
-    stale = [(url, item_id) for url, item_id in matches if url != CARD_RESOURCE_URL]
+    stale = [(url, item_id) for url, item_id in matches if url != resource_url]
     current = len(matches) - len(stale)
 
     # Two entries for the same card make the browser load the module twice, and the second
@@ -128,8 +149,8 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
     for index, (stale_url, item_id) in enumerate(stale):
         try:
             if current == 0 and index == 0:
-                await resources.async_update_item(item_id, {"url": CARD_RESOURCE_URL})
-                _LOGGER.info("Updated Norman card resource %s -> %s", stale_url, CARD_RESOURCE_URL)
+                await resources.async_update_item(item_id, {"url": resource_url})
+                _LOGGER.info("Updated Norman card resource %s -> %s", stale_url, resource_url)
             else:
                 await resources.async_delete_item(item_id)
                 _LOGGER.info("Removed duplicate Norman card resource %s", stale_url)
@@ -139,8 +160,8 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
     if matches:
         return
     try:
-        await resources.async_create_item({"res_type": "module", "url": CARD_RESOURCE_URL})
-        _LOGGER.info("Registered the Norman shades card at %s", CARD_RESOURCE_URL)
+        await resources.async_create_item({"res_type": "module", "url": resource_url})
+        _LOGGER.info("Registered the Norman shades card at %s", resource_url)
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Norman could not auto-register the card resource")
 
@@ -165,6 +186,7 @@ def async_get_frontend_diagnostics(hass: HomeAssistant) -> dict[str, object]:
     Compares the URL this build expects against what Lovelace has registered, so a user
     running a cached older card is visible straight from a diagnostics download.
     """
+    version = integration_version(hass)
     registered: list[str] = []
     lovelace = hass.data.get("lovelace")
     resources = getattr(lovelace, "resources", None)
@@ -183,10 +205,10 @@ def async_get_frontend_diagnostics(hass: HomeAssistant) -> dict[str, object]:
     # wrong" into a single boolean in the diagnostics download.
     versions = [_resource_version(url) for url in registered]
     return {
-        "integration_version": INTEGRATION_VERSION,
-        "expected_resource": CARD_RESOURCE_URL,
+        "integration_version": version,
+        "expected_resource": card_resource_url(hass),
         "registered_resources": registered,
         "registered_versions": versions,
         # None (rather than True) when nothing is registered: there is no card to be stale.
-        "version_matches": all(v == INTEGRATION_VERSION for v in versions) if versions else None,
+        "version_matches": all(v == version for v in versions) if versions else None,
     }
