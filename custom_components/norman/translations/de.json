@@ -201,6 +201,9 @@
     },
     "room_command_failed": {
       "message": "Der Hub hat {command} für den Raum {room} abgelehnt: {error}"
+    },
+    "command_needs_a_room": {
+      "message": "{command} benötigt einen Raum; nur {commands} können an den gesamten Hub gesendet werden."
     }
   }
 }

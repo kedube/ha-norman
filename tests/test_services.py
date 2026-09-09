@@ -240,3 +240,33 @@ async def test_room_command_reports_hub_rejection(
         )
 
     assert "Bedroom" in str(err.value)
+
+
+async def test_room_command_without_a_room_addresses_the_whole_hub(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Omitting the room sends the verb with no RoomID, which the hub reads as everything."""
+    await hass.services.async_call(DOMAIN, "room_command", {"command": "best_view"}, blocking=True)
+
+    call = fake_hub.control_calls[-1]
+    assert call["Switch"] == 1
+    # No scope field at all: an omitted RoomID is what makes it hub-wide.
+    assert "RoomID" not in call
+    assert "PeripheralUID" not in call
+
+
+async def test_hub_wide_favorite_is_refused(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """favorite has no observed hub-wide form, so it is refused rather than guessed at.
+
+    Sending an unverified form to every blind in the house is the worst case to get wrong.
+    """
+    before = len(fake_hub.control_calls)
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN, "room_command", {"command": "favorite"}, blocking=True
+        )
+
+    assert "favorite" in str(err.value)
+    assert len(fake_hub.control_calls) == before  # nothing was sent

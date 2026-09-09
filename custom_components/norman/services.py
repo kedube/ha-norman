@@ -19,6 +19,7 @@ from .const import (
     ATTR_PERIPHERAL_UID,
     ATTR_ROOM,
     DOMAIN,
+    HUB_WIDE_COMMANDS,
     ROOM_COMMANDS,
     SENSITIVE_HUB_KEYS,
     SERVICE_GET_HUB_DATA,
@@ -32,7 +33,7 @@ GET_HUB_DATA_SCHEMA = vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string}
 ROOM_COMMAND_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
-        vol.Required(ATTR_ROOM): cv.string,
+        vol.Optional(ATTR_ROOM): cv.string,
         vol.Required(ATTR_COMMAND): vol.In(sorted(ROOM_COMMANDS)),
     }
 )
@@ -119,18 +120,54 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
     return {"reply": reply}
 
 
-async def _async_room_command(call: ServiceCall) -> None:
-    """Run one of the app's room-wide commands against every blind in a room.
+async def _async_send_room_fields(
+    entry: NormanConfigEntry, room_id: int | None, command: str, scope: str
+) -> None:
+    """Send one room command, to a room or (``room_id`` None) to every blind on the hub."""
+    coordinator = entry.runtime_data
+    try:
+        await coordinator.api.async_send_room_control(room_id, ROOM_COMMANDS[command])
+    except (NormanConnectionError, NormanApiError) as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="room_command_failed",
+            translation_placeholders={"room": scope, "command": command, "error": str(err)},
+        ) from err
+    await coordinator.async_request_refresh()
 
-    These are the Norman app's own room buttons: ``best_privacy`` closes the bottom rail
-    and leaves the middle where it is, ``best_view`` opens the bottom rail, and
-    ``favorite`` sends the room to its stored favorite position. Each is a single request
-    to the hub, not one per blind, and ``favorite`` has no Home Assistant equivalent.
+
+async def _async_room_command(call: ServiceCall) -> None:
+    """Run one of the app's room-wide commands, for one room or the whole hub.
+
+    These are the Norman app's own room buttons: ``best_privacy`` puts the bottom rail at 0
+    and the middle rail at 100 (private, but the sheer fabric still open), ``best_view``
+    opens both rails, and ``favorite`` runs to the stored favorite position. Each is a
+    single request to the hub, not one per blind, and ``favorite`` has no Home Assistant
+    equivalent.
+
+    Omit ``room`` to address every blind on the hub: the hub accepts the same verbs with no
+    ``RoomID`` at all. ``favorite`` is not offered hub-wide -- the app has no such button
+    and it has never been observed, so it is refused rather than guessed at.
     """
     entry = _resolve_entry(call.hass, call)
     coordinator = entry.runtime_data
-    wanted = str(call.data[ATTR_ROOM])
+    command = str(call.data[ATTR_COMMAND])
+    wanted = call.data.get(ATTR_ROOM)
 
+    if wanted is None:
+        if command not in HUB_WIDE_COMMANDS:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="command_needs_a_room",
+                translation_placeholders={
+                    "command": command,
+                    "commands": ", ".join(sorted(HUB_WIDE_COMMANDS)),
+                },
+            )
+        await _async_send_room_fields(entry, None, command, "the whole hub")
+        return
+
+    wanted = str(wanted)
     # Match the hub's own room names, case-insensitively; the areas Home Assistant seeded
     # from them may since have been renamed, so the hub name is what counts here.
     rooms = {
@@ -151,16 +188,7 @@ async def _async_room_command(call: ServiceCall) -> None:
             },
         )
 
-    command = str(call.data[ATTR_COMMAND])
-    try:
-        await coordinator.api.async_send_room_control(room_id, ROOM_COMMANDS[command])
-    except (NormanConnectionError, NormanApiError) as err:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN,
-            translation_key="room_command_failed",
-            translation_placeholders={"room": wanted, "command": command, "error": str(err)},
-        ) from err
-    await coordinator.async_request_refresh()
+    await _async_send_room_fields(entry, room_id, command, wanted)
 
 
 def async_setup_services(hass: HomeAssistant) -> None:

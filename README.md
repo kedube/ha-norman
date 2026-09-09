@@ -314,8 +314,10 @@ new covering types are welcome and are the main thing that broadens this table.
   [docs/services.md](docs/services.md#hub-verbs)); they have no entity because they change how
   a blind travels. Motor speed and direction reversing live in the app's Engineering Settings
   screen and have not been captured, so their syntax is unknown.
-- **Favorite position is an extrapolation.** The app only sends it room-wide; the per-blind
-  button uses the form the hub advertises. Report it if it does nothing.
+- **Blinds move slowly, and nothing reports that they are moving.** A large shade can take
+  ~30 seconds to travel, during which the hub keeps reporting the old position; only the target
+  changes immediately. Automations that check a position right after commanding one will read
+  the previous value.
 - **Hub schedules are not exposed.** The hub stores its own sunrise/sunset and clock schedules;
   the integration neither shows nor edits them, since Home Assistant automations do the same
   job with more flexibility. Delete hub schedules that would fight your automations.

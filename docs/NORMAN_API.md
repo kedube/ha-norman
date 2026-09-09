@@ -227,6 +227,12 @@ The hub acknowledges immediately, echoing the fields it accepted (`PeripheralUID
 positions, `TaskID`, `RequestTimestamp`) plus its own millisecond `Timestamp`. The blind then
 moves and the new position arrives through the notification stream and the next `status` call.
 
+`GroupID` is the blind's **remote-control group** — the button (1, 2, 4, ...) a paired Norman
+remote uses to address it, not a Home Assistant grouping. Blinds in one room have different
+`GroupID`s, and the same value repeats across rooms, so it is only meaningful together with
+`RoomID`. The integration parses it but exposes nothing: Home Assistant has areas and groups of
+its own, and the hub offers no way to command a group.
+
 The app also sends `RoomID` and `GroupID` with every move; the hub accepts moves without them,
 so the integration does not send them. For a single-rail blind (`ModuleType` 32) the app sends
 `BottomRailPosition` only and the hub's echo reports `MiddleRailPosition: 0`; the integration
@@ -275,34 +281,51 @@ and clean verbs change how a blind behaves and may need a physical recalibration
 ### Room-wide and hub-wide control
 
 Two verbs work **without** `PeripheralUID`, addressing every blind in a room or on the hub in
-one request. Both were captured from the app and confirmed in the following `status` reads,
-where every target in scope changed:
+one request. The **room** forms were captured from the app. The **hub-wide** forms (no `RoomID` at all)
+have not been captured, but the app does have the screen that would send them: its hub main page
+carries an **All Rooms** header (`Hub_Main_Page_Header_All_Rooms`) above the room list, and the
+three room buttons are shared labels (`General_Best_Privacy`, `General_Best_View`,
+`General_Remote_Favorite`) rather than per-room strings. `{"Switch": 1}` with no `RoomID` was
+verified directly against the hub: it moved blinds in a room that had been left closed while
+every other room was already open. A hub-wide `Favorite` is presumed to work the same way but
+has not been captured or tested, so `norman.room_command` refuses it rather than sending an
+unverified command to every blind in the house.
 
 | Body (plus `Timestamp`, `TaskID`) | Effect |
 |---|---|
-| `{"Switch": 1}` | open the **bottom** rail of every blind on the hub |
-| `{"Switch": 0}` | close the **bottom** rail of every blind on the hub |
+| `{"Switch": 1}` | open every blind on the hub (both rails to 100) -- **verified** |
+| `{"Switch": 0}` | close every blind on the hub (bottom to 0, middle to 100) |
 | `{"Switch": 1, "RoomID": 29550}` / `{"Switch": 0, "RoomID": 29550}` | open / close every blind in the room |
 | `{"Favorite": 0, "RoomID": 24973}` | send every blind in the room to its stored favorite position |
 
-`Switch` drives the **bottom rail only** and leaves the middle rail untouched -- confirmed
-from a capture of the app's room screen, where a room at bottom 100 / middle 100 went to
-target `tb=0, tm=100` on close. That is what makes the app's **Best Privacy** work on a
-day/night shade: the bottom fabric closes for privacy while the sheer middle stays open for
-light. The app's three room buttons map exactly onto these two verbs:
+`Switch` sets **both** rails, to a fixed pair of positions per direction -- it is not a
+relative or bottom-only move. Verified by staging a two-rail blind at 60/60 and 40/40 and
+watching the targets it produced:
 
-| App button | Body | Observed |
+| App button | Body | Target it sets (two-rail) |
 |---|---|---|
-| Best Privacy | `{"Switch": 0, "RoomID": …}` | bottom 100 -> 0, middle unchanged |
-| Best View | `{"Switch": 1, "RoomID": …}` | bottom -> 100 |
-| Remote Favorite | `{"Favorite": 0, "RoomID": …}` | middle 100 -> 50 (the stored favorite) |
+| Best Privacy | `{"Switch": 0, "RoomID": …}` | bottom **0**, middle **100** |
+| Best View | `{"Switch": 1, "RoomID": …}` | bottom **100**, middle **100** |
+| Remote Favorite | `{"Favorite": 0, "RoomID": …}` | the blind's stored favorite (0/50 on the reference hub) |
 
-`norman.room_command` sends these three. The hub echoes `Switch` / `Favorite` and `RoomID`. `Switch` and `Favorite` are also listed per
-blind in the registration reply, so the per-blind forms `{"Switch": 1, "PeripheralUID": …}`
-and `{"Favorite": 0, "PeripheralUID": …}` are the obvious extrapolation, but neither has been
-captured. The integration sends the per-blind `Favorite` form from the Favorite position button
-(still unverified in that form) and the room-wide forms of both verbs from
-`norman.room_command`. Per-blind open/close stays with the cover entities, since Home
+"Best Privacy" therefore means bottom fabric closed, sheer middle fully open: private, but
+still lit. Reading this from a capture alone is misleading -- a room that is already at middle
+100 shows no middle movement, which is what made an earlier revision of this document claim
+`Switch` left the middle rail untouched. Stage a blind away from both rails' end positions
+before drawing conclusions.
+
+`norman.room_command` sends these three. The hub echoes `Switch` / `Favorite` and `RoomID`. `Switch` and `Favorite` are also listed per blind in the registration reply. The per-blind
+`Favorite` form is **confirmed**: `{"Favorite": 0, "PeripheralUID": 58850}` moves that blind
+alone to its stored favorite, verified twice against the reference hub from two different
+starting positions. It is what the **Favorite position** button sends. The per-blind
+`{"Switch": 1, "PeripheralUID": …}` form remains untested.
+
+**Beware when testing this: the reply says nothing about movement.** The hub answers
+`Error: 0` immediately and echoes the field, and then `status` keeps reporting the *old*
+position — target included — for as long as the blind takes to travel. On a large shade that
+is around **30 seconds**. A test that watches for 15 or 20 seconds will conclude the command
+did nothing. Neither the reply nor the status read distinguishes "refused" from "moving"; only
+waiting long enough does. Per-blind open/close stays with the cover entities, since Home
 Assistant's own groups and areas already fan those out across both rails.
 
 ### POST /NM/v1/notification
@@ -438,8 +461,8 @@ documented here must be catalogued and vice versa.
 | `FirmwareVersion` | status | `0.5.3.8`, `4.1.0.4` | **used**; on type 33 it is the version the app shows |
 | `RfFirmwareVersion` | status (type 32 only) | `0.3.20` | **used**: this is the version the Norman app shows for single-rail blinds (Den_1: app 0.3.20, `FirmwareVersion` 4.1.0.4), so it takes precedence for the device's version |
 | `Timestamp` | status | epoch seconds | **used** (last-seen sensor) |
-| `PacketReceiveRate` | status | `0` | not used |
-| `StallCurrent` | status (type 33 only) | `4100` | not used |
+| `PacketReceiveRate` | status | `0` | not used. Has been `0` on every blind in every capture, including blinds that are plainly reachable, so it is either unimplemented in this firmware or counts something the hub never populates. |
+| `StallCurrent` | status (type 33 only) | `4100`, `1240` | not used. Despite the name it reads as a **stall threshold, not a measurement**: the current draw at which the motor decides it has hit an obstruction (or a limit) and stops. It does not vary during travel -- it holds one value through a full open and close, in both directions, and at rest. It is not fixed per blind either: two blinds read `4100` in captures a day apart and `1240` afterwards, with no setting changed in the app, so the motor appears to adapt it. A **falling** value on one blind is therefore the interesting signal (a motor deciding it needs less force to call something a stall), not the absolute number. Both blinds that changed are in one room, and one of them (`58850`) is the blind a `Calibration` was run against the day before -- so calibration, or the limit-setting around it, is the likeliest cause. Unconfirmed: the other blind was not calibrated. Not exposed as an entity while its meaning rests on a single observation. |
 | `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. |
 
 ### Cover types
@@ -467,6 +490,12 @@ The hub uses two different shapes:
 |---|---|---|
 | registration, status, control | `"Error": 0` | `"Error": <non-zero int>` |
 | GetAllPeripheral | `"status": {"code": 0}` | `"status": {"code": <non-zero>, "error": "<message>"}` |
+
+**Observed error codes.** Only one non-zero `Error` has ever been captured: `10`, returned for
+`{"PairingMode": 5}` on `/control` while the hub was not in a state to start pairing. The reply
+still echoed the field (`{"PairingMode": 5, "Error": 10, ...}`) and HTTP was still 200, so the
+code is the only signal of failure. No mapping of codes to meanings exists; treat any non-zero
+value as "the hub refused this" and surface it verbatim.
 
 `_raise_on_error_code` accepts four spellings of success on the `Error` endpoints: `0`, the
 string `"0"`, an absent or `null` field, and any string beginning with `succ`
