@@ -63,6 +63,24 @@
         }
       }
     },
+    "room_command": {
+      "name": "部屋コマンド",
+      "description": "Normanアプリの部屋ボタンを、部屋のすべての窓装飾に対して1回のハブ要求で実行します。",
+      "fields": {
+        "room": {
+          "name": "部屋",
+          "description": "ハブが認識している部屋名（Normanアプリの部屋名）。"
+        },
+        "command": {
+          "name": "コマンド",
+          "description": "best_privacyはボトムレールを閉じ、ミドルレールはそのままにします。best_viewはボトムレールを開きます。favoriteは部屋を保存されたお気に入り位置に移動します。"
+        },
+        "config_entry_id": {
+          "name": "ハブ",
+          "description": "複数設定されている場合、どのハブか。"
+        }
+      }
+    },
     "get_hub_data": {
       "name": "Hubデータを取得",
       "description": "Hubが送信するそのままの製品リストとステータスを読み取ります。応答を返します。未対応のブラインドを報告するときに開発者ツールやスクリプトから使用してください。",
@@ -177,6 +195,12 @@
     },
     "entry_not_loaded": {
       "message": "Norman Hub {hub} は読み込まれていません"
+    },
+    "unknown_room": {
+      "message": "このハブに「{room}」という部屋はありません。既知の部屋: {rooms}。"
+    },
+    "room_command_failed": {
+      "message": "ハブが部屋 {room} の {command} を拒否しました: {error}"
     }
   }
 }

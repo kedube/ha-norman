@@ -63,6 +63,24 @@
         }
       }
     },
+    "room_command": {
+      "name": "房间命令",
+      "description": "对房间内所有窗饰执行 Norman 应用的房间按钮，只需向中枢发送一次请求。",
+      "fields": {
+        "room": {
+          "name": "房间",
+          "description": "中枢所知的房间名称（Norman 应用中的房间名称）。"
+        },
+        "command": {
+          "name": "命令",
+          "description": "best_privacy 关闭底轨并保持中轨不变；best_view 打开底轨；favorite 将房间移至其存储的收藏位置。"
+        },
+        "config_entry_id": {
+          "name": "中枢",
+          "description": "设置了多个中枢时，使用哪一个。"
+        }
+      }
+    },
     "get_hub_data": {
       "name": "获取 Hub 数据",
       "description": "读取 Hub 原始的设备列表和状态，与 Hub 发送的内容完全相同。会返回响应；报告不支持的窗帘时，请从开发者工具或脚本中使用。",
@@ -177,6 +195,12 @@
     },
     "entry_not_loaded": {
       "message": "Norman Hub {hub} 尚未加载"
+    },
+    "unknown_room": {
+      "message": "此中枢上没有名为“{room}”的房间。已知房间：{rooms}。"
+    },
+    "room_command_failed": {
+      "message": "中枢拒绝了房间 {room} 的 {command}：{error}"
     }
   }
 }

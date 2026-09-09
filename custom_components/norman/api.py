@@ -435,6 +435,25 @@ class NormanApiClient:
         self._raise_on_error_code(data, "Control request")
         return data
 
+    async def async_send_room_control(self, room_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+        """POST a room-wide command: every blind in one room, in a single request.
+
+        The hub accepts ``RoomID`` in place of ``PeripheralUID`` for the ``Switch`` and
+        ``Favorite`` verbs (docs/NORMAN_API.md, "Room-wide and hub-wide control"). This is
+        what the Norman app's Best Privacy / Best View / Remote Favorite buttons send.
+        """
+        data = await self._async_request(
+            ENDPOINT_CONTROL,
+            {
+                "RoomID": room_id,
+                "Timestamp": int(time.time()),
+                "TaskID": self._next_task_id(),
+                **fields,
+            },
+        )
+        self._raise_on_error_code(data, "Room control request")
+        return data
+
     async def async_listen_notifications(self) -> AsyncIterator[dict[str, Any]]:
         """Yield peripheral state-change notifications from the hub's long-poll.
 

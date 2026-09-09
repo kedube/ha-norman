@@ -150,3 +150,93 @@ async def test_send_hub_command_validates_input(
             blocking=True,
         )
     assert fake_hub.control_calls == []
+
+
+async def test_room_command_sends_the_room_wide_verb(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A room command addresses the room by RoomID, not one request per blind.
+
+    This is the app's own Best Privacy: the hub accepts RoomID in place of PeripheralUID.
+    """
+    status_calls = len(fake_hub.calls_to("/status"))
+
+    await hass.services.async_call(
+        DOMAIN,
+        "room_command",
+        {"room": "Living Room", "command": "best_privacy"},
+        blocking=True,
+    )
+
+    call = fake_hub.control_calls[-1]
+    assert call["RoomID"] == 1
+    assert call["Switch"] == 0
+    # Addressing the room replaces the per-blind id; sending both would be ambiguous.
+    assert "PeripheralUID" not in call
+    assert {"Timestamp", "TaskID"} <= set(call)
+    assert len(fake_hub.calls_to("/status")) == status_calls + 1
+
+
+async def test_room_command_maps_each_button_to_its_verb(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """best_view opens the bottom rail, favorite runs to the stored position."""
+    await hass.services.async_call(
+        DOMAIN, "room_command", {"room": "Bedroom", "command": "best_view"}, blocking=True
+    )
+    assert fake_hub.control_calls[-1]["Switch"] == 1
+    assert fake_hub.control_calls[-1]["RoomID"] == 2
+
+    await hass.services.async_call(
+        DOMAIN, "room_command", {"room": "Bedroom", "command": "favorite"}, blocking=True
+    )
+    assert fake_hub.control_calls[-1]["Favorite"] == 0
+    assert "Switch" not in fake_hub.control_calls[-1]
+
+
+async def test_room_command_matches_the_name_case_insensitively(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Room names come from the hub, so a user typing them should not have to match case."""
+    await hass.services.async_call(
+        DOMAIN, "room_command", {"room": "living room", "command": "best_view"}, blocking=True
+    )
+    assert fake_hub.control_calls[-1]["RoomID"] == 1
+
+
+async def test_room_command_rejects_an_unknown_room(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A typo names the rooms that do exist rather than silently doing nothing."""
+    before = len(fake_hub.control_calls)
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN, "room_command", {"room": "Kitchen", "command": "best_view"}, blocking=True
+        )
+
+    assert "Kitchen" in str(err.value)
+    assert len(fake_hub.control_calls) == before  # nothing was sent
+
+
+async def test_room_command_validates_the_command(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Only the app's three buttons are accepted; anything else is a schema error."""
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN, "room_command", {"room": "Bedroom", "command": "explode"}, blocking=True
+        )
+
+
+async def test_room_command_reports_hub_rejection(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A hub error surfaces with the room and command in the message."""
+    fake_hub.control_response = {"Error": 7}
+
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            DOMAIN, "room_command", {"room": "Bedroom", "command": "best_privacy"}, blocking=True
+        )
+
+    assert "Bedroom" in str(err.value)

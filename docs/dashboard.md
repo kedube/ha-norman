@@ -54,6 +54,23 @@ a different area in Home Assistant moves it on the card.
 
 A blind the hub has stopped reporting is dimmed and its sliders are disabled.
 
+### Whole-room control
+
+`room_controls: true` puts **▲ ■ ▼** in each room heading, acting on every blind in that room
+at once — including the middle rails of two-rail blinds, so "close the bedroom" closes both
+fabrics. It is one service call per press, not one per blind.
+
+```yaml
+type: custom:norman-shades-card
+room_controls: true
+```
+
+It is off by default, and it needs the room headings: with `hide_room_names: true` there is
+nowhere to put the buttons, so nothing is added. The hub has its own room-wide command, but it
+is not reachable from a dashboard card and only drives both rails fully open or closed; going
+through Home Assistant's cover service reaches every rail and works the same way as the
+per-rail buttons.
+
 The sliders drive the integration's `number` entities, so they move in the same 10% steps as
 those entities and never disagree with the covers. While you drag a thumb the card holds it in
 place rather than letting an incoming hub update pull it back, and the percentage it shows is
@@ -68,6 +85,7 @@ type: custom:norman-shades-card
 title: Shades              # omit for no header
 hide_battery: false        # hide the battery readings
 hide_room_names: false     # one flat list instead of room headings
+room_controls: false       # add open/stop/close to each room heading
 rooms:                     # only these areas, in this order
   - Master Bedroom
   - Den
@@ -76,7 +94,7 @@ bottom_label: Bottom rail  # rename the rail rows
 middle_label: Middle rail
 ```
 
-`title`, `hide_battery`, and `hide_room_names` are also available in the card's visual editor.
+`title`, `hide_battery`, `hide_room_names`, and `room_controls` are also available in the card's visual editor.
 
 ## Using the built-in cards instead
 

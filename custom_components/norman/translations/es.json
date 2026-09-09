@@ -63,6 +63,24 @@
         }
       }
     },
+    "room_command": {
+      "name": "Comando de habitación",
+      "description": "Ejecuta uno de los botones de habitación de la aplicación Norman en todas las persianas de una habitación, en una sola petición al concentrador.",
+      "fields": {
+        "room": {
+          "name": "Habitación",
+          "description": "El nombre de la habitación tal como lo conoce el concentrador (el nombre en la aplicación Norman)."
+        },
+        "command": {
+          "name": "Comando",
+          "description": "best_privacy cierra el riel inferior y deja el riel central donde está; best_view abre el riel inferior; favorite envía la habitación a su posición favorita guardada."
+        },
+        "config_entry_id": {
+          "name": "Concentrador",
+          "description": "Qué concentrador, cuando hay más de uno configurado."
+        }
+      }
+    },
     "get_hub_data": {
       "name": "Obtener datos del hub",
       "description": "Lee la lista de dispositivos y el estado sin procesar del hub, tal como el hub los envía. Devuelve una respuesta; úsalo desde las herramientas para desarrolladores o un script al informar de una persiana no compatible.",
@@ -177,6 +195,12 @@
     },
     "entry_not_loaded": {
       "message": "El Norman Hub {hub} no está cargado"
+    },
+    "unknown_room": {
+      "message": "No hay ninguna habitación llamada «{room}» en este concentrador. Habitaciones conocidas: {rooms}."
+    },
+    "room_command_failed": {
+      "message": "El concentrador rechazó {command} para la habitación {room}: {error}"
     }
   }
 }

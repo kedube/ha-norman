@@ -280,17 +280,30 @@ where every target in scope changed:
 
 | Body (plus `Timestamp`, `TaskID`) | Effect |
 |---|---|
-| `{"Switch": 1}` | open every blind on the hub (both rails to 100) |
-| `{"Switch": 0}` | close every blind on the hub |
+| `{"Switch": 1}` | open the **bottom** rail of every blind on the hub |
+| `{"Switch": 0}` | close the **bottom** rail of every blind on the hub |
 | `{"Switch": 1, "RoomID": 29550}` / `{"Switch": 0, "RoomID": 29550}` | open / close every blind in the room |
 | `{"Favorite": 0, "RoomID": 24973}` | send every blind in the room to its stored favorite position |
 
-The hub echoes `Switch` / `Favorite` and `RoomID`. `Switch` and `Favorite` are also listed per
+`Switch` drives the **bottom rail only** and leaves the middle rail untouched -- confirmed
+from a capture of the app's room screen, where a room at bottom 100 / middle 100 went to
+target `tb=0, tm=100` on close. That is what makes the app's **Best Privacy** work on a
+day/night shade: the bottom fabric closes for privacy while the sheer middle stays open for
+light. The app's three room buttons map exactly onto these two verbs:
+
+| App button | Body | Observed |
+|---|---|---|
+| Best Privacy | `{"Switch": 0, "RoomID": …}` | bottom 100 -> 0, middle unchanged |
+| Best View | `{"Switch": 1, "RoomID": …}` | bottom -> 100 |
+| Remote Favorite | `{"Favorite": 0, "RoomID": …}` | middle 100 -> 50 (the stored favorite) |
+
+`norman.room_command` sends these three. The hub echoes `Switch` / `Favorite` and `RoomID`. `Switch` and `Favorite` are also listed per
 blind in the registration reply, so the per-blind forms `{"Switch": 1, "PeripheralUID": …}`
 and `{"Favorite": 0, "PeripheralUID": …}` are the obvious extrapolation, but neither has been
-captured. The integration sends the per-blind `Favorite` form from the Favorite position
-button (unverified until someone reports it moving a blind) and leaves `Switch` alone: Home
-Assistant's own cover groups and areas already fan out open/close.
+captured. The integration sends the per-blind `Favorite` form from the Favorite position button
+(still unverified in that form) and the room-wide forms of both verbs from
+`norman.room_command`. Per-blind open/close stays with the cover entities, since Home
+Assistant's own groups and areas already fan those out across both rails.
 
 ### POST /NM/v1/notification
 

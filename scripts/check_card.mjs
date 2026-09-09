@@ -155,5 +155,66 @@ check("buttons are labelled per rail",
       middle.buttons[0].title === "open middle rail" || middle.buttons[0].title === "Open middle rail",
       String(middle.buttons[0].title));
 
+// --- room-wide controls (opt-in via room_controls) -----------------------------------
+calls.length = 0;
+const roomCard = new Card();
+roomCard._hass = hass;
+roomCard.setConfig({ type:"custom:norman-shades-card", room_controls:true });
+roomCard._hass = hass;
+roomCard._cells = [];
+const fbRoom = roomCard._buildRoomControls("Front Bedroom", [fb]);
+check("room controls render 3 buttons", fbRoom.children.length === 3, String(fbRoom.children.length));
+
+fbRoom.children[0]._on?.click?.();
+check("room open sends ONE call", calls.length === 1, JSON.stringify(calls));
+const roomTargets = calls[0]?.[2] || [];
+check("room open includes BOTH rails of a two-rail blind",
+      Array.isArray(roomTargets) && roomTargets.length === 2 &&
+      roomTargets.includes("cover.front_bedroom_1_bottom_rail") &&
+      roomTargets.includes("cover.front_bedroom_1_middle_rail"),
+      JSON.stringify(roomTargets));
+
+calls.length = 0;
+const denRoom = roomCard._buildRoomControls("Den", [den]);
+denRoom.children[2]._on?.click?.();
+check("single-rail room close targets its one cover",
+      calls.length === 1 && JSON.stringify(calls[0][2]) === JSON.stringify(["cover.den_1_bottom_rail"]),
+      JSON.stringify(calls));
+check("room close uses close_cover", calls[0]?.[1] === "close_cover", String(calls[0]?.[1]));
+
+calls.length = 0;
+const multi = roomCard._buildRoomControls("Everything", [fb, den]);
+multi.children[1]._on?.click?.();
+check("a room with 2 blinds sends one call covering all 3 rails",
+      calls.length === 1 && calls[0][2].length === 3, JSON.stringify(calls));
+check("room stop uses stop_cover", calls[0]?.[1] === "stop_cover");
+check("room buttons are labelled with the room name",
+      String(fbRoom.children[0].title).includes("Front Bedroom"), String(fbRoom.children[0].title));
+
+// Off by default: the heading must stay a plain heading unless the option is set.
+const plain = new Card();
+plain._hass = hass; plain.setConfig({ type:"custom:norman-shades-card" }); plain._hass = hass;
+check("room controls are OFF by default", !plain._config.room_controls);
+
+// Full render path: the option must reach the heading through _build(), not just the builder.
+const countRoomButtons = (cfg) => {
+  const c = new Card();
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card", ...cfg }); c._hass = hass;
+  c._body = mk("body"); c._cells = [];
+  c._build(c._roomsOf(c._collectBlinds()));
+  let n = 0;
+  const walk = (el) => {
+    if (el?.className && String(el.className).includes("room-buttons")) n += el.children.length;
+    (el?.children || []).forEach(walk);
+  };
+  walk(c._body);
+  return n;
+};
+check("_build attaches room controls when enabled", countRoomButtons({ room_controls:true }) === 6,
+      String(countRoomButtons({ room_controls:true })));
+check("_build attaches none when disabled", countRoomButtons({}) === 0);
+check("hiding room headings also hides room controls",
+      countRoomButtons({ room_controls:true, hide_room_names:true }) === 0);
+
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);

@@ -36,6 +36,38 @@ nudge_tilt:
           min: -100
           max: 100
           mode: box
+room_command:
+  name: Room command
+  description: >-
+    Run one of the Norman app's room buttons against every blind in a room, in a single
+    request to the hub.
+  fields:
+    room:
+      name: Room
+      description: The room's name as the hub knows it (the Norman app's room name).
+      example: Office
+      required: true
+      selector:
+        text:
+    command:
+      name: Command
+      description: >-
+        best_privacy closes the bottom rail and leaves the middle rail where it is;
+        best_view opens the bottom rail; favorite sends the room to its stored favorite.
+      required: true
+      selector:
+        select:
+          options:
+            - best_privacy
+            - best_view
+            - favorite
+    config_entry_id:
+      name: Hub
+      description: Which hub, when more than one is set up.
+      required: false
+      selector:
+        config_entry:
+          integration: norman
 get_hub_data:
   name: Get hub data
   description: Read the hub's raw device list and status, exactly as the hub sends them. Returns a response; use it from Developer Tools or a script when reporting an unsupported blind.

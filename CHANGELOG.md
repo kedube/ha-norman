@@ -5,6 +5,25 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **New action: `norman.room_command`.** Runs the Norman app's own room buttons —
+  `best_privacy`, `best_view`, `favorite` — against every blind in a room, in a single request
+  to the hub rather than one per blind. `favorite` has no Home Assistant equivalent, so this is
+  the only way to send a room to its stored favorite position. Captured from the app and
+  confirmed against a real hub; see
+  [docs/services.md](docs/services.md#normanroom_command).
+- **Protocol reference corrected:** `Switch` drives the **bottom rail only** and leaves the
+  middle rail untouched — the doc previously said it moved both rails to 100. That is precisely
+  what makes the app's "Best Privacy" work on a day/night shade: the bottom fabric closes while
+  the sheer middle stays open. The three app buttons are now documented with the bodies they
+  send and the movement observed.
+- `scripts/parse_hub_capture.py` reassembles a packet capture of the hub into readable
+  request/response pairs, for decoding verbs the integration does not yet know.
+- **New card option: `room_controls`.** Puts open/stop/close in each room heading, moving every
+  blind in that room at once — including the middle rails of two-rail blinds, so closing a room
+  closes both fabrics. One service call per press rather than one per blind. Off by default, and
+  available in the visual editor.
+
 ## 0.22 — 2026-09-08
 - **Fixed: the dashboard card found no middle rails and no batteries.** It identified entities
   by `unique_id`, which the *frontend* entity registry never sends — `_as_display_dict` carries

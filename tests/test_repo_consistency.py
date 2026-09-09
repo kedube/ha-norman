@@ -540,7 +540,8 @@ def test_example_dashboard_is_valid_yaml() -> None:
     It is copied verbatim into people's dashboards, so a typo in an option name is a
     silently ignored setting rather than an error they can see.
     """
-    config = yaml.safe_load((REPO / "examples" / "dashboard.yaml").read_text(encoding="utf-8"))
+    text = (REPO / "examples" / "dashboard.yaml").read_text(encoding="utf-8")
+    config = yaml.safe_load(text)
     assert config["views"], "the example dashboard has no views"
 
     card_js = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")

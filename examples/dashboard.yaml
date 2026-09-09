@@ -1,11 +1,5 @@
 # Example Home Assistant dashboard for the Norman integration.
 #
-# Three views, in increasing order of how much you have to maintain by hand:
-#
-#   Shades        one Norman Shades card, everything grouped by room automatically
-#   By room       one card per room, for a dashboard where each room has its own section
-#   Details       built-in cards only, showing what the card is doing underneath
-#
 # HOW TO USE THIS FILE
 #
 # Storage-mode dashboards (the default, edited in the UI) cannot include a YAML file, so
@@ -16,7 +10,6 @@
 #   3. Save.
 #
 # YAML-mode dashboards can use this file as-is. In configuration.yaml:
-#
 
 title: Shades
 views:

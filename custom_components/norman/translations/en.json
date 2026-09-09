@@ -63,6 +63,24 @@
         }
       }
     },
+    "room_command": {
+      "name": "Room command",
+      "description": "Run one of the Norman app's room buttons against every blind in a room, in a single request to the hub.",
+      "fields": {
+        "room": {
+          "name": "Room",
+          "description": "The room's name as the hub knows it (the Norman app's room name)."
+        },
+        "command": {
+          "name": "Command",
+          "description": "best_privacy closes the bottom rail and leaves the middle rail where it is; best_view opens the bottom rail; favorite sends the room to its stored favorite."
+        },
+        "config_entry_id": {
+          "name": "Hub",
+          "description": "Which hub, when more than one is set up."
+        }
+      }
+    },
     "get_hub_data": {
       "name": "Get hub data",
       "description": "Read the hub's raw device list and status, exactly as the hub sends them. Returns a response; use it from Developer Tools or a script when reporting an unsupported blind.",
@@ -177,6 +195,12 @@
     },
     "entry_not_loaded": {
       "message": "Norman hub {hub} is not loaded"
+    },
+    "unknown_room": {
+      "message": "No room called \"{room}\" on this hub. Known rooms: {rooms}."
+    },
+    "room_command_failed": {
+      "message": "The hub rejected {command} for room {room}: {error}"
     }
   }
 }

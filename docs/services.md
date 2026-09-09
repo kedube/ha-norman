@@ -51,6 +51,35 @@ data:
   step: 25
 ```
 
+## `norman.room_command`
+
+Run one of the Norman app's own **room** buttons against every blind in a room. The hub
+accepts `RoomID` in place of `PeripheralUID` for these verbs, so this is a single request no
+matter how many blinds the room holds — the same request the app sends.
+
+| Field | Required | Values | Meaning |
+|---|---|---|---|
+| `room` | yes | a room name | As the **hub** knows it (the Norman app's room name), matched case-insensitively. Not the Home Assistant area, which may have been renamed. |
+| `command` | yes | `best_privacy`, `best_view`, `favorite` | Which of the app's buttons to press. |
+| `config_entry_id` | no | | Which hub, when more than one is set up. |
+
+| Command | Sends | Effect |
+|---|---|---|
+| `best_privacy` | `{"Switch": 0, "RoomID": …}` | Closes the **bottom** rail; the middle rail stays where it is. On a day/night shade that is the point: the room is private but the sheer fabric still lets light in. |
+| `best_view` | `{"Switch": 1, "RoomID": …}` | Opens the bottom rail. |
+| `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant has no equivalent, so this action is the only way to reach it for a whole room. |
+
+```yaml
+action: norman.room_command
+data:
+  room: Office
+  command: best_privacy
+```
+
+Note that `Switch` drives the bottom rail **only**. It is not "open/close everything": to move
+both rails of a two-rail blind, use the cover entities (or the card's room controls, which fan
+out across every rail).
+
 ## `norman.get_hub_data`
 
 Read the hub's raw device list and status, exactly as the hub sends them, and return them as a
