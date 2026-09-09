@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.24 — 2026-09-09
 - **New action: `norman.room_command`.** Runs the Norman app's own room buttons —
   `best_privacy`, `best_view`, `favorite` — against every blind in a room, in a single request
   to the hub rather than one per blind. `favorite` has no Home Assistant equivalent, so this is
