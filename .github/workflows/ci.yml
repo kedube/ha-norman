@@ -41,9 +41,22 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v7
 
+      # The action is a Docker container pulled from ghcr.io on every run, so it fails with
+      # Docker's exit 125 ("toomanyrequests") whenever the registry rate-limits the runner --
+      # before the container starts, so nothing is validated and the failure says nothing
+      # about this repository. Retry rather than leaving a red build that needs a human to
+      # recognise as infrastructure.
       - name: Run hassfest
         # Pinned by SHA (master @ 2026-08-03). This repo is untagged, so Dependabot tracks
         # the branch head.
+        uses: home-assistant/actions/hassfest@a7c616ce81ccda50150bf1595786c71b1883fabb
+        id: hassfest
+        continue-on-error: true
+
+      # A second attempt is enough: the rate limit is per-minute and this lands about a
+      # minute later. A real validation error fails here too, so nothing is masked.
+      - name: Retry hassfest
+        if: steps.hassfest.outcome == 'failure'
         uses: home-assistant/actions/hassfest@a7c616ce81ccda50150bf1595786c71b1883fabb
 
   ruff:
