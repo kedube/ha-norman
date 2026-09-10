@@ -42,6 +42,20 @@
       "wrong_hub": "That address belongs to a different Norman Hub"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Norman options",
+        "description": "Updates are pushed by the hub. This poll is a safety net for changes the hub never announces — most often a blind that moved while its radio was asleep.",
+        "data": {
+          "poll_interval": "Poll interval"
+        },
+        "data_description": {
+          "poll_interval": "How often to re-read every blind's position from the hub. Lower notices a stale position sooner; higher does less work. 0 turns polling off, leaving updates to the hub's notifications alone."
+        }
+      }
+    }
+  },
   "services": {
     "nudge_position": {
       "name": "Nudge position",

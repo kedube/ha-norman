@@ -5,8 +5,11 @@ rules:
   # Bronze
   action-setup: done
   appropriate-polling:
-    status: exempt
-    comment: Local push; the hub's notification stream drives refreshes.
+    status: done
+    comment: >-
+      Local push drives refreshes; a 60-second poll backs it up because the hub only
+      notifies when it hears from a blind, and a battery blind's radio sleeps. The
+      interval is configurable, and 0 turns the poll off.
   brands: done
   common-modules: done
   config-flow-test-coverage: done
@@ -27,9 +30,7 @@ rules:
   # Silver
   action-exceptions: done
   config-entry-unloading: done
-  docs-configuration-parameters:
-    status: exempt
-    comment: No options flow; the only setting is the hub address.
+  docs-configuration-parameters: done
   docs-installation-parameters: done
   entity-unavailable: done
   integration-owner: done

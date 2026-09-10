@@ -42,6 +42,20 @@
       "wrong_hub": "该地址属于另一台 Norman Hub"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Norman 选项",
+        "description": "更新由中枢推送。此轮询是针对中枢从未通告的变化的保障，通常是无线休眠期间移动过的窗帘。",
+        "data": {
+          "poll_interval": "轮询间隔"
+        },
+        "data_description": {
+          "poll_interval": "从中枢重新读取每个窗帘位置的频率。较低能更快发现过时位置，较高则负载更小。0 表示关闭轮询，仅依赖中枢的通知。"
+        }
+      }
+    }
+  },
   "services": {
     "nudge_position": {
       "name": "微调位置",

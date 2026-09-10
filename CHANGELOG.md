@@ -5,6 +5,20 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **A sleeping blind no longer reports a stale position.** The hub only pushes a notification
+  when it hears from a blind, and a battery blind's radio sleeps to save power — the Norman app
+  shows those as "Disconnect", though a command still wakes them and works. With updates driven
+  purely by push, a blind that moved while asleep kept serving its last known position
+  indefinitely, so `is_closed` answered about the past and automations that check state before
+  acting ("close it if it isn't closed") silently did the wrong thing. `status` is now also
+  re-read every 60 seconds, which corrects the position whether or not the hub says anything.
+- **The poll interval is configurable.** The integration gained a **Configure** button:
+  10-3600 seconds, or **0 to turn polling off** and go back to relying purely on the hub's
+  notifications. Changing it reloads the entry. A value between 1 and 9 is rejected by the
+  form rather than quietly replaced by the default, so the page cannot show a number that is
+  not the one in force.
+
 ## 0.28 — 2026-09-09
 - **Fixed a dangling instruction in the example dashboard.** Its header ended "In
   configuration.yaml:" with nothing after it — the YAML-mode snippet had been removed and the

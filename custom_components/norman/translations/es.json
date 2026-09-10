@@ -42,6 +42,20 @@
       "wrong_hub": "Esa dirección pertenece a otro Norman Hub"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de Norman",
+        "description": "El hub envía las actualizaciones. Este sondeo es una red de seguridad para los cambios que el hub nunca anuncia, normalmente una persiana que se movió mientras su radio estaba en reposo.",
+        "data": {
+          "poll_interval": "Intervalo de sondeo"
+        },
+        "data_description": {
+          "poll_interval": "Con qué frecuencia se vuelve a leer la posición de cada persiana desde el hub. Un valor menor detecta antes una posición obsoleta; uno mayor genera menos carga. 0 desactiva el sondeo y deja las actualizaciones solo a las notificaciones del hub."
+        }
+      }
+    }
+  },
   "services": {
     "nudge_position": {
       "name": "Ajustar posición",

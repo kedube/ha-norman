@@ -42,6 +42,20 @@
       "wrong_hub": "該位址屬於另一台 Norman Hub"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Norman 選項",
+        "description": "更新由中樞推送。此輪詢是針對中樞從未通告的變化的保障，通常是無線休眠期間移動過的窗簾。",
+        "data": {
+          "poll_interval": "輪詢間隔"
+        },
+        "data_description": {
+          "poll_interval": "從中樞重新讀取每個窗簾位置的頻率。較低能更快發現過時位置，較高則負載更小。0 表示關閉輪詢，僅依賴中樞的通知。"
+        }
+      }
+    }
+  },
   "services": {
     "nudge_position": {
       "name": "微調位置",

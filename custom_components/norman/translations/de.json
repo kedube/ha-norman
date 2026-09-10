@@ -42,6 +42,20 @@
       "wrong_hub": "Diese Adresse gehört zu einem anderen Norman Hub"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Norman-Optionen",
+        "description": "Aktualisierungen werden vom Hub gesendet. Diese Abfrage dient als Absicherung für Änderungen, die der Hub nie meldet — meist ein Rollo, das sich bewegt hat, während sein Funkmodul im Ruhezustand war.",
+        "data": {
+          "poll_interval": "Abfrageintervall"
+        },
+        "data_description": {
+          "poll_interval": "Wie oft die Position jedes Rollos vom Hub neu gelesen wird. Niedriger erkennt eine veraltete Position früher; höher verursacht weniger Last. 0 deaktiviert die Abfrage, sodass nur noch die Benachrichtigungen des Hubs zählen."
+        }
+      }
+    }
+  },
   "services": {
     "nudge_position": {
       "name": "Position anstoßen",
