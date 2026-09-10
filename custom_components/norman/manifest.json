@@ -20,7 +20,7 @@
   "requirements": [
     "getmac==0.9.5"
   ],
-  "version": "0.38",
+  "version": "0.39",
   "zeroconf": [
     "_nien_made._tcp.local."
   ]

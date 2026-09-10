@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.39 — 2026-09-10
 - **A sleeping blind no longer reports a stale position.** The hub only pushes a notification
   when it hears from a blind, and a battery blind's radio sleeps to save power — the Norman app
   shows those as "Disconnect", though a command still wakes them and works. With updates driven
