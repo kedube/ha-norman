@@ -46,18 +46,17 @@ def _poll_interval(entry: NormanConfigEntry) -> timedelta | None:
 
     A value that is missing, non-numeric, or out of range falls back to the default rather
     than raising: options are user input, and a bad one should not stop the integration from
-    loading. 0 is the one value outside the range that is honoured rather than corrected.
+    loading. 0 is the one value outside the supported range that is honoured rather than
+    corrected, and it is also the default -- so an unconfigured entry polls not at all.
     """
     raw = entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
     try:
         seconds = int(raw)
     except (TypeError, ValueError):
-        return timedelta(seconds=DEFAULT_POLL_INTERVAL)
-    if seconds == POLL_DISABLED:
-        return None
-    if not MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
         seconds = DEFAULT_POLL_INTERVAL
-    return timedelta(seconds=seconds)
+    if seconds != POLL_DISABLED and not MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
+        seconds = DEFAULT_POLL_INTERVAL
+    return None if seconds == POLL_DISABLED else timedelta(seconds=seconds)
 
 
 class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):

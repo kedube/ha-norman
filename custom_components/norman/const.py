@@ -19,24 +19,26 @@ REQUEST_TIMEOUT = 10
 
 # How often to re-read `status` even when the hub has pushed nothing.
 #
-# The hub pushes state changes over the notification long-poll, so this is a safety net
-# rather than the primary update path. It exists because a battery blind's radio sleeps:
-# the hub stops hearing from it (the Norman app shows "Disconnect"), no notification is
-# sent, and a push-only integration would serve an ever-staler cached position while the
+# Off by default. The hub pushes state changes over the notification long-poll, which is
+# the primary update path and is enough for most installs; polling only earns its keep when
+# a battery blind's radio sleeps. The hub then stops hearing from it (the Norman app shows
+# "Disconnect") and sends no notification, so the cached position can go stale while the
 # blind is in fact reachable -- a command still wakes it and works. A stale position makes
 # `is_closed` answer about the past, which silently breaks automations that check state
-# before acting. `status` is the hub's lightweight, uncached call (docs/NORMAN_API.md), so
-# re-reading it on a slow timer is cheap next to serving a wrong position.
-DEFAULT_POLL_INTERVAL = 60
-# Bounds offered in the options flow. 0 turns polling off entirely, leaving the push-only
-# behaviour the integration had before the poll existed -- state then updates only when the
-# hub announces a change, so a blind that moved while asleep keeps a stale position until
-# something else prompts a refresh. Any other value is clamped to this range: the floor keeps
-# a misconfigured entry from hammering a hub that answers `status` synchronously, and the
-# ceiling is the point past which a poll stops being a useful safety net.
+# before acting ("close it if it isn't closed"). Anyone seeing that can switch polling on;
+# `status` is the hub's lightweight, uncached call (docs/NORMAN_API.md), so the cost is one
+# small local request per interval.
 POLL_DISABLED = 0
+DEFAULT_POLL_INTERVAL = POLL_DISABLED
+# Bounds offered in the options flow, either side of POLL_DISABLED. The floor keeps a
+# misconfigured entry from hammering a hub that answers `status` synchronously; the ceiling
+# is the point past which a poll stops being a useful safety net. A value outside this range
+# (other than 0) falls back to the default.
 MIN_POLL_INTERVAL = 10
 MAX_POLL_INTERVAL = 3600
+# What the options form offers when polling has never been configured, so that switching it
+# on is one click rather than a guess.
+SUGGESTED_POLL_INTERVAL = 60
 CONF_POLL_INTERVAL = "poll_interval"
 
 # Seconds to wait after the notification stream drops before reconnecting.

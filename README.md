@@ -276,9 +276,10 @@ actions:
   integration never contacts Norman's servers and opens no listening ports.
 - **Push updates.** The integration holds a long-poll connection open to the hub. Whenever a
   blind's state changes, the hub sends a notification and the integration re-reads the status of
-  every blind. A slow 60-second poll backs this up, so a blind whose radio was asleep when it
-  moved does not report a stale position. The interval is configurable under the integration's
-  **Configure** button (10-3600 seconds, or 0 to poll only when the hub says something).
+  every blind. **Optional polling** backs this up for the case the hub cannot cover: a battery
+  blind whose radio was asleep when it moved reports a stale position until something wakes it.
+  Off by default; set an interval (10-3600 seconds) under the integration's **Configure**
+  button if you see stale positions.
 - **Reconnects.** The long-poll is recycled every 5 minutes (old connections go quiet), and
   re-established 15 seconds after any drop. Every reconnect re-reads the list of blinds, so a
   blind paired after setup shows up without a restart.

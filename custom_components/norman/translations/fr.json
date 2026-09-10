@@ -54,6 +54,9 @@
           "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub. Plus bas détecte plus tôt une position obsolète ; plus haut sollicite moins le hub. 0 désactive l'interrogation, laissant les mises à jour aux seules notifications du hub."
         }
       }
+    },
+    "error": {
+      "poll_interval_out_of_range": "Saisissez 0 pour désactiver l'interrogation, ou une valeur entre 10 et 3600 secondes."
     }
   },
   "services": {

@@ -54,6 +54,9 @@
           "poll_interval": "Con qué frecuencia se vuelve a leer la posición de cada persiana desde el hub. Un valor menor detecta antes una posición obsoleta; uno mayor genera menos carga. 0 desactiva el sondeo y deja las actualizaciones solo a las notificaciones del hub."
         }
       }
+    },
+    "error": {
+      "poll_interval_out_of_range": "Introduzca 0 para desactivar el sondeo, o un valor entre 10 y 3600 segundos."
     }
   },
   "services": {

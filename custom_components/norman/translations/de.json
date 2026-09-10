@@ -54,6 +54,9 @@
           "poll_interval": "Wie oft die Position jedes Rollos vom Hub neu gelesen wird. Niedriger erkennt eine veraltete Position früher; höher verursacht weniger Last. 0 deaktiviert die Abfrage, sodass nur noch die Benachrichtigungen des Hubs zählen."
         }
       }
+    },
+    "error": {
+      "poll_interval_out_of_range": "Geben Sie 0 ein, um die Abfrage zu deaktivieren, oder einen Wert zwischen 10 und 3600 Sekunden."
     }
   },
   "services": {

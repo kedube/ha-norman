@@ -54,6 +54,9 @@
           "poll_interval": "How often to re-read every blind's position from the hub. Lower notices a stale position sooner; higher does less work. 0 turns polling off, leaving updates to the hub's notifications alone."
         }
       }
+    },
+    "error": {
+      "poll_interval_out_of_range": "Enter 0 to turn polling off, or a value between 10 and 3600 seconds."
     }
   },
   "services": {
