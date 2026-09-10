@@ -12,8 +12,8 @@ version heading and publishes it as the release's Highlights.
   websocket API, which can only serialize selectors and a few known validators — so building
   the form raised before it could be shown. The range is now expressed by the selector alone
   and the one rule it cannot state ("0, or 10 to 3600") is checked when the form is submitted.
-  A test serializes the schema the way the websocket API does, which is what the existing
-  options tests missed by driving the flow directly.
+  A test serializes the schema through the same call the websocket API uses, which is what
+  the existing options tests missed by driving the flow directly.
 - **Polling is now off by default.** It was introduced in 0.39 set to 60 seconds for everyone.
   Push covers most installs on its own, so the poll is now opt-in for the case that needs it —
   a battery blind whose radio sleeps and whose position therefore goes stale. Existing entries

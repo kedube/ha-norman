@@ -44,12 +44,12 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-# The schema must stay serializable: the frontend fetches it over the websocket API, and
-# voluptuous_serialize can only convert selectors and a handful of known validators. A plain
-# function anywhere in here (say a vol.All(..., _check) wrapper) raises "Unable to convert
-# schema" while the form is being built, which surfaces as a bare 500 and an unopenable
-# dialog. So the range is expressed by the selector alone, and the one rule it cannot
-# express -- "0, or 10 to 3600", with a gap -- is enforced in the step handler instead.
+# The schema must stay serializable: the frontend fetches it over the websocket API, which
+# converts it field by field and understands only selectors and a handful of known
+# validators. A plain function anywhere in here (say a vol.All(..., _check) wrapper) fails
+# that conversion while the form is being built, which surfaces as a bare 500 and a dialog
+# that never opens. So the range is expressed by the selector alone, and the one rule it
+# cannot express -- "0, or 10 to 3600", with a gap -- is enforced in the step handler.
 OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): NumberSelector(
