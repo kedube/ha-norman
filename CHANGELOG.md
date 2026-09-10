@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.40 — 2026-09-10
 - **Fixed the options dialog failing to open.** Choosing **Configure** returned "Config flow
   could not be loaded: 500 Internal Server Error". The poll-interval field paired its selector
   with a plain validation function, and the frontend fetches the form's schema over the
