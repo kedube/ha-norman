@@ -573,10 +573,12 @@ both-rails `control` call. The five buttons are the only place the integration s
 [control verb](#control-verbs) other than `MotorStop` without the user reaching for
 `send_hub_command`.
 
-There is no polling interval. If the notification stream cannot be established at all the
-integration still works for commands, and each command's follow-up `status` call keeps the
-state fresh, but external changes (remote, app) will not be reflected until the stream comes
-back. The listener logs one error when the stream drops and one info line when it recovers.
+`status` is also re-read every 60 seconds regardless, which catches changes the hub never
+pushed -- it only notifies when it hears from a blind, and a battery blind's radio sleeps (the
+Norman app shows such a blind as "Disconnect"). If the notification stream cannot be
+established at all the integration still works for commands, and each command's follow-up
+`status` call keeps the state fresh, but external changes (remote, app) will be reflected only
+at the poll interval until the stream comes back. The listener logs one error when the stream drops and one info line when it recovers.
 
 **`GetAllPeripheral` is cached; `status` is not.** A refresh re-reads `status` every time but
 only calls `GetAllPeripheral` when the cached device list has been invalidated, which happens

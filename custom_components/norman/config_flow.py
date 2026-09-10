@@ -5,15 +5,34 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_HOST
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+)
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.util.network import is_host_valid
 import voluptuous as vol
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
-from .const import DOMAIN
+from .const import (
+    CONF_POLL_INTERVAL,
+    DEFAULT_POLL_INTERVAL,
+    DOMAIN,
+    MAX_POLL_INTERVAL,
+    MIN_POLL_INTERVAL,
+    POLL_DISABLED,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,10 +43,49 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
+def _validate_poll_interval(value: Any) -> int:
+    """Accept 0 (polling off) or a value in the supported range.
+
+    The selector cannot express "0, or 10 to 3600" as a single range, so it is left open at
+    the bottom and the gap is rejected here -- otherwise a 1-second entry would be accepted
+    by the form and then silently corrected to the default on load.
+    """
+    seconds = int(value)
+    if seconds == POLL_DISABLED or MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
+        return seconds
+    raise vol.Invalid(
+        f"expected {POLL_DISABLED} (off) or {MIN_POLL_INTERVAL}-{MAX_POLL_INTERVAL} seconds"
+    )
+
+
+OPTIONS_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): vol.All(
+            NumberSelector(
+                NumberSelectorConfig(
+                    min=POLL_DISABLED,
+                    max=MAX_POLL_INTERVAL,
+                    step=1,
+                    unit_of_measurement="seconds",
+                    mode=NumberSelectorMode.BOX,
+                )
+            ),
+            _validate_poll_interval,
+        ),
+    }
+)
+
+
 class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Norman."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> NormanOptionsFlow:
+        """Return the options flow."""
+        return NormanOptionsFlow()
 
     def __init__(self) -> None:
         """Initialize the flow."""
@@ -143,4 +201,28 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
                 STEP_USER_DATA_SCHEMA, user_input or entry.data
             ),
             errors=errors,
+        )
+
+
+class NormanOptionsFlow(OptionsFlow):
+    """Let the user tune how often the hub is polled.
+
+    Updates are pushed, so this only sets how quickly a change the hub never announced is
+    noticed -- most importantly a blind that moved while its radio was asleep. Lowering it
+    costs one `status` call per interval; raising it means a stale position lingers longer.
+    """
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show and store the options."""
+        if user_input is not None:
+            # OPTIONS_SCHEMA has already validated and coerced the value.
+            return self.async_create_entry(
+                data={CONF_POLL_INTERVAL: user_input[CONF_POLL_INTERVAL]}
+            )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                OPTIONS_SCHEMA, self.config_entry.options
+            ),
         )

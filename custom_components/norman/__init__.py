@@ -82,6 +82,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
         hass, coordinator.listen_notifications(), "norman-notification-listener"
     )
 
+    # A changed poll interval is applied by reloading: the interval is passed to the
+    # coordinator at construction.
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Serve and register the dashboard card. Best-effort: every entity works without it.
@@ -103,6 +107,11 @@ async def _async_resolve_mac(hass: HomeAssistant, host: str) -> str | None:
         _LOGGER.debug("Could not resolve the MAC address of %s", host, exc_info=True)
         return None
     return dr.format_mac(mac) if mac else None
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
+    """Reload the entry when its options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bool:

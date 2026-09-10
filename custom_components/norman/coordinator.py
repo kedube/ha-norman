@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import logging
 from typing import Any
 
@@ -13,11 +14,16 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
+    CONF_POLL_INTERVAL,
     DEFAULT_COVER_TYPE,
+    DEFAULT_POLL_INTERVAL,
     DOMAIN,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
+    MAX_POLL_INTERVAL,
+    MIN_POLL_INTERVAL,
     MODULE_TYPE_COVER_TYPES,
+    POLL_DISABLED,
     RECONNECT_INTERVAL,
 )
 from .models import NormanDevices, NormanHubData, NormanPeripheralData
@@ -32,11 +38,36 @@ def hub_identifier(entry: ConfigEntry) -> str:
     return f"hub_{entry.entry_id}"
 
 
+def _poll_interval(entry: NormanConfigEntry) -> timedelta | None:
+    """The configured poll interval, or None when polling is switched off.
+
+    ``POLL_DISABLED`` (0) means "push only": returning None leaves the coordinator without
+    an ``update_interval``, so it refreshes solely on notifications and commands.
+
+    A value that is missing, non-numeric, or out of range falls back to the default rather
+    than raising: options are user input, and a bad one should not stop the integration from
+    loading. 0 is the one value outside the range that is honoured rather than corrected.
+    """
+    raw = entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
+    try:
+        seconds = int(raw)
+    except (TypeError, ValueError):
+        return timedelta(seconds=DEFAULT_POLL_INTERVAL)
+    if seconds == POLL_DISABLED:
+        return None
+    if not MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
+        seconds = DEFAULT_POLL_INTERVAL
+    return timedelta(seconds=seconds)
+
+
 class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     """Norman data update coordinator.
 
-    The hub pushes state changes over a long-poll (see ``listen_notifications``), so there
-    is no polling interval: every notification, reconnect, and command triggers a refresh.
+    The hub pushes state changes over a long-poll (see ``listen_notifications``): every
+    notification, reconnect, and command triggers a refresh. A slow poll backs that up,
+    because a sleeping blind generates no notifications and its cached position would
+    otherwise go stale without ever being corrected. The interval is configurable in the
+    integration's options; the entry is reloaded when it changes.
     """
 
     config_entry: NormanConfigEntry
@@ -48,7 +79,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             _LOGGER,
             config_entry=entry,
             name=f"{DOMAIN} {entry.data.get('host', '')}".strip(),
-            update_interval=None,
+            update_interval=_poll_interval(entry),
         )
         self.api = api
         # Registry id of the hub device, set by async_setup_entry once it is created
@@ -91,11 +122,11 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     _LOGGER.debug("Notification listener still down: %s", err)
                 await asyncio.sleep(RECONNECT_INTERVAL)
             except Exception:  # noqa: BLE001 - the listener must outlive any single failure
-                # There is no polling fallback (update_interval is None), so this task is the
-                # only thing that ever refreshes state. Letting an unexpected error escape the
-                # loop would leave the integration loaded and apparently healthy while it
-                # silently stopped updating for good -- a far worse failure than a logged
-                # exception and a retry. async_refresh() is inside the try above and reaches
+                # POLL_INTERVAL would keep state moving, but at a fraction of the push
+                # path's responsiveness. Letting an unexpected error escape the loop would
+                # leave the integration loaded and apparently healthy while every change made
+                # at a remote or in the app went unnoticed until the next poll -- a far worse
+                # failure than a logged exception and a retry. async_refresh() is inside the try above and reaches
                 # the device registry, so this is not merely theoretical.
                 _LOGGER.exception(
                     "Unexpected error in the Norman notification listener; retrying in %s seconds",

@@ -3,23 +3,35 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import logging
 from unittest.mock import patch
 
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.util import dt as dt_util
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.norman.api import NormanConnectionError
-from custom_components.norman.const import COVER_TYPE_SINGLE_RAIL, COVER_TYPE_TWO_RAIL, DOMAIN
-from custom_components.norman.coordinator import NormanCoordinator
+from custom_components.norman.const import (
+    CONF_POLL_INTERVAL,
+    COVER_TYPE_SINGLE_RAIL,
+    COVER_TYPE_TWO_RAIL,
+    DEFAULT_POLL_INTERVAL,
+    DOMAIN,
+    MAX_POLL_INTERVAL,
+    MIN_POLL_INTERVAL,
+    POLL_DISABLED,
+)
+from custom_components.norman.coordinator import NormanCoordinator, _poll_interval
 from custom_components.norman.entity import hub_identifier
 
 from .conftest import HUB_MAC, FakeHub, cover_entity_id, settle
 from .const import (
     HUB_SSID,
+    MOCK_CONFIG,
     UID_BEDROOM,
     UID_LIVING,
     UID_STATUS_ONLY,
@@ -469,3 +481,91 @@ async def test_hub_outage_makes_entities_unavailable_until_it_recovers(
     await notifications.put({"PeripheralList": []})
     await settle(hass)
     assert hass.states.get(cover_entity_id(hass, UID_LIVING)).state == "open"
+
+
+async def test_polling_refreshes_a_position_the_hub_never_pushed(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+) -> None:
+    """A blind whose radio slept still gets its real position picked up.
+
+    The hub only pushes a notification when it hears from a blind. A battery blind's radio
+    sleeps -- the Norman app shows it as "Disconnect" -- so a position changed at a remote
+    (or simply never confirmed) generates no notification at all. Without a poll the cached
+    position stays as it was indefinitely, and `is_closed` answers about the past, which
+    silently breaks automations that check state before acting.
+    """
+    entity_id = cover_entity_id(hass, UID_LIVING)
+    assert hass.states.get(entity_id).state == "open"
+
+    # The blind closes without the hub saying so: no notification is queued.
+    fake_hub.set_position(UID_LIVING, bottom=0)
+    assert hass.states.get(entity_id).state == "open", "still the stale cached position"
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=DEFAULT_POLL_INTERVAL + 1))
+    await settle(hass)
+
+    assert hass.states.get(entity_id).state == "closed"
+
+
+@pytest.mark.parametrize(
+    ("option", "expected"),
+    [
+        (None, timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # unset
+        (30, timedelta(seconds=30)),
+        (MIN_POLL_INTERVAL, timedelta(seconds=MIN_POLL_INTERVAL)),
+        (MAX_POLL_INTERVAL, timedelta(seconds=MAX_POLL_INTERVAL)),
+        (POLL_DISABLED, None),  # 0 means push only
+        (5, timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # below the floor
+        (99999, timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # above the ceiling
+        (-1, timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # negative
+        ("banana", timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # not a number
+    ],
+)
+def test_poll_interval_option(option: object, expected: timedelta | None) -> None:
+    """0 disables polling; anything unusable falls back to the default."""
+    options = {} if option is None else {CONF_POLL_INTERVAL: option}
+    entry = MockConfigEntry(domain=DOMAIN, options=options)
+    assert _poll_interval(entry) == expected
+
+
+async def test_poll_interval_of_zero_disables_polling(
+    hass: HomeAssistant,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """With polling off, a change the hub never announced is not picked up."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=MOCK_CONFIG,
+        options={CONF_POLL_INTERVAL: POLL_DISABLED},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data.update_interval is None
+
+    entity_id = cover_entity_id(hass, UID_LIVING)
+    fake_hub.set_position(UID_LIVING, bottom=0)
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=DEFAULT_POLL_INTERVAL + 1))
+    await settle(hass)
+
+    assert hass.states.get(entity_id).state == "open", "no poll, so the change is missed"
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_changing_the_poll_interval_reloads_the_entry(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """The interval is read at construction, so a change has to reload to take effect."""
+    assert init_integration.runtime_data.update_interval == timedelta(seconds=DEFAULT_POLL_INTERVAL)
+
+    hass.config_entries.async_update_entry(init_integration, options={CONF_POLL_INTERVAL: 30})
+    await hass.async_block_till_done()
+
+    assert init_integration.runtime_data.update_interval == timedelta(seconds=30)

@@ -42,6 +42,20 @@
       "wrong_hub": "そのアドレスは別のNorman Hubのものです"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Norman のオプション",
+        "description": "更新はハブからプッシュされます。このポーリングは、ハブが通知しない変更（多くは無線がスリープ中に動いたブラインド）に備えるものです。",
+        "data": {
+          "poll_interval": "ポーリング間隔"
+        },
+        "data_description": {
+          "poll_interval": "各ブラインドの位置をハブから再取得する間隔。短いほど古い位置に早く気づき、長いほど負荷が減ります。0 でポーリングを無効にし、更新はハブの通知のみになります。"
+        }
+      }
+    }
+  },
   "services": {
     "nudge_position": {
       "name": "位置を微調整",

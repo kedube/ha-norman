@@ -42,6 +42,20 @@
       "wrong_hub": "Cette adresse appartient à un autre Norman Hub"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Norman",
+        "description": "Les mises à jour sont envoyées par le hub. Cette interrogation sert de filet de sécurité pour les changements que le hub n'annonce jamais, le plus souvent un store qui a bougé pendant que sa radio était en veille.",
+        "data": {
+          "poll_interval": "Intervalle d'interrogation"
+        },
+        "data_description": {
+          "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub. Plus bas détecte plus tôt une position obsolète ; plus haut sollicite moins le hub. 0 désactive l'interrogation, laissant les mises à jour aux seules notifications du hub."
+        }
+      }
+    }
+  },
   "services": {
     "nudge_position": {
       "name": "Ajuster la position",

@@ -78,10 +78,18 @@ It becomes available again automatically on the next successful refresh.
 
 ### Data updates
 
-There is no polling interval. The integration holds a long-poll open to the hub and refreshes
-every cover whenever the hub reports a change, including changes made with a remote or the
-Norman app. It also refreshes after every command it sends and every time the long-poll is
-reconnected. See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
+Updates are pushed. The integration holds a long-poll open to the hub and refreshes every
+cover whenever the hub reports a change, including changes made with a remote or the Norman
+app. It also refreshes after every command it sends and every time the long-poll is
+reconnected. A slow 60-second poll backs that up: a battery blind's radio sleeps, and the hub
+only pushes when it hears from a blind, so without the poll a position that changed while the
+blind was asleep would stay stale indefinitely.
+
+The poll interval is configurable: **Settings → Devices & services → Norman → Configure**.
+Accepted values are 10 to 3600 seconds, or **0 to disable polling** and rely purely on the
+hub's notifications. Lowering it notices a stale position sooner at the cost of one extra
+`status` call per interval; disabling it restores the push-only behaviour, in which a blind
+that moved while asleep keeps a stale position until something else triggers a refresh. See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
 
 **Best privacy** and **Best view** are the app's own buttons, per blind: privacy puts the
 bottom rail at 0 and the middle rail at 100 (closed for privacy, sheer fabric still open), and

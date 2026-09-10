@@ -9,13 +9,18 @@ import aiohttp
 from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.norman.const import DOMAIN
+from custom_components.norman.const import (
+    CONF_POLL_INTERVAL,
+    DEFAULT_POLL_INTERVAL,
+    DOMAIN,
+    POLL_DISABLED,
+)
 
 from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, MOCK_CONFIG
 
@@ -321,3 +326,58 @@ async def test_zeroconf_discovery_unknown_error_aborts(hass: HomeAssistant) -> N
         result = await _start_zeroconf_flow(hass)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "unknown"
+
+
+async def _open_options(hass: HomeAssistant, entry: MockConfigEntry) -> dict:
+    """Start the options flow for ``entry``."""
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return await hass.config_entries.options.async_init(entry.entry_id)
+
+
+@pytest.mark.parametrize("value", [POLL_DISABLED, 10, 30, 3600])
+async def test_options_flow_stores_the_poll_interval(hass: HomeAssistant, value: int) -> None:
+    """0 (off) and every in-range value are accepted and stored as an int."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={CONF_POLL_INTERVAL: value}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {CONF_POLL_INTERVAL: value}
+    assert isinstance(entry.options[CONF_POLL_INTERVAL], int)
+
+
+@pytest.mark.parametrize("value", [1, 9, 5000, -1])
+async def test_options_flow_rejects_the_gap_between_off_and_the_floor(
+    hass: HomeAssistant, value: int
+) -> None:
+    """A value that is neither 0 nor in range is refused rather than silently corrected.
+
+    Without this the form would accept, say, 1 second, and the coordinator would quietly
+    substitute the default -- leaving the options page showing a number that is not the one
+    in force.
+    """
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={CONF_POLL_INTERVAL: value}
+        )
+    assert entry.options == {}
+
+
+async def test_options_flow_defaults_to_the_current_value(hass: HomeAssistant) -> None:
+    """The form is seeded with what is configured, so saving twice is not destructive."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_POLL_INTERVAL: 120})
+    result = await _open_options(hass, entry)
+
+    schema = result["data_schema"].schema
+    key = next(k for k in schema if str(k) == CONF_POLL_INTERVAL)
+    assert key.description["suggested_value"] == 120
+    assert key.default() == DEFAULT_POLL_INTERVAL
