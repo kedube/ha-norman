@@ -15,7 +15,6 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
-import voluptuous_serialize
 
 from custom_components.norman.const import (
     CONF_POLL_INTERVAL,
@@ -408,19 +407,24 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
     """The options form must survive being converted for the websocket API.
 
     The frontend fetches the schema over the websocket API, which runs it through
-    voluptuous_serialize. That can only convert selectors and a few known validators: a
-    plain function in the schema (a `vol.All(selector, _check)` wrapper, say) raises
-    "Unable to convert schema" while the form is being built, which reaches the user as a
-    bare "Config flow could not be loaded: 500 Internal Server Error" and a dialog that
-    never opens. Every other options test drives the flow directly and never serializes,
-    so nothing else here would catch it.
+    ``to_field_list`` -- the same call used here. That understands selectors and a few known
+    validators only: a plain function in the schema (a `vol.All(selector, _check)` wrapper,
+    say) fails to convert while the form is being built, which reaches the user as a bare
+    "Config flow could not be loaded: 500 Internal Server Error" and a dialog that never
+    opens. Every other options test drives the flow directly and never serializes, so
+    nothing else here would catch it.
     """
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     result = await _open_options(hass, entry)
 
-    converted = voluptuous_serialize.convert(
-        result["data_schema"], custom_serializer=cv.custom_serializer
-    )
+    # Home Assistant 2026.9 replaced voluptuous_serialize.convert with to_field_list for
+    # this; use whichever the installed release has, so the check runs either way.
+    try:
+        from homeassistant.helpers.data_entry_flow import to_field_list as _serialize
+    except ImportError:  # pragma: no cover - Home Assistant < 2026.9
+        from voluptuous_serialize import convert as _serialize
+
+    converted = _serialize(result["data_schema"], custom_serializer=cv.custom_serializer)
 
     assert converted == [
         {
