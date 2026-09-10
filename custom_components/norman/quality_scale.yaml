@@ -7,9 +7,8 @@ rules:
   appropriate-polling:
     status: done
     comment: >-
-      Local push drives refreshes; a 60-second poll backs it up because the hub only
-      notifies when it hears from a blind, and a battery blind's radio sleeps. The
-      interval is configurable, and 0 turns the poll off.
+      Local push drives refreshes. An optional poll (off by default, configurable in the
+      options) backs it up for sleeping battery blinds, which the hub stops reporting on.
   brands: done
   common-modules: done
   config-flow-test-coverage: done

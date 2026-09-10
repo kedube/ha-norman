@@ -32,6 +32,7 @@ from .const import (
     MAX_POLL_INTERVAL,
     MIN_POLL_INTERVAL,
     POLL_DISABLED,
+    SUGGESTED_POLL_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,34 +44,22 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-def _validate_poll_interval(value: Any) -> int:
-    """Accept 0 (polling off) or a value in the supported range.
-
-    The selector cannot express "0, or 10 to 3600" as a single range, so it is left open at
-    the bottom and the gap is rejected here -- otherwise a 1-second entry would be accepted
-    by the form and then silently corrected to the default on load.
-    """
-    seconds = int(value)
-    if seconds == POLL_DISABLED or MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
-        return seconds
-    raise vol.Invalid(
-        f"expected {POLL_DISABLED} (off) or {MIN_POLL_INTERVAL}-{MAX_POLL_INTERVAL} seconds"
-    )
-
-
+# The schema must stay serializable: the frontend fetches it over the websocket API, and
+# voluptuous_serialize can only convert selectors and a handful of known validators. A plain
+# function anywhere in here (say a vol.All(..., _check) wrapper) raises "Unable to convert
+# schema" while the form is being built, which surfaces as a bare 500 and an unopenable
+# dialog. So the range is expressed by the selector alone, and the one rule it cannot
+# express -- "0, or 10 to 3600", with a gap -- is enforced in the step handler instead.
 OPTIONS_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): vol.All(
-            NumberSelector(
-                NumberSelectorConfig(
-                    min=POLL_DISABLED,
-                    max=MAX_POLL_INTERVAL,
-                    step=1,
-                    unit_of_measurement="seconds",
-                    mode=NumberSelectorMode.BOX,
-                )
-            ),
-            _validate_poll_interval,
+        vol.Required(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): NumberSelector(
+            NumberSelectorConfig(
+                min=POLL_DISABLED,
+                max=MAX_POLL_INTERVAL,
+                step=1,
+                unit_of_measurement="seconds",
+                mode=NumberSelectorMode.BOX,
+            )
         ),
     }
 )
@@ -214,15 +203,26 @@ class NormanOptionsFlow(OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show and store the options."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            # OPTIONS_SCHEMA has already validated and coerced the value.
-            return self.async_create_entry(
-                data={CONF_POLL_INTERVAL: user_input[CONF_POLL_INTERVAL]}
-            )
+            # The selector bounds the value to 0-3600; the gap between "off" and the floor
+            # is checked here because a schema-level validator would not survive being
+            # serialized for the frontend (see OPTIONS_SCHEMA).
+            seconds = int(user_input[CONF_POLL_INTERVAL])
+            if seconds == POLL_DISABLED or MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
+                return self.async_create_entry(data={CONF_POLL_INTERVAL: seconds})
+            errors[CONF_POLL_INTERVAL] = "poll_interval_out_of_range"
+
+        # An entry that has never been configured shows SUGGESTED_POLL_INTERVAL rather than
+        # the 0 default, so turning polling on is one click instead of a guess at a sensible
+        # number. Leaving the field at 0 still stores 0.
+        suggested = (
+            user_input or self.config_entry.options or {CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL}
+        )
 
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(
-                OPTIONS_SCHEMA, self.config_entry.options
-            ),
+            data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, suggested),
+            errors=errors,
         )

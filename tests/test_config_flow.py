@@ -10,16 +10,20 @@ from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+import voluptuous_serialize
 
 from custom_components.norman.const import (
     CONF_POLL_INTERVAL,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
+    MAX_POLL_INTERVAL,
     POLL_DISABLED,
+    SUGGESTED_POLL_INTERVAL,
 )
 
 from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, MOCK_CONFIG
@@ -352,16 +356,33 @@ async def test_options_flow_stores_the_poll_interval(hass: HomeAssistant, value:
     assert isinstance(entry.options[CONF_POLL_INTERVAL], int)
 
 
-@pytest.mark.parametrize("value", [1, 9, 5000, -1])
+@pytest.mark.parametrize("value", [1, 9])
 async def test_options_flow_rejects_the_gap_between_off_and_the_floor(
     hass: HomeAssistant, value: int
 ) -> None:
-    """A value that is neither 0 nor in range is refused rather than silently corrected.
+    """A value between "off" and the floor is refused rather than silently corrected.
 
     Without this the form would accept, say, 1 second, and the coordinator would quietly
     substitute the default -- leaving the options page showing a number that is not the one
-    in force.
+    in force. The selector cannot express the gap, so the step handler checks it and the
+    form comes back with an error.
     """
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={CONF_POLL_INTERVAL: value}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_POLL_INTERVAL: "poll_interval_out_of_range"}
+    assert entry.options == {}
+
+
+@pytest.mark.parametrize("value", [-1, 5000])
+async def test_options_flow_rejects_values_outside_the_selector(
+    hass: HomeAssistant, value: int
+) -> None:
+    """Anything beyond the selector's own bounds is refused by the schema."""
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     result = await _open_options(hass, entry)
 
@@ -381,3 +402,41 @@ async def test_options_flow_defaults_to_the_current_value(hass: HomeAssistant) -
     key = next(k for k in schema if str(k) == CONF_POLL_INTERVAL)
     assert key.description["suggested_value"] == 120
     assert key.default() == DEFAULT_POLL_INTERVAL
+
+
+async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssistant) -> None:
+    """The options form must survive being converted for the websocket API.
+
+    The frontend fetches the schema over the websocket API, which runs it through
+    voluptuous_serialize. That can only convert selectors and a few known validators: a
+    plain function in the schema (a `vol.All(selector, _check)` wrapper, say) raises
+    "Unable to convert schema" while the form is being built, which reaches the user as a
+    bare "Config flow could not be loaded: 500 Internal Server Error" and a dialog that
+    never opens. Every other options test drives the flow directly and never serializes,
+    so nothing else here would catch it.
+    """
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    converted = voluptuous_serialize.convert(
+        result["data_schema"], custom_serializer=cv.custom_serializer
+    )
+
+    assert converted == [
+        {
+            "name": CONF_POLL_INTERVAL,
+            "required": True,
+            "default": DEFAULT_POLL_INTERVAL,
+            # An unconfigured entry is offered a working interval rather than the 0 default.
+            "description": {"suggested_value": SUGGESTED_POLL_INTERVAL},
+            "selector": {
+                "number": {
+                    "min": float(POLL_DISABLED),
+                    "max": float(MAX_POLL_INTERVAL),
+                    "step": 1.0,
+                    "unit_of_measurement": "seconds",
+                    "mode": "box",
+                }
+            },
+        }
+    ]

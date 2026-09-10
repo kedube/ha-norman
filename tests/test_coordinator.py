@@ -496,6 +496,9 @@ async def test_polling_refreshes_a_position_the_hub_never_pushed(
     position stays as it was indefinitely, and `is_closed` answers about the past, which
     silently breaks automations that check state before acting.
     """
+    hass.config_entries.async_update_entry(init_integration, options={CONF_POLL_INTERVAL: 60})
+    await hass.async_block_till_done()
+
     entity_id = cover_entity_id(hass, UID_LIVING)
     assert hass.states.get(entity_id).state == "open"
 
@@ -503,7 +506,7 @@ async def test_polling_refreshes_a_position_the_hub_never_pushed(
     fake_hub.set_position(UID_LIVING, bottom=0)
     assert hass.states.get(entity_id).state == "open", "still the stale cached position"
 
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=DEFAULT_POLL_INTERVAL + 1))
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=61))
     await settle(hass)
 
     assert hass.states.get(entity_id).state == "closed"
@@ -512,15 +515,15 @@ async def test_polling_refreshes_a_position_the_hub_never_pushed(
 @pytest.mark.parametrize(
     ("option", "expected"),
     [
-        (None, timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # unset
+        (None, None),  # unset: off by default
         (30, timedelta(seconds=30)),
         (MIN_POLL_INTERVAL, timedelta(seconds=MIN_POLL_INTERVAL)),
         (MAX_POLL_INTERVAL, timedelta(seconds=MAX_POLL_INTERVAL)),
         (POLL_DISABLED, None),  # 0 means push only
-        (5, timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # below the floor
-        (99999, timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # above the ceiling
-        (-1, timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # negative
-        ("banana", timedelta(seconds=DEFAULT_POLL_INTERVAL)),  # not a number
+        (5, None),  # below the floor: falls back to the default (off)
+        (99999, None),  # above the ceiling
+        (-1, None),  # negative
+        ("banana", None),  # not a number
     ],
 )
 def test_poll_interval_option(option: object, expected: timedelta | None) -> None:
@@ -563,9 +566,16 @@ async def test_changing_the_poll_interval_reloads_the_entry(
     init_integration: MockConfigEntry,
 ) -> None:
     """The interval is read at construction, so a change has to reload to take effect."""
-    assert init_integration.runtime_data.update_interval == timedelta(seconds=DEFAULT_POLL_INTERVAL)
+    assert init_integration.runtime_data.update_interval is None, "off by default"
 
     hass.config_entries.async_update_entry(init_integration, options={CONF_POLL_INTERVAL: 30})
     await hass.async_block_till_done()
 
     assert init_integration.runtime_data.update_interval == timedelta(seconds=30)
+
+    hass.config_entries.async_update_entry(
+        init_integration, options={CONF_POLL_INTERVAL: POLL_DISABLED}
+    )
+    await hass.async_block_till_done()
+
+    assert init_integration.runtime_data.update_interval is None, "switched back off"

@@ -5,6 +5,21 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Fixed the options dialog failing to open.** Choosing **Configure** returned "Config flow
+  could not be loaded: 500 Internal Server Error". The poll-interval field paired its selector
+  with a plain validation function, and the frontend fetches the form's schema over the
+  websocket API, which can only serialize selectors and a few known validators — so building
+  the form raised before it could be shown. The range is now expressed by the selector alone
+  and the one rule it cannot state ("0, or 10 to 3600") is checked when the form is submitted.
+  A test serializes the schema the way the websocket API does, which is what the existing
+  options tests missed by driving the flow directly.
+- **Polling is now off by default.** It was introduced in 0.39 set to 60 seconds for everyone.
+  Push covers most installs on its own, so the poll is now opt-in for the case that needs it —
+  a battery blind whose radio sleeps and whose position therefore goes stale. Existing entries
+  keep whatever they have configured; entries that never configured it stop polling. The form
+  suggests 60 seconds when you switch it on.
+
 ## 0.39 — 2026-09-10
 - **A sleeping blind no longer reports a stale position.** The hub only pushes a notification
   when it hears from a blind, and a battery blind's radio sleeps to save power — the Norman app
