@@ -623,39 +623,38 @@ check("the sheer fabric keeps the same cell height",
 check("the sheer fabric has its own fold line",
       /rgba\([^)]+\) 0 1px/.test(sheerCss));
 
-// The opening must be DARK -- darker than the fabric, by a wide margin.
-// This is the graphic's core distinction: an open window is a hole you see through, a
-// closed one is a pale fabric panel. An earlier version tinted the opening from the text
-// colour at 6% alpha, which rendered LIGHTER than the fabric in a light theme, so "open"
-// and "closed" looked the same. A rough luminance of the darkest colour in each token is
-// enough to catch that inversion.
+// The opening must be BRIGHT, and the fabric DARKER than it.
+// Settled by rendering the reference card beside this one at the same size: its open
+// window measures 250 and its closed fabric 191. The window is lit; the shade is what
+// blocks the light. An earlier version of this card (and of this check) had it inverted
+// -- a dark opening under near-white fabric -- which is why the picture never looked like
+// the reference however much the fabric itself was tuned. Direction is the thing to pin.
+const lumOf = (hex) => {
+  const n = parseInt(hex, 16);
+  return 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+};
 const darkestIn = (css) => {
   let worst = 255;
-  for (const [, hex] of css.matchAll(/#([0-9a-f]{6})\b/gi)) {
-    const n = parseInt(hex, 16);
-    const l = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
-    worst = Math.min(worst, l);
-  }
+  for (const [, hex] of css.matchAll(/#([0-9a-f]{6})\b/gi)) worst = Math.min(worst, lumOf(hex));
   return worst;
 };
 const lightestIn = (css) => {
   let best = 0;
-  for (const [, hex] of css.matchAll(/#([0-9a-f]{6})\b/gi)) {
-    const n = parseInt(hex, 16);
-    const l = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
-    best = Math.max(best, l);
-  }
+  for (const [, hex] of css.matchAll(/#([0-9a-f]{6})\b/gi)) best = Math.max(best, lumOf(hex));
   return best;
 };
 const openingCss = /--n-opening:([^;]+);/.exec(cardSource)[1];
-check("the opening is defined with explicit dark colours, not a theme tint",
+check("the opening is defined with explicit colours, not a theme tint",
       /#[0-9a-f]{6}/i.test(openingCss), openingCss.trim());
-const openingLum = lightestIn(openingCss);
-check("the opening is dark", openingLum < 110, String(Math.round(openingLum)));
-// The fabric's DARKEST tone must still be clearly lighter than the opening's lightest.
-const fabricLum = darkestIn(fabricCss);
-check("the fabric is clearly lighter than the opening",
-      fabricLum - openingLum > 60,
+// The reference's opening is 250; anything below ~215 stops reading as a lit window.
+const openingLum = darkestIn(openingCss);
+check("the opening is bright, like the reference's lit window",
+      openingLum > 215, String(Math.round(openingLum)));
+// And the fabric's LIGHTEST tone must still be darker than the opening's darkest, so the
+// shade always reads as something covering the light rather than as part of it.
+const fabricLum = lightestIn(fabricCss);
+check("the fabric is darker than the opening, as in the reference",
+      fabricLum < openingLum,
       `fabric ${Math.round(fabricLum)} vs opening ${Math.round(openingLum)}`);
 
 // Which fabric covers the window, per the app's own presets. This is the substantive
