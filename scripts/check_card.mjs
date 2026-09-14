@@ -593,6 +593,36 @@ check("mixed: each rail sits on its band's bottom edge",
       Math.abs(parseFloat(mixed.railEls[1].style.top) - (sheerTop + sheerH)) < 0.01 &&
       Math.abs(parseFloat(mixed.railEls[0].style.top) - (blackTop + blackH)) < 0.01);
 
+// The pleat. A cellular shade reads as a shade because it is visibly DIVIDED into cells:
+// a hard fold line at the top of each, then a ramp to a lit lip at the bottom. Earlier
+// versions lost that -- soft, closely-spaced stops averaged out to a flat grey panel at
+// the size the card actually renders -- so the structure is pinned here.
+const fabricCss = (() => {
+  const i = cardSource.indexOf(".shade-band {", cardSource.indexOf("--n-cell:"));
+  return cardSource.slice(i, cardSource.indexOf(".shade-band.sheer", i));
+})();
+check("the fabric is built from a repeating cell",
+      fabricCss.includes("repeating-linear-gradient"));
+check("each cell has a hard fold line at its top",
+      /var\(--n-fold\) 0 1px/.test(fabricCss), fabricCss.slice(0, 160));
+check("the cell height is a single tunable token",
+      /--n-cell:\s*\d+px/.test(cardSource) && fabricCss.includes("var(--n-cell)"));
+// The cell is the reference's own 6px tile. An earlier version of this check demanded
+// >=8px on the theory that 6px would turn to mush at card width; that was a guess, and
+// the reference's 6px is what actually looks like a shade. Pin it to the source value.
+const cellPx = Number(/--n-cell:\s*(\d+)px/.exec(cardSource)[1]);
+check("the cell matches the reference tile's 6px pitch", cellPx === 6, String(cellPx));
+// Both fabrics must keep the same cell rhythm, or the join reads as a rendering fault
+// rather than as two fabrics meeting.
+const sheerCss = cardSource.slice(
+  cardSource.indexOf(".shade-band.sheer {"),
+  cardSource.indexOf("/* A rail is an extruded bar"),
+);
+check("the sheer fabric keeps the same cell height",
+      sheerCss.includes("var(--n-cell)"), sheerCss.slice(0, 200));
+check("the sheer fabric has its own fold line",
+      /rgba\([^)]+\) 0 1px/.test(sheerCss));
+
 // Which fabric covers the window, per the app's own presets. This is the substantive
 // correctness question in the picture: a closed blind drawn as the sheer fabric tells the
 // user the window is see-through when it is not.
@@ -604,19 +634,26 @@ const covering = (values) => {
     .map((b) => (b.cls.includes("sheer") ? "sheer" : "blackout") + ":" + Math.round(b.h))
     .join(" ");
 };
+// The full travel, derived rather than restated, so moving the headbox does not require
+// editing these expectations.
+const FULL = Math.round(100 - HEAD);
 // Fully closed: the blackout fabric covers the whole opening.
 check("closed (0/0) is covered by the BLACKOUT fabric",
-      covering([0, 0]) === "blackout:91", covering([0, 0]));
+      covering([0, 0]) === `blackout:${FULL}`, covering([0, 0]));
 // "Best privacy" is bottom 0 / middle 100 -- the blackout stacks away at the head and the
 // sheer covers the window: "closed for privacy, sheer fabric still open".
 check("Best privacy (0/100) is covered by the SHEER fabric",
-      covering([0, 100]) === "sheer:91", covering([0, 100]));
+      covering([0, 100]) === `sheer:${FULL}`, covering([0, 100]));
 // Both rails up: nothing covers the opening at all.
 check("open (100/100) leaves the opening clear", covering([100, 100]) === "",
       covering([100, 100]));
 // Part-way: the blackout hangs from the head to the middle rail, the sheer below it.
+// Part-open: the blackout hangs head->middle (20% of travel) and the sheer middle->bottom
+// (60% of travel), both as a share of the travel rather than of the whole picture.
 check("part-open draws blackout above the middle rail and sheer below",
-      covering([20, 80]) === "sheer:55 blackout:18", covering([20, 80]));
+      covering([20, 80]) ===
+        `sheer:${Math.round((100 - HEAD) * 0.6)} blackout:${Math.round((100 - HEAD) * 0.2)}`,
+      covering([20, 80]));
 
 // Clamping: the rails are physically stacked and must never cross.
 const clampShade = shadeFor(twoRail, twoRailBlind, [20, 80]);
