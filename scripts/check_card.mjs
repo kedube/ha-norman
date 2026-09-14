@@ -500,5 +500,96 @@ check("home controls drop out when hidden",
       headerButtons({ hide_home_controls:true }) === 0,
       String(headerButtons({ hide_home_controls:true })));
 
+// ---- the shade picture --------------------------------------------------------------
+// The picture's geometry is the part no amount of reading catches: a sign error puts the
+// fabric at the wrong end of the window, and a band that starts below where it ends draws
+// nothing at all. These pin the arithmetic that _drawShade and _clampRail perform.
+
+const pictureCard = () => {
+  const c = new Card();
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass;
+  return c;
+};
+
+// A two-rail blind: rails[0] is the bottom rail, rails[1] the middle.
+const twoRail = pictureCard();
+const twoRailBlind = twoRail._collectBlinds().find(b => b.middleCover);
+check("two-rail blind is found for the picture", !!twoRailBlind);
+
+const shadeFor = (card, blind, values) => {
+  const rails = card._railsOf(blind);
+  const shade = card._buildShade(blind, rails);
+  // Drive the drawing off explicit values rather than whatever the fake hub reports.
+  shade.dragValues = Object.fromEntries(values.map((v, i) => [i, v]));
+  card._drawShade(shade);
+  return shade;
+};
+
+// Fully open: every rail sits at the head, so no fabric is showing.
+const open = shadeFor(twoRail, twoRailBlind, [100, 100]);
+check("open: bottom rail sits at the head", open.railEls[0].style.top === "7%",
+      open.railEls[0].style.top);
+check("open: no fabric hangs", open.bands.every(b => parseFloat(b.style.height) === 0),
+      open.bands.map(b => b.style.height).join(" "));
+
+// Fully closed: the bottom rail reaches the sill.
+const closed = shadeFor(twoRail, twoRailBlind, [0, 0]);
+check("closed: bottom rail reaches the sill", closed.railEls[0].style.top === "100%",
+      closed.railEls[0].style.top);
+
+// Bottom 20 / middle 80: two contiguous bands, neither inverted.
+const mixed = shadeFor(twoRail, twoRailBlind, [20, 80]);
+const sheerTop = parseFloat(mixed.bands[1].style.top);
+const sheerH = parseFloat(mixed.bands[1].style.height);
+const blackTop = parseFloat(mixed.bands[0].style.top);
+const blackH = parseFloat(mixed.bands[0].style.height);
+check("mixed: sheer band starts at the head", Math.abs(sheerTop - 7) < 0.01, String(sheerTop));
+check("mixed: bands are contiguous (no gap, no overlap)",
+      Math.abs((sheerTop + sheerH) - blackTop) < 0.01,
+      `${sheerTop}+${sheerH} vs ${blackTop}`);
+check("mixed: no band has negative height", sheerH >= 0 && blackH >= 0,
+      `${sheerH} ${blackH}`);
+check("mixed: the middle rail sits above the bottom rail",
+      parseFloat(mixed.railEls[1].style.top) < parseFloat(mixed.railEls[0].style.top),
+      `${mixed.railEls[1].style.top} vs ${mixed.railEls[0].style.top}`);
+check("mixed: each rail sits on its band's bottom edge",
+      Math.abs(parseFloat(mixed.railEls[1].style.top) - (sheerTop + sheerH)) < 0.01 &&
+      Math.abs(parseFloat(mixed.railEls[0].style.top) - (blackTop + blackH)) < 0.01);
+
+// Clamping: the rails are physically stacked and must never cross.
+const clampShade = shadeFor(twoRail, twoRailBlind, [20, 80]);
+check("clamp: the bottom rail cannot rise above the middle",
+      twoRail._clampRail(clampShade, 0, 95) === 80,
+      String(twoRail._clampRail(clampShade, 0, 95)));
+check("clamp: the middle rail cannot drop below the bottom",
+      twoRail._clampRail(clampShade, 1, 5) === 20,
+      String(twoRail._clampRail(clampShade, 1, 5)));
+check("clamp: a legal drag is left alone",
+      twoRail._clampRail(clampShade, 0, 10) === 10,
+      String(twoRail._clampRail(clampShade, 0, 10)));
+
+// A single-rail blind has nothing to clamp against and one band only.
+const oneRail = pictureCard();
+const oneRailBlind = oneRail._collectBlinds().find(b => !b.middleCover);
+const single = shadeFor(oneRail, oneRailBlind, [40]);
+check("single-rail: one band only", single.bands.length === 1, String(single.bands.length));
+check("single-rail: nothing to clamp against",
+      oneRail._clampRail(single, 0, 90) === 90,
+      String(oneRail._clampRail(single, 0, 90)));
+
+// hide_picture must actually drop the picture, since it is the card's largest element.
+const hidden = new Card();
+hidden._hass = hass;
+hidden.setConfig({ type:"custom:norman-shades-card", hide_picture:true });
+hidden._hass = hass;
+hidden._render();
+let pictures = 0;
+const countPictures = (el) => {
+  if (el?.className && String(el.className).split(" ").includes("shade")) pictures += 1;
+  (el?.children || []).forEach(countPictures);
+};
+countPictures(hidden.shadowRoot);
+check("hide_picture removes every picture", pictures === 0, String(pictures));
+
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);

@@ -1,9 +1,16 @@
 /**
  * Norman shades card.
  *
- * Groups every Norman blind by room and gives each rail a percentage slider in 10% steps,
- * with the blind's battery level alongside. Written as a plain custom element with no build
- * step and no external dependencies, so the file that ships is the file that runs.
+ * Groups every Norman blind by room. Each blind is drawn as a window with its fabric
+ * hanging in it -- draggable, and showing where every rail actually is -- above a percentage
+ * slider per rail in 10% steps, with the blind's battery level alongside. Written as a plain
+ * custom element with no build step and no external dependencies, so the file that ships is
+ * the file that runs.
+ *
+ * The window is drawn in CSS: the slats are a repeating gradient and the geometry is in
+ * percent, so the picture themes itself, stays crisp at any pixel density, scales with the
+ * card, and handles however many rails a blind has. (The card this one takes its shape from
+ * uses three embedded PNGs for the same job, which is why its travel height is fixed.)
  *
  * Discovery is automatic: the card finds Norman cover entities through the entity registry
  * (via the hass object's `entities` map) and groups them by the area Home Assistant has each
@@ -300,8 +307,18 @@ class NormanShadesCard extends HTMLElement {
       :host {
         --n-fg-rgb: var(--rgb-primary-text-color, 33, 33, 33);
         --n-accent-rgb: var(--rgb-primary-color, 3, 169, 244);
+        --n-bg-rgb: var(--rgb-card-background-color, 255, 255, 255);
         --n-radius: 10px;
         --n-control: 32px;
+        /* The shade picture: what the window behind the fabric reads as, the head rail's
+           housing, and a rail's thickness. The head is what an "open" shade still shows. */
+        --n-sky: linear-gradient(
+          to bottom,
+          rgba(var(--n-accent-rgb), 0.16),
+          rgba(var(--n-accent-rgb), 0.05)
+        );
+        --n-head: 7%;
+        --n-rail: 6px;
       }
       ha-card { padding: 4px 0 8px; }
 
@@ -385,9 +402,139 @@ class NormanShadesCard extends HTMLElement {
       .battery.low { color: var(--warning-color, #ff9800); }
       .battery.critical { color: var(--error-color, #f44336); }
 
-      /* Rail: a bar that carries its own label and value, plus a segmented open/stop/close.
-         The bar is drawn here and the real range input sits over it invisibly, so it is
-         still a native slider to the keyboard and to a screen reader. */
+      /* The shade picture.
+         ------------------------------------------------------------------------------
+         A blind is drawn as a window: a frame, and fabric hanging from the head down to
+         each rail. Geometry is in PERCENT of the frame, never pixels, so the picture
+         scales with the card and a phone gets a smaller shade rather than a clipped one.
+
+         Two rails, drawn as two stacked bands. On a day/night cellular shade the middle
+         rail is the join between the two fabrics, so the band above it is the sheer
+         (light-filtering) cell and the band below it is the blackout cell; on a
+         top-down/bottom-up blind the same two bands read as the top and bottom halves.
+         Both are honest about the one thing that is always true: where each rail is.
+
+         Every band's top and height is written by one function (_drawShade), so the
+         fabric and its rail can never disagree about where the rail is. */
+      .shade {
+        position: relative;
+        width: 100%;
+        aspect-ratio: var(--n-shade-aspect, 4 / 3);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--n-sky);
+        cursor: ns-resize;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      .shade.disabled { cursor: not-allowed; }
+      .shade:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+      /* The head rail's housing, which the fabric emerges from. */
+      .shade-head {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: var(--n-head);
+        background: rgba(var(--n-fg-rgb), 0.55);
+        z-index: 3;
+      }
+
+      /* Fabric. The slats are a repeating gradient rather than a tiled bitmap: it themes
+         with the card, stays crisp at any pixel density, and costs no bytes. The period
+         is in px so the cells stay a constant size as the shade scales. */
+      .shade-band {
+        position: absolute;
+        left: 0; right: 0;
+        transition: top 0.3s ease, height 0.3s ease;
+        z-index: 1;
+      }
+      .shade-band.sheer {
+        background:
+          repeating-linear-gradient(
+            to bottom,
+            rgba(var(--n-fg-rgb), 0.16) 0 1px,
+            rgba(255, 255, 255, 0.06) 1px 2px,
+            transparent 2px 7px
+          ),
+          rgba(var(--n-fg-rgb), 0.16);
+      }
+      .shade-band.blackout {
+        background:
+          repeating-linear-gradient(
+            to bottom,
+            rgba(var(--n-fg-rgb), 0.22) 0 1px,
+            rgba(255, 255, 255, 0.05) 1px 2px,
+            transparent 2px 7px
+          ),
+          rgba(var(--n-fg-rgb), 0.42);
+      }
+
+      /* A rail: the solid bar at a band's bottom edge, and the drag handle. */
+      .shade-rail {
+        position: absolute;
+        left: 0; right: 0;
+        height: var(--n-rail);
+        margin-top: calc(var(--n-rail) / -2);
+        border-radius: 2px;
+        background: rgba(var(--n-fg-rgb), 0.7);
+        transition: top 0.3s ease;
+        z-index: 2;
+      }
+      .shade-rail::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 28px;
+        height: 3px;
+        margin: -1.5px 0 0 -14px;
+        border-radius: 2px;
+        background: rgba(var(--n-bg-rgb), 0.75);
+      }
+      .shade-rail.middle { background: rgba(var(--n-fg-rgb), 0.5); }
+
+      /* While a rail is held, nothing animates: the fabric must track the finger 1:1. */
+      .shade.dragging .shade-band,
+      .shade.dragging .shade-rail { transition: none; }
+
+      /* Where a rail is heading while it travels, as a dashed line. */
+      .shade-target {
+        position: absolute;
+        left: 0; right: 0;
+        height: 0;
+        border-top: 2px dashed var(--primary-color);
+        opacity: 0;
+        transition: opacity 0.25s ease, top 0.3s ease;
+        z-index: 2;
+      }
+      .shade-target.showing { opacity: 0.8; }
+
+      /* Per-rail readout, over the picture. */
+      .shade-readouts {
+        position: absolute;
+        left: 6px; bottom: 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        pointer-events: none;
+        z-index: 4;
+      }
+      .shade-readout {
+        font-size: 0.72rem;
+        font-variant-numeric: tabular-nums;
+        color: var(--primary-text-color);
+        background: rgba(var(--n-bg-rgb), 0.72);
+        border-radius: 4px;
+        padding: 0 4px;
+        white-space: nowrap;
+      }
+      .shade-readout.moving { color: var(--primary-color); font-weight: 500; }
+
+      /* Rail: the controls under the picture, one row per rail. */
+      /* The bar is kept as the accessible control: a real range input, visually hidden
+         over the picture is not possible (the picture is the control), so it sits in the
+         rail row below where it is still reachable by keyboard and screen reader. */
       .rail {
         display: flex;
         align-items: center;
@@ -786,10 +933,198 @@ class NormanShadesCard extends HTMLElement {
     row.appendChild(head);
 
     const rails = this._railsOf(blind).map((rail) => this._buildRail(rail));
+    const shade = this._config.hide_picture ? null : this._buildShade(blind, rails);
+    if (shade) row.appendChild(shade.element);
     for (const { element } of rails) row.appendChild(element);
 
-    this._cells.push({ blind, row, batteryEl, rails });
+    this._cells.push({ blind, row, batteryEl, rails, shade });
     return row;
+  }
+
+  /**
+   * The window picture for one blind: fabric hanging from the head down to each rail.
+   *
+   * Draggable. A rail is picked up by pressing anywhere on the picture -- the nearest one
+   * takes the drag -- and follows the pointer until release, when the position is written
+   * once. Dragging tracks pointer deltas rather than absolute coordinates, so a tap with no
+   * movement leaves the blind exactly where it is instead of jumping to the tapped row: a
+   * mis-tap on a phone should do nothing, not move a blind across the room.
+   *
+   * The rails are ordered so that `rails[0]` is the bottom rail and `rails[1]`, when there
+   * is one, is the middle rail (see _railsOf).
+   */
+  _buildShade(blind, rails) {
+    const element = document.createElement("div");
+    element.className = "shade";
+    element.setAttribute("role", "group");
+    element.setAttribute("aria-label", `${blind.name} position`);
+
+    const head = document.createElement("div");
+    head.className = "shade-head";
+
+    // One band and one rail per rail entity, plus a target line. The band above the
+    // middle rail is the sheer cell, the one below it the blackout cell; a single-rail
+    // blind gets one blackout band, since there is no second fabric to distinguish.
+    const bands = [];
+    const railEls = [];
+    const targets = [];
+    const twoRail = rails.length > 1;
+    for (let index = 0; index < rails.length; index += 1) {
+      const band = document.createElement("div");
+      band.className = `shade-band ${twoRail && index === 1 ? "sheer" : "blackout"}`;
+      bands.push(band);
+
+      const railEl = document.createElement("div");
+      railEl.className = `shade-rail ${index === 1 ? "middle" : "bottom"}`;
+      railEls.push(railEl);
+
+      const target = document.createElement("div");
+      target.className = "shade-target";
+      targets.push(target);
+    }
+
+    const readouts = document.createElement("div");
+    readouts.className = "shade-readouts";
+    const readoutEls = rails.map(() => {
+      const readout = document.createElement("div");
+      readout.className = "shade-readout";
+      readouts.appendChild(readout);
+      return readout;
+    });
+
+    element.append(head, ...bands, ...railEls, ...targets, readouts);
+
+    const shade = { element, bands, railEls, targets, readoutEls, rails };
+    this._bindShadeDrag(shade);
+    return shade;
+  }
+
+  /**
+   * Make the picture draggable: press to pick up the nearest rail, drag, release to write.
+   *
+   * Deltas, not absolute position. `pointerdown` records where the pointer started and
+   * where that rail already was; every `pointermove` applies the difference. A press with
+   * no movement therefore writes nothing at all.
+   *
+   * A two-rail blind's rails cannot cross: the middle rail is physically above the bottom
+   * one, so each is clamped against the other's current position. Without that, dragging
+   * the middle rail past the bottom one would draw a negative-height band and ask the hub
+   * for a geometry the blind cannot make.
+   */
+  _bindShadeDrag(shade) {
+    const { element } = shade;
+    let active = null;
+
+    const positionFromEvent = (event) => {
+      // getBoundingClientRect is read once per drag, on pickup: the card can scroll under
+      // the finger mid-drag, and re-reading would make the shade jump.
+      const fraction = (event.clientY - active.top) / active.height;
+      // The picture reads top-down (0% of travel at the head) but a cover position is
+      // 100 = open, so the two run opposite ways.
+      return clampToStep(100 - fraction * 100);
+    };
+
+    element.addEventListener("pointerdown", (event) => {
+      if (element.classList.contains("disabled")) return;
+      const rect = element.getBoundingClientRect();
+      if (!rect.height) return;
+
+      // Whichever rail is nearest the press takes the drag.
+      const pressed = 100 - ((event.clientY - rect.top) / rect.height) * 100;
+      let index = 0;
+      let best = Infinity;
+      for (let i = 0; i < shade.rails.length; i += 1) {
+        const value = this._railValue(shade.rails[i]);
+        const distance = Math.abs((value === null ? 0 : value) - pressed);
+        if (distance < best) {
+          best = distance;
+          index = i;
+        }
+      }
+
+      active = { index, top: rect.top, height: rect.height };
+      shade.holding = true;
+      const rail = shade.rails[index];
+      this._dragging.add(rail.numberId || rail.coverId);
+      element.classList.add("dragging");
+      element.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    });
+
+    element.addEventListener("pointermove", (event) => {
+      if (!active) return;
+      shade.dragValues ||= {};
+      shade.dragValues[active.index] = this._clampRail(
+        shade,
+        active.index,
+        positionFromEvent(event),
+      );
+      this._drawShade(shade);
+    });
+
+    const release = (event) => {
+      if (!active) return;
+      const { index } = active;
+      const rail = shade.rails[index];
+      const chosen = shade.dragValues?.[index];
+      active = null;
+      shade.holding = false;
+      element.classList.remove("dragging");
+      this._dragging.delete(rail.numberId || rail.coverId);
+      if (shade.dragValues) delete shade.dragValues[index];
+      // No movement, no write: a tap must not move the blind.
+      if (chosen !== undefined) this._setRail(rail, chosen);
+      else this._drawShade(shade);
+      if (event) element.releasePointerCapture?.(event.pointerId);
+    };
+    element.addEventListener("pointerup", release);
+    element.addEventListener("pointercancel", release);
+  }
+
+  /** Keep a rail on its own side of the other one, so the fabric never inverts. */
+  _clampRail(shade, index, value) {
+    if (shade.rails.length < 2) return value;
+    const other = this._shadeValue(shade, index === 0 ? 1 : 0);
+    if (other === null) return value;
+    // rails[0] is the bottom rail and rails[1] the middle: the bottom can never be above
+    // the middle, which in cover terms (100 = open = high) means bottom <= middle.
+    return index === 0 ? Math.min(value, other) : Math.max(value, other);
+  }
+
+  /** What a rail should currently be drawn at: the drag, else a pending write, else state. */
+  _shadeValue(shade, index) {
+    const dragged = shade.dragValues?.[index];
+    if (dragged !== undefined) return dragged;
+    const rail = shade.rails[index];
+    const pending = this._pending.get(rail.numberId || rail.coverId);
+    if (pending !== undefined) return pending;
+    return this._railValue(rail);
+  }
+
+  /**
+   * Write every coupled measurement of one picture in a single pass.
+   *
+   * Fabric geometry and rail geometry are the same numbers, so they are set together here
+   * rather than in separate places that could disagree and leave a rail floating off its
+   * fabric's edge.
+   */
+  _drawShade(shade) {
+    const head = 7; // must match --n-head
+    const travel = 100 - head;
+    // Where each rail sits, as a percentage down the picture: a cover position of 100
+    // (open) puts the rail at the head, 0 (closed) at the sill.
+    const dropOf = (value) => head + ((100 - (value === null ? 0 : value)) / 100) * travel;
+
+    for (let index = 0; index < shade.rails.length; index += 1) {
+      const value = this._shadeValue(shade, index);
+      const drop = dropOf(value);
+      // The band above this rail starts at the head, or at the rail above it.
+      const above = index + 1 < shade.rails.length ? dropOf(this._shadeValue(shade, index + 1)) : head;
+      const band = shade.bands[index];
+      band.style.top = `${above}%`;
+      band.style.height = `${Math.max(0, drop - above)}%`;
+      shade.railEls[index].style.top = `${drop}%`;
+    }
   }
 
   _buildRail(rail) {
@@ -903,6 +1238,40 @@ class NormanShadesCard extends HTMLElement {
       const unavailable = this._isUnavailable(cell.blind);
       cell.row.classList.toggle("unavailable", unavailable);
 
+      if (cell.shade) {
+        const shade = cell.shade;
+        shade.element.classList.toggle("disabled", unavailable);
+        // Never redraw a rail the user is holding: the hub's value lags the finger.
+        if (!shade.holding) this._drawShade(shade);
+
+        const head = 7; // must match --n-head
+        const travel = 100 - head;
+        for (let index = 0; index < shade.rails.length; index += 1) {
+          const rail = shade.rails[index];
+          const key = rail.numberId || rail.coverId;
+          const current = this._railValue(rail);
+          const heading = this._railTarget(rail);
+          const pending = this._pending.has(key);
+          const moving =
+            !pending &&
+            heading !== null &&
+            current !== null &&
+            Math.round(heading) !== Math.round(current);
+
+          const target = shade.targets[index];
+          target.classList.toggle("showing", moving);
+          if (moving) target.style.top = `${head + ((100 - heading) / 100) * travel}%`;
+
+          const readout = shade.readoutEls[index];
+          const label = shade.rails.length > 1 ? `${rail.label}: ` : "";
+          readout.classList.toggle("moving", moving);
+          if (current === null) readout.textContent = `${label}—`;
+          else if (moving) {
+            readout.textContent = `${label}${Math.round(current)}% → ${Math.round(heading)}%`;
+          } else readout.textContent = `${label}${Math.round(current)}%`;
+        }
+      }
+
       if (cell.batteryEl) {
         const level = this._numberOf(cell.blind.battery);
         cell.batteryEl.className = `battery ${batteryClass(level)}`;
@@ -978,6 +1347,7 @@ class NormanShadesCardEditor extends HTMLElement {
 
     const fields = [
       { key: "title", label: "Title", type: "text" },
+      { key: "hide_picture", label: "Hide the window picture", type: "checkbox" },
       { key: "hide_battery", label: "Hide battery levels", type: "checkbox" },
       { key: "hide_room_names", label: "Hide room headings", type: "checkbox" },
       { key: "hide_room_controls", label: "Hide whole-room open/close", type: "checkbox" },

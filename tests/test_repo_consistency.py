@@ -174,6 +174,43 @@ def test_card_reads_its_version_from_the_resource_url() -> None:
     assert "CARD_VERSION" in card, "the card should expose its version for the console banner"
 
 
+def test_card_draws_the_shade_with_css_not_bitmaps() -> None:
+    """The shade picture must be drawn in CSS, never with embedded images.
+
+    The card this one is modelled on draws its shutter from three base64 PNGs, which is why
+    its travel height cannot change: the geometry is pinned to features baked into a bitmap.
+    Drawing the slats with a repeating gradient instead keeps the picture themeable, crisp at
+    any pixel density, and free to scale -- and keeps the file reviewable, since a base64
+    blob is not something anyone can read a change to.
+    """
+    from custom_components.norman.frontend import CARD_FILENAME
+
+    card = (COMPONENT / "www" / CARD_FILENAME).read_text(encoding="utf-8")
+    assert "repeating-linear-gradient" in card, (
+        "the shade's slats should be a CSS gradient, not an image"
+    )
+    assert "data:image" not in card, "the card embeds a bitmap; draw the shade in CSS instead"
+    assert "base64" not in card, "the card embeds base64 data; draw the shade in CSS instead"
+
+
+def test_card_shade_geometry_is_relative() -> None:
+    """The picture must be sized in percent and aspect-ratio, not fixed pixels.
+
+    A shade laid out in absolute pixels cannot follow the card's width, so it either clips or
+    leaves a gap on a phone. The rails' own thickness is the one thing allowed to be fixed:
+    it is a constant visual weight, not a measurement of the window.
+    """
+    from custom_components.norman.frontend import CARD_FILENAME
+
+    card = (COMPONENT / "www" / CARD_FILENAME).read_text(encoding="utf-8")
+    assert "aspect-ratio" in card, "the picture should get its height from an aspect ratio"
+    # The head percentage is shared between the CSS token and the drawing arithmetic; both
+    # must agree or the fabric hangs from the wrong place.
+    assert card.count("must match --n-head") >= 2, (
+        "the head offset is duplicated in CSS and in JS; both places should say so"
+    )
+
+
 def test_docs_do_not_pin_a_card_version() -> None:
     """No document may hardcode a ?v= stamp for the card resource.
 
