@@ -330,19 +330,19 @@ class NormanShadesCard extends HTMLElement {
            front of the window, so it overhangs the jambs rather than sitting between
            them, and it casts a shadow onto the fabric below. */
         /* The opening behind the fabric.
-           A window with the shade up is a DARK rectangle: you are looking through it, and
-           what is behind it is not the wall. It has to be darker than the fabric by a
-           wide margin, or "open" and "closed" read as the same picture -- which is the
-           one distinction this graphic exists to make. Fixed dark tones rather than a
-           tint of the theme, so the relationship survives in a light theme too (an
-           earlier version used a 6% text-colour tint, which rendered LIGHTER than the
-           fabric and made an open window look blank).
-           A slight gradient, lighter at the bottom, reads as depth rather than as a
-           flat hole. */
-        --n-opening: linear-gradient(to bottom, #2f3742, #3d4652 65%, #49525f);
+           ----------------------------------------------------------------------------
+           BRIGHT, not dark. Rendering the reference card side by side with this one
+           settled it: its open window reads 250 (near white) and its closed fabric 191
+           (grey). So the window is LIT and the shade is what blocks the light -- open is
+           a bright hole, closed is darker slats over it. An earlier version had this
+           exactly inverted (dark opening, near-white fabric), which is why the picture
+           kept not looking like the reference however much the fabric was tuned.
+
+           Slightly cooler and dimmer at the top, as glass in a reveal. */
+        --n-opening: linear-gradient(to bottom, #f2f4f6, #fafafa 40%, #fdfdfd);
         --n-frame: #f6f6f6;
         --n-jamb: 6%;
-        --n-fold: #bebebe;
+        --n-fold: #9e9e9e;
         --n-cell: 6px;
         --n-head: 11.3%;
         --n-rail: 7px;
@@ -465,25 +465,37 @@ class NormanShadesCard extends HTMLElement {
          inner edge 228, outer edge 242). Measured from its PNG: ~6% of the width at the
          sides, with a deeper sill. Drawn as a ring over everything, so the fabric runs
          behind it. */
+      /* The window frame, at the geometry measured off the reference's picture.png:
+         side jambs 2.6%..5.2% of the width, sill 95.4%..99.3% of the height. Off-white
+         (face 246, edges 228/242). The interior is left entirely to the opening: the
+         reference has NO centre mullion and no glazing bars -- its interior alpha is 0
+         all the way across, which I had misread off a low-resolution comparison.
+
+         Drawn with real edges rather than stacked box-shadow insets, which only ever
+         produce a uniform ring and so silently dropped the jambs. */
       .shade-frame {
         position: absolute;
         inset: 0;
         pointer-events: none;
         z-index: 5;
+        border-left: var(--n-jamb) solid var(--n-frame);
+        border-right: var(--n-jamb) solid var(--n-frame);
         box-shadow:
-          inset 0 0 0 1px #d8d8d8,
-          inset 0 0 0 var(--n-jamb) var(--n-frame),
-          inset 0 0 0 calc(var(--n-jamb) + 1px) #cfcfcf;
+          inset 1px 0 0 #d2d2d2,
+          inset -1px 0 0 #d2d2d2,
+          inset 0 0 0 1px rgba(0, 0, 0, 0.04);
       }
-      /* The sill: the deeper bottom member the reference has (232 -> 241). */
+      /* The sill: the deeper bottom member (232 -> 241 in the reference). */
       .shade-frame::after {
         content: "";
         position: absolute;
-        left: 0; right: 0; bottom: 0;
-        height: 6%;
-        min-height: 5px;
-        background: linear-gradient(to bottom, #e8e8e8, var(--n-frame));
-        border-top: 1px solid #cfcfcf;
+        left: calc(var(--n-jamb) * -1);
+        right: calc(var(--n-jamb) * -1);
+        bottom: 0;
+        height: 4.6%;
+        min-height: 4px;
+        background: linear-gradient(to bottom, #e8e8e8, #f1f1f1);
+        border-top: 1px solid #d2d2d2;
       }
 
       /* The headbox: 0 -> 11.3% of the picture in the reference, a pale valance with a
@@ -533,10 +545,11 @@ class NormanShadesCard extends HTMLElement {
         background-image: repeating-linear-gradient(
           to bottom,
           var(--n-fold) 0 1px,
-          #cacaca 1px 2px,
-          #e3e3e3 2px 3px,
-          #ececec 3px 4px,
-          #f7f7f7 4px var(--n-cell)
+          #bcbcbc 1px 2px,
+          #cacaca 2px 3px,
+          #e3e3e3 3px 4px,
+          #ececec 4px 5px,
+          #f1f1f1 5px var(--n-cell)
         );
       }
       /* The light-filtering cell: the same weave, warmer and brighter, because the upper
