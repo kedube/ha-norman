@@ -45,6 +45,10 @@ const url = new URL("file://" + process.cwd() + "/custom_components/norman/www/n
 url.searchParams.set("v", "test");
 await import(url.href);
 
+// The card's own text, for the few checks that pin a design constant shared between the
+// CSS and the JS rather than any runtime behaviour.
+const cardSource = await import("node:fs").then((fs) => fs.readFileSync(url, "utf8"));
+
 const Card = els.get("norman-shades-card");
 const card = new Card();
 
@@ -552,8 +556,15 @@ const shadeFor = (card, blind, values) => {
 };
 
 // Fully open: every rail sits at the head, so no fabric is showing.
+// The headbox depth is a design constant; read it rather than restating it, so moving the
+// headbox does not require editing arithmetic in three places.
+const HEAD = Number(/--n-head:\s*([\d.]+)%/.exec(cardSource)[1]);
+check("the CSS headbox and the JS constant agree",
+      HEAD === Number(/const SHADE_HEAD_PCT = ([\d.]+);/.exec(cardSource)[1]),
+      String(HEAD));
+
 const open = shadeFor(twoRail, twoRailBlind, [100, 100]);
-check("open: bottom rail sits at the head", open.railEls[0].style.top === "7%",
+check("open: bottom rail sits at the head", open.railEls[0].style.top === `${HEAD}%`,
       open.railEls[0].style.top);
 check("open: no fabric hangs", open.bands.every(b => parseFloat(b.style.height) === 0),
       open.bands.map(b => b.style.height).join(" "));
@@ -569,7 +580,7 @@ const sheerTop = parseFloat(mixed.bands[1].style.top);
 const sheerH = parseFloat(mixed.bands[1].style.height);
 const blackTop = parseFloat(mixed.bands[0].style.top);
 const blackH = parseFloat(mixed.bands[0].style.height);
-check("mixed: sheer band starts at the head", Math.abs(sheerTop - 7) < 0.01, String(sheerTop));
+check("mixed: sheer band starts at the head", Math.abs(sheerTop - HEAD) < 0.01, String(sheerTop));
 check("mixed: bands are contiguous (no gap, no overlap)",
       Math.abs((sheerTop + sheerH) - blackTop) < 0.01,
       `${sheerTop}+${sheerH} vs ${blackTop}`);
