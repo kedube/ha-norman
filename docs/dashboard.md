@@ -1,14 +1,17 @@
 # Dashboard card
 
 The integration ships a Lovelace card, **Norman Shades**, that shows every blind grouped by
-room with its battery level and a position bar per rail, in the style of Home Assistant's own
-tile cards.
+room: each one drawn as a window with its fabric hanging in it, which you can drag to move a
+rail, above a position bar per rail and the blind's battery level.
 
 <img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub name and three preset chips in the header, then each room with its own open, stop and close pill and preset chips, and each blind showing a filled position bar per rail." width="820">
 
 *The card on a real hub. Every blind is at 100% here; a blind that is **moving** reads
-"20% → 50%" instead, with a faint marker at the target and its stop button highlighted, until
-it arrives.*
+"20% → 50%" instead, with a dashed line at the target on the picture and its stop button
+highlighted, until it arrives.*
+
+> **Note:** this screenshot predates the window picture and shows the earlier bars-only
+> layout. The controls below each picture are unchanged.
 
 The card header is named after your **hub** — the name it has in Home Assistant, which the
 integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
@@ -48,11 +51,33 @@ a different area in Home Assistant moves it on the card.
 | Room heading | The area name. Blinds with no area are grouped under "Unassigned". |
 | Blind name | Click it to open the usual more-info dialog. |
 | Battery | From the blind's battery sensor, with the icon following the level. Amber below 30%, red below 15%. |
-| Bottom rail | A position bar, 0–100% in steps of 10: tap or drag anywhere on it, or use the arrow keys once it has focus. The rail's name and its position are printed inside the bar. Beside it, one **▲ ■ ▼** pill (open, stop, close) for that rail. |
+| The picture | A window with the blind's fabric hanging in it, drawn from where the hub says each rail is. **Drag it** to move a rail: press anywhere and the nearest rail follows your finger; the position is sent when you let go. A press without movement does nothing, so a mis-tap cannot move a blind. |
+| Bottom rail | A position bar under the picture, 0–100% in steps of 10: tap or drag anywhere on it, or use the arrow keys once it has focus. Beside it, one **▲ ■ ▼** pill (open, stop, close) for that rail. |
 | Middle rail | The same bar again, on two-rail blinds (day/night, top-down/bottom-up) only. Each rail's controls act on that rail alone. |
-| While moving | The bar reads "current → target" (for example "20% → 50%"), a marker sits at the target, and the stop button is highlighted. This comes from the cover's `target_position` attribute, so it needs no extra configuration. |
+| While moving | The rail's readout reads "current → target" (for example "20% → 50%"), a dashed line sits at the target on the picture, and the stop button is highlighted. This comes from the cover's `target_position` attribute, so it needs no extra configuration. |
 
-A blind the hub has stopped reporting is dimmed and its bars are disabled.
+A blind the hub has stopped reporting is dimmed, and its picture and bars are disabled.
+
+### The picture
+
+On a **two-rail** blind the picture shows both fabrics: the lighter band above the middle rail
+is the sheer, light-filtering cell, and the darker band below it runs down to the bottom rail.
+That is literally what a day/night cellular shade is, and it is why **Best privacy** looks the
+way it does — the bottom rail closes while the sheer stays open. On a top-down/bottom-up blind
+the same two bands read as the top and bottom halves of the covering.
+
+The two rails cannot cross: drag the middle rail down onto the bottom one and it stops there,
+because the blind cannot make that shape either.
+
+On a **single-rail** blind there is one band and one rail.
+
+The picture is drawn entirely in CSS, so it follows your theme, stays sharp on any screen, and
+scales with the card rather than being a fixed-size image. To go back to bars alone:
+
+```yaml
+type: custom:norman-shades-card
+hide_picture: true
+```
 
 ### Whole-room control
 
@@ -147,6 +172,7 @@ Every option is optional; the card works with none of them.
 ```yaml
 type: custom:norman-shades-card
 title: Norman Hub          # omit to use the hub's own name
+hide_picture: false        # bars only, no window picture
 hide_battery: false        # hide the battery readings
 hide_room_names: false     # one flat list instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading
@@ -160,7 +186,7 @@ bottom_label: Bottom rail  # rename the rail rows
 middle_label: Middle rail
 ```
 
-`title`, `hide_battery`, `hide_room_names`, `hide_room_controls`, `hide_room_presets`, and `hide_home_controls` are also available in the card's visual editor.
+`title`, `hide_picture`, `hide_battery`, `hide_room_names`, `hide_room_controls`, `hide_room_presets`, and `hide_home_controls` are also available in the card's visual editor.
 
 ## Using the built-in cards instead
 

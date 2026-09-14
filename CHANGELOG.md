@@ -5,6 +5,20 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **The card now draws each blind as a window.** Every blind gets a picture of itself — the
+  frame, the head rail, and the fabric hanging down to wherever the hub says each rail is —
+  which you move by **dragging**: press anywhere on the picture and the nearest rail follows
+  your finger, with the position sent when you let go. A press without movement sends nothing,
+  so a mis-tap cannot move a blind. On a two-rail blind both fabrics are drawn, the sheer cell
+  above the middle rail and the blackout cell below it, and the two rails cannot be dragged
+  past each other because the blind cannot make that shape either. While a rail travels, a
+  dashed line marks where it is heading. The position bars and **▲ ■ ▼** pills are unchanged
+  and sit below the picture, so the keyboard and screen-reader paths are exactly as they were.
+  `hide_picture: true` (also in the visual editor) goes back to bars alone. The picture is
+  drawn in CSS rather than from embedded images, so it follows your theme, stays sharp on any
+  screen, and scales with the card.
+
 ## 0.40 — 2026-09-10
 - **Fixed the options dialog failing to open.** Choosing **Configure** returned "Config flow
   could not be loaded: 500 Internal Server Error". The poll-interval field paired its selector
