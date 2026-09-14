@@ -516,6 +516,32 @@ const twoRail = pictureCard();
 const twoRailBlind = twoRail._collectBlinds().find(b => b.middleCover);
 check("two-rail blind is found for the picture", !!twoRailBlind);
 
+// Render a whole card and assert nothing shows a stray "undefined". The geometry checks
+// below call _buildShade directly with the right arguments, which is exactly how a caller
+// passing the WRONG ones slipped through: _buildBlind hands it the built-rail wrappers,
+// whose .label is undefined, and the readouts printed "undefined: 40%".
+const renderedText = (cfg = {}) => {
+  const c = new Card();
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card", ...cfg }); c._hass = hass;
+  c._render();
+  const seen = [];
+  const walk = (el) => {
+    if (el?._text) seen.push(String(el._text));
+    for (const k of ["title", "aria-label"]) if (el?.attrs?.[k]) seen.push(String(el.attrs[k]));
+    (el?.children || []).forEach(walk);
+  };
+  walk(c.shadowRoot);
+  return seen.join(" | ");
+};
+check("a rendered card shows no stray 'undefined'",
+      !renderedText().includes("undefined"),
+      renderedText().split(" | ").filter(s => s.includes("undefined")).join(" ; "));
+check("a rendered card shows no stray 'NaN'",
+      !renderedText().includes("NaN"),
+      renderedText().split(" | ").filter(s => s.includes("NaN")).join(" ; "));
+check("the readouts name each rail on a two-rail blind",
+      renderedText().includes("Bottom rail") && renderedText().includes("Middle rail"));
+
 const shadeFor = (card, blind, values) => {
   const rails = card._railsOf(blind);
   const shade = card._buildShade(blind, rails);

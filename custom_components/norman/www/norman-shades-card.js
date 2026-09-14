@@ -310,15 +310,29 @@ class NormanShadesCard extends HTMLElement {
         --n-bg-rgb: var(--rgb-card-background-color, 255, 255, 255);
         --n-radius: 10px;
         --n-control: 32px;
-        /* The shade picture: what the window behind the fabric reads as, the head rail's
-           housing, and a rail's thickness. The head is what an "open" shade still shows. */
-        --n-sky: linear-gradient(
-          to bottom,
-          rgba(var(--n-accent-rgb), 0.16),
-          rgba(var(--n-accent-rgb), 0.05)
-        );
-        --n-head: 7%;
-        --n-rail: 6px;
+        /* The shade picture.
+           The window is glazed: a cool vertical wash with a soft diagonal sheen over it, so
+           the glass reads as glass rather than as flat paint. The frame is drawn with an
+           inset ring rather than a border, which keeps the reveal inside the picture's own
+           box and lets the fabric run edge to edge beneath it.
+           --n-head is the headbox depth, as a percentage of the picture, and is the one
+           number the drawing arithmetic in JS also needs to know. */
+        --n-glass: linear-gradient(
+            115deg,
+            rgba(255, 255, 255, 0.22) 0%,
+            rgba(255, 255, 255, 0) 42%,
+            rgba(255, 255, 255, 0) 58%,
+            rgba(255, 255, 255, 0.12) 100%
+          ),
+          linear-gradient(
+            to bottom,
+            rgba(var(--n-accent-rgb), 0.26),
+            rgba(var(--n-accent-rgb), 0.07) 55%,
+            rgba(var(--n-accent-rgb), 0.14)
+          );
+        --n-frame: rgba(var(--n-fg-rgb), 0.34);
+        --n-head: 9%;
+        --n-rail: 7px;
       }
       ha-card { padding: 4px 0 8px; }
 
@@ -420,9 +434,9 @@ class NormanShadesCard extends HTMLElement {
         position: relative;
         width: 100%;
         aspect-ratio: var(--n-shade-aspect, 4 / 3);
-        border-radius: 6px;
+        border-radius: 4px;
         overflow: hidden;
-        background: var(--n-sky);
+        background: var(--n-glass);
         cursor: ns-resize;
         touch-action: none;
         -webkit-user-select: none;
@@ -431,13 +445,51 @@ class NormanShadesCard extends HTMLElement {
       .shade.disabled { cursor: not-allowed; }
       .shade:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 
-      /* The head rail's housing, which the fabric emerges from. */
+      /* The frame, drawn over everything as an inset ring plus a sill.
+         A ring rather than a border: the fabric runs the full width beneath it, so the
+         reveal overlaps the fabric's edges the way a real frame overlaps a blind. */
+      .shade-frame {
+        position: absolute;
+        inset: 0;
+        border-radius: 4px;
+        pointer-events: none;
+        z-index: 5;
+        box-shadow:
+          inset 0 0 0 2px var(--n-frame),
+          inset 0 0 0 3px rgba(255, 255, 255, 0.14),
+          inset 0 12px 18px -12px rgba(0, 0, 0, 0.35);
+      }
+      /* The sill: a thicker bottom member, so the window sits on something. */
+      .shade-frame::after {
+        content: "";
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        height: 5%;
+        min-height: 4px;
+        background: linear-gradient(
+          to bottom,
+          rgba(255, 255, 255, 0.16),
+          var(--n-frame) 45%
+        );
+      }
+
+      /* The headbox the fabric rolls out of: a solid member with its own lip and a
+         shadow cast onto the fabric below, which is what reads as depth. */
       .shade-head {
         position: absolute;
         top: 0; left: 0; right: 0;
         height: var(--n-head);
-        background: rgba(var(--n-fg-rgb), 0.55);
-        z-index: 3;
+        min-height: 7px;
+        z-index: 4;
+        background: linear-gradient(
+          to bottom,
+          rgba(var(--n-fg-rgb), 0.42),
+          rgba(var(--n-fg-rgb), 0.62) 62%,
+          rgba(var(--n-fg-rgb), 0.5)
+        );
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.22),
+          0 3px 6px -2px rgba(0, 0, 0, 0.45);
       }
 
       /* Fabric. The slats are a repeating gradient rather than a tiled bitmap: it themes
@@ -449,25 +501,46 @@ class NormanShadesCard extends HTMLElement {
         transition: top 0.3s ease, height 0.3s ease;
         z-index: 1;
       }
+      /* Fabric shades a cell at a time: each cell is lit at the top and shadowed where it
+         meets the next, which is what makes a stack of cells look like fabric rather than
+         like stripes. A fine vertical wash across the width adds the slack a hanging
+         fabric has. The 6px period is fixed in px so cells stay a constant size as the
+         picture scales; `background-position` is pinned to the bottom so the cells stay
+         put as a band grows rather than sliding under the rail. */
+      .shade-band { background-position: bottom; }
       .shade-band.sheer {
-        background:
+        background-image:
+          linear-gradient(
+            to right,
+            rgba(0, 0, 0, 0.1),
+            rgba(255, 255, 255, 0.05) 22%,
+            rgba(255, 255, 255, 0.05) 78%,
+            rgba(0, 0, 0, 0.1)
+          ),
           repeating-linear-gradient(
             to bottom,
-            rgba(var(--n-fg-rgb), 0.16) 0 1px,
-            rgba(255, 255, 255, 0.06) 1px 2px,
-            transparent 2px 7px
-          ),
-          rgba(var(--n-fg-rgb), 0.16);
+            rgba(255, 255, 255, 0.16) 0 1px,
+            rgba(var(--n-fg-rgb), 0.05) 1px 4px,
+            rgba(var(--n-fg-rgb), 0.2) 5px 6px
+          );
+        background-color: rgba(var(--n-fg-rgb), 0.14);
       }
       .shade-band.blackout {
-        background:
+        background-image:
+          linear-gradient(
+            to right,
+            rgba(0, 0, 0, 0.14),
+            rgba(255, 255, 255, 0.04) 22%,
+            rgba(255, 255, 255, 0.04) 78%,
+            rgba(0, 0, 0, 0.14)
+          ),
           repeating-linear-gradient(
             to bottom,
-            rgba(var(--n-fg-rgb), 0.22) 0 1px,
-            rgba(255, 255, 255, 0.05) 1px 2px,
-            transparent 2px 7px
-          ),
-          rgba(var(--n-fg-rgb), 0.42);
+            rgba(255, 255, 255, 0.1) 0 1px,
+            rgba(var(--n-fg-rgb), 0.1) 1px 4px,
+            rgba(var(--n-fg-rgb), 0.3) 5px 6px
+          );
+        background-color: rgba(var(--n-fg-rgb), 0.4);
       }
 
       /* A rail: the solid bar at a band's bottom edge, and the drag handle. */
@@ -932,8 +1005,12 @@ class NormanShadesCard extends HTMLElement {
 
     row.appendChild(head);
 
-    const rails = this._railsOf(blind).map((rail) => this._buildRail(rail));
-    const shade = this._config.hide_picture ? null : this._buildShade(blind, rails);
+    // _railsOf returns the rail descriptors; _buildRail wraps each one with its elements.
+    // The picture needs the descriptors (it reads rail.label and the entity ids), so keep
+    // both rather than digging the descriptor back out of the wrapper.
+    const railDefs = this._railsOf(blind);
+    const rails = railDefs.map((rail) => this._buildRail(rail));
+    const shade = this._config.hide_picture ? null : this._buildShade(blind, railDefs);
     if (shade) row.appendChild(shade.element);
     for (const { element } of rails) row.appendChild(element);
 
