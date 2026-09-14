@@ -593,6 +593,31 @@ check("mixed: each rail sits on its band's bottom edge",
       Math.abs(parseFloat(mixed.railEls[1].style.top) - (sheerTop + sheerH)) < 0.01 &&
       Math.abs(parseFloat(mixed.railEls[0].style.top) - (blackTop + blackH)) < 0.01);
 
+// Which fabric covers the window, per the app's own presets. This is the substantive
+// correctness question in the picture: a closed blind drawn as the sheer fabric tells the
+// user the window is see-through when it is not.
+const covering = (values) => {
+  const s = shadeFor(twoRail, twoRailBlind, values);
+  return s.bands
+    .map((b, i) => ({ cls: String(b.className), h: parseFloat(b.style.height) || 0 }))
+    .filter((b) => b.h > 0.05)
+    .map((b) => (b.cls.includes("sheer") ? "sheer" : "blackout") + ":" + Math.round(b.h))
+    .join(" ");
+};
+// Fully closed: the blackout fabric covers the whole opening.
+check("closed (0/0) is covered by the BLACKOUT fabric",
+      covering([0, 0]) === "blackout:91", covering([0, 0]));
+// "Best privacy" is bottom 0 / middle 100 -- the blackout stacks away at the head and the
+// sheer covers the window: "closed for privacy, sheer fabric still open".
+check("Best privacy (0/100) is covered by the SHEER fabric",
+      covering([0, 100]) === "sheer:91", covering([0, 100]));
+// Both rails up: nothing covers the opening at all.
+check("open (100/100) leaves the opening clear", covering([100, 100]) === "",
+      covering([100, 100]));
+// Part-way: the blackout hangs from the head to the middle rail, the sheer below it.
+check("part-open draws blackout above the middle rail and sheer below",
+      covering([20, 80]) === "sheer:55 blackout:18", covering([20, 80]));
+
 // Clamping: the rails are physically stacked and must never cross.
 const clampShade = shadeFor(twoRail, twoRailBlind, [20, 80]);
 check("clamp: the bottom rail cannot rise above the middle",

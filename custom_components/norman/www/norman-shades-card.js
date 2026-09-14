@@ -314,56 +314,40 @@ class NormanShadesCard extends HTMLElement {
         --n-bg-rgb: var(--rgb-card-background-color, 255, 255, 255);
         --n-radius: 10px;
         --n-control: 32px;
-        /* The shade picture.
-           The window is glazed: a cool vertical wash with a soft diagonal sheen over it, so
-           the glass reads as glass rather than as flat paint. The frame is drawn with an
-           inset ring rather than a border, which keeps the reveal inside the picture's own
-           box and lets the fabric run edge to edge beneath it.
-           --n-head is the headbox depth, as a percentage of the picture, and is the one
-           number the drawing arithmetic in JS also needs to know. */
-        --n-glass: linear-gradient(
-            115deg,
-            rgba(255, 255, 255, 0.22) 0%,
-            rgba(255, 255, 255, 0) 42%,
-            rgba(255, 255, 255, 0) 58%,
-            rgba(255, 255, 255, 0.12) 100%
-          ),
-          linear-gradient(
-            to bottom,
-            rgba(var(--n-accent-rgb), 0.26),
-            rgba(var(--n-accent-rgb), 0.07) 55%,
-            rgba(var(--n-accent-rgb), 0.14)
-          );
-        /* The fabric and the frame are FIXED colours, not tints of the text colour: a
-           blind is the colour it is in both themes, and tinting them would make a closed
-           blind render lighter than the glass in a dark theme -- reading as "open" at a
-           glance, which is the one mistake this picture must never make. Dark themes only
-           deepen the glass behind them (below). */
-        --n-sheer: #e6e1d6;
-        --n-blackout: #cfc8b9;
-        --n-frame: #7d7f86;
-        --n-rail-dark: #4a4d55;
+        /* The shade picture, matching the card this one is modelled on.
+           ----------------------------------------------------------------------------
+           Its three PNGs were decoded to get these values rather than guessed at:
+
+             slat (1x6px):  rgb 188 -> 245 top to bottom, a translucent dark line at the
+                            top edge. A LIGHT grey fabric, lit from below.
+             rail (137x7):  rgb 248/237/224/232/243/222/193 -- a pale extrusion.
+             frame:         off-white, rgb 229 at the top, 232 at the sill, 204 in the
+                            headbox -- and the window interior is fully TRANSPARENT.
+
+           That last point is the one I had wrong: the opening is not painted. It is a
+           hole, so the card shows through it, and what reads as "light" is simply the
+           absence of fabric. A tinted "glass" fill fights the fabric instead of
+           contrasting with it. --n-daylight therefore stays very close to the card's
+           own background, and only darkens enough to be legible. */
+        --n-daylight: linear-gradient(
+          to bottom,
+          rgba(var(--n-fg-rgb), 0.1),
+          rgba(var(--n-fg-rgb), 0.03) 45%,
+          rgba(var(--n-fg-rgb), 0.07)
+        );
+        /* Fabric, frame and hardware are fixed near-whites, as in the original: a blind is
+           the colour it is, and a blind rendered as a tint of the text colour inverts in a
+           dark theme -- a closed blind would read lighter than its opening, which is the
+           one mistake this picture must never make. */
+        --n-slat-top: #bcbcbc;
+        --n-slat-bottom: #f5f5f5;
+        --n-frame: #e0e0e0;
+        --n-frame-edge: #b4b4b4;
+        --n-head-face: #cccccc;
+        --n-rail-face: #ececec;
         --n-head: 9%;
         --n-rail: 7px;
       }
-      /* A dark theme is night outside the window: the glass deepens, while the fabric and
-         hardware keep their own colours. That keeps "closed" reading as a pale panel over
-         a dark opening in both themes, instead of inverting. */
-      @media (prefers-color-scheme: dark) {
-        :host {
-          --n-glass: linear-gradient(
-              115deg,
-              rgba(255, 255, 255, 0.1) 0%,
-              rgba(255, 255, 255, 0) 45%,
-              rgba(255, 255, 255, 0) 58%,
-              rgba(255, 255, 255, 0.06) 100%
-            ),
-            linear-gradient(to bottom, #1b2430, #101722 60%, #16202c);
-          --n-sheer: #cfc9bd;
-          --n-blackout: #b3ab9c;
-        }
-      }
-
       ha-card { padding: 4px 0 8px; }
 
       /* Header: the hub's name, and the app's three whole-house presets. */
@@ -466,7 +450,7 @@ class NormanShadesCard extends HTMLElement {
         aspect-ratio: var(--n-shade-aspect, 4 / 3);
         border-radius: 4px;
         overflow: hidden;
-        background: var(--n-glass);
+        background: var(--n-daylight);
         cursor: ns-resize;
         touch-action: none;
         -webkit-user-select: none;
@@ -481,26 +465,25 @@ class NormanShadesCard extends HTMLElement {
       .shade-frame {
         position: absolute;
         inset: 0;
-        border-radius: 4px;
+        border-radius: 3px;
         pointer-events: none;
         z-index: 5;
+        /* An off-white frame with a darker outer edge, as in the reference: a broad reveal
+           the fabric runs behind, not a dark outline drawn on top of it. */
         box-shadow:
-          inset 0 0 0 2px var(--n-frame),
-          inset 0 0 0 3px rgba(255, 255, 255, 0.14),
-          inset 0 12px 18px -12px rgba(0, 0, 0, 0.35);
+          inset 0 0 0 1px var(--n-frame-edge),
+          inset 0 0 0 6px var(--n-frame),
+          inset 0 0 0 7px rgba(0, 0, 0, 0.12);
       }
-      /* The sill: a thicker bottom member, so the window sits on something. */
+      /* The sill: a deeper bottom member, so the window sits on something. */
       .shade-frame::after {
         content: "";
         position: absolute;
         left: 0; right: 0; bottom: 0;
-        height: 5%;
-        min-height: 4px;
-        background: linear-gradient(
-          to bottom,
-          rgba(255, 255, 255, 0.16),
-          var(--n-frame) 45%
-        );
+        height: 8%;
+        min-height: 7px;
+        background: linear-gradient(to bottom, var(--n-frame) 70%, var(--n-frame-edge));
+        border-top: 1px solid var(--n-frame-edge);
       }
 
       /* The headbox the fabric rolls out of: a solid member with its own lip and a
@@ -513,13 +496,14 @@ class NormanShadesCard extends HTMLElement {
         z-index: 4;
         background: linear-gradient(
           to bottom,
-          rgba(255, 255, 255, 0.28),
-          var(--n-rail-dark) 55%,
-          rgba(0, 0, 0, 0.4)
+          #ededed,
+          var(--n-head-face) 60%,
+          #c2c2c2
         );
+        border-bottom: 1px solid var(--n-frame-edge);
         box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.22),
-          0 3px 6px -2px rgba(0, 0, 0, 0.45);
+          inset 0 1px 0 rgba(255, 255, 255, 0.9),
+          0 2px 5px -2px rgba(0, 0, 0, 0.4);
       }
 
       /* Fabric. The slats are a repeating gradient rather than a tiled bitmap: it themes
@@ -537,48 +521,59 @@ class NormanShadesCard extends HTMLElement {
          fabric has. The 6px period is fixed in px so cells stay a constant size as the
          picture scales; the background is pinned to the bottom so the cells stay put as a
          band grows rather than sliding under the rail. */
-      .shade-band { background-position: bottom; }
-      /* The sheer cell: a light-filtering fabric, so it is pale and the cell lines are
-         faint. The cell period is 7px, with the shadow only in the last pixel -- a heavier
-         line than that reads as a slatted metal shutter rather than as cellular fabric. */
-      .shade-band.sheer {
-        background-image:
-          linear-gradient(
-            to right,
-            rgba(0, 0, 0, 0.07),
-            rgba(255, 255, 255, 0.16) 26%,
-            rgba(255, 255, 255, 0.16) 74%,
-            rgba(0, 0, 0, 0.07)
-          ),
-          repeating-linear-gradient(
-            to bottom,
-            rgba(255, 255, 255, 0.5) 0 1px,
-            rgba(0, 0, 0, 0) 1px 6px,
-            rgba(0, 0, 0, 0.1) 6px 7px
-          );
-        background-color: var(--n-sheer);
+      /* Fabric, as a 6px slat: a translucent dark line at the top edge of each slat,
+         then a ramp from 188 to 245 grey. This is the decoded reference tile expressed as
+         a gradient, so the cells stay a constant size as the picture scales.
+
+         The two cells differ in OPACITY, not just tone, because that is the physical
+         difference: on a day/night shade the upper cell is the light-filtering fabric and
+         the lower one is the blackout fabric. The upper cell is therefore drawn
+         semi-transparent, so the opening behind it shows through and it visibly passes
+         more light than the section below it -- which is exactly what the blind does, and
+         what makes "Best privacy" legible at a glance. */
+      .shade-band {
+        background-image: repeating-linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.14) 0 1px,
+          var(--n-slat-top) 1px 2px,
+          #cacaca 2px 3px,
+          #e3e3e3 3px 4px,
+          #ececec 4px 5px,
+          var(--n-slat-bottom) 5px 6px
+        );
+        background-position: bottom;
       }
-      /* The blackout cell: the same fabric, deeper. Still clearly lighter than the frame,
-         because a closed blind is a pale panel in a dark frame, not a black hole. */
-      .shade-band.blackout {
+      /* The light-filtering (sheer) cell.
+         The upper section of a day/night shade passes noticeably more light than the
+         blackout section below it -- that is the entire point of the product, and the
+         reason "Best privacy" (bottom closed, sheer open) is a useful preset. So the two
+         cells are separated by three reinforcing cues, not one:
+           - opacity: the sheer is translucent, so the opening shows through it;
+           - a warm daylight wash over the sheer, as light coming through fabric;
+           - lighter, more widely spaced slat shadows, as a thinner weave.
+         Three cues because any one of them alone is a subtle tonal shift that disappears
+         on a phone, in bright sun, or for anyone with low contrast vision. */
+      .shade-band.sheer {
+        opacity: 0.72;
         background-image:
-          linear-gradient(
-            to right,
-            rgba(0, 0, 0, 0.1),
-            rgba(255, 255, 255, 0.1) 26%,
-            rgba(255, 255, 255, 0.1) 74%,
-            rgba(0, 0, 0, 0.1)
-          ),
+          linear-gradient(rgba(255, 248, 224, 0.55), rgba(255, 250, 235, 0.35)),
           repeating-linear-gradient(
             to bottom,
-            rgba(255, 255, 255, 0.3) 0 1px,
-            rgba(0, 0, 0, 0) 1px 6px,
-            rgba(0, 0, 0, 0.14) 6px 7px
+            rgba(0, 0, 0, 0.07) 0 1px,
+            #e8e8e8 1px 3px,
+            #f2f2f2 3px 5px,
+            var(--n-slat-bottom) 5px 6px
           );
-        background-color: var(--n-blackout);
+      }
+      /* The blackout cell: opaque, and clearly deeper so the join is unmistakable. */
+      .shade-band.blackout { opacity: 1; }
+      .shade-band.blackout::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(40, 44, 52, 0.2);
       }
 
-      /* A rail: the solid bar at a band's bottom edge, and the drag handle. */
       /* A rail is an extruded bar: lit along its top edge, dark along its bottom, with a
          shadow cast onto whatever is beneath it. The bottom rail hangs BELOW its position
          (the fabric ends where the rail begins); the middle rail straddles the join between
@@ -590,11 +585,14 @@ class NormanShadesCard extends HTMLElement {
         border-radius: 1px;
         background: linear-gradient(
           to bottom,
-          rgba(255, 255, 255, 0.4),
-          var(--n-rail-dark) 40%,
-          rgba(0, 0, 0, 0.55)
+          #f8f8f8,
+          #e0e0e0 35%,
+          var(--n-rail-face) 65%,
+          #dedede 85%,
+          #c1c1c1
         );
-        box-shadow: 0 2px 5px -1px rgba(0, 0, 0, 0.5);
+        border-top: 1px solid rgba(255, 255, 255, 0.9);
+        box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.4);
         transition: top 0.3s ease;
         z-index: 3;
       }
@@ -608,7 +606,7 @@ class NormanShadesCard extends HTMLElement {
         height: 1px;
         margin-top: -0.5px;
         border-radius: 1px;
-        background: rgba(255, 255, 255, 0.28);
+        background: rgba(0, 0, 0, 0.12);
       }
       /* The middle rail sits between two fabrics of similar tone, so unlike the bottom
          rail it has no dark opening behind it to read against. A hairline top and bottom
@@ -621,9 +619,9 @@ class NormanShadesCard extends HTMLElement {
           0 2px 4px -1px rgba(0, 0, 0, 0.4);
         background: linear-gradient(
           to bottom,
-          rgba(255, 255, 255, 0.35),
-          var(--n-frame) 40%,
-          rgba(0, 0, 0, 0.4)
+          #f4f4f4,
+          #dcdcdc 45%,
+          #c8c8c8
         );
       }
 
@@ -1114,7 +1112,23 @@ class NormanShadesCard extends HTMLElement {
     const twoRail = rails.length > 1;
     for (let index = 0; index < rails.length; index += 1) {
       const band = document.createElement("div");
-      band.className = `shade-band ${twoRail && index === 1 ? "sheer" : "blackout"}`;
+      // Which fabric this band is.
+      //
+      // On a day/night shade the BLACKOUT fabric hangs from the head down to the middle
+      // rail, and the SHEER hangs from the middle rail down to the bottom rail. So the
+      // band spanning head->middle (index 1, the middle rail's band) is the blackout, and
+      // the band spanning middle->bottom (index 0) is the sheer.
+      //
+      // Checked against the app's own presets: "Best privacy" is bottom 0 / middle 100,
+      // which stacks the blackout away at the head and draws the sheer across the whole
+      // window -- "closed for privacy, sheer fabric still open" (docs/entities.md). Fully
+      // closed (both 0) draws the blackout across the whole window. Getting this backwards
+      // makes a closed blind look like a sheer one, which is a privacy question, not a
+      // cosmetic one.
+      //
+      // A single-rail blind has one fabric and no second cell to distinguish, so it is
+      // drawn as the opaque one.
+      band.className = `shade-band ${twoRail && index === 0 ? "sheer" : "blackout"}`;
       bands.push(band);
 
       const railEl = document.createElement("div");

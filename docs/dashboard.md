@@ -60,11 +60,22 @@ A blind the hub has stopped reporting is dimmed, and its picture and bars are di
 
 ### The picture
 
-On a **two-rail** blind the picture shows both fabrics: the lighter band above the middle rail
-is the sheer, light-filtering cell, and the darker band below it runs down to the bottom rail.
-That is literally what a day/night cellular shade is, and it is why **Best privacy** looks the
-way it does — the bottom rail closes while the sheer stays open. On a top-down/bottom-up blind
-the same two bands read as the top and bottom halves of the covering.
+On a **two-rail** blind the picture shows both fabrics, arranged the way the blind is: the
+**blackout** cell hangs from the head rail down to the **middle rail**, and the **sheer**,
+light-filtering cell hangs from the middle rail down to the **bottom rail**. The sheer is drawn
+translucent and warmer, so you can see at a glance that the upper part of the window is passing
+more light than the lower part.
+
+That is why the app's presets look the way they do:
+
+| Preset | Rails | The picture shows |
+|---|---|---|
+| **Best view** | both 100 | A clear opening — both fabrics stacked at the head. |
+| **Best privacy** | bottom 0, middle 100 | The **sheer** across the whole window: private, but still bright. |
+| Closed | both 0 | The **blackout** across the whole window. |
+
+On a top-down/bottom-up blind the same two bands read as the top and bottom halves of the
+covering.
 
 The two rails cannot cross: drag the middle rail down onto the bottom one and it stops there,
 because the blind cannot make that shape either.

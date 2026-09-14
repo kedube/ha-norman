@@ -18,6 +18,13 @@ version heading and publishes it as the release's Highlights.
   `hide_picture: true` (also in the visual editor) goes back to bars alone. The picture is
   drawn in CSS rather than from embedded images, so it follows your theme, stays sharp on any
   screen, and scales with the card.
+- **The two fabrics are drawn the way the blind is built.** On a two-rail blind the blackout
+  cell hangs from the head rail to the middle rail and the sheer hangs from the middle rail to
+  the bottom rail — so **Best privacy** (bottom 0, middle 100) draws the *sheer* across the
+  window, private but still bright, and a fully closed blind draws the *blackout*. The sheer is
+  translucent and warmer than the blackout, so which part of the window is passing more light
+  is visible at a glance rather than something you work out from two percentages. The materials
+  themselves follow the card this one is modelled on.
 
 ## 0.40 — 2026-09-10
 - **Fixed the options dialog failing to open.** Choosing **Configure** returned "Config flow
