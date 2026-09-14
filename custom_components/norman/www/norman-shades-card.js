@@ -329,7 +329,17 @@ class NormanShadesCard extends HTMLElement {
            The headbox stands PROUD of the frame: it is a valance mounted on the wall in
            front of the window, so it overhangs the jambs rather than sitting between
            them, and it casts a shadow onto the fabric below. */
-        --n-opening: rgba(var(--n-fg-rgb), 0.06);
+        /* The opening behind the fabric.
+           A window with the shade up is a DARK rectangle: you are looking through it, and
+           what is behind it is not the wall. It has to be darker than the fabric by a
+           wide margin, or "open" and "closed" read as the same picture -- which is the
+           one distinction this graphic exists to make. Fixed dark tones rather than a
+           tint of the theme, so the relationship survives in a light theme too (an
+           earlier version used a 6% text-colour tint, which rendered LIGHTER than the
+           fabric and made an open window look blank).
+           A slight gradient, lighter at the bottom, reads as depth rather than as a
+           flat hole. */
+        --n-opening: linear-gradient(to bottom, #2f3742, #3d4652 65%, #49525f);
         --n-frame: #f6f6f6;
         --n-jamb: 6%;
         --n-fold: #bebebe;
@@ -599,8 +609,11 @@ class NormanShadesCard extends HTMLElement {
         font-size: 0.7rem;
         line-height: 1.45;
         font-variant-numeric: tabular-nums;
-        color: #333;
-        background: rgba(255, 255, 255, 0.82);
+        /* The readout sits over the fabric when the blind is down and over the dark
+           opening when it is up, so it carries its own light scrim rather than relying on
+           either. */
+        color: #23272e;
+        background: rgba(255, 255, 255, 0.9);
         border-radius: 2px;
         padding: 0 4px;
         white-space: nowrap;

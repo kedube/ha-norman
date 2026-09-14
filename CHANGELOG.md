@@ -25,6 +25,11 @@ version heading and publishes it as the release's Highlights.
   translucent and warmer than the blackout, so which part of the window is passing more light
   is visible at a glance rather than something you work out from two percentages. The materials
   themselves follow the card this one is modelled on.
+- **An open window now reads as an opening.** The area behind the fabric is drawn as a dark
+  recess rather than a faint tint of the theme's text colour — which, in a light theme,
+  rendered *lighter* than the fabric and made a raised blind look like a blank panel. Open and
+  closed are now unmistakable at a glance, which is the one distinction the picture exists to
+  make.
 
 ## 0.40 — 2026-09-10
 - **Fixed the options dialog failing to open.** Choosing **Configure** returned "Config flow
