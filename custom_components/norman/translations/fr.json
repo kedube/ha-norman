@@ -48,15 +48,18 @@
         "title": "Options Norman",
         "description": "Les mises à jour sont envoyées par le hub. Cette interrogation sert de filet de sécurité pour les changements que le hub n'annonce jamais, le plus souvent un store qui a bougé pendant que sa radio était en veille.",
         "data": {
-          "poll_interval": "Intervalle d'interrogation"
+          "poll_interval": "Intervalle d'interrogation",
+          "wake_interval": "Intervalle de réveil"
         },
         "data_description": {
-          "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub. Plus bas détecte plus tôt une position obsolète ; plus haut sollicite moins le hub. 0 désactive l'interrogation, laissant les mises à jour aux seules notifications du hub."
+          "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub. Plus bas détecte plus tôt une position obsolète ; plus haut sollicite moins le hub. 0 désactive l'interrogation, laissant les mises à jour aux seules notifications du hub.",
+          "wake_interval": "À quelle fréquence demander à chaque store de se signaler (batterie, position, dernier contact), comme le fait l'actualisation de l'app Norman. Cela rafraîchit le cache du hub lui-même, que l'interrogation ci-dessus ne fait que relire. 0 désactive ; sinon de 600 à 86400 secondes."
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "Saisissez 0 pour désactiver l'interrogation, ou une valeur entre 10 et 3600 secondes."
+      "poll_interval_out_of_range": "Saisissez 0 pour désactiver l'interrogation, ou une valeur entre 10 et 3600 secondes.",
+      "wake_interval_out_of_range": "Saisissez 0 pour désactiver, ou une valeur entre 600 et 86400 secondes."
     }
   },
   "services": {
@@ -90,7 +93,7 @@
         },
         "command": {
           "name": "Commande",
-          "description": "best_privacy ferme le rail inférieur et laisse le rail central en place ; best_view ouvre le rail inférieur ; favorite envoie la pièce à sa position favorite enregistrée."
+          "description": "best_privacy ferme le rail inférieur et laisse le rail central où il est ; best_view ouvre le rail inférieur ; favorite envoie la pièce à sa position favorite enregistrée ; refresh demande à chaque store de la pièce de se signaler (rien ne bouge)."
         },
         "config_entry_id": {
           "name": "Hub",
@@ -159,6 +162,15 @@
       },
       "jog_down": {
         "name": "Pas vers le bas"
+      },
+      "request_status": {
+        "name": "Demander l'état"
+      },
+      "refresh_blinds": {
+        "name": "Actualiser les stores"
+      },
+      "start_pairing": {
+        "name": "Démarrer l'appairage"
       }
     },
     "sensor": {
@@ -185,6 +197,14 @@
       },
       "wifi_ssid": {
         "name": "Réseau Wi-Fi"
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Connexion"
+      },
+      "pairing_mode": {
+        "name": "Mode appairage"
       }
     }
   },
@@ -224,6 +244,9 @@
     },
     "button_needs_room": {
       "message": "{command} nécessite la pièce et le groupe de {name} depuis le hub, qui n'ont pas encore été lus."
+    },
+    "hub_button_failed": {
+      "message": "Impossible d'envoyer {command} au hub : {error}"
     }
   }
 }

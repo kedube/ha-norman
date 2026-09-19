@@ -82,8 +82,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
         hass, coordinator.listen_notifications(), "norman-notification-listener"
     )
 
-    # A changed poll interval is applied by reloading: the interval is passed to the
-    # coordinator at construction.
+    # The optional wake sweep (have every blind report in on a timer) runs alongside.
+    coordinator.async_start_wake_sweep()
+
+    # A changed poll or wake interval is applied by reloading: both are read from the
+    # options at construction / setup.
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

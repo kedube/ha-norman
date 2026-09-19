@@ -63,7 +63,7 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     # middle-rail cover as well
     assert covers == ["1001", "1001_middle", "1002", "1003", "1003_middle"]
     assert f"{entry.entry_id}_wifi_rssi" in {e.unique_id for e in entries}
-    assert {e.domain for e in entries} == {"button", "cover", "number", "sensor"}
+    assert {e.domain for e in entries} == {"binary_sensor", "button", "cover", "number", "sensor"}
     living = cover_entity_id(hass, UID_LIVING)
     assert hass.states.get(living).attributes["friendly_name"] == "Living Drape Bottom rail"
 

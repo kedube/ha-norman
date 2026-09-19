@@ -19,6 +19,8 @@ Read this before changing anything in [`api.py`](../custom_components/norman/api
   - [POST /NM/v1/control](#post-nmv1control)
   - [Control verbs](#control-verbs)
   - [Room-wide and hub-wide control](#room-wide-and-hub-wide-control)
+  - [Waking a blind](#waking-a-blind)
+  - [Pairing mode](#pairing-mode)
   - [POST /NM/v1/notification](#post-nmv1notification)
 - [The complete endpoint surface](#the-complete-endpoint-surface)
 - [Configuration endpoints used by the app](#configuration-endpoints-used-by-the-app)
@@ -266,6 +268,8 @@ observed. All of the following were captured from the Norman app:
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
 | `CleanTopLimit` / `CleanBottomLimit` | 0 | Clear the stored limit (the app sends this right before setting a new one). |
 | `Calibration` | 0 | Run the motor's calibration. |
+| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`). Nothing moves; the blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification for it. Answered within 5 s on every try. **Used** (Request status button). See [Waking a blind](#waking-a-blind). |
+| `ReportBatteryLevel` | 0 | Ask every blind on the hub (no scope field) or in a room (`RoomID`) to report in. The app's refresh button. Despite the name the answer carries position and last-seen too. **Used** (Refresh blinds button, `room_command: refresh`). |
 
 ```json
 {"PeripheralUID": 58850, "Timestamp": 1788828922, "TaskID": 43620, "MotorStop": 170}
@@ -355,6 +359,74 @@ is around **30 seconds**. A test that watches for 15 or 20 seconds will conclude
 did nothing. Neither the reply nor the status read distinguishes "refused" from "moving"; only
 waiting long enough does. Per-blind open/close stays with the cover entities, since Home
 Assistant's own groups and areas already fan those out across both rails.
+
+### Waking a blind
+
+Captured on 2026-09-18 from the app's **device & battery status** screen (its
+`SSLowBatteryAndDisconnectViewController`, which lists blinds the hub has not heard from
+and offers a refresh button), then confirmed by reading the app's network library
+(`DKIoTClient.framework`), which builds three requests for it:
+
+| App builder | Body (plus `Timestamp`, `TaskID`) | Scope |
+|---|---|---|
+| `CreateNormanPeripheralRequestStatus` | `{"PeripheralUID": X, "StatusRequest": 0}` | one blind |
+| `CreateNormanRoomRequestPeripheralBatteryLevel` | `{"RoomID": R, "ReportBatteryLevel": 0}` | one room |
+| `CreateNormanHubRequestPeripheralBatteryLevel` | `{"ReportBatteryLevel": 0}` | every blind |
+
+All three carry the value `0` — the same literal the library uses for `FindTop` and
+`Favorite`, while `MotorStop` gets `170` — and the hub echoes the verb back with `Error: 0`.
+The refresh button sends the hub-wide form; the other two were verified by sending them.
+
+What happens next is visible in `status`: each blind's `Timestamp` is **when the hub last
+heard from it**, and it moves when a blind reports in with nothing changed, so it is a
+liveness signal rather than a last-change time. Timings on the reference hub:
+
+- **Per blind** (`StatusRequest`): the blind's `Timestamp` moved within **5 s**, on every try,
+  including a blind that had ignored the hub-wide sweep.
+- **Per room** (`ReportBatteryLevel` + `RoomID`): all three blinds in the room within **5 s**.
+- **Hub-wide** (`ReportBatteryLevel`): the hub polls the battery (type 33) blinds one after
+  another; seven of nine had reported within ~30 s, and the remaining two only on a later
+  try. The four type 32 blinds (`RssiMean` 34, wired) did not respond to the sweep at all —
+  but a per-blind `StatusRequest` to one of them was answered in 4 s, so the integration
+  follows every sweep with one request per type 32 blind.
+
+Each report arrives as a `{"Status": …, "PeripheralList": [uid]}` notification, so a client
+holding the notification stream sees them without polling. The app taps the button several
+times in a row; nothing suggests that is needed.
+
+**Error 2.** Every position `control` sent during the sweep window that followed three
+refresh taps (21:59:02–21:59:42, twelve commands to eleven blinds) answered
+`{"Error": 2}` with the fields echoed, and the same commands a minute later answered `0`. A
+`StatusRequest` sent mid-sweep answered `0`, so 2 is not a blanket "busy". It is the only
+code the hub has ever returned for a move; the integration retries a move that gets it
+(`HUB_BUSY_RETRIES` × `HUB_BUSY_RETRY_DELAY`) before failing.
+
+The app's **"Disconnect"** label is time-based: `isDisconnectPeripheral:withHub:` compares
+now against the blind's last-heard time and flags it past **86400 s** (24 h). The
+integration's connection binary sensor applies the same threshold.
+
+**Why reporting in matters: the hub's cache can be wrong.** In the same session the hub had
+reported every type 33 blind's `MiddleRailPosition` as 100 for the preceding hour; when the
+blinds reported in, several read 0 (nothing had moved). And a blind that accepts a move and
+does not go leaves the hub reporting the old position with the *new target* indefinitely:
+blind 8399 answered a move to middle 100 with `Error: 0` at 22:00:00 and `status` then
+showed `MiddleRailPosition: 0, TargetMiddleRailPosition: 100` until a room-wide
+`ReportBatteryLevel` at 22:12:10 had it report in, at which point the target snapped to 0.
+Neither `status` nor the notification stream reveals either case on their own. The
+integration's move watchdog (a `StatusRequest` 60 s after any unconfirmed move, then one
+retry) and its optional wake sweep exist for exactly these two.
+
+### Pairing mode
+
+`{"PairingMode": 5}` on `control`, with no scope field, opens the hub's pairing window. The
+hub echoes it with `Error: 0` and `status` reports `PairingMode: 5` from then on — for
+exactly ten minutes on 2026-09-18 (22:08:47 → 22:18:48), after which it reads `0` again.
+The same request was refused with `Error: 8` a few minutes earlier, while the hub was
+sweeping its blinds after a refresh, and with `Error: 10` in an earlier capture. The app
+also sends `{"SearchForPeripheral": 0}` (answered `0`) around it; the rest of its pairing
+flow (`discoverPeripheralWithRoomId`, `remoteControlPair` in its library) has not been
+captured. `PairingMode` reads `4` in the registration reply regardless. The integration
+exposes the window as a hub button and a binary sensor and nothing more.
 
 ### POST /NM/v1/notification
 
@@ -472,7 +544,9 @@ documented here must be catalogued and vice versa.
 | `WiFiSSID` | registration | | **used** (Wi-Fi network sensor); redacted in diagnostics |
 | `TimeZone` | GetAllPeripheral | `America/New_York` | **used** (time zone sensor); redacted in diagnostics |
 | `GeoLoc` (`Latitude`/`Longitude`), `NetworkID` | registration, GetAllPeripheral | | not used; redacted |
-| `OTA`, `PairingMode`, `DeviceType`, `FirmwareId`, `FirmwareCode`, `TotalSegment`/`Segment`, `CleanPairing`, `StatusRequest`, `ReportBatteryLevel` | registration, status | `0`, `4`, `48` | not used. `PairingMode` reads `4` in registration and `0` in status; `OTA` was `1` in one registration reply while status said `0`. |
+| `PairingMode` | registration (`4`), status (`0` / `5`) | `5` | **used** (pairing-mode sensor): `5` in status while the hub's ten-minute pairing window is open, see [Pairing mode](#pairing-mode). |
+| `OTA`, `DeviceType`, `FirmwareId`, `FirmwareCode`, `TotalSegment`/`Segment`, `CleanPairing` | registration, status | `0`, `48` | not used. `OTA` was `1` in one registration reply while status said `0`. |
+| `StatusRequest`, `ReportBatteryLevel` | registration (`0`) | `0` | The hub's own report-in verbs, listed the same way a blind lists its command vocabulary. **Used** as `control` verbs (see [Waking a blind](#waking-a-blind)); the registration field itself is not read. |
 | `SceneGroupList`, rooms' `SceneList` | GetAllPeripheral | `[]` | not used |
 | rooms' `Icon`, `Color`, `Sorting`; groups' `Sorting` | GetAllPeripheral | `"3"` | not used |
 | `RequestTimestamp` / `Timestamp` | every reply | seconds / milliseconds | not used |
@@ -488,7 +562,7 @@ documented here must be catalogued and vice versa.
 | `RssiMean` | status | `0`, `34` | **used** (signal-strength sensor, unitless) |
 | `FirmwareVersion` | status | `0.5.3.8`, `4.1.0.4` | **used**; on type 33 it is the version the app shows |
 | `RfFirmwareVersion` | status (type 32 only) | `0.3.20` | **used**: this is the version the Norman app shows for single-rail blinds (Den_1: app 0.3.20, `FirmwareVersion` 4.1.0.4), so it takes precedence for the device's version |
-| `Timestamp` | status | epoch seconds | **used** (last-seen sensor) |
+| `Timestamp` | status | epoch seconds | **used** (last-seen sensor, connection sensor). When the hub last **heard from** the blind: it moves when a blind reports in with nothing changed, not only on a state change. |
 | `PacketReceiveRate` | status | `0` | not used. Has been `0` on every blind in every capture, including blinds that are plainly reachable, so it is either unimplemented in this firmware or counts something the hub never populates. |
 | `StallCurrent` | status (type 33 only) | `4100`, `1240` | not used. Despite the name it reads as a **stall threshold, not a measurement**: the current draw at which the motor decides it has hit an obstruction (or a limit) and stops. It does not vary during travel -- it holds one value through a full open and close, in both directions, and at rest. It is not fixed per blind either: two blinds read `4100` in captures a day apart and `1240` afterwards, with no setting changed in the app, so the motor appears to adapt it. A **falling** value on one blind is therefore the interesting signal (a motor deciding it needs less force to call something a stall), not the absolute number. Both blinds that changed are in one room, and one of them (`58850`) is the blind a `Calibration` was run against the day before -- so calibration, or the limit-setting around it, is the likeliest cause. Unconfirmed: the other blind was not calibrated. Not exposed as an entity while its meaning rests on a single observation. |
 | `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. |
@@ -519,11 +593,17 @@ The hub uses two different shapes:
 | registration, status, control | `"Error": 0` | `"Error": <non-zero int>` |
 | GetAllPeripheral | `"status": {"code": 0}` | `"status": {"code": <non-zero>, "error": "<message>"}` |
 
-**Observed error codes.** Only one non-zero `Error` has ever been captured: `10`, returned for
-`{"PairingMode": 5}` on `/control` while the hub was not in a state to start pairing. The reply
-still echoed the field (`{"PairingMode": 5, "Error": 10, ...}`) and HTTP was still 200, so the
-code is the only signal of failure. No mapping of codes to meanings exists; treat any non-zero
-value as "the hub refused this" and surface it verbatim.
+**Observed error codes.** Three non-zero `Error` values have been captured, all on `/control`,
+all with HTTP 200 and the fields echoed back, so the code is the only signal of failure:
+
+| Code | Seen on | Circumstances |
+|---|---|---|
+| `2` | a position move | while the hub was sweeping its blinds after the app's refresh (see [Waking a blind](#waking-a-blind)); the same moves succeeded a minute later. The integration retries a move that gets it. |
+| `8` | `{"PairingMode": 5}` | 2026-09-18, during the same sweep window; the identical request ten minutes later was accepted and opened the window (see [Pairing mode](#pairing-mode)) |
+| `10` | `{"PairingMode": 5}` | an earlier capture, same situation |
+
+No mapping of codes to meanings exists; treat any other non-zero value as "the hub refused
+this" and surface it verbatim.
 
 `_raise_on_error_code` accepts four spellings of success on the `Error` endpoints: `0`, the
 string `"0"`, an absent or `null` field, and any string beginning with `succ`
@@ -575,7 +655,8 @@ both-rails `control` call. The five buttons are the only place the integration s
 
 `status` can also be re-read on a timer (off by default; see the poll interval option), which
 catches changes the hub never pushed -- it only notifies when it hears from a blind, and a
-battery blind's radio sleeps (the Norman app shows such a blind as "Disconnect"). If the
+battery blind's radio sleeps (the Norman app shows such a blind as "Disconnect" after a day of
+silence). The report-in verbs ([Waking a blind](#waking-a-blind)) end that on demand. If the
 notification stream cannot be established at all the integration still works for commands, and
 each command's follow-up `status` call keeps the state fresh, but external changes (remote,
 app) will not be reflected until the stream comes back or the next poll, if one is set. The listener logs one error when the stream drops and one info line when it recovers.

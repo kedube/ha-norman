@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -18,6 +19,7 @@ from .const import (
     HUB_CMD_FAVORITE,
     HUB_CMD_JOG_DOWN,
     HUB_CMD_JOG_UP,
+    HUB_CMD_REQUEST_STATUS,
     HUB_CMD_SWITCH,
     HUB_COMMAND_SETTING,
     HUB_COMMAND_TRIGGER,
@@ -25,7 +27,7 @@ from .const import (
     HUB_SWITCH_OPEN,
 )
 from .coordinator import NormanConfigEntry, NormanCoordinator
-from .entity import NormanEntity, async_add_entities_for_new_devices
+from .entity import NormanEntity, NormanHubEntity, async_add_entities_for_new_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +90,47 @@ BUTTONS: tuple[NormanButtonDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
         fields={HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER},
     ),
+    # Asks this blind to report in. A battery blind's radio sleeps between commands and the
+    # hub stops hearing from it; the app then shows it as "Disconnect" and offers a refresh.
+    # This is the per-blind form of that refresh, taken from the app's network library:
+    # the blind answered within 5 s each time it was tried (docs/NORMAN_API.md, "Waking a
+    # blind"). The follow-up refresh below is usually too early to see the answer; the
+    # hub's own notification for the blind brings it a few seconds later.
+    NormanButtonDescription(
+        key="request_status",
+        translation_key="request_status",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        fields={HUB_CMD_REQUEST_STATUS: HUB_COMMAND_SETTING},
+    ),
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class NormanHubButtonDescription(ButtonEntityDescription):
+    """A button on the hub device and what pressing it does."""
+
+    press_fn: Callable[[NormanCoordinator], Awaitable[None]]
+
+
+# The hub's own buttons. Refresh blinds is the app's refresh on its device & battery status
+# screen: the hub polls every battery blind in turn (~30 s for the reference hub's nine),
+# and the coordinator follows up with a status request to each wired blind, which the
+# hub-wide sweep skips. Room scope is `norman.room_command` with `refresh`. Start pairing
+# opens the hub's ten-minute pairing window (the Pairing mode sensor shows it); the rest of
+# pairing happens at the blind and in the app.
+HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
+    NormanHubButtonDescription(
+        key="refresh_blinds",
+        translation_key="refresh_blinds",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        press_fn=lambda coordinator: coordinator.async_refresh_blinds(),
+    ),
+    NormanHubButtonDescription(
+        key="start_pairing",
+        translation_key="start_pairing",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator: coordinator.api.async_start_pairing(),
+    ),
 )
 
 # There are no "run to top/bottom limit" buttons. `SetMotorToTopLimit` /
@@ -107,10 +150,50 @@ async def async_setup_entry(
     """Set up the buttons for every blind, including ones paired later."""
     coordinator = entry.runtime_data
 
+    async_add_entities(
+        NormanHubButton(coordinator, entry, description) for description in HUB_BUTTONS
+    )
+
     def _buttons_for(device_id: int) -> list[NormanButton]:
         return [NormanButton(coordinator, device_id, entry, description) for description in BUTTONS]
 
     async_add_entities_for_new_devices(entry, async_add_entities, _buttons_for)
+
+
+class NormanHubButton(NormanHubEntity, ButtonEntity):
+    """One hub-wide action."""
+
+    entity_description: NormanHubButtonDescription
+
+    def __init__(
+        self,
+        coordinator: NormanCoordinator,
+        entry: NormanConfigEntry,
+        description: NormanHubButtonDescription,
+    ) -> None:
+        """Attach the button to the hub device."""
+        super().__init__(coordinator, entry)
+        self.entity_description = description
+        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+
+    async def async_press(self) -> None:
+        """Run the hub action.
+
+        A status re-read follows so the Pairing mode sensor flips at once; a refresh's
+        answers arrive later, one notification per blind, each with its own refresh.
+        """
+        try:
+            await self.entity_description.press_fn(self.coordinator)
+        except (NormanApiError, NormanConnectionError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="hub_button_failed",
+                translation_placeholders={
+                    "command": self.entity_description.key,
+                    "error": str(err),
+                },
+            ) from err
+        await self.coordinator.async_request_refresh()
 
 
 class NormanButton(NormanEntity, ButtonEntity):

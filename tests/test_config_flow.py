@@ -18,11 +18,17 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 
 from custom_components.norman.const import (
     CONF_POLL_INTERVAL,
+    CONF_WAKE_INTERVAL,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     MAX_POLL_INTERVAL,
+    MAX_WAKE_INTERVAL,
+    MIN_WAKE_INTERVAL,
     POLL_DISABLED,
     SUGGESTED_POLL_INTERVAL,
+    SUGGESTED_WAKE_INTERVAL,
+    WAKE_DISABLED,
 )
 
 from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, MOCK_CONFIG
@@ -351,7 +357,8 @@ async def test_options_flow_stores_the_poll_interval(hass: HomeAssistant, value:
         result["flow_id"], user_input={CONF_POLL_INTERVAL: value}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_POLL_INTERVAL: value}
+    # The wake sweep field keeps its 0 default when only the poll is given.
+    assert entry.options == {CONF_POLL_INTERVAL: value, CONF_WAKE_INTERVAL: WAKE_DISABLED}
     assert isinstance(entry.options[CONF_POLL_INTERVAL], int)
 
 
@@ -442,5 +449,67 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
                     "mode": "box",
                 }
             },
-        }
+        },
+        {
+            "name": CONF_WAKE_INTERVAL,
+            "required": True,
+            "default": DEFAULT_WAKE_INTERVAL,
+            "description": {"suggested_value": SUGGESTED_WAKE_INTERVAL},
+            "selector": {
+                "number": {
+                    "min": float(WAKE_DISABLED),
+                    "max": float(MAX_WAKE_INTERVAL),
+                    "step": 1.0,
+                    "unit_of_measurement": "seconds",
+                    "mode": "box",
+                }
+            },
+        },
     ]
+
+
+@pytest.mark.parametrize("value", [WAKE_DISABLED, MIN_WAKE_INTERVAL, 3600, MAX_WAKE_INTERVAL])
+async def test_options_flow_stores_the_wake_interval(hass: HomeAssistant, value: int) -> None:
+    """0 (off) and every in-range wake interval are accepted and stored as an int."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={CONF_POLL_INTERVAL: 0, CONF_WAKE_INTERVAL: value}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {CONF_POLL_INTERVAL: 0, CONF_WAKE_INTERVAL: value}
+    assert isinstance(entry.options[CONF_WAKE_INTERVAL], int)
+
+
+@pytest.mark.parametrize("value", [1, MIN_WAKE_INTERVAL - 1])
+async def test_options_flow_rejects_a_wake_interval_below_the_floor(
+    hass: HomeAssistant, value: int
+) -> None:
+    """The gap between "off" and the floor is refused, with the error on the wake field.
+
+    The floor is ten minutes: a sweep wakes every battery blind's radio, so it should not
+    run more than a few times an hour.
+    """
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={CONF_POLL_INTERVAL: 0, CONF_WAKE_INTERVAL: value}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_WAKE_INTERVAL: "wake_interval_out_of_range"}
+    assert entry.options == {}
+
+
+async def test_options_form_suggests_both_intervals_when_unconfigured(hass: HomeAssistant) -> None:
+    """A fresh entry is seeded with the suggested poll and wake values, not the 0 defaults."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    schema = result["data_schema"].schema
+    suggested = {str(k): k.description["suggested_value"] for k in schema}
+    assert suggested == {
+        CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL,
+        CONF_WAKE_INTERVAL: SUGGESTED_WAKE_INTERVAL,
+    }

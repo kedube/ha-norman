@@ -60,7 +60,7 @@ matter how many blinds the room holds — the same request the app sends.
 | Field | Required | Values | Meaning |
 |---|---|---|---|
 | `room` | no | a room name | As the **hub** knows it (the Norman app's room name), matched case-insensitively. Not the Home Assistant area, which may have been renamed. **Omit it to address every blind on the hub.** |
-| `command` | yes | `best_privacy`, `best_view`, `favorite` | Which of the app's buttons to press. |
+| `command` | yes | `best_privacy`, `best_view`, `favorite`, `refresh` | Which of the app's buttons to press. |
 | `config_entry_id` | no | | Which hub, when more than one is set up. |
 
 | Command | Sends | Effect |
@@ -68,6 +68,7 @@ matter how many blinds the room holds — the same request the app sends.
 | `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that is the point: the room is private behind the closed fabric, but the sheer middle is fully open so it still lets light in. |
 | `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. |
 | `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant has no equivalent, so this action is the only way to reach it for a whole room. |
+| `refresh` | `{"ReportBatteryLevel": 0, "RoomID": …}` | Asks every blind in the room to **report in** — battery, position and last-seen — the same request the app's refresh sends on its device & battery status screen. Nothing moves. On hardware all three blinds in a room answered within five seconds; hub-wide, every battery blind over about half a minute. The hub-wide sweep skips wired (single-rail) blinds, so each of those in scope gets its own `StatusRequest` afterwards. The answers arrive as the hub's own notifications, so the entities follow a few seconds after the call returns. The **Request status** button does this for one blind and **Refresh blinds** on the hub for all of them (see [docs/entities.md](entities.md#hub-buttons)). |
 
 ```yaml
 action: norman.room_command
@@ -85,7 +86,7 @@ data:
   command: best_view      # every blind in the house, in one request
 ```
 
-All three commands work without a room — this is what the app's **All Rooms** screen sends.
+All four commands work without a room — the first three are what the app's **All Rooms** screen sends, and `refresh` without a room is its refresh button.
 
 `Switch` sets both rails to fixed positions; it is not a relative move and there is no
 room-wide way to reach an arbitrary percentage. For that, use the cover entities (or the card's
@@ -165,10 +166,12 @@ clears a setting. These were captured from the Norman app, so they are known to 
 | `{SetTopLimit: 0}` / `{SetBottomLimit: 0}` | Store the **current** position as that limit. | changes the blind's travel |
 | `{CleanTopLimit: 0}` / `{CleanBottomLimit: 0}` | Clear a stored limit. | changes the blind's travel |
 | `{Calibration: 0}` | Run the motor's calibration. | changes the blind's travel |
+| `{StatusRequest: 0}` | Ask this blind to report in; nothing moves. The **Request status** button. | yes |
 
-Two more verbs are confirmed only in their **room-wide** form, which this action cannot send
+Three more verbs are confirmed only in their **room-wide** form, which this action cannot send
 because it always addresses one blind: `{Switch: 1}` / `{Switch: 0}` opens or closes every
-blind in a room (or on the hub), and `{Favorite: 0}` sends a room to its favorite positions.
+blind in a room (or on the hub), `{Favorite: 0}` sends a room to its favorite positions, and
+`{ReportBatteryLevel: 0}` has a room (or the hub) report in — `norman.room_command`'s `refresh`.
 The per-blind `Switch` form has not been captured; the per-blind `Favorite` form is what the
 the Favorite position button sends. The rest of the vocabulary (`MotorSpeedAdjust`,
 `ReverseMotorDirection`, and others; see [docs/NORMAN_API.md](NORMAN_API.md#control-verbs))

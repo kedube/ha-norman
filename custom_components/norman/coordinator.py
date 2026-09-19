@@ -3,28 +3,37 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
     CONF_POLL_INTERVAL,
+    CONF_WAKE_INTERVAL,
+    COVER_TYPE_SINGLE_RAIL,
     DEFAULT_COVER_TYPE,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
     MAX_POLL_INTERVAL,
+    MAX_WAKE_INTERVAL,
     MIN_POLL_INTERVAL,
+    MIN_WAKE_INTERVAL,
     MODULE_TYPE_COVER_TYPES,
+    MOVE_REPORT_WAIT,
+    MOVE_TIMEOUT,
     POLL_DISABLED,
     RECONNECT_INTERVAL,
+    WAKE_DISABLED,
 )
 from .models import NormanDevices, NormanHubData, NormanPeripheralData
 
@@ -59,6 +68,22 @@ def _poll_interval(entry: NormanConfigEntry) -> timedelta | None:
     return None if seconds == POLL_DISABLED else timedelta(seconds=seconds)
 
 
+def _wake_interval(entry: NormanConfigEntry) -> timedelta | None:
+    """The configured wake sweep interval, or None when the sweep is off.
+
+    Same rules as ``_poll_interval``: 0 (the default) means off, an unusable value falls
+    back to the default rather than stopping the entry from loading.
+    """
+    raw = entry.options.get(CONF_WAKE_INTERVAL, DEFAULT_WAKE_INTERVAL)
+    try:
+        seconds = int(raw)
+    except (TypeError, ValueError):
+        seconds = DEFAULT_WAKE_INTERVAL
+    if seconds != WAKE_DISABLED and not MIN_WAKE_INTERVAL <= seconds <= MAX_WAKE_INTERVAL:
+        seconds = DEFAULT_WAKE_INTERVAL
+    return None if seconds == WAKE_DISABLED else timedelta(seconds=seconds)
+
+
 class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     """Norman data update coordinator.
 
@@ -91,6 +116,105 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # True while the notification stream is known to be down, so that the outage is
         # logged once at error level rather than on every reconnect attempt.
         self._listener_offline = False
+        # One move watchdog per blind (see async_watch_move); a new move replaces it.
+        self._move_watchers: dict[int, asyncio.Task[None]] = {}
+
+    @callback
+    def async_start_wake_sweep(self) -> None:
+        """Schedule the wake sweep at the configured interval, if any.
+
+        Called once from setup; the timer is removed when the entry unloads. A changed
+        interval is applied by reloading the entry, like the poll interval.
+        """
+        interval = _wake_interval(self.config_entry)
+        if interval is None:
+            return
+
+        async def _sweep(_now: datetime) -> None:
+            try:
+                await self.async_refresh_blinds()
+            except (NormanApiError, NormanConnectionError) as err:
+                _LOGGER.warning("Wake sweep failed: %s", err)
+
+        self.config_entry.async_on_unload(
+            async_track_time_interval(self.hass, _sweep, interval, name="norman-wake-sweep")
+        )
+
+    async def async_refresh_blinds(self, room_id: int | None = None) -> None:
+        """Have every blind (in a room, or on the hub) report in.
+
+        The hub-wide ``ReportBatteryLevel`` sweep reaches only the battery (two-rail) blinds:
+        on the reference hub the four single-rail blinds ignored it every time, while a
+        per-blind ``StatusRequest`` had one answering in four seconds. So the sweep is
+        followed by a status request to each single-rail blind in scope. Nothing moves; the
+        answers arrive as notifications over the next half minute, each refreshing the data.
+        """
+        await self.api.async_request_battery_report(room_id)
+        for device_id, device in self.data.items():
+            if device.type != COVER_TYPE_SINGLE_RAIL:
+                continue
+            if room_id is not None and device.room_id != room_id:
+                continue
+            await self.api.async_request_status(device_id)
+
+    @callback
+    def async_watch_move(self, device_id: int, bottom: int, middle: int) -> None:
+        """After a move, make sure the blind actually went.
+
+        A blind that ignores a move leaves the hub reporting the old position with the
+        new target, indefinitely, until it next reports in (const.py, ``MOVE_TIMEOUT``).
+        So: wait for the travel time; if the blind has not confirmed the target, ask it to
+        report in; if the report shows it is still not there, send the move once more.
+        A new move for the same blind replaces the watch; a stop cancels it.
+        """
+        self.async_cancel_move_watch(device_id)
+        self._move_watchers[device_id] = self.config_entry.async_create_background_task(
+            self.hass,
+            self._async_watch_move(device_id, bottom, middle),
+            name=f"norman-move-watch-{device_id}",
+        )
+
+    @callback
+    def async_cancel_move_watch(self, device_id: int) -> None:
+        """Drop the watchdog for a blind (a stop means there is no target to reach)."""
+        if task := self._move_watchers.pop(device_id, None):
+            task.cancel()
+
+    def _at_target(self, device_id: int, bottom: int, middle: int) -> bool:
+        data = self.data.get(device_id)
+        if data is None:
+            return True  # gone from the hub; nothing to chase
+        if data.bottom_rail_position != bottom:
+            return False
+        return data.type == COVER_TYPE_SINGLE_RAIL or data.middle_rail_position == middle
+
+    async def _async_watch_move(self, device_id: int, bottom: int, middle: int) -> None:
+        await asyncio.sleep(MOVE_TIMEOUT)
+        if self._at_target(device_id, bottom, middle):
+            return
+        name = self.data[device_id].name if device_id in self.data else str(device_id)
+        try:
+            await self.api.async_request_status(device_id)
+            await asyncio.sleep(MOVE_REPORT_WAIT)
+            # The blind's answer normally arrives as a notification that refreshes the data;
+            # re-read in case it did not.
+            await self.async_refresh()
+            if self._at_target(device_id, bottom, middle):
+                return
+            _LOGGER.warning(
+                "%s did not reach %s/%s within %.0f s of the move and reports it is not "
+                "there; sending the move again",
+                name,
+                bottom,
+                middle,
+                MOVE_TIMEOUT + MOVE_REPORT_WAIT,
+            )
+            await self.api.async_set_position(device_id, bottom, middle)
+            await self.async_refresh()
+        except (NormanApiError, NormanConnectionError) as err:
+            _LOGGER.warning("Could not chase the move of %s: %s", name, err)
+        finally:
+            self._move_watchers.pop(device_id, None)
 
     async def listen_notifications(self) -> None:
         """Continuously listen for hub notifications and refresh data on change.

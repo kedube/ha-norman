@@ -27,12 +27,18 @@ import voluptuous as vol
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
     CONF_POLL_INTERVAL,
+    CONF_WAKE_INTERVAL,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     MAX_POLL_INTERVAL,
+    MAX_WAKE_INTERVAL,
     MIN_POLL_INTERVAL,
+    MIN_WAKE_INTERVAL,
     POLL_DISABLED,
     SUGGESTED_POLL_INTERVAL,
+    SUGGESTED_WAKE_INTERVAL,
+    WAKE_DISABLED,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,6 +62,15 @@ OPTIONS_SCHEMA = vol.Schema(
             NumberSelectorConfig(
                 min=POLL_DISABLED,
                 max=MAX_POLL_INTERVAL,
+                step=1,
+                unit_of_measurement="seconds",
+                mode=NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(CONF_WAKE_INTERVAL, default=DEFAULT_WAKE_INTERVAL): NumberSelector(
+            NumberSelectorConfig(
+                min=WAKE_DISABLED,
+                max=MAX_WAKE_INTERVAL,
                 step=1,
                 unit_of_measurement="seconds",
                 mode=NumberSelectorMode.BOX,
@@ -194,11 +209,12 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class NormanOptionsFlow(OptionsFlow):
-    """Let the user tune how often the hub is polled.
+    """Let the user tune the two safety nets: the status poll and the wake sweep.
 
-    Updates are pushed, so this only sets how quickly a change the hub never announced is
-    noticed -- most importantly a blind that moved while its radio was asleep. Lowering it
-    costs one `status` call per interval; raising it means a stale position lingers longer.
+    Updates are pushed, so the poll only sets how quickly a change the hub never announced
+    is noticed. The wake sweep goes further: it has every blind report in, which refreshes
+    the hub's own cache (positions, battery, last seen) rather than re-reading it. Each
+    costs one request per interval; the sweep also wakes every battery blind's radio.
     """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -210,15 +226,26 @@ class NormanOptionsFlow(OptionsFlow):
             # is checked here because a schema-level validator would not survive being
             # serialized for the frontend (see OPTIONS_SCHEMA).
             seconds = int(user_input[CONF_POLL_INTERVAL])
-            if seconds == POLL_DISABLED or MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
-                return self.async_create_entry(data={CONF_POLL_INTERVAL: seconds})
-            errors[CONF_POLL_INTERVAL] = "poll_interval_out_of_range"
+            wake = int(user_input.get(CONF_WAKE_INTERVAL, DEFAULT_WAKE_INTERVAL))
+            if seconds != POLL_DISABLED and not MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
+                errors[CONF_POLL_INTERVAL] = "poll_interval_out_of_range"
+            if wake != WAKE_DISABLED and not MIN_WAKE_INTERVAL <= wake <= MAX_WAKE_INTERVAL:
+                errors[CONF_WAKE_INTERVAL] = "wake_interval_out_of_range"
+            if not errors:
+                return self.async_create_entry(
+                    data={CONF_POLL_INTERVAL: seconds, CONF_WAKE_INTERVAL: wake}
+                )
 
-        # An entry that has never been configured shows SUGGESTED_POLL_INTERVAL rather than
-        # the 0 default, so turning polling on is one click instead of a guess at a sensible
-        # number. Leaving the field at 0 still stores 0.
+        # An entry that has never been configured shows the suggested values rather than the
+        # 0 defaults, so turning either on is one click instead of a guess at a sensible
+        # number. Leaving a field at 0 still stores 0.
         suggested = (
-            user_input or self.config_entry.options or {CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL}
+            user_input
+            or self.config_entry.options
+            or {
+                CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL,
+                CONF_WAKE_INTERVAL: SUGGESTED_WAKE_INTERVAL,
+            }
         )
 
         return self.async_show_form(

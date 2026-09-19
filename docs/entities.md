@@ -1,23 +1,26 @@
 # Entities
 
 Per blind the integration creates a **cover** (two for two-rail blinds), a **position slider**
-per rail, five **buttons**, and four **diagnostic sensors**, all on one **device**. The hub gets
-a device of its own carrying four diagnostic sensors.
+per rail, six **buttons**, four **diagnostic sensors**, and a **connection** sensor, all on one
+**device**. The hub gets a device of its own carrying four diagnostic sensors, a pairing-mode
+sensor, and two buttons.
 
 | | Per blind | On the hub |
 |---|---|---|
 | Cover | Bottom rail; Middle rail on two-rail blinds | — |
 | Number | Bottom rail position; Middle rail position on two-rail blinds | — |
-| Button | Best privacy, Best view, Favorite position, Jog up, Jog down | — |
+| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | Refresh blinds, Start pairing |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
+| Binary sensor | Connection | Pairing mode |
 
 \* disabled by default; enable from the entity's settings.
 
 <img src="../images/blind-device.png" alt="A two-rail blind's device page in Home Assistant, showing the Controls, Configuration and Diagnostic sections and the Activity timeline." width="820">
 
 *Everything in that table, on one blind's device page. **Controls** holds the covers and
-sliders, **Configuration** the five buttons, and **Diagnostic** the sensors — Home Assistant
-sorts them by the entity category each one declares.*
+sliders, **Configuration** the five buttons that move or set something, and **Diagnostic** the
+sensors plus the Request status button and the connection sensor (added after this screenshot)
+— Home Assistant sorts them by the entity category each one declares.*
 
 ## Devices
 
@@ -78,6 +81,14 @@ It becomes available again automatically on the next successful refresh.
 
 ### Data updates
 
+**Move watchdog.** A blind can answer a move with `Error 0` and then not move: the hub keeps
+reporting the old position with the new target, indefinitely, until the blind next reports in
+(blind 8399 sat at middle 0 with target 100 for twelve minutes on 2026-09-18). So after every
+move the integration waits 60 seconds; if the blind has not confirmed the target it is asked to
+report in (a `StatusRequest`), and if the report shows it still is not there the move is sent
+once more, with a warning in the log. A new move for the same blind replaces the watch and a
+stop cancels it. Nothing happens for a blind that arrives.
+
 Updates are pushed. The integration holds a long-poll open to the hub and refreshes every
 cover whenever the hub reports a change, including changes made with a remote or the Norman
 app. It also refreshes after every command it sends and every time the long-poll is
@@ -131,8 +142,8 @@ One press is one verb sent to the hub for that blind (see
 [docs/NORMAN_API.md](NORMAN_API.md#control-verbs)), followed by a status re-read so the cover
 catches up with the motor.
 
-All five are **enabled** but carry Home Assistant's *configuration* entity category. That is a
-layout choice rather than a statement about how often they are used: the device page lists
+The five that move or set something are **enabled** but carry Home Assistant's *configuration*
+entity category. That is a layout choice rather than a statement about how often they are used: the device page lists
 uncategorised entities first, sorted by entity id, so leaving the buttons uncategorised placed
 them between a two-rail blind's two covers. With them categorised, the bottom-rail and
 middle-rail covers stay side by side at the top of the page and the buttons follow the
@@ -144,9 +155,46 @@ dashboard by hand if you want them there.
 | Best privacy / Best view | `Switch: 0` / `Switch: 1` | The app's own buttons, addressed at this blind by its room and group. Privacy is bottom rail 0 with the middle rail at 100; view opens both. |
 | Favorite position | `Favorite: 0` | Moves to the favorite stored in the blind, addressed the same way. Works on both rail types. |
 | Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | One small motor step, addressed by `PeripheralUID`. The app uses it while setting limits and as the Fine-tune step of calibration, tapping it repeatedly to inch a rail into place. Independent of position targets, and the hub reports no position change until the motor settles. |
+| Request status | `StatusRequest: 0` | Asks this one blind to report in; nothing moves. Filed under **Diagnostic**, next to the sensors it refreshes. A battery blind's radio sleeps between commands and the hub stops hearing from it, so its battery, last-seen and position go stale and the Norman app eventually lists it as "Disconnect". This is the per-blind form of the app's refresh, taken from the app's network library; on hardware the blind answered within five seconds every time. The answer arrives as a hub notification a few seconds after the press, not in the press itself. See [Waking a blind](NORMAN_API.md#waking-a-blind). |
 
 Errors follow the cover convention: a hub error or timeout fails the press with a message
 naming the verb and the blind.
+
+### Hub buttons
+
+**Refresh blinds** sends `{"ReportBatteryLevel": 0}` with no scope field: the same request the
+Norman app's refresh button sends on its device & battery status screen. The hub then polls
+every battery blind in turn and each one reports in over the next half minute (about 30 s for
+nine blinds), each as its own notification. Despite the verb's name the answer carries position
+and last-seen as well as battery. Nothing moves. The hub-wide sweep does **not** reach wired
+(single-rail) blinds — on the reference hub all four ignored it every time, while a per-blind
+status request had one answering in four seconds — so the button follows the sweep with a
+`StatusRequest` to each single-rail blind. The room-scoped form is `norman.room_command` with
+`refresh` ([docs/services.md](services.md)), which had a whole room reporting in within five
+seconds and does the same follow-up for the room's wired blinds. The **wake sweep** option
+(below) runs this on a timer.
+
+**Start pairing** sends `{"PairingMode": 5}`, which opens the hub's pairing window for ten
+minutes; the **Pairing mode** sensor shows it. Under *Configuration*. What happens next — putting
+the new blind into pairing, searching, assigning a room — is the Norman app's job and is not
+modelled here; the button exists so the window can be opened from an automation or a dashboard
+when someone is at the blind. The hub refuses it (Error 8 has been seen) while it is busy, for
+instance during a refresh sweep.
+
+Moves sent while that sweep is running have been answered with the hub's `Error 2`
+(observed only in that window so far); the integration retries a move a few times, five
+seconds apart, before failing it, so a press of Refresh blinds followed by a cover command
+still works — it just takes a little longer.
+
+### Wake sweep
+
+**Settings → Devices & services → Norman → Configure** has a second interval next to the poll:
+the **wake sweep**. Every interval it does what Refresh blinds does — the hub-wide sweep plus a
+status request per wired blind — so the hub's own cache is refreshed rather than merely
+re-read. The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's middle
+rail at 100, and when the blinds reported in several read 0; nothing had moved, the cache was
+stale. Off by default. The floor is ten minutes, because a sweep wakes every battery blind's
+radio; an hour is a sensible value, and is what the form suggests.
 
 ### Firmware version
 
@@ -164,13 +212,44 @@ on the same push refreshes as the cover and are unavailable under the same condi
 | Sensor | Source | Notes |
 |---|---|---|
 | **Battery** | `BatteryVoltage` | A percentage, despite the hub's field name: every hub seen reports 0–100 and its registration calls the feature `ReportBatteryLevel`. Battery device class, so it shows the usual icons and can drive low-battery automations. |
-| **Last seen** | `Timestamp` | When the blind last reported to the hub. Accepts epoch seconds, epoch milliseconds, or ISO 8601 from the hub; anything else shows *unknown*. |
+| **Last seen** | `Timestamp` | When the hub last **heard from** the blind. It moves whenever the blind reports in, including with nothing changed (a Request status press, or the hub's sweep after Refresh blinds), so it is a liveness signal rather than a last-change time. Accepts epoch seconds, epoch milliseconds, or ISO 8601 from the hub; anything else shows *unknown*. |
 | **Signal strength** | `RssiMean` | **Disabled by default.** A unitless radio-quality index from the hub (0 and 34 seen), not dBm. Useful for spotting a blind at the edge of range. |
 | **Firmware version** | `RfFirmwareVersion` on single-rail blinds, `FirmwareVersion` otherwise (see [Firmware version](#firmware-version)) | **Disabled by default**: the same value is already on the device page as `sw_version`. Enable it from the entity settings if you want history or automations on it. Carries both raw values as the `module_firmware` and `rf_firmware` attributes. |
 
 Sensor entity ids follow the same pattern as the cover with the sensor name appended, for
 example `sensor.living_room_living_drape_battery`. Installs that ran 0.11 keep their existing
 `..._battery_voltage` entity id; the entity is migrated in place.
+
+### Connection
+
+Each blind also gets a **Connection** binary sensor (connectivity device class, under
+**Diagnostic**): **on** while the hub has heard from the blind within the last **24 hours**,
+**off** once it has been quiet longer, and *unknown* if the hub has never dated it. The
+threshold is the Norman app's own: its device & battery status screen lists a blind under
+"Disconnect" once 86400 seconds have passed since the hub last heard from it, so this sensor
+and the app always agree. It re-evaluates on every hub update and on a 15-minute timer, since a
+blind going quiet produces no hub event.
+
+Off does **not** make the blind's other entities unavailable. A quiet blind is usually one
+whose radio is asleep; a command still wakes it (see [availability](#availability)). Off is
+the cue to press **Request status**, or to have an automation do so before commanding a blind
+that has been quiet:
+
+```yaml
+automation:
+  - alias: Wake a quiet blind before the evening close
+    triggers:
+      - trigger: time
+        at: "20:55:00"
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.living_room_living_drape_connection
+        state: "off"
+    actions:
+      - action: button.press
+        target:
+          entity_id: button.living_room_living_drape_request_status
+```
 
 ### Hub sensors
 
@@ -188,6 +267,12 @@ The hub device has its own diagnostic sensors:
 | Time zone | `TimeZone` in the device list | enabled | The IANA zone set in the Norman app; the hub uses it for its own schedules. |
 | Wi-Fi network | `WiFiSSID` in the registration reply | enabled | The network the hub is joined to. Diagnostics downloads still redact it. |
 | Wi-Fi signal | `WiFiRSSI` in status | disabled | dBm. |
+
+And one binary sensor:
+
+| Binary sensor | Source | Notes |
+|---|---|---|
+| Pairing mode | `PairingMode` in status | **On** while the hub's pairing window is open (status reports `5`; it lasts ten minutes after **Start pairing** or the app opens it), **off** at `0`. |
 
 ## Removing a blind
 

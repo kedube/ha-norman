@@ -48,15 +48,18 @@
         "title": "Norman のオプション",
         "description": "更新はハブからプッシュされます。このポーリングは、ハブが通知しない変更（多くは無線がスリープ中に動いたブラインド）に備えるものです。",
         "data": {
-          "poll_interval": "ポーリング間隔"
+          "poll_interval": "ポーリング間隔",
+          "wake_interval": "ウェイク間隔"
         },
         "data_description": {
-          "poll_interval": "各ブラインドの位置をハブから再取得する間隔。短いほど古い位置に早く気づき、長いほど負荷が減ります。0 でポーリングを無効にし、更新はハブの通知のみになります。"
+          "poll_interval": "各ブラインドの位置をハブから再取得する間隔。短いほど古い位置に早く気づき、長いほど負荷が減ります。0 でポーリングを無効にし、更新はハブの通知のみになります。",
+          "wake_interval": "Norman アプリの更新と同じように、すべてのブラインドに応答（バッテリー、位置、最終受信）を求める頻度です。上のポーリングが読み直すだけのハブ側キャッシュを更新します。0 で無効、それ以外は 600〜86400 秒。"
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "ポーリングを無効にするには 0 を、それ以外は 10〜3600 秒の値を入力してください。"
+      "poll_interval_out_of_range": "ポーリングを無効にするには 0 を、それ以外は 10〜3600 秒の値を入力してください。",
+      "wake_interval_out_of_range": "無効にするには 0 を、または 600〜86400 秒の値を入力してください。"
     }
   },
   "services": {
@@ -90,7 +93,7 @@
         },
         "command": {
           "name": "コマンド",
-          "description": "best_privacyはボトムレールを閉じ、ミドルレールはそのままにします。best_viewはボトムレールを開きます。favoriteは部屋を保存されたお気に入り位置に移動します。"
+          "description": "best_privacy は下レールを閉じ、中レールはそのままにします。best_view は下レールを開きます。favorite は部屋を保存済みのお気に入り位置へ動かします。refresh は部屋の各ブラインドに応答を求めます（何も動きません）。"
         },
         "config_entry_id": {
           "name": "ハブ",
@@ -159,6 +162,15 @@
       },
       "jog_down": {
         "name": "下へ微調整"
+      },
+      "request_status": {
+        "name": "状態を要求"
+      },
+      "refresh_blinds": {
+        "name": "ブラインドを更新"
+      },
+      "start_pairing": {
+        "name": "ペアリングを開始"
       }
     },
     "sensor": {
@@ -185,6 +197,14 @@
       },
       "wifi_ssid": {
         "name": "Wi-Fiネットワーク"
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "接続"
+      },
+      "pairing_mode": {
+        "name": "ペアリングモード"
       }
     }
   },
@@ -224,6 +244,9 @@
     },
     "button_needs_room": {
       "message": "{command} にはハブから取得する {name} の部屋とグループが必要ですが、まだ読み込まれていません。"
+    },
+    "hub_button_failed": {
+      "message": "ハブに {command} を送信できませんでした: {error}"
     }
   }
 }

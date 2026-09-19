@@ -48,15 +48,18 @@
         "title": "Norman 選項",
         "description": "更新由中樞推送。此輪詢是針對中樞從未通告的變化的保障，通常是無線休眠期間移動過的窗簾。",
         "data": {
-          "poll_interval": "輪詢間隔"
+          "poll_interval": "輪詢間隔",
+          "wake_interval": "喚醒掃描間隔"
         },
         "data_description": {
-          "poll_interval": "從中樞重新讀取每個窗簾位置的頻率。較低能更快發現過時位置，較高則負載更小。0 表示關閉輪詢，僅依賴中樞的通知。"
+          "poll_interval": "從中樞重新讀取每個窗簾位置的頻率。較低能更快發現過時位置，較高則負載更小。0 表示關閉輪詢，僅依賴中樞的通知。",
+          "wake_interval": "多久讓每個窗簾回報一次（電量、位置、最後回報），與 Norman 應用程式的重新整理相同。這會更新集線器本身的快取，而上面的輪詢只是重新讀取快取。0 為關閉；否則為 600 到 86400 秒。"
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "輸入 0 可關閉輪詢，或輸入 10 至 3600 秒之間的值。"
+      "poll_interval_out_of_range": "輸入 0 可關閉輪詢，或輸入 10 至 3600 秒之間的值。",
+      "wake_interval_out_of_range": "輸入 0 關閉喚醒掃描，或輸入 600 到 86400 秒之間的值。"
     }
   },
   "services": {
@@ -90,7 +93,7 @@
         },
         "command": {
           "name": "命令",
-          "description": "best_privacy 關閉底軌並保持中軌不變；best_view 打開底軌；favorite 將房間移至其儲存的收藏位置。"
+          "description": "best_privacy 關閉下軌並保持中軌不動；best_view 打開下軌；favorite 將房間移至已儲存的最愛位置；refresh 要求房間內每個窗簾回報狀態（不會移動）。"
         },
         "config_entry_id": {
           "name": "中樞",
@@ -159,6 +162,15 @@
       },
       "jog_down": {
         "name": "向下微調"
+      },
+      "request_status": {
+        "name": "要求狀態"
+      },
+      "refresh_blinds": {
+        "name": "重新整理窗簾"
+      },
+      "start_pairing": {
+        "name": "開始配對"
       }
     },
     "sensor": {
@@ -185,6 +197,14 @@
       },
       "wifi_ssid": {
         "name": "Wi-Fi 網路"
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "連線"
+      },
+      "pairing_mode": {
+        "name": "配對模式"
       }
     }
   },
@@ -224,6 +244,9 @@
     },
     "button_needs_room": {
       "message": "{command} 需要從中樞取得 {name} 的房間和群組，但尚未讀取。"
+    },
+    "hub_button_failed": {
+      "message": "無法將 {command} 傳送至集線器：{error}"
     }
   }
 }

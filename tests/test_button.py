@@ -11,8 +11,8 @@ from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.norman.button import BUTTONS
-from custom_components.norman.const import DOMAIN, HUB_COMMAND_TRIGGER
+from custom_components.norman.button import BUTTONS, HUB_BUTTONS
+from custom_components.norman.const import DOMAIN, HUB_COMMAND_SETTING, HUB_COMMAND_TRIGGER
 
 from .conftest import FakeHub
 from .const import UID_BEDROOM, UID_LIVING
@@ -43,7 +43,12 @@ async def test_every_blind_gets_the_buttons(
     for uid in (UID_LIVING, UID_BEDROOM):
         for description in BUTTONS:
             entry = _button(hass, uid, description.key)
-            assert entry.entity_category is EntityCategory.CONFIG, description.key
+            expected = (
+                EntityCategory.DIAGNOSTIC
+                if description.key == "request_status"
+                else EntityCategory.CONFIG
+            )
+            assert entry.entity_category is expected, description.key
             assert entry.disabled_by is None, f"{description.key} should be enabled"
 
     state = hass.states.get(_button(hass, UID_LIVING, "favorite").entity_id)
@@ -56,6 +61,9 @@ async def test_every_blind_gets_the_buttons(
     [
         ("jog_up", "MotorFineTuneToUp", HUB_COMMAND_TRIGGER),
         ("jog_down", "MotorFineTuneToDown", HUB_COMMAND_TRIGGER),
+        # The app's per-blind status request, value 0 like every non-motor verb; the
+        # blind answered within 5 s each time it was tried on hardware (2026-09-18).
+        ("request_status", "StatusRequest", HUB_COMMAND_SETTING),
     ],
 )
 async def test_press_sends_the_verb_and_refreshes(
@@ -169,3 +177,91 @@ async def test_jog_is_addressed_by_uid_not_room_and_group(
         assert "GroupID" not in call
 
     assert [d.addressed for d in BUTTONS if d.key.startswith("jog")] == [False, False]
+
+
+def _hub_button(hass: HomeAssistant, entry: MockConfigEntry, key: str) -> er.RegistryEntry:
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(BUTTON_DOMAIN, DOMAIN, f"{entry.entry_id}_{key}")
+    found = registry.async_get(entity_id or "")
+    assert found, f"no {key} button on the hub"
+    return found
+
+
+async def test_hub_gets_its_buttons(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
+    """The hub device carries the app's refresh (diagnostic) and start pairing (config)."""
+    assert [d.key for d in HUB_BUTTONS] == ["refresh_blinds", "start_pairing"]
+    entry = _hub_button(hass, init_integration, "refresh_blinds")
+    assert entry.entity_category is EntityCategory.DIAGNOSTIC
+    assert entry.disabled_by is None
+    state = hass.states.get(entry.entity_id)
+    assert state.attributes["friendly_name"] == "ShadeAuto Hub Refresh blinds"
+
+    pairing = _hub_button(hass, init_integration, "start_pairing")
+    assert pairing.entity_category is EntityCategory.CONFIG
+    assert hass.states.get(pairing.entity_id).attributes["friendly_name"] == (
+        "ShadeAuto Hub Start pairing"
+    )
+
+
+async def test_start_pairing_opens_the_window_and_re_reads_status(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """One press is `{"PairingMode": 5}` with no scope field, then a status re-read.
+
+    Captured from the app on 2026-09-18; the hub reported PairingMode 5 for ten minutes
+    after it. The re-read is what flips the Pairing mode sensor at once.
+    """
+    status_calls = len(fake_hub.calls_to("/status"))
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _hub_button(hass, init_integration, "start_pairing").entity_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    call = fake_hub.control_calls[-1]
+    assert set(call) == {"Timestamp", "TaskID", "PairingMode"}
+    assert call["PairingMode"] == 5
+    assert len(fake_hub.calls_to("/status")) == status_calls + 1
+
+
+async def test_refresh_blinds_sweeps_the_hub_then_pokes_each_wired_blind(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """One press is `{"ReportBatteryLevel": 0}` with no scope field, then one StatusRequest
+    per single-rail blind.
+
+    Captured from the app's refresh button on 2026-09-18. On hardware the hub-wide sweep
+    never reached the wired (single-rail) blinds, while a per-blind status request did, so
+    the button follows up with one for each of them. The battery blinds answer the sweep on
+    their own, one notification at a time over the next half minute.
+    """
+    before = len(fake_hub.control_calls)
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _hub_button(hass, init_integration, "refresh_blinds").entity_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    calls = fake_hub.control_calls[before:]
+    assert set(calls[0]) == {"Timestamp", "TaskID", "ReportBatteryLevel"}
+    assert calls[0]["ReportBatteryLevel"] == HUB_COMMAND_SETTING
+    assert [c["PeripheralUID"] for c in calls[1:]] == [UID_BEDROOM]
+    assert calls[1]["StatusRequest"] == HUB_COMMAND_SETTING
+
+
+async def test_refresh_blinds_failure_names_the_hub(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A hub error on the hub button reads as a hub failure, not a blind's."""
+    fake_hub.control_response = {"Error": 9}
+    with pytest.raises(HomeAssistantError, match="Failed to send refresh_blinds to the hub"):
+        await hass.services.async_call(
+            BUTTON_DOMAIN,
+            SERVICE_PRESS,
+            {ATTR_ENTITY_ID: _hub_button(hass, init_integration, "refresh_blinds").entity_id},
+            blocking=True,
+        )

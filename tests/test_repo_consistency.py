@@ -70,13 +70,17 @@ def test_hacs_declares_a_minimum_home_assistant_version() -> None:
 
 def test_entity_translation_keys_are_translated() -> None:
     """Every entity description's translation_key needs a name (and buttons an icon)."""
-    from custom_components.norman.button import BUTTONS
+    from custom_components.norman.binary_sensor import CONNECTION, PAIRING_MODE
+    from custom_components.norman.button import BUTTONS, HUB_BUTTONS
     from custom_components.norman.sensor import HUB_SENSORS, SENSORS
 
     strings = _load(COMPONENT / "strings.json")["entity"]
     sensor_keys = {description.translation_key for description in (*SENSORS, *HUB_SENSORS)}
     assert sensor_keys == set(strings["sensor"])
-    button_keys = {description.translation_key for description in BUTTONS}
+    assert {CONNECTION.translation_key, PAIRING_MODE.translation_key} == set(
+        strings["binary_sensor"]
+    )
+    button_keys = {description.translation_key for description in (*BUTTONS, *HUB_BUTTONS)}
     assert button_keys == set(strings["button"])
     icons = _load(COMPONENT / "icons.json")["entity"]["button"]
     assert button_keys == set(icons)

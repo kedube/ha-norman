@@ -22,8 +22,16 @@ from homeassistant.exceptions import HomeAssistantError
 from yarl import URL
 
 from .const import (
+    HUB_BUSY_RETRIES,
+    HUB_BUSY_RETRY_DELAY,
+    HUB_CMD_PAIRING_MODE,
+    HUB_CMD_REPORT_BATTERY,
+    HUB_CMD_REQUEST_STATUS,
     HUB_CMD_STOP,
+    HUB_COMMAND_SETTING,
     HUB_COMMAND_TRIGGER,
+    HUB_ERROR_BUSY,
+    HUB_PAIRING_START,
     HUB_PORT,
     NOTIF_MAX_BUFFER,
     NOTIF_MAX_DURATION,
@@ -44,7 +52,16 @@ ENDPOINT_NOTIFICATION = "/NM/v1/notification"
 
 
 class NormanApiError(HomeAssistantError):
-    """The hub answered, but with an error or an unparseable body."""
+    """The hub answered, but with an error or an unparseable body.
+
+    ``code`` is the hub's ``Error`` value when that is what failed, so callers can tell a
+    transient refusal (``HUB_ERROR_BUSY``) from everything else; ``None`` otherwise.
+    """
+
+    def __init__(self, message: str, code: int | str | None = None) -> None:
+        """Keep the hub's error code alongside the message."""
+        super().__init__(message)
+        self.code = code
 
 
 class NormanConnectionError(HomeAssistantError):
@@ -340,7 +357,7 @@ class NormanApiClient:
         error = data.get("Error", 0)
         if error in (0, "0", None) or (isinstance(error, str) and error.lower().startswith("succ")):
             return
-        raise NormanApiError(f"{what} failed with error code: {error}")
+        raise NormanApiError(f"{what} failed with error code: {error}", code=error)
 
     async def async_validate_connection(self) -> str | None:
         """Register with the hub and return its ThingName.
@@ -398,14 +415,63 @@ class NormanApiClient:
             bottom_rail_position: Bottom rail position (0=closed, 100=open)
             middle_rail_position: Middle rail position (0=closed, 100=open)
 
+        A move the hub answers with ``Error 2`` is retried, ``HUB_BUSY_RETRIES`` times and
+        ``HUB_BUSY_RETRY_DELAY`` seconds apart, before the error is raised. Every move sent
+        while the hub was sweeping its blinds after a refresh answered 2, and the same moves
+        succeeded once the sweep was over (const.py, ``HUB_ERROR_BUSY``), so a wait is the
+        fix. Any other error is raised at once.
         """
-        await self.async_send_control(
-            device_id,
-            {
-                "BottomRailPosition": bottom_rail_position,
-                "MiddleRailPosition": middle_rail_position,
-            },
-        )
+        fields = {
+            "BottomRailPosition": bottom_rail_position,
+            "MiddleRailPosition": middle_rail_position,
+        }
+        for attempt in range(HUB_BUSY_RETRIES + 1):
+            try:
+                await self.async_send_control(device_id, fields)
+            except NormanApiError as err:
+                if err.code != HUB_ERROR_BUSY or attempt == HUB_BUSY_RETRIES:
+                    raise
+                _LOGGER.debug(
+                    "Hub answered busy (Error %s) moving %s; retrying in %s s (%s of %s)",
+                    HUB_ERROR_BUSY,
+                    device_id,
+                    HUB_BUSY_RETRY_DELAY,
+                    attempt + 1,
+                    HUB_BUSY_RETRIES,
+                )
+                await asyncio.sleep(HUB_BUSY_RETRY_DELAY)
+            else:
+                return
+
+    async def async_request_status(self, device_id: int) -> None:
+        """Ask one blind to report in.
+
+        ``{"StatusRequest": 0, "PeripheralUID": ...}`` is what the Norman app's network
+        library builds for a per-blind status request. The hub relays it over the radio and
+        the blind answers within a few seconds: its ``Timestamp`` in ``status`` moves and the
+        hub pushes a notification naming it. Nothing moves. This is the per-blind form of
+        the app's "refresh" on its device & battery status screen.
+        """
+        await self.async_send_control(device_id, {HUB_CMD_REQUEST_STATUS: HUB_COMMAND_SETTING})
+
+    async def async_request_battery_report(self, room_id: int | None = None) -> None:
+        """Ask every blind in a room, or on the hub, to report in.
+
+        ``{"ReportBatteryLevel": 0}`` is what the app's refresh button sends (captured
+        2026-09-18). The hub polls its battery blinds one after another; the whole hub took
+        about 30 s, one room about 5 s. Despite the name the reply carries position and
+        last-seen as well as battery. ``room_id`` of ``None`` addresses the whole hub.
+        """
+        await self.async_send_room_control(room_id, {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING})
+
+    async def async_start_pairing(self) -> None:
+        """Open the hub's pairing window.
+
+        ``{"PairingMode": 5}`` with no scope field, as the app sends when adding a blind.
+        The hub then reports ``PairingMode: 5`` in ``status`` for ten minutes. It refuses
+        (Error 8, or 10 in an earlier capture) while busy, for instance during a sweep.
+        """
+        await self.async_send_room_control(None, {HUB_CMD_PAIRING_MODE: HUB_PAIRING_START})
 
     async def async_stop(self, device_id: int) -> None:
         """Stop a cover's motor where it is.

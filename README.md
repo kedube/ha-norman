@@ -185,11 +185,13 @@ rail"). Each rail also has a **position slider** (a `number` entity, 0–100% in
 which is often easier to place on a dashboard than a cover's own slider.
 
 Each blind also has **buttons** for best privacy, best view, its favorite position, jog up,
-and jog down, plus diagnostic sensors for **battery** (percent), **last seen**, and, disabled
-by default, **signal strength** and **firmware version**. The hub gets its own device with
-**MAC address**, **time zone**, and **Wi-Fi network** sensors, plus a **Wi-Fi signal** sensor
-that starts disabled. Full detail, including availability rules, is in
-[docs/entities.md](docs/entities.md).
+jog down, and **request status** (ask a quiet blind to report in); diagnostic sensors for
+**battery**, **last seen**, and, disabled by default, **signal strength** and **firmware
+version**; and a **connection** sensor that turns off after a day of silence, the Norman app's
+own "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
+and (disabled) **Wi-Fi signal** sensors, a **refresh blinds** button, a **start pairing** button
+for its ten-minute pairing window, and a **pairing mode** sensor. Full detail, including
+availability rules, is in [docs/entities.md](docs/entities.md).
 
 <img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, firmware version, last seen and signal strength." width="820">
 
@@ -279,7 +281,11 @@ actions:
   every blind. **Optional polling** backs this up for the case the hub cannot cover: a battery
   blind whose radio was asleep when it moved reports a stale position until something wakes it.
   Off by default; set an interval (10-3600 seconds) under the integration's **Configure**
-  button if you see stale positions.
+  button if you see stale positions. **Request status** (per blind) and **Refresh blinds**
+  (hub) wake a quiet blind on demand, and the **wake sweep** interval does so on a timer,
+  refreshing the hub's own cache rather than re-reading it.
+- **Ignored moves are chased.** Sixty seconds after a move, a blind that has not confirmed its
+  target is asked to report in and, if it still is not there, sent the move once more.
 - **Reconnects.** The long-poll is recycled every 5 minutes (old connections go quiet), and
   re-established 15 seconds after any drop. Every reconnect re-reads the list of blinds, so a
   blind paired after setup shows up without a restart.
@@ -289,7 +295,9 @@ actions:
 - **Commands.** Each move is sent to the hub, then the status is re-read so the entity reflects
   the blind as it moves. The hub's move command always takes *both* rails, so the untouched rail
   is sent back at its current target. Stop sends the hub's motor-stop verb, the same one the
-  Norman app's stop button sends.
+  Norman app's stop button sends. A move the hub answers with its "busy" code (seen while it is
+  sweeping the blinds after a refresh) is retried a few times, five seconds apart, before it
+  fails.
 - **Discovery.** The hub announces itself over mDNS; Home Assistant offers it, and re-announcements
   from a known hub update its address.
 

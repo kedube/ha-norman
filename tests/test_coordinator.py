@@ -17,15 +17,18 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from custom_components.norman.api import NormanConnectionError
 from custom_components.norman.const import (
     CONF_POLL_INTERVAL,
+    CONF_WAKE_INTERVAL,
     COVER_TYPE_SINGLE_RAIL,
     COVER_TYPE_TWO_RAIL,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
     MAX_POLL_INTERVAL,
     MIN_POLL_INTERVAL,
+    MIN_WAKE_INTERVAL,
     POLL_DISABLED,
+    WAKE_DISABLED,
 )
-from custom_components.norman.coordinator import NormanCoordinator, _poll_interval
+from custom_components.norman.coordinator import NormanCoordinator, _poll_interval, _wake_interval
 from custom_components.norman.entity import hub_identifier
 
 from .conftest import HUB_MAC, FakeHub, cover_entity_id, settle
@@ -579,3 +582,55 @@ async def test_changing_the_poll_interval_reloads_the_entry(
     await hass.async_block_till_done()
 
     assert init_integration.runtime_data.update_interval is None, "switched back off"
+
+
+@pytest.mark.parametrize(
+    ("option", "expected"),
+    [
+        (None, None),
+        (3600, timedelta(seconds=3600)),
+        (MIN_WAKE_INTERVAL, timedelta(seconds=MIN_WAKE_INTERVAL)),
+        (WAKE_DISABLED, None),
+        (5, None),  # below the floor: off
+        ("banana", None),
+    ],
+)
+def test_wake_interval_option(option: object, expected: timedelta | None) -> None:
+    """0 disables the wake sweep; anything unusable falls back to the default (off)."""
+    options = {} if option is None else {CONF_WAKE_INTERVAL: option}
+    entry = MockConfigEntry(domain=DOMAIN, options=options)
+    assert _wake_interval(entry) == expected
+
+
+async def test_wake_sweep_has_every_blind_report_in_on_the_timer(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Each tick sends the hub-wide report verb, then a status request per wired blind.
+
+    The hub-wide ReportBatteryLevel sweep reached only the battery blinds on hardware; the
+    four wired (single-rail) ones ignored it every time, while a per-blind StatusRequest
+    had one answering in four seconds. So the sweep is followed by one request per wired
+    blind. Battery blinds get nothing extra: the sweep already covers them.
+    """
+    hass.config_entries.async_update_entry(init_integration, options={CONF_WAKE_INTERVAL: 3600})
+    await hass.async_block_till_done()
+    before = len(fake_hub.control_calls)
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3601))
+    await settle(hass)
+
+    calls = fake_hub.control_calls[before:]
+    assert [c.get("ReportBatteryLevel") for c in calls[:1]] == [0]
+    assert "RoomID" not in calls[0]
+    status_requests = [c["PeripheralUID"] for c in calls if "StatusRequest" in c]
+    assert status_requests == [UID_BEDROOM], "only the single-rail blind gets a status request"
+
+
+async def test_wake_sweep_is_off_by_default(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """With no option set, no sweep runs no matter how much time passes."""
+    before = len(fake_hub.control_calls)
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(days=2))
+    await settle(hass)
+    assert not [c for c in fake_hub.control_calls[before:] if "ReportBatteryLevel" in c]

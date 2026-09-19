@@ -85,6 +85,9 @@ class FakeHub:
         self.devices: dict[str, Any] = devices_payload()
         self.status: dict[str, Any] = status_payload()
         self.control_response: dict[str, Any] = {"Error": 0}
+        # Replies to hand out one per /control call before falling back to control_response;
+        # for a hub that answers busy and then succeeds.
+        self.control_responses: list[dict[str, Any]] = []
         self.control_exc: Exception | None = None
         self.status_exc: Exception | None = None
         self.notification_body: str = json.dumps({"Error": 0})
@@ -108,6 +111,8 @@ class FakeHub:
     async def _control(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
         if self.control_exc is not None:
             raise self.control_exc
+        if self.control_responses:
+            return AiohttpClientMockResponse(method, url, json=self.control_responses.pop(0))
         return AiohttpClientMockResponse(method, url, json=self.control_response)
 
     async def _notification(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:

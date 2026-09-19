@@ -48,15 +48,18 @@
         "title": "Norman options",
         "description": "Updates are pushed by the hub. This poll is a safety net for changes the hub never announces — most often a blind that moved while its radio was asleep.",
         "data": {
-          "poll_interval": "Poll interval"
+          "poll_interval": "Poll interval",
+          "wake_interval": "Wake sweep interval"
         },
         "data_description": {
-          "poll_interval": "How often to re-read every blind's position from the hub. Lower notices a stale position sooner; higher does less work. 0 turns polling off, leaving updates to the hub's notifications alone."
+          "poll_interval": "How often to re-read every blind's position from the hub. Lower notices a stale position sooner; higher does less work. 0 turns polling off, leaving updates to the hub's notifications alone.",
+          "wake_interval": "How often to have every blind report in (battery, position, last seen), as the Norman app's refresh does. This refreshes the hub's own cache, which the poll above only re-reads. 0 turns it off; otherwise 600 to 86400 seconds."
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "Enter 0 to turn polling off, or a value between 10 and 3600 seconds."
+      "poll_interval_out_of_range": "Enter 0 to turn polling off, or a value between 10 and 3600 seconds.",
+      "wake_interval_out_of_range": "Enter 0 to turn the wake sweep off, or a value between 600 and 86400 seconds."
     }
   },
   "services": {
@@ -90,7 +93,7 @@
         },
         "command": {
           "name": "Command",
-          "description": "best_privacy closes the bottom rail and leaves the middle rail where it is; best_view opens the bottom rail; favorite sends the room to its stored favorite."
+          "description": "best_privacy closes the bottom rail and leaves the middle rail where it is; best_view opens the bottom rail; favorite sends the room to its stored favorite; refresh asks every blind in the room to report in (nothing moves)."
         },
         "config_entry_id": {
           "name": "Hub",
@@ -159,6 +162,15 @@
       },
       "jog_down": {
         "name": "Jog down"
+      },
+      "request_status": {
+        "name": "Request status"
+      },
+      "refresh_blinds": {
+        "name": "Refresh blinds"
+      },
+      "start_pairing": {
+        "name": "Start pairing"
       }
     },
     "sensor": {
@@ -185,6 +197,14 @@
       },
       "wifi_ssid": {
         "name": "Wi-Fi network"
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Connection"
+      },
+      "pairing_mode": {
+        "name": "Pairing mode"
       }
     }
   },
@@ -224,6 +244,9 @@
     },
     "button_needs_room": {
       "message": "{command} needs {name}'s room and group from the hub, which have not been read yet."
+    },
+    "hub_button_failed": {
+      "message": "Failed to send {command} to the hub: {error}"
     }
   }
 }

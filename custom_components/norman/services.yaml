@@ -46,7 +46,7 @@ room_command:
       name: Room
       description: >-
         The room's name as the hub knows it (the Norman app's room name). Leave empty to
-        address every blind on the hub; only best_privacy and best_view work hub-wide.
+        address every blind on the hub.
       example: Office
       required: false
       selector:
@@ -55,7 +55,8 @@ room_command:
       name: Command
       description: >-
         best_privacy closes the bottom rail and leaves the middle rail where it is;
-        best_view opens the bottom rail; favorite sends the room to its stored favorite.
+        best_view opens the bottom rail; favorite sends the room to its stored favorite;
+        refresh asks every blind in the room to report in (nothing moves).
       required: true
       selector:
         select:
@@ -63,6 +64,7 @@ room_command:
             - best_privacy
             - best_view
             - favorite
+            - refresh
     config_entry_id:
       name: Hub
       description: Which hub, when more than one is set up.

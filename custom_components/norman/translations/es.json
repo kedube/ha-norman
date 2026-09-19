@@ -48,15 +48,18 @@
         "title": "Opciones de Norman",
         "description": "El hub envía las actualizaciones. Este sondeo es una red de seguridad para los cambios que el hub nunca anuncia, normalmente una persiana que se movió mientras su radio estaba en reposo.",
         "data": {
-          "poll_interval": "Intervalo de sondeo"
+          "poll_interval": "Intervalo de sondeo",
+          "wake_interval": "Intervalo de activación"
         },
         "data_description": {
-          "poll_interval": "Con qué frecuencia se vuelve a leer la posición de cada persiana desde el hub. Un valor menor detecta antes una posición obsoleta; uno mayor genera menos carga. 0 desactiva el sondeo y deja las actualizaciones solo a las notificaciones del hub."
+          "poll_interval": "Con qué frecuencia se vuelve a leer la posición de cada persiana desde el hub. Un valor menor detecta antes una posición obsoleta; uno mayor genera menos carga. 0 desactiva el sondeo y deja las actualizaciones solo a las notificaciones del hub.",
+          "wake_interval": "Cada cuánto pedir a todas las persianas que informen (batería, posición, última vez visto), como hace la actualización de la app Norman. Esto renueva la caché del propio hub, que el sondeo de arriba solo vuelve a leer. 0 lo desactiva; si no, de 600 a 86400 segundos."
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "Introduzca 0 para desactivar el sondeo, o un valor entre 10 y 3600 segundos."
+      "poll_interval_out_of_range": "Introduzca 0 para desactivar el sondeo, o un valor entre 10 y 3600 segundos.",
+      "wake_interval_out_of_range": "Introduce 0 para desactivarlo, o un valor entre 600 y 86400 segundos."
     }
   },
   "services": {
@@ -90,7 +93,7 @@
         },
         "command": {
           "name": "Comando",
-          "description": "best_privacy cierra el riel inferior y deja el riel central donde está; best_view abre el riel inferior; favorite envía la habitación a su posición favorita guardada."
+          "description": "best_privacy cierra el riel inferior y deja el riel central donde está; best_view abre el riel inferior; favorite lleva la habitación a su posición favorita guardada; refresh pide a cada persiana de la habitación que informe (nada se mueve)."
         },
         "config_entry_id": {
           "name": "Concentrador",
@@ -159,6 +162,15 @@
       },
       "jog_down": {
         "name": "Paso hacia abajo"
+      },
+      "request_status": {
+        "name": "Solicitar estado"
+      },
+      "refresh_blinds": {
+        "name": "Actualizar persianas"
+      },
+      "start_pairing": {
+        "name": "Iniciar emparejamiento"
       }
     },
     "sensor": {
@@ -185,6 +197,14 @@
       },
       "wifi_ssid": {
         "name": "Red Wi-Fi"
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Conexión"
+      },
+      "pairing_mode": {
+        "name": "Modo de emparejamiento"
       }
     }
   },
@@ -224,6 +244,9 @@
     },
     "button_needs_room": {
       "message": "{command} necesita la habitación y el grupo de {name} del concentrador, que aún no se han leído."
+    },
+    "hub_button_failed": {
+      "message": "No se pudo enviar {command} al hub: {error}"
     }
   }
 }

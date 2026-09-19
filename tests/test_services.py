@@ -15,7 +15,7 @@ import voluptuous as vol
 from custom_components.norman.const import DOMAIN
 
 from .conftest import FakeHub
-from .const import HUB_THING_NAME, HUB_URL, UID_LIVING
+from .const import HUB_THING_NAME, HUB_URL, UID_BEDROOM, UID_LIVING
 
 
 async def _get_hub_data(hass: HomeAssistant, **data) -> dict:
@@ -269,3 +269,40 @@ async def test_hub_wide_favorite_sends_the_bare_verb(
     assert call["Favorite"] == 0
     assert "RoomID" not in call
     assert "PeripheralUID" not in call
+
+
+async def test_room_command_refresh_asks_the_room_to_report_in(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """`refresh` is the app's report-in verb: ReportBatteryLevel 0, room- or hub-wide.
+
+    Verified on hardware on 2026-09-18: the room form had all three blinds in the room
+    report in within 5 s; the hub-wide form took about 30 s for every battery blind.
+    Nothing moves.
+    """
+    before = len(fake_hub.control_calls)
+    await hass.services.async_call(
+        DOMAIN, "room_command", {"room": "Living Room", "command": "refresh"}, blocking=True
+    )
+    calls = fake_hub.control_calls[before:]
+    assert calls[0]["ReportBatteryLevel"] == 0
+    assert calls[0]["RoomID"] == 1
+    assert "Switch" not in calls[0]
+    # The living room holds only a two-rail blind, which the sweep reaches by itself.
+    assert len(calls) == 1
+
+    before = len(fake_hub.control_calls)
+    await hass.services.async_call(
+        DOMAIN, "room_command", {"room": "Bedroom", "command": "refresh"}, blocking=True
+    )
+    calls = fake_hub.control_calls[before:]
+    assert calls[0]["RoomID"] == 2
+    # The bedroom's single-rail shade is poked individually: the sweep skips wired blinds.
+    assert [c.get("PeripheralUID") for c in calls[1:]] == [UID_BEDROOM]
+    assert calls[1]["StatusRequest"] == 0
+
+    before = len(fake_hub.control_calls)
+    await hass.services.async_call(DOMAIN, "room_command", {"command": "refresh"}, blocking=True)
+    calls = fake_hub.control_calls[before:]
+    assert "RoomID" not in calls[0]
+    assert [c.get("PeripheralUID") for c in calls[1:]] == [UID_BEDROOM]

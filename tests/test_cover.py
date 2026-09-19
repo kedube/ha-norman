@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
+from unittest.mock import patch
 
 import aiohttp
 from homeassistant.components.cover import (
@@ -36,7 +38,13 @@ from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.norman.const import DOMAIN, HUB_CMD_STOP, HUB_COMMAND_TRIGGER
+from custom_components.norman.const import (
+    DOMAIN,
+    HUB_BUSY_RETRIES,
+    HUB_CMD_STOP,
+    HUB_COMMAND_TRIGGER,
+)
+from custom_components.norman.coordinator import NormanCoordinator
 
 from .conftest import FakeHub, cover_entity_id, settle
 from .const import UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
@@ -439,6 +447,129 @@ async def test_command_failures_raise_home_assistant_error(
 
     with pytest.raises(HomeAssistantError, match=f"Failed to set position.*Living Drape.*{match}"):
         await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+
+
+async def test_a_busy_hub_is_retried_before_the_move_fails(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Error 2 on a move is retried a few times, spaced out; success on a retry is success.
+
+    Every move sent while the hub was sweeping its blinds after a refresh answered Error 2,
+    and the identical moves a minute later answered 0 (captured 2026-09-18). Any other code
+    still fails at once (the parametrized failure test above covers Error 3).
+    """
+    fake_hub.control_responses = [{"Error": 2}, {"Error": 2}, {"Error": 0}]
+    with patch("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0):
+        await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+
+    moves = [c for c in fake_hub.control_calls if "BottomRailPosition" in c]
+    assert len(moves) == 3
+    assert {m["BottomRailPosition"] for m in moves} == {10}
+
+
+async def test_a_hub_that_stays_busy_fails_with_the_code(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """After the last retry the error reaches the user with the hub's code in it."""
+    fake_hub.control_response = {"Error": 2}
+    with (
+        patch("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0),
+        pytest.raises(HomeAssistantError, match="Failed to set position.*error code: 2"),
+    ):
+        await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+
+    moves = [c for c in fake_hub.control_calls if "BottomRailPosition" in c]
+    assert len(moves) == 1 + HUB_BUSY_RETRIES
+
+
+async def _watchdog_done(coordinator: NormanCoordinator, uid: int) -> None:
+    """Wait for the blind's move watchdog to run to completion.
+
+    Not ``async_block_till_done(wait_background_tasks=True)``: that would also wait for the
+    notification listener, which never ends.
+    """
+    if task := coordinator._move_watchers.get(uid):
+        await task
+    await settle_hass(coordinator)
+
+
+async def settle_hass(coordinator: NormanCoordinator) -> None:
+    await coordinator.hass.async_block_till_done()
+
+
+def _moves(fake_hub: FakeHub, uid: int) -> list[dict[str, Any]]:
+    return [
+        c
+        for c in fake_hub.control_calls
+        if c.get("PeripheralUID") == uid and "BottomRailPosition" in c
+    ]
+
+
+async def test_move_watchdog_chases_a_blind_that_never_moved(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A move the blind ignored is followed by a status request, then sent once more.
+
+    Captured 2026-09-18: blind 8399 answered a move to middle 100 with Error 0 and then
+    sat at middle 0 with target 100 for twelve minutes, until a report-in cleared it. So
+    after the travel time the blind is asked to report in; if it is still not at the
+    target, the move goes again -- once, with no further chase.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+        await _watchdog_done(coordinator, UID_LIVING)
+
+    calls = fake_hub.control_calls
+    moves = _moves(fake_hub, UID_LIVING)
+    assert len(moves) == 2, "the move, then the one retry"
+    assert moves[0] == moves[1] | {"Timestamp": moves[0]["Timestamp"], "TaskID": moves[0]["TaskID"]}
+    status_requests = [c for c in calls if c.get("StatusRequest") == 0]
+    assert [c["PeripheralUID"] for c in status_requests] == [UID_LIVING]
+    assert calls.index(status_requests[0]) < calls.index(moves[1])
+
+
+async def test_move_watchdog_is_quiet_when_the_blind_arrives(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A blind that reaches its target gets no status request and no retry."""
+    orig = fake_hub._control
+
+    async def _arrive(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if "BottomRailPosition" in body:
+            fake_hub.set_position(UID_LIVING, bottom=body["BottomRailPosition"])
+        return await orig(method, url, data)
+
+    with (
+        patch.object(fake_hub, "_control", _arrive),
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+        await _watchdog_done(init_integration.runtime_data, UID_LIVING)
+
+    assert len(_moves(fake_hub, UID_LIVING)) == 1
+    assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+
+
+async def test_stop_cancels_the_move_watchdog(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """After a stop there is no target to chase, so the watch is dropped."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+    assert UID_LIVING in coordinator._move_watchers
+
+    await _call(hass, COVER_DOMAIN, SERVICE_STOP_COVER)
+    await settle(hass)
+    assert UID_LIVING not in coordinator._move_watchers
+    assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
 
 
 async def test_new_blind_is_added_after_reconnect(

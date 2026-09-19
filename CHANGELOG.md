@@ -5,6 +5,42 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Wake a quiet blind.** A battery blind's radio sleeps between commands and the hub stops
+  hearing from it; its battery, last-seen and position go stale, and the Norman app lists it
+  as "Disconnect" with a refresh button. That refresh is now in Home Assistant, captured from
+  the app on 2026-09-18 and confirmed against its network library: a **Request status** button
+  on every blind (`StatusRequest: 0`, the blind answered within five seconds each time) and a
+  **Refresh blinds** button on the hub (`ReportBatteryLevel: 0`, every battery blind reports
+  in over about half a minute). `norman.room_command` gains `refresh` for one room. Nothing
+  moves; the answers arrive as the hub's own notifications.
+- **Connection sensor.** Each blind gets a connectivity binary sensor that turns off once
+  the hub has not heard from it for 24 hours — the app's own "Disconnect" rule, read from its
+  code — and on again the moment it reports in. It does not affect availability: a quiet blind
+  still takes commands. It is the cue for an automation to press Request status.
+- **Busy hub retried.** Every move sent while the hub was sweeping its blinds after a refresh
+  came back with the hub's `Error 2`, and the same moves succeeded a minute later. A move that
+  gets that code is now retried up to three times, five seconds apart, before it fails.
+- **Last seen is a liveness time.** The hub's per-blind `Timestamp` moves whenever the blind
+  reports in, not only when its state changes; the docs and the availability note said
+  otherwise and now do not.
+- **Ignored moves are chased.** A blind can accept a move and not go, and the hub then
+  reports the old position with the new target until the blind next reports in (one sat
+  like that for twelve minutes in the capture). Sixty seconds after every move the
+  integration now checks that the blind confirmed the target; if not, it asks the blind to
+  report in and, if the report shows it never moved, sends the move once more. A stop
+  cancels the watch.
+- **Refresh reaches wired blinds too.** The hub-wide sweep never woke the wired (single-rail)
+  blinds, but a per-blind status request did, so Refresh blinds and `room_command: refresh`
+  now follow the sweep with one request per wired blind in scope.
+- **Wake sweep option.** A second interval next to the poll in the integration's options.
+  Every interval it has every blind report in, the way the refresh button does, which
+  refreshes the hub's own cache; the poll only re-reads it, and the capture showed that
+  cache wrong for blinds that had gone quiet. Off by default; ten minutes to a day.
+- **Pairing window on the hub.** A **Start pairing** button opens the hub's ten-minute
+  pairing window (the app's own request) and a **Pairing mode** sensor shows while it is
+  open. Pairing itself still happens at the blind and in the app.
+
 ## 0.41 — 2026-09-14
 - **The card now draws each blind as a window.** Every blind gets a picture of itself — the
   frame, the head rail, and the fabric hanging down to wherever the hub says each rail is —

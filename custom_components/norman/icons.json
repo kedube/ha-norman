@@ -15,6 +15,23 @@
       },
       "jog_down": {
         "default": "mdi:arrow-down-bold"
+      },
+      "request_status": {
+        "default": "mdi:access-point"
+      },
+      "refresh_blinds": {
+        "default": "mdi:refresh"
+      },
+      "start_pairing": {
+        "default": "mdi:link-plus"
+      }
+    },
+    "binary_sensor": {
+      "pairing_mode": {
+        "default": "mdi:link-off",
+        "state": {
+          "on": "mdi:link-plus"
+        }
       }
     }
   },

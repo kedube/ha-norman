@@ -48,15 +48,18 @@
         "title": "Norman 选项",
         "description": "更新由中枢推送。此轮询是针对中枢从未通告的变化的保障，通常是无线休眠期间移动过的窗帘。",
         "data": {
-          "poll_interval": "轮询间隔"
+          "poll_interval": "轮询间隔",
+          "wake_interval": "唤醒扫描间隔"
         },
         "data_description": {
-          "poll_interval": "从中枢重新读取每个窗帘位置的频率。较低能更快发现过时位置，较高则负载更小。0 表示关闭轮询，仅依赖中枢的通知。"
+          "poll_interval": "从中枢重新读取每个窗帘位置的频率。较低能更快发现过时位置，较高则负载更小。0 表示关闭轮询，仅依赖中枢的通知。",
+          "wake_interval": "多久让每个窗帘上报一次（电量、位置、最后上报），与 Norman 应用的刷新相同。这会更新网关自身的缓存，而上面的轮询只是重新读取缓存。0 为关闭；否则为 600 到 86400 秒。"
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "输入 0 可关闭轮询，或输入 10 至 3600 秒之间的值。"
+      "poll_interval_out_of_range": "输入 0 可关闭轮询，或输入 10 至 3600 秒之间的值。",
+      "wake_interval_out_of_range": "输入 0 关闭唤醒扫描，或输入 600 到 86400 秒之间的值。"
     }
   },
   "services": {
@@ -90,7 +93,7 @@
         },
         "command": {
           "name": "命令",
-          "description": "best_privacy 关闭底轨并保持中轨不变；best_view 打开底轨；favorite 将房间移至其存储的收藏位置。"
+          "description": "best_privacy 关闭下轨并保持中轨不动；best_view 打开下轨；favorite 将房间移动到已保存的收藏位置；refresh 要求房间内每个窗帘上报状态（不会移动）。"
         },
         "config_entry_id": {
           "name": "中枢",
@@ -159,6 +162,15 @@
       },
       "jog_down": {
         "name": "向下微调"
+      },
+      "request_status": {
+        "name": "请求状态"
+      },
+      "refresh_blinds": {
+        "name": "刷新窗帘"
+      },
+      "start_pairing": {
+        "name": "开始配对"
       }
     },
     "sensor": {
@@ -185,6 +197,14 @@
       },
       "wifi_ssid": {
         "name": "Wi-Fi 网络"
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "连接"
+      },
+      "pairing_mode": {
+        "name": "配对模式"
       }
     }
   },
@@ -224,6 +244,9 @@
     },
     "button_needs_room": {
       "message": "{command} 需要从中枢获取 {name} 的房间和分组，但尚未读取。"
+    },
+    "hub_button_failed": {
+      "message": "无法将 {command} 发送到网关：{error}"
     }
   }
 }

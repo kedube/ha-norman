@@ -86,11 +86,14 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
         A blind that is out of radio range or has a flat battery is not distinguishable
         from a healthy one here: the hub keeps listing it in ``status`` with its last known
         position, and the fields that might reveal the difference do not. ``RssiMean`` reads
-        0 on healthy two-rail blinds, and ``Timestamp`` is the last state *change*, so a
-        blind nobody has moved for a week looks identical to one that has dropped off.
-        Marking a blind unavailable on either would blank working entities, which is worse
-        than a stale position. So availability tracks only what the hub actually tells us:
-        the peripheral is gone from the payload entirely, or the hub itself is unreachable.
+        0 on healthy two-rail blinds, and ``Timestamp`` is when the hub last *heard* from the
+        blind -- a battery blind's radio sleeps between commands, so a healthy blind nobody
+        has touched goes quiet too, and a command still wakes it. Marking a blind
+        unavailable on either would blank working entities, which is worse than a stale
+        position. So availability tracks only what the hub actually tells us: the
+        peripheral is gone from the payload entirely, or the hub itself is unreachable. The
+        connection binary sensor reports the quiet-for-a-day case separately, with the
+        app's own 24 h rule, and the Request status button ends it.
         """
         return super().available and self._device_id in self.coordinator.data
 
@@ -153,10 +156,12 @@ class NormanRailMixin(NormanEntity):
                     "error": str(err),
                 },
             ) from err
+        self.coordinator.async_watch_move(self._device_id, bottom_val, middle_val)
         await self.coordinator.async_request_refresh()
 
     async def _async_stop_motor(self) -> None:
         """Stop the motor where it is (the hub has one stop per blind, not per rail)."""
+        self.coordinator.async_cancel_move_watch(self._device_id)
         try:
             await self.coordinator.api.async_stop(self._device_id)
         except (NormanApiError, NormanConnectionError) as err:

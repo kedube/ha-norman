@@ -132,7 +132,11 @@ async def _async_send_room_fields(
     """Send one room command, to a room or (``room_id`` None) to every blind on the hub."""
     coordinator = entry.runtime_data
     try:
-        await coordinator.api.async_send_room_control(room_id, ROOM_COMMANDS[command])
+        if command == "refresh":
+            # The sweep plus a per-blind status request to each wired blind in scope.
+            await coordinator.async_refresh_blinds(room_id)
+        else:
+            await coordinator.api.async_send_room_control(room_id, ROOM_COMMANDS[command])
     except (NormanConnectionError, NormanApiError) as err:
         raise HomeAssistantError(
             translation_domain=DOMAIN,

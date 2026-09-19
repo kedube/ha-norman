@@ -48,15 +48,18 @@
         "title": "Norman-Optionen",
         "description": "Aktualisierungen werden vom Hub gesendet. Diese Abfrage dient als Absicherung für Änderungen, die der Hub nie meldet — meist ein Rollo, das sich bewegt hat, während sein Funkmodul im Ruhezustand war.",
         "data": {
-          "poll_interval": "Abfrageintervall"
+          "poll_interval": "Abfrageintervall",
+          "wake_interval": "Weck-Intervall"
         },
         "data_description": {
-          "poll_interval": "Wie oft die Position jedes Rollos vom Hub neu gelesen wird. Niedriger erkennt eine veraltete Position früher; höher verursacht weniger Last. 0 deaktiviert die Abfrage, sodass nur noch die Benachrichtigungen des Hubs zählen."
+          "poll_interval": "Wie oft die Position jedes Rollos vom Hub neu gelesen wird. Niedriger erkennt eine veraltete Position früher; höher verursacht weniger Last. 0 deaktiviert die Abfrage, sodass nur noch die Benachrichtigungen des Hubs zählen.",
+          "wake_interval": "Wie oft sich jede Jalousie melden soll (Batterie, Position, zuletzt gesehen), wie beim Aktualisieren in der Norman-App. Das erneuert den Zwischenspeicher des Hubs, den die Abfrage oben nur ausliest. 0 schaltet es aus; sonst 600 bis 86400 Sekunden."
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "Geben Sie 0 ein, um die Abfrage zu deaktivieren, oder einen Wert zwischen 10 und 3600 Sekunden."
+      "poll_interval_out_of_range": "Geben Sie 0 ein, um die Abfrage zu deaktivieren, oder einen Wert zwischen 10 und 3600 Sekunden.",
+      "wake_interval_out_of_range": "0 zum Ausschalten eingeben, oder einen Wert zwischen 600 und 86400 Sekunden."
     }
   },
   "services": {
@@ -90,7 +93,7 @@
         },
         "command": {
           "name": "Befehl",
-          "description": "best_privacy schließt die untere Schiene und lässt die mittlere Schiene unverändert; best_view öffnet die untere Schiene; favorite fährt den Raum auf seine gespeicherte Favoritenposition."
+          "description": "best_privacy schließt die untere Schiene und lässt die mittlere Schiene, wo sie ist; best_view öffnet die untere Schiene; favorite fährt den Raum auf die gespeicherte Favoritenposition; refresh fordert jede Jalousie im Raum auf, sich zu melden (nichts bewegt sich)."
         },
         "config_entry_id": {
           "name": "Hub",
@@ -159,6 +162,15 @@
       },
       "jog_down": {
         "name": "Schritt nach unten"
+      },
+      "request_status": {
+        "name": "Status anfordern"
+      },
+      "refresh_blinds": {
+        "name": "Jalousien aktualisieren"
+      },
+      "start_pairing": {
+        "name": "Kopplung starten"
       }
     },
     "sensor": {
@@ -185,6 +197,14 @@
       },
       "wifi_ssid": {
         "name": "WLAN-Netzwerk"
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Verbindung"
+      },
+      "pairing_mode": {
+        "name": "Kopplungsmodus"
       }
     }
   },
@@ -224,6 +244,9 @@
     },
     "button_needs_room": {
       "message": "{command} benötigt Raum und Gruppe von {name} vom Hub, die noch nicht gelesen wurden."
+    },
+    "hub_button_failed": {
+      "message": "{command} konnte nicht an den Hub gesendet werden: {error}"
     }
   }
 }

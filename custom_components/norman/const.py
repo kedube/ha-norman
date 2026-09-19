@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from homeassistant.const import Platform
 
 DOMAIN = "norman"
 MANUFACTURER = "Norman"
 
 # Platforms
-PLATFORMS = [Platform.BUTTON, Platform.COVER, Platform.NUMBER, Platform.SENSOR]
+PLATFORMS = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.COVER,
+    Platform.NUMBER,
+    Platform.SENSOR,
+]
 
 # The hub speaks plain HTTP on a fixed port on the local network; there is no TLS and no
 # authentication in the vendor protocol (see docs/NORMAN_API.md).
@@ -40,6 +48,37 @@ MAX_POLL_INTERVAL = 3600
 # on is one click rather than a guess.
 SUGGESTED_POLL_INTERVAL = 60
 CONF_POLL_INTERVAL = "poll_interval"
+
+# The wake sweep: have every blind report in on a timer, the way the Norman app's refresh
+# does (hub-wide ReportBatteryLevel, plus a StatusRequest to each wired blind, which the
+# hub-wide sweep skips). The poll above only re-reads the hub's *cache*, and the capture of
+# 2026-09-18 showed that cache being wrong for a blind that had gone quiet -- middle rails
+# the hub reported at 100 read 0 once the blinds reported in. The sweep refreshes the cache
+# itself: positions, battery and last-seen become what the blind says now. Off by default;
+# the floor keeps a sweep from waking battery blinds more than a few times an hour.
+WAKE_DISABLED = 0
+DEFAULT_WAKE_INTERVAL = WAKE_DISABLED
+MIN_WAKE_INTERVAL = 600
+MAX_WAKE_INTERVAL = 86400
+SUGGESTED_WAKE_INTERVAL = 3600
+CONF_WAKE_INTERVAL = "wake_interval"
+
+# The move watchdog. A blind that ignores a move leaves the hub reporting the old position
+# with the new target -- indefinitely, until the blind next reports in (blind 8399 sat at
+# middle 0 / target 100 for twelve minutes on 2026-09-18 after answering the move with
+# Error 0). So after a move, if the blind has not confirmed the target within MOVE_TIMEOUT,
+# it is asked to report in; if the report shows it never moved, the move is sent once more.
+# A large shade takes ~30 s to travel end to end, so the timeout leaves a margin over that.
+MOVE_TIMEOUT = 60.0
+MOVE_REPORT_WAIT = 10.0
+
+# Pairing. `{"PairingMode": 5}` on control opens the hub's pairing window; status then
+# reports `PairingMode: 5` for ten minutes (22:08:47 to 22:18:48 on 2026-09-18) and 0 after.
+# The hub refused it with Error 8 while sweeping its blinds, and with Error 10 in an
+# earlier capture. The rest of the app's pairing flow (SearchForPeripheral, room discovery,
+# remote pairing) is not modelled: only the window is exposed.
+HUB_CMD_PAIRING_MODE = "PairingMode"
+HUB_PAIRING_START = 5
 
 # Seconds to wait after the notification stream drops before reconnecting.
 RECONNECT_INTERVAL = 15
@@ -212,6 +251,33 @@ HUB_CMD_FAVORITE = "Favorite"
 HUB_CMD_SWITCH = "Switch"
 HUB_SWITCH_OPEN = 1
 HUB_SWITCH_CLOSE = 0
+# The two "report in" verbs, captured from the app's device & battery status screen on
+# 2026-09-18 and confirmed against its network library (DKIoTClient.framework builds both
+# with the same value-0 literal it uses for FindTop and Favorite):
+#   {"StatusRequest": 0, "PeripheralUID": X}  -- one blind; it answered within 5 s each time
+#   {"ReportBatteryLevel": 0}                  -- every battery blind on the hub (the app's
+#                                                refresh button); ~30 s for all to report
+#   {"ReportBatteryLevel": 0, "RoomID": R}     -- one room; all three blinds in 5 s
+# Neither moves anything. A blind that reports in updates its `Timestamp` in `status` and the
+# hub pushes a PeripheralList notification for it, which is how the coordinator learns of it.
+# See docs/NORMAN_API.md, "Waking a blind".
+HUB_CMD_REQUEST_STATUS = "StatusRequest"
+HUB_CMD_REPORT_BATTERY = "ReportBatteryLevel"
+
+# Error 2 on a position command. Observed on 2026-09-18: every move sent while the hub was
+# sweeping its blinds after three refresh taps (a ~50 s window) answered Error 2, and the
+# identical moves a minute later answered 0. A StatusRequest sent mid-sweep still answered 0,
+# so it is not a blanket "busy" -- but it is the only code the hub has ever returned for a
+# move, and waiting cured it. A move is therefore retried a few times, spaced out, before the
+# error reaches the user. Diagnostics record every attempt.
+HUB_ERROR_BUSY = 2
+HUB_BUSY_RETRIES = 3
+HUB_BUSY_RETRY_DELAY = 5.0
+
+# The Norman app lists a blind under "Disconnect" when the hub has not heard from it for
+# 86400 s (the constant in its isDisconnectPeripheral:withHub: check). The connection
+# binary sensor uses the same rule so Home Assistant and the app agree.
+UNRESPONSIVE_AFTER = timedelta(hours=24)
 
 COVER_TYPE_TWO_RAIL = "two_rail"
 COVER_TYPE_SINGLE_RAIL = "single_rail"
@@ -242,9 +308,12 @@ ROOM_COMMANDS: dict[str, dict[str, int]] = {
     "best_privacy": {"Switch": 0},
     "best_view": {"Switch": 1},
     "favorite": {"Favorite": HUB_COMMAND_SETTING},
+    # Asks every blind in the room to report in (battery, position, last seen). Nothing
+    # moves. Verified room-wide and hub-wide on 2026-09-18.
+    "refresh": {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING},
 }
 
-# All three verbs work with no RoomID at all, addressing every blind on the hub. This is what
+# All four verbs work with no RoomID at all, addressing every blind on the hub. This is what
 # the app's "All Rooms" screen sends, captured from it: the bare verb with no scope field.
 # None of the three is conditioned on rail count: a per-blind capture of a single-rail shade
 # shows the app sending Switch 0, Switch 1 and Favorite to it unchanged.
