@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.47 — 2026-09-19
 - **Wake a quiet blind.** A battery blind's radio sleeps between commands and the hub stops
   hearing from it; its battery, last-seen and position go stale, and the Norman app lists it
   as "Disconnect" with a refresh button. That refresh is now in Home Assistant, captured from
