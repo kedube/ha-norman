@@ -188,8 +188,14 @@ def _hub_button(hass: HomeAssistant, entry: MockConfigEntry, key: str) -> er.Reg
 
 
 async def test_hub_gets_its_buttons(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
-    """The hub device carries the app's refresh (diagnostic) and start pairing (config)."""
-    assert [d.key for d in HUB_BUTTONS] == ["refresh_blinds", "start_pairing"]
+    """The hub device carries the three All Rooms verbs, refresh, and start pairing."""
+    assert [d.key for d in HUB_BUTTONS] == [
+        "all_best_privacy",
+        "all_best_view",
+        "all_favorite",
+        "refresh_blinds",
+        "start_pairing",
+    ]
     entry = _hub_button(hass, init_integration, "refresh_blinds")
     assert entry.entity_category is EntityCategory.DIAGNOSTIC
     assert entry.disabled_by is None
@@ -265,3 +271,49 @@ async def test_refresh_blinds_failure_names_the_hub(
             {ATTR_ENTITY_ID: _hub_button(hass, init_integration, "refresh_blinds").entity_id},
             blocking=True,
         )
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("all_best_privacy", {"Switch": 0}),
+        ("all_best_view", {"Switch": 1}),
+        ("all_favorite", {"Favorite": 0}),
+    ],
+)
+async def test_hub_wide_buttons_send_the_bare_verb(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    key: str,
+    expected: dict[str, int],
+) -> None:
+    """The All Rooms verbs carry no scope field at all -- an omitted scope means everything.
+
+    One request reaches every blind: the hub fans out over its own radio, so this is not
+    thirteen paced commands. Verified on hardware with every blind staged at 50/50 first,
+    single-rail blinds included (docs/NORMAN_API.md, "Room-wide and hub-wide control").
+    """
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _hub_button(hass, init_integration, key).entity_id},
+        blocking=True,
+    )
+
+    call = fake_hub.control_calls[-1]
+    assert {k: call[k] for k in expected} == expected
+    # No scope field: not a room, not a blind, and no all-rooms marker either.
+    assert set(call) == {"Timestamp", "TaskID", *expected}
+
+
+async def test_hub_wide_buttons_are_config_entities(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """They sit with the hub's other configuration entities, not its diagnostics."""
+    for key in ("all_best_privacy", "all_best_view", "all_favorite"):
+        entry = _hub_button(hass, init_integration, key)
+        assert entry.entity_category is EntityCategory.CONFIG, key
+        assert entry.disabled_by is None, key
+    state = hass.states.get(_hub_button(hass, init_integration, "all_favorite").entity_id)
+    assert state.attributes["friendly_name"] == "ShadeAuto Hub All blinds favorite position"

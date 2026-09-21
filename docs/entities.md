@@ -3,13 +3,13 @@
 Per blind the integration creates a **cover** (two for two-rail blinds), a **position slider**
 per rail, six **buttons**, four **diagnostic sensors**, and a **connection** sensor, all on one
 **device**. The hub gets a device of its own carrying four diagnostic sensors, a pairing-mode
-sensor, and two buttons.
+sensor, and five buttons.
 
 | | Per blind | On the hub |
 |---|---|---|
 | Cover | Bottom rail; Middle rail on two-rail blinds | — |
 | Number | Bottom rail position; Middle rail position on two-rail blinds | — |
-| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | Refresh blinds, Start pairing |
+| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | All blinds best privacy, All blinds best view, All blinds favorite position, Refresh blinds, Start pairing |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
 | Binary sensor | Connection | Pairing mode |
 
@@ -161,6 +161,25 @@ Errors follow the cover convention: a hub error or timeout fails the press with 
 naming the verb and the blind.
 
 ### Hub buttons
+
+**All blinds best privacy**, **All blinds best view** and **All blinds favorite position** are
+the three buttons the Norman app offers on its **All Rooms** header, for the whole house. Each
+is **one** request carrying the bare verb and no scope field at all — `{"Switch": 0}`,
+`{"Switch": 1}`, `{"Favorite": 0}` — because an omitted scope means "everything", not
+"nothing". The hub then fans out over its own radio, so unlike thirteen per-blind commands
+these are not paced from Home Assistant (see
+[Command spacing](options.md#command-spacing)); one press is one request however many blinds
+you have.
+
+Verified on the reference hub with every blind staged at 50/50 first, which matters: an
+earlier capture could not tell whether single-rail blinds honour a hub-wide `Favorite`, because
+they were already at their end position when it fired. Staged away from it, all thirteen moved
+— the single-rail blinds to 50%. Best privacy puts the bottom rail at 0 and the middle rail at
+100 (private, but the sheer fabric still open); best view opens both; favorite runs each blind
+to its own stored position.
+
+Blinds take 30–60 s to travel and the hub keeps reporting the old position meanwhile, so the
+entities will lag the press. The room-scoped forms are `norman.room_command` with a `room`.
 
 **Refresh blinds** sends `{"ReportBatteryLevel": 0}` with no scope field: the same request the
 Norman app's refresh button sends on its device & battery status screen. The hub then polls

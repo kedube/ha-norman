@@ -151,6 +151,15 @@
       }
     },
     "button": {
+      "all_best_privacy": {
+        "name": "All blinds best privacy"
+      },
+      "all_best_view": {
+        "name": "All blinds best view"
+      },
+      "all_favorite": {
+        "name": "All blinds favorite position"
+      },
       "best_privacy": {
         "name": "プライバシー重視"
       },

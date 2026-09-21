@@ -108,9 +108,13 @@ BUTTONS: tuple[NormanButtonDescription, ...] = (
 
 @dataclass(frozen=True, kw_only=True)
 class NormanHubButtonDescription(ButtonEntityDescription):
-    """A button on the hub device and what pressing it does."""
+    """A button on the hub device and what pressing it does.
 
-    press_fn: Callable[[NormanCoordinator], Awaitable[None]]
+    ``press_fn`` may return the hub's reply; nothing here reads it, so the type is left
+    open rather than forcing every action to be wrapped in a discarding lambda.
+    """
+
+    press_fn: Callable[[NormanCoordinator], Awaitable[Any]]
 
 
 # The hub's own buttons. Refresh blinds is the app's refresh on its device & battery status
@@ -120,6 +124,37 @@ class NormanHubButtonDescription(ButtonEntityDescription):
 # opens the hub's ten-minute pairing window (the Pairing mode sensor shows it); the rest of
 # pairing happens at the blind and in the app.
 HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
+    # The app's All Rooms header offers the same three buttons for the whole house, and the
+    # hub takes them with no scope field at all (docs/NORMAN_API.md, "Room-wide and hub-wide
+    # control"). One request moves every blind: the hub fans out over its own radio, so
+    # these are not paced from here the way thirteen per-blind commands would be. Verified
+    # on the reference hub with every blind staged at 50/50 first -- all thirteen moved,
+    # including the four single-rail ones, which the original capture could not settle
+    # because they were already at their end position when it fired.
+    NormanHubButtonDescription(
+        key="all_best_privacy",
+        translation_key="all_best_privacy",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+            None, {HUB_CMD_SWITCH: HUB_SWITCH_CLOSE}
+        ),
+    ),
+    NormanHubButtonDescription(
+        key="all_best_view",
+        translation_key="all_best_view",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+            None, {HUB_CMD_SWITCH: HUB_SWITCH_OPEN}
+        ),
+    ),
+    NormanHubButtonDescription(
+        key="all_favorite",
+        translation_key="all_favorite",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+            None, {HUB_CMD_FAVORITE: HUB_COMMAND_SETTING}
+        ),
+    ),
     NormanHubButtonDescription(
         key="refresh_blinds",
         translation_key="refresh_blinds",

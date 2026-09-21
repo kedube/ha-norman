@@ -299,8 +299,11 @@ all-rooms marker: `{"Switch": 0}`, `{"Switch": 1}`, `{"Favorite": 0}`. An omitte
 "everything", not "nothing".
 
 Hub-wide `Favorite` moved every two-rail blind to its stored 0/50. The four single-rail blinds
-did not move, but they were already sitting at bottom 100 when it fired, so that capture says
-nothing either way about them.
+did not move in that capture, but they were already sitting at bottom 100 when it fired, so it
+said nothing either way about them. **Settled since**, by staging all thirteen blinds at 50/50
+first and then sending each of the three hub-wide verbs: every blind moved, the single-rail
+ones going to 50% on `Favorite`. Best Privacy's bottom 0 / middle 100 was confirmed at this
+scope too.
 
 A later per-blind capture of a **single-rail** shade settles it: the app sends all three verbs
 to it in exactly the same form as to a two-rail blind, addressed by `RoomID` + `GroupID`.
@@ -317,7 +320,8 @@ So none of the three verbs is conditioned on rail count, at any scope. On a sing
 | Body (plus `Timestamp`, `TaskID`) | Effect |
 |---|---|
 | `{"Switch": 1}` | open every blind on the hub (both rails to 100) -- **verified** |
-| `{"Switch": 0}` | close every blind on the hub (bottom to 0, middle to 100) |
+| `{"Switch": 0}` | close every blind on the hub (bottom to 0, middle to 100) -- **verified** |
+| `{"Favorite": 0}` | send every blind on the hub to its stored favorite -- **verified** |
 | `{"Switch": 1, "RoomID": 29550}` / `{"Switch": 0, "RoomID": 29550}` | open / close every blind in the room |
 | `{"Favorite": 0, "RoomID": 24973}` | send every blind in the room to its stored favorite position |
 
@@ -337,7 +341,8 @@ still lit. Reading this from a capture alone is misleading -- a room that is alr
 `Switch` left the middle rail untouched. Stage a blind away from both rails' end positions
 before drawing conclusions.
 
-`norman.room_command` sends these three. The hub echoes `Switch` / `Favorite` and `RoomID`.
+`norman.room_command` sends these three, and the hub's three **All blinds** buttons send
+the hub-wide form. The hub echoes `Switch` / `Favorite` and `RoomID`.
 
 **Both verbs take three scopes, selected by which address fields are present:**
 

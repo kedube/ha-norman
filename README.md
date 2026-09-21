@@ -188,12 +188,13 @@ rail"). Each rail also has a **position slider** (a `number` entity, 0–100% in
 which is often easier to place on a dashboard than a cover's own slider.
 
 Each blind also has **buttons** for best privacy, best view, its favorite position, jog up,
-jog down, and **request status** (ask a quiet blind to report in); diagnostic sensors for
-**battery**, **last seen**, and, disabled by default, **signal strength** and **firmware
-version**; and a **connection** sensor that turns off after a day of silence, the Norman app's
-own "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
-and (disabled) **Wi-Fi signal** sensors, a **refresh blinds** button, a **start pairing** button
-for its ten-minute pairing window, and a **pairing mode** sensor. Full detail, including
+jog down and **request status** (ask a quiet blind to report in); diagnostic sensors for
+**battery**, **last seen** and, disabled by default, **signal strength** and **firmware
+version**; and a **connection** sensor that turns off after a day of silence, the app's own
+"Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
+and (disabled) **Wi-Fi signal** sensors; **all blinds** best privacy, best view and favorite
+buttons (the app's All Rooms header, one request for the whole house); **refresh blinds**,
+**start pairing** and a **pairing mode** sensor. Full detail, including
 availability rules, is in [docs/entities.md](docs/entities.md).
 
 <img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, firmware version, last seen and signal strength." width="820">
@@ -280,9 +281,8 @@ actions:
   a timer ([docs/options.md](docs/options.md)).
 - **Commands are paced.** The hub has one radio and drops commands sent faster than it can
   transmit them, so they are queued and spaced ([docs/options.md](docs/options.md#command-spacing)).
-- **Ignored commands are chased.** A minute after a move — or a Best Privacy, Best View or
-  Favorite press — a blind that has not confirmed it is asked to report in and, if it still is
-  not there, sent the command once more.
+- **Ignored commands are chased.** A minute after a move or a preset press, a blind that has
+  not confirmed it is asked to report in and, if still not there, sent the command again.
 - **Reconnects.** The long-poll is recycled every 5 minutes (old connections go quiet), and
   re-established 15 seconds after any drop. Every reconnect re-reads the list of blinds, so a
   blind paired after setup shows up without a restart.

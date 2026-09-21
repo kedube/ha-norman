@@ -1,6 +1,15 @@
 {
   "entity": {
     "button": {
+      "all_best_privacy": {
+        "default": "mdi:blinds-horizontal"
+      },
+      "all_best_view": {
+        "default": "mdi:weather-sunny"
+      },
+      "all_favorite": {
+        "default": "mdi:star"
+      },
       "best_privacy": {
         "default": "mdi:blinds-horizontal"
       },
