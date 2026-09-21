@@ -46,6 +46,7 @@ configuration.*
 | [docs/dashboard.md](docs/dashboard.md) | The bundled **Norman Shades** card, and building your own views |
 | [examples/dashboard.yaml](examples/dashboard.yaml) | A ready-made dashboard view to copy from |
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
+| [docs/options.md](docs/options.md) | Polling, wake sweeps, and command spacing |
 | [docs/services.md](docs/services.md) | All four actions, and the hub verbs `send_hub_command` can send |
 | [docs/NORMAN_API.md](docs/NORMAN_API.md) | The hub's local API, for contributors |
 
@@ -124,7 +125,9 @@ with the version you came from and the version you moved to is the fastest way t
 
 ## Configuration
 
-The only setting is the hub's address, and usually Home Assistant finds it for you.
+The only setting needed to get going is the hub's address, and usually Home Assistant finds it
+for you. Three tuning options (polling, wake sweeps, and command spacing) are described in
+[docs/options.md](docs/options.md).
 
 **Discovered.** The hub announces itself on the local network, so once the integration is
 installed a **Norman Hub (address)** card appears under **Settings → Devices & services →
@@ -211,21 +214,16 @@ complete dashboard you can paste into the raw configuration editor.
 
 ### Actions
 
-Alongside the standard cover actions, the integration provides five of its own — two
-relative-move actions for automations and buttons, one room-wide action, and two for
-troubleshooting:
+Alongside the standard cover actions, the integration provides five of its own:
 
 - `norman.nudge_position` — move by `step` (positive opens, negative closes).
 - `norman.nudge_tilt` — tilt by `step` (direction depends on the blind; on SmartDrape,
   negative tilts left).
-- `norman.room_command` — run one of the Norman app's own room buttons (`best_privacy`,
-  `best_view`, `favorite`) against every blind in a room, in one request to the hub.
-- `norman.get_hub_data` — returns the hub's raw device list and status as a response, for
-  bug reports and for adding support for new blind types.
+- `norman.room_command` — run a Norman app room button (`best_privacy`, `best_view`,
+  `favorite`) against every blind in a room, in one request to the hub.
+- `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports.
 - `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for
-  one blind, for the verbs that have no entity of their own (setting or clearing a limit, and
-  calibration, and the run-to-limit verbs). Fine-tune, favorite, best privacy and best view
-  are buttons; stop is on the covers.
+  one blind, for the verbs that have no entity of their own (limits, calibration, run-to-limit).
 
 The nudges are relative to where the blind is **heading**, so repeated presses add up, and both
 clamp to 0–100. See [docs/services.md](docs/services.md).
@@ -276,16 +274,15 @@ actions:
 
 - **Local only.** Every request goes to the hub's HTTP API on port 10123 of your LAN. The
   integration never contacts Norman's servers and opens no listening ports.
-- **Push updates.** The integration holds a long-poll connection open to the hub. Whenever a
-  blind's state changes, the hub sends a notification and the integration re-reads the status of
-  every blind. **Optional polling** backs this up for the case the hub cannot cover: a battery
-  blind whose radio was asleep when it moved reports a stale position until something wakes it.
-  Off by default; set an interval (10-3600 seconds) under the integration's **Configure**
-  button if you see stale positions. **Request status** (per blind) and **Refresh blinds**
-  (hub) wake a quiet blind on demand, and the **wake sweep** interval does so on a timer,
-  refreshing the hub's own cache rather than re-reading it.
-- **Ignored moves are chased.** Sixty seconds after a move, a blind that has not confirmed its
-  target is asked to report in and, if it still is not there, sent the move once more.
+- **Push updates.** The integration holds a long-poll connection open to the hub, which
+  notifies it whenever a blind's state changes. **Request status** (per blind) and **Refresh
+  blinds** (hub) wake a quiet blind on demand; optional polling and wake sweeps do the same on
+  a timer ([docs/options.md](docs/options.md)).
+- **Commands are paced.** The hub has one radio and drops commands sent faster than it can
+  transmit them, so they are queued and spaced ([docs/options.md](docs/options.md#command-spacing)).
+- **Ignored commands are chased.** A minute after a move — or a Best Privacy, Best View or
+  Favorite press — a blind that has not confirmed it is asked to report in and, if it still is
+  not there, sent the command once more.
 - **Reconnects.** The long-poll is recycled every 5 minutes (old connections go quiet), and
   re-established 15 seconds after any drop. Every reconnect re-reads the list of blinds, so a
   blind paired after setup shows up without a restart.
@@ -346,6 +343,9 @@ new covering types are welcome and are the main thing that broadens this table.
   ~30 seconds to travel, during which the hub keeps reporting the old position; only the target
   changes immediately. Automations that check a position right after commanding one will read
   the previous value.
+- **Commanding many blinds at once takes time.** The hub's radio drops commands sent too
+  fast, so they are queued and spaced: thirteen blinds take about 16 seconds. Tunable; see
+  [docs/options.md](docs/options.md#command-spacing).
 - **Hub schedules are not exposed.** The hub stores its own sunrise/sunset and clock schedules;
   the integration neither shows nor edits them, since Home Assistant automations do the same
   job with more flexibility. Delete hub schedules that would fight your automations.
@@ -404,6 +404,9 @@ with the response and what the product is.
 The hub has no single-rail command, so the integration sends the untouched rail's current
 target along with the change. If the hub reports no target and no position for that rail, it
 falls back to 100 (open). A [diagnostics export](#diagnostics) shows what the hub reports.
+
+**I commanded several blinds at once and only some of them moved.**
+Raise the **Command spacing** option — see [docs/options.md](docs/options.md#command-spacing).
 
 **The hub's address changed.**
 Use [Reconfigure](#changing-the-hub-address).

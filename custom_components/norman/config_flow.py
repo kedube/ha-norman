@@ -26,13 +26,17 @@ import voluptuous as vol
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
+    CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
+    DEFAULT_CONTROL_INTERVAL,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
+    MAX_CONTROL_INTERVAL,
     MAX_POLL_INTERVAL,
     MAX_WAKE_INTERVAL,
+    MIN_CONTROL_INTERVAL,
     MIN_POLL_INTERVAL,
     MIN_WAKE_INTERVAL,
     POLL_DISABLED,
@@ -72,6 +76,18 @@ OPTIONS_SCHEMA = vol.Schema(
                 min=WAKE_DISABLED,
                 max=MAX_WAKE_INTERVAL,
                 step=1,
+                unit_of_measurement="seconds",
+                mode=NumberSelectorMode.BOX,
+            )
+        ),
+        # Unlike the two above there is no "off" value here: the hub always needs a gap
+        # between control sends, so the selector's range is the whole rule and the step
+        # handler has nothing extra to check.
+        vol.Required(CONF_CONTROL_INTERVAL, default=DEFAULT_CONTROL_INTERVAL): NumberSelector(
+            NumberSelectorConfig(
+                min=MIN_CONTROL_INTERVAL,
+                max=MAX_CONTROL_INTERVAL,
+                step=0.1,
                 unit_of_measurement="seconds",
                 mode=NumberSelectorMode.BOX,
             )
@@ -231,9 +247,16 @@ class NormanOptionsFlow(OptionsFlow):
                 errors[CONF_POLL_INTERVAL] = "poll_interval_out_of_range"
             if wake != WAKE_DISABLED and not MIN_WAKE_INTERVAL <= wake <= MAX_WAKE_INTERVAL:
                 errors[CONF_WAKE_INTERVAL] = "wake_interval_out_of_range"
+            control = float(user_input.get(CONF_CONTROL_INTERVAL, DEFAULT_CONTROL_INTERVAL))
+            if not MIN_CONTROL_INTERVAL <= control <= MAX_CONTROL_INTERVAL:
+                errors[CONF_CONTROL_INTERVAL] = "control_interval_out_of_range"
             if not errors:
                 return self.async_create_entry(
-                    data={CONF_POLL_INTERVAL: seconds, CONF_WAKE_INTERVAL: wake}
+                    data={
+                        CONF_POLL_INTERVAL: seconds,
+                        CONF_WAKE_INTERVAL: wake,
+                        CONF_CONTROL_INTERVAL: control,
+                    }
                 )
 
         # An entry that has never been configured shows the suggested values rather than the
@@ -245,6 +268,7 @@ class NormanOptionsFlow(OptionsFlow):
             or {
                 CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL,
                 CONF_WAKE_INTERVAL: SUGGESTED_WAKE_INTERVAL,
+                CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
             }
         )
 

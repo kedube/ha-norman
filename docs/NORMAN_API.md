@@ -605,6 +605,13 @@ all with HTTP 200 and the fields echoed back, so the code is the only signal of 
 No mapping of codes to meanings exists; treat any other non-zero value as "the hub refused
 this" and surface it verbatim.
 
+**`Error: 0` means the hub accepted the command, not that a blind carried it out.** The hub
+answers `0` and echoes the fields back for a command it then fails to deliver over the radio,
+and it stores the new `TargetBottomRailPosition` either way. The only evidence that a blind
+acted is its **position** converging on that target in a later `status` read — which can take
+30–60 s, and may never happen if the transmission was missed (see
+[Control commands are paced](#control-commands-are-paced)).
+
 `_raise_on_error_code` accepts four spellings of success on the `Error` endpoints: `0`, the
 string `"0"`, an absent or `null` field, and any string beginning with `succ`
 (case-insensitive). Be equally permissive in new code — the hub demonstrably uses more than one
@@ -639,6 +646,7 @@ periodic reconnect (300 s) / disconnect (15 s) ──► GetAllPeripheral + stat
 cover / number action ──► control (both positions) ──► status (request_refresh)
 cover stop ──► control (MotorStop) ──► status (request_refresh)
 button press ──► control (Switch / Favorite by room+group, or jog by uid) ──► status (refresh)
+                  (Switch / Favorite are then watched, and resent once if the blind never moved)
 get_hub_data action ──► GetAllPeripheral + status (redacted, returned as the response)
 send_hub_command action ──► control (caller's fields) ──► status
 mDNS announcement ──► config flow ──► registration (identity) ──► offer, or refresh the address
@@ -669,12 +677,33 @@ reading a capture: `status` is the hot path and carries positions and battery, w
 heavier structural payload — names, rooms, module types, firmware — is fetched rarely. A
 `schedule` update does not invalidate anything, since schedules are not modelled.
 
-Requests share one aiohttp session and the integration takes no lock, so it **can** have more
-than one in flight: `PARALLEL_UPDATES = 0` on every platform means Home Assistant does not
-serialise entity commands, and the notification listener's refreshes run concurrently with
-them. In practice this has caused no trouble — the hub echoes a per-request `TaskID`, which
-suggests it queues work rather than assuming one caller — but that is an observation, not a
-guarantee from the protocol, and nothing here has been stress-tested for it.
+### Control commands are paced
+
+**The hub has one radio, and it drops commands sent faster than it can transmit them.** A
+script that sent Best Privacy to all thirteen blinds at once (diagnostics of 2026-09-21,
+every request stamped with the same `Timestamp`) had the hub serialise the HTTP replies
+~333 ms apart, answer every one with `Error: 0`, and store every blind's target — and
+**eleven of the thirteen blinds never moved**. They never heard the command: the hub
+transmitted while their acknowledgement windows overlapped, and nothing in the protocol
+reports that. Resending does not help, because a resent burst collides the same way.
+
+The gap was measured on the reference hub by sending the same thirteen commands with a
+fixed delay between them: at 1.0–1.2 s a few blinds still missed, and at **1.3 s all
+thirteen responded**. So `_async_control` holds an `asyncio.Lock` and spaces every
+`/control` send by `CONTROL_MIN_INTERVAL` (const.py, 1.3 s), measured from the end of the
+previous send so that a slow hub reply counts towards the gap rather than adding to it.
+Concurrent callers queue rather than collide; thirteen commands take ~16 s to dispatch.
+
+Only `/control` is gated. `status` reads, `GetAllPeripheral` and the notification stream are
+unaffected and still run concurrently, so the UI stays responsive while a batch drains.
+
+Requests otherwise share one aiohttp session and `PARALLEL_UPDATES = 0` on every platform, so
+Home Assistant does not serialise entity commands itself and the notification listener's
+refreshes run alongside them. The hub echoes a per-request `TaskID`, which suggests it queues
+HTTP work rather than assuming one caller — the acks were never the problem, the radio was.
+
+**If you are writing another client, pace your control calls.** The `Error: 0` reply is not
+evidence that a blind heard anything; see [Error conventions](#error-conventions).
 
 ## Capturing traffic
 

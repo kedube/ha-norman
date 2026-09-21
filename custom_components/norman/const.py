@@ -72,6 +72,25 @@ CONF_WAKE_INTERVAL = "wake_interval"
 MOVE_TIMEOUT = 60.0
 MOVE_REPORT_WAIT = 10.0
 
+# Minimum gap between two `control` sends. The hub has one radio and transmits to blinds
+# one at a time: a Best Privacy script that fired all thirteen blinds in the same second
+# (diagnostics of 2026-09-21, every request stamped 1790018526) had the hub serialise them
+# ~333 ms apart, ack every one with Error 0, store every target -- and eleven of thirteen
+# blinds never moved, having missed their transmission. Pacing the sends fixes it, and the
+# threshold was measured on the reference hub: at 1.0-1.2 s a few blinds still missed,
+# at 1.3 s all thirteen responded. Sends are serialised by a lock and spaced by this gap,
+# so a burst of commands takes (n * this) seconds to dispatch rather than colliding. Hubs
+# differ -- more blinds, longer range, a different radio environment -- so this is the
+# default for a user-configurable option rather than a fixed constant.
+DEFAULT_CONTROL_INTERVAL = 1.3
+# Bounds offered in the options flow. The floor is the hub's own observed serialisation rate
+# (~333 ms), below which pacing cannot help; the ceiling keeps a mistyped value from making a
+# whole-house scene take minutes -- at 5 s, thirteen blinds already take over a minute. A
+# value outside the range falls back to the default.
+MIN_CONTROL_INTERVAL = 0.3
+MAX_CONTROL_INTERVAL = 5.0
+CONF_CONTROL_INTERVAL = "control_interval"
+
 # Pairing. `{"PairingMode": 5}` on control opens the hub's pairing window; status then
 # reports `PairingMode: 5` for ten minutes (22:08:47 to 22:18:48 on 2026-09-18) and 0 after.
 # The hub refused it with Error 8 while sweeping its blinds, and with Error 10 in an

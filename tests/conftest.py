@@ -56,6 +56,19 @@ def _fake_arp() -> AsyncGenerator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _no_control_pacing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Send control commands without the inter-command gap.
+
+    Real sends are spaced by the entry's command-spacing option (1.3 s by default) because
+    the hub's radio drops commands that arrive faster; see const.py. That is wall-clock
+    time the tests would otherwise wait through on every command, so the gap is zeroed
+    here -- the option keeps its real default -- and the pacing is covered in test_api.py.
+    """
+    monkeypatch.setattr("custom_components.norman.coordinator._control_interval", lambda entry: 0.0)
+    monkeypatch.setattr("custom_components.norman.api.DEFAULT_CONTROL_INTERVAL", 0)
+
+
+@pytest.fixture(autouse=True)
 def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Load custom_components/ for every test."""
 

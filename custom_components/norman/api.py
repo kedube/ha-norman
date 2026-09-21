@@ -22,6 +22,7 @@ from homeassistant.exceptions import HomeAssistantError
 from yarl import URL
 
 from .const import (
+    DEFAULT_CONTROL_INTERVAL,
     HUB_BUSY_RETRIES,
     HUB_BUSY_RETRY_DELAY,
     HUB_CMD_PAIRING_MODE,
@@ -251,6 +252,13 @@ class NormanApiClient:
         self._session = session
         self._thing_name: str | None = None
         self._task_ids = itertools.count(1)
+        # The hub has a single radio and transmits to one blind at a time, so `control`
+        # sends are serialised and spaced (``control_interval``, from the options). Only
+        # control is gated: status reads and the notification stream are unaffected.
+        self._control_lock = asyncio.Lock()
+        self._last_control: float | None = None
+        # Seconds between control sends; set from the entry's options when it loads.
+        self.control_interval = DEFAULT_CONTROL_INTERVAL
         self.traffic = TrafficRecorder()
         # Hub identity from the registration reply, for the hub device
         self.hub_model: str | None = None
@@ -481,6 +489,25 @@ class NormanApiClient:
         """
         await self.async_send_control(device_id, {HUB_CMD_STOP: HUB_COMMAND_TRIGGER})
 
+    async def _async_control(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST to the control endpoint, serialised and paced.
+
+        Every control send goes through here. The hub acks a command it cannot deliver
+        (``Error 0``, target stored, blind never moves), so a burst of commands is lost
+        silently; ``DEFAULT_CONTROL_INTERVAL`` in const.py has the measurement. The lock makes
+        concurrent callers queue rather than collide, and the gap is measured from the end
+        of the previous send, so a slow hub reply counts towards it.
+        """
+        async with self._control_lock:
+            if self._last_control is not None:
+                gap = time.monotonic() - self._last_control
+                if gap < self.control_interval:
+                    await asyncio.sleep(self.control_interval - gap)
+            try:
+                return await self._async_request(ENDPOINT_CONTROL, payload)
+            finally:
+                self._last_control = time.monotonic()
+
     async def async_send_control(self, device_id: int, fields: dict[str, Any]) -> dict[str, Any]:
         """POST arbitrary fields to the control endpoint for one peripheral.
 
@@ -489,14 +516,13 @@ class NormanApiClient:
         ``send_hub_command`` action exposes for the other verbs the hub advertises (see
         docs/NORMAN_API.md, "Control verbs"). Returns the hub's reply.
         """
-        data = await self._async_request(
-            ENDPOINT_CONTROL,
+        data = await self._async_control(
             {
                 "PeripheralUID": device_id,
                 "Timestamp": int(time.time()),
                 "TaskID": self._next_task_id(),
                 **fields,
-            },
+            }
         )
         self._raise_on_error_code(data, "Control request")
         return data
@@ -522,7 +548,7 @@ class NormanApiClient:
         }
         if device_id is not None:
             payload["PeripheralUID"] = device_id
-        data = await self._async_request(ENDPOINT_CONTROL, payload)
+        data = await self._async_control(payload)
         self._raise_on_error_code(data, "Blind control request")
         return data
 
@@ -546,7 +572,7 @@ class NormanApiClient:
         }
         if room_id is not None:
             payload["RoomID"] = room_id
-        data = await self._async_request(ENDPOINT_CONTROL, payload)
+        data = await self._async_control(payload)
         self._raise_on_error_code(data, "Room control request")
         return data
 

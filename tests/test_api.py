@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import aiohttp
@@ -420,3 +421,61 @@ async def test_registration_records_hub_identity(
     )
     await client.async_validate_connection()
     assert (client.hub_model, client.hub_firmware_version) == ("NienMadeHub", "6.1.25")
+
+
+async def test_control_sends_are_spaced(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent control commands queue and go out one gap apart.
+
+    The hub has a single radio: thirteen commands sent in the same second were all acked
+    and eleven never reached a blind (const.py, ``DEFAULT_CONTROL_INTERVAL``). Rather than
+    wait real seconds, the sleep is recorded and the clock advanced by hand.
+    """
+    client.control_interval = 1.3
+    now = 0.0
+    slept: list[float] = []
+
+    def fake_monotonic() -> float:
+        return now
+
+    async def fake_sleep(delay: float) -> None:
+        nonlocal now
+        slept.append(delay)
+        now += delay
+
+    monkeypatch.setattr("custom_components.norman.api.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("custom_components.norman.api.asyncio.sleep", fake_sleep)
+    aioclient_mock.post(CONTROL, json={"Error": 0})
+
+    await asyncio.gather(*(client.async_send_control(uid, {"Switch": 0}) for uid in range(4)))
+
+    assert len(aioclient_mock.mock_calls) == 4
+    # The first send goes out at once; each later one waits out the full gap.
+    assert slept == [pytest.approx(1.3)] * 3
+
+
+async def test_control_gap_counts_time_already_spent(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slow hub reply counts towards the gap rather than adding to it."""
+    client.control_interval = 1.3
+    now = 0.0
+    slept: list[float] = []
+
+    def fake_monotonic() -> float:
+        return now
+
+    async def fake_sleep(delay: float) -> None:
+        nonlocal now
+        slept.append(delay)
+        now += delay
+
+    monkeypatch.setattr("custom_components.norman.api.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("custom_components.norman.api.asyncio.sleep", fake_sleep)
+    aioclient_mock.post(CONTROL, json={"Error": 0})
+
+    await client.async_send_control(1, {"Switch": 0})
+    now += 1.0  # the hub took a second to answer
+    await client.async_send_control(2, {"Switch": 0})
+    assert slept == [pytest.approx(0.3)]

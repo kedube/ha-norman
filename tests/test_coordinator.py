@@ -16,13 +16,17 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 
 from custom_components.norman.api import NormanConnectionError
 from custom_components.norman.const import (
+    CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
     COVER_TYPE_SINGLE_RAIL,
     COVER_TYPE_TWO_RAIL,
+    DEFAULT_CONTROL_INTERVAL,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
+    MAX_CONTROL_INTERVAL,
     MAX_POLL_INTERVAL,
+    MIN_CONTROL_INTERVAL,
     MIN_POLL_INTERVAL,
     MIN_WAKE_INTERVAL,
     POLL_DISABLED,
@@ -634,3 +638,38 @@ async def test_wake_sweep_is_off_by_default(
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(days=2))
     await settle(hass)
     assert not [c for c in fake_hub.control_calls[before:] if "ReportBatteryLevel" in c]
+
+
+@pytest.mark.parametrize(
+    ("option", "expected"),
+    [
+        (2.5, 2.5),
+        (MIN_CONTROL_INTERVAL, MIN_CONTROL_INTERVAL),
+        (MAX_CONTROL_INTERVAL, MAX_CONTROL_INTERVAL),
+        (0.1, DEFAULT_CONTROL_INTERVAL),  # below the floor
+        (99, DEFAULT_CONTROL_INTERVAL),  # above the ceiling
+        ("nonsense", DEFAULT_CONTROL_INTERVAL),
+        (None, DEFAULT_CONTROL_INTERVAL),
+    ],
+)
+async def test_control_interval_option_reaches_the_client(
+    hass: HomeAssistant,
+    fake_hub: FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    option: object,
+    expected: float,
+) -> None:
+    """The configured gap is applied to the API client, and a bad value falls back.
+
+    The autouse fixture zeroes pacing for every other test, so this one restores the real
+    helper to check what the option actually does.
+    """
+    monkeypatch.undo()
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, options={CONF_CONTROL_INTERVAL: option}
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data.api.control_interval == expected

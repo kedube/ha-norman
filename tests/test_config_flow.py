@@ -17,13 +17,17 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.norman.const import (
+    CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
+    DEFAULT_CONTROL_INTERVAL,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
+    MAX_CONTROL_INTERVAL,
     MAX_POLL_INTERVAL,
     MAX_WAKE_INTERVAL,
+    MIN_CONTROL_INTERVAL,
     MIN_WAKE_INTERVAL,
     POLL_DISABLED,
     SUGGESTED_POLL_INTERVAL,
@@ -358,7 +362,11 @@ async def test_options_flow_stores_the_poll_interval(hass: HomeAssistant, value:
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     # The wake sweep field keeps its 0 default when only the poll is given.
-    assert entry.options == {CONF_POLL_INTERVAL: value, CONF_WAKE_INTERVAL: WAKE_DISABLED}
+    assert entry.options == {
+        CONF_POLL_INTERVAL: value,
+        CONF_WAKE_INTERVAL: WAKE_DISABLED,
+        CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
+    }
     assert isinstance(entry.options[CONF_POLL_INTERVAL], int)
 
 
@@ -465,6 +473,22 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
                 }
             },
         },
+        {
+            "name": CONF_CONTROL_INTERVAL,
+            "required": True,
+            "default": DEFAULT_CONTROL_INTERVAL,
+            # No "off" value, so the default is also what an unconfigured entry is offered.
+            "description": {"suggested_value": DEFAULT_CONTROL_INTERVAL},
+            "selector": {
+                "number": {
+                    "min": float(MIN_CONTROL_INTERVAL),
+                    "max": float(MAX_CONTROL_INTERVAL),
+                    "step": 0.1,
+                    "unit_of_measurement": "seconds",
+                    "mode": "box",
+                }
+            },
+        },
     ]
 
 
@@ -478,7 +502,11 @@ async def test_options_flow_stores_the_wake_interval(hass: HomeAssistant, value:
         result["flow_id"], user_input={CONF_POLL_INTERVAL: 0, CONF_WAKE_INTERVAL: value}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_POLL_INTERVAL: 0, CONF_WAKE_INTERVAL: value}
+    assert entry.options == {
+        CONF_POLL_INTERVAL: 0,
+        CONF_WAKE_INTERVAL: value,
+        CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
+    }
     assert isinstance(entry.options[CONF_WAKE_INTERVAL], int)
 
 
@@ -503,7 +531,10 @@ async def test_options_flow_rejects_a_wake_interval_below_the_floor(
 
 
 async def test_options_form_suggests_both_intervals_when_unconfigured(hass: HomeAssistant) -> None:
-    """A fresh entry is seeded with the suggested poll and wake values, not the 0 defaults."""
+    """A fresh entry is seeded with the suggested poll and wake values, not the 0 defaults.
+
+    Command spacing has no "off" value, so its suggestion is simply its default.
+    """
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     result = await _open_options(hass, entry)
 
@@ -512,4 +543,5 @@ async def test_options_form_suggests_both_intervals_when_unconfigured(hass: Home
     assert suggested == {
         CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL,
         CONF_WAKE_INTERVAL: SUGGESTED_WAKE_INTERVAL,
+        CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
     }

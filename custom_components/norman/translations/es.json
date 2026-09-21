@@ -49,17 +49,20 @@
         "description": "El hub envía las actualizaciones. Este sondeo es una red de seguridad para los cambios que el hub nunca anuncia, normalmente una persiana que se movió mientras su radio estaba en reposo.",
         "data": {
           "poll_interval": "Intervalo de sondeo",
-          "wake_interval": "Intervalo de activación"
+          "wake_interval": "Intervalo de activación",
+          "control_interval": "Command spacing"
         },
         "data_description": {
           "poll_interval": "Con qué frecuencia se vuelve a leer la posición de cada persiana desde el hub. Un valor menor detecta antes una posición obsoleta; uno mayor genera menos carga. 0 desactiva el sondeo y deja las actualizaciones solo a las notificaciones del hub.",
-          "wake_interval": "Cada cuánto pedir a todas las persianas que informen (batería, posición, última vez visto), como hace la actualización de la app Norman. Esto renueva la caché del propio hub, que el sondeo de arriba solo vuelve a leer. 0 lo desactiva; si no, de 600 a 86400 segundos."
+          "wake_interval": "Cada cuánto pedir a todas las persianas que informen (batería, posición, última vez visto), como hace la actualización de la app Norman. Esto renueva la caché del propio hub, que el sondeo de arriba solo vuelve a leer. 0 lo desactiva; si no, de 600 a 86400 segundos.",
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. 1.3 seconds was enough for thirteen blinds on the hub this was measured on."
         }
       }
     },
     "error": {
       "poll_interval_out_of_range": "Introduzca 0 para desactivar el sondeo, o un valor entre 10 y 3600 segundos.",
-      "wake_interval_out_of_range": "Introduce 0 para desactivarlo, o un valor entre 600 y 86400 segundos."
+      "wake_interval_out_of_range": "Introduce 0 para desactivarlo, o un valor entre 600 y 86400 segundos.",
+      "control_interval_out_of_range": "Enter a value between 0.3 and 5 seconds."
     }
   },
   "services": {

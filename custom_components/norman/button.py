@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+import functools
 import logging
 from typing import Any
 
@@ -228,11 +229,25 @@ class NormanButton(NormanEntity, ButtonEntity):
                             "name": self._device_name,
                         },
                     )
-                await self.coordinator.api.async_send_blind_control(
-                    data.room_id, data.group_id, fields, self._device_id
+                send = functools.partial(
+                    self.coordinator.api.async_send_blind_control,
+                    data.room_id,
+                    data.group_id,
+                    fields,
+                    self._device_id,
                 )
             else:
-                await self.coordinator.api.async_send_control(self._device_id, fields)
+                send = functools.partial(
+                    self.coordinator.api.async_send_control, self._device_id, fields
+                )
+            await send()
+            # The addressed verbs (Best Privacy, Best View, Favorite) send the blind to a
+            # stored position, and the hub acks a command it never delivers, so the move is
+            # supervised the way a position move is (coordinator.async_watch_preset). The
+            # rest -- jog, run-to-limit, status -- either do not move the blind or are held
+            # rather than aimed, so there is no target to chase.
+            if self.entity_description.addressed:
+                self.coordinator.async_watch_preset(self._device_id, send)
         except (NormanApiError, NormanConnectionError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,

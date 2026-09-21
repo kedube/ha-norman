@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 import logging
 from typing import Any
@@ -15,17 +16,21 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
+    CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
     COVER_TYPE_SINGLE_RAIL,
+    DEFAULT_CONTROL_INTERVAL,
     DEFAULT_COVER_TYPE,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
+    MAX_CONTROL_INTERVAL,
     MAX_POLL_INTERVAL,
     MAX_WAKE_INTERVAL,
+    MIN_CONTROL_INTERVAL,
     MIN_POLL_INTERVAL,
     MIN_WAKE_INTERVAL,
     MODULE_TYPE_COVER_TYPES,
@@ -68,6 +73,23 @@ def _poll_interval(entry: NormanConfigEntry) -> timedelta | None:
     return None if seconds == POLL_DISABLED else timedelta(seconds=seconds)
 
 
+def _control_interval(entry: NormanConfigEntry) -> float:
+    """Seconds to leave between control sends.
+
+    The hub drops commands sent faster than its radio can transmit them (const.py,
+    ``DEFAULT_CONTROL_INTERVAL``). An unusable or out-of-range value falls back to the
+    default rather than stopping the entry from loading.
+    """
+    raw = entry.options.get(CONF_CONTROL_INTERVAL, DEFAULT_CONTROL_INTERVAL)
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_CONTROL_INTERVAL
+    if not MIN_CONTROL_INTERVAL <= seconds <= MAX_CONTROL_INTERVAL:
+        return DEFAULT_CONTROL_INTERVAL
+    return seconds
+
+
 def _wake_interval(entry: NormanConfigEntry) -> timedelta | None:
     """The configured wake sweep interval, or None when the sweep is off.
 
@@ -106,6 +128,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             update_interval=_poll_interval(entry),
         )
         self.api = api
+        # The hub drops control commands sent faster than its radio can transmit them, so
+        # the client spaces them; the gap is configurable per hub (see _control_interval).
+        api.control_interval = _control_interval(entry)
         # Registry id of the hub device, set by async_setup_entry once it is created
         self.hub_device_id: str | None = None
         # What the hub says about itself; refreshed alongside the peripherals
@@ -187,6 +212,57 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         if data.bottom_rail_position != bottom:
             return False
         return data.type == COVER_TYPE_SINGLE_RAIL or data.middle_rail_position == middle
+
+    @callback
+    def async_watch_preset(self, device_id: int, resend: Callable[[], Awaitable[Any]]) -> None:
+        """After a preset verb (Best Privacy, Best View, Favorite), make sure it arrived.
+
+        A preset has no position for the caller to aim at: the blind resolves it to its own
+        stored one, and the hub records that in ``TargetBottomRailPosition``. So the target
+        cannot be checked against the request -- only the blind's *position* converging on
+        whatever target the hub ended up with. The hub acks a command it never delivers, so
+        without this a missed preset is silent (const.py, ``CONTROL_MIN_INTERVAL``).
+        """
+        self.async_cancel_move_watch(device_id)
+        self._move_watchers[device_id] = self.config_entry.async_create_background_task(
+            self.hass,
+            self._async_watch_preset(device_id, resend),
+            name=f"norman-preset-watch-{device_id}",
+        )
+
+    def _at_hub_target(self, device_id: int) -> bool:
+        """True when the blind sits where the hub says it should."""
+        data = self.data.get(device_id)
+        if data is None:
+            return True  # gone from the hub; nothing to chase
+        target = data.target_bottom_rail_position
+        if target is None:
+            return True  # no target recorded; nothing to compare against
+        return data.bottom_rail_position == target
+
+    async def _async_watch_preset(
+        self, device_id: int, resend: Callable[[], Awaitable[Any]]
+    ) -> None:
+        await asyncio.sleep(MOVE_TIMEOUT)
+        if self._at_hub_target(device_id):
+            return
+        name = self.data[device_id].name if device_id in self.data else str(device_id)
+        try:
+            await self.api.async_request_status(device_id)
+            await asyncio.sleep(MOVE_REPORT_WAIT)
+            await self.async_refresh()
+            if self._at_hub_target(device_id):
+                return
+            _LOGGER.warning(
+                "%s did not reach the position its preset asked for within %.0f s and "
+                "reports it is not there; sending the command again",
+                name,
+                MOVE_TIMEOUT + MOVE_REPORT_WAIT,
+            )
+            await resend()
+            await self.async_refresh()
+        except (NormanApiError, NormanConnectionError) as err:
+            _LOGGER.warning("Could not chase the preset of %s: %s", name, err)
 
     async def _async_watch_move(self, device_id: int, bottom: int, middle: int) -> None:
         await asyncio.sleep(MOVE_TIMEOUT)

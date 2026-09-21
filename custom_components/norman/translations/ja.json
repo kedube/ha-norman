@@ -49,17 +49,20 @@
         "description": "更新はハブからプッシュされます。このポーリングは、ハブが通知しない変更（多くは無線がスリープ中に動いたブラインド）に備えるものです。",
         "data": {
           "poll_interval": "ポーリング間隔",
-          "wake_interval": "ウェイク間隔"
+          "wake_interval": "ウェイク間隔",
+          "control_interval": "Command spacing"
         },
         "data_description": {
           "poll_interval": "各ブラインドの位置をハブから再取得する間隔。短いほど古い位置に早く気づき、長いほど負荷が減ります。0 でポーリングを無効にし、更新はハブの通知のみになります。",
-          "wake_interval": "Norman アプリの更新と同じように、すべてのブラインドに応答（バッテリー、位置、最終受信）を求める頻度です。上のポーリングが読み直すだけのハブ側キャッシュを更新します。0 で無効、それ以外は 600〜86400 秒。"
+          "wake_interval": "Norman アプリの更新と同じように、すべてのブラインドに応答（バッテリー、位置、最終受信）を求める頻度です。上のポーリングが読み直すだけのハブ側キャッシュを更新します。0 で無効、それ以外は 600〜86400 秒。",
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. 1.3 seconds was enough for thirteen blinds on the hub this was measured on."
         }
       }
     },
     "error": {
       "poll_interval_out_of_range": "ポーリングを無効にするには 0 を、それ以外は 10〜3600 秒の値を入力してください。",
-      "wake_interval_out_of_range": "無効にするには 0 を、または 600〜86400 秒の値を入力してください。"
+      "wake_interval_out_of_range": "無効にするには 0 を、または 600〜86400 秒の値を入力してください。",
+      "control_interval_out_of_range": "Enter a value between 0.3 and 5 seconds."
     }
   },
   "services": {
