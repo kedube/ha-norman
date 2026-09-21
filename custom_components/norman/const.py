@@ -112,7 +112,15 @@ READ_CHUNK_SIZE = 1024
 NOTIF_MAX_BUFFER = 64 * 1024
 
 # Raw hub traffic kept for diagnostics: number of exchanges and max bytes per body.
-TRAFFIC_MAX_EXCHANGES = 50
+# Each command produces about four exchanges -- the control call, the notification it
+# provokes, and the status reads that follow -- so a scene covering a whole house produces
+# four times the blind count, and the commands are paced seconds apart on top of that. At 50
+# a thirteen-blind scene overflowed the buffer before the user could download it, hiding the
+# very run they were trying to report (2026-09-21). 200 holds a thirteen-blind scene, its
+# watchdog retries a minute later, and the routine traffic around both, for a report of
+# roughly half a megabyte -- the point past which a diagnostics file stops being something
+# a user can attach to an issue.
+TRAFFIC_MAX_EXCHANGES = 200
 TRAFFIC_BODY_LIMIT = 16 * 1024
 
 # Keys the hub sends that identify the home or network rather than a blind. Redacted from
