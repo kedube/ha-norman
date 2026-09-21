@@ -76,13 +76,19 @@ MOVE_REPORT_WAIT = 10.0
 # one at a time: a Best Privacy script that fired all thirteen blinds in the same second
 # (diagnostics of 2026-09-21, every request stamped 1790018526) had the hub serialise them
 # ~333 ms apart, ack every one with Error 0, store every target -- and eleven of thirteen
-# blinds never moved, having missed their transmission. Pacing the sends fixes it, and the
-# threshold was measured on the reference hub: at 1.0-1.2 s a few blinds still missed,
-# at 1.3 s all thirteen responded. Sends are serialised by a lock and spaced by this gap,
-# so a burst of commands takes (n * this) seconds to dispatch rather than colliding. Hubs
-# differ -- more blinds, longer range, a different radio environment -- so this is the
-# default for a user-configurable option rather than a fixed constant.
-DEFAULT_CONTROL_INTERVAL = 1.3
+# blinds never moved, having missed their transmission. Pacing the sends fixes it. The
+# threshold was measured on the reference hub twice, and the two tests disagreed: sending
+# the thirteen commands by hand, 1.0-1.2 s still lost a few and 1.3 s got them all; but the
+# same house running the scene through a Home Assistant automation kept losing a blind now
+# and then at 1.3 s, so the hand test was the easier case. At 1.5 s several consecutive
+# whole-house runs dropped nothing, which is where the default sits. 1.4 s may well be
+# enough -- the floor was not bisected past 1.3 -- but a tenth of a second per blind buys
+# no useful time against a failure mode that is silent when it happens.
+# Sends are serialised by a lock and spaced by this gap, so a burst of commands takes
+# (n * this) seconds to dispatch rather than colliding. Hubs differ -- more blinds, longer
+# range, a different radio environment -- so this is the default for a user-configurable
+# option rather than a fixed constant.
+DEFAULT_CONTROL_INTERVAL = 1.5
 # Bounds offered in the options flow. The floor is the hub's own observed serialisation rate
 # (~333 ms), below which pacing cannot help; the ceiling keeps a mistyped value from making a
 # whole-house scene take minutes -- at 5 s, thirteen blinds already take over a minute. A

@@ -344,7 +344,7 @@ new covering types are welcome and are the main thing that broadens this table.
   changes immediately. Automations that check a position right after commanding one will read
   the previous value.
 - **Commanding many blinds at once takes time.** The hub's radio drops commands sent too
-  fast, so they are queued and spaced: thirteen blinds take about 16 seconds. Tunable; see
+  fast, so they are queued and spaced: thirteen blinds take about 20 seconds. Tunable; see
   [docs/options.md](docs/options.md#command-spacing).
 - **Hub schedules are not exposed.** The hub stores its own sunrise/sunset and clock schedules;
   the integration neither shows nor edits them, since Home Assistant automations do the same

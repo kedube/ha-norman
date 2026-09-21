@@ -7,7 +7,7 @@ changing any of them reloads the entry.
 |---|---|---|---|
 | Poll interval | 0 (off) | 10–3600 s | Re-reads every blind's position from the hub on a timer. |
 | Wake sweep interval | 0 (off) | 600–86400 s | Has every blind report in, refreshing the hub's own cache. |
-| Command spacing | 1.3 s | 0.3–5 s | Seconds to leave between commands sent to the hub. |
+| Command spacing | 1.5 s | 0.3–5 s | Seconds to leave between commands sent to the hub. |
 
 ## Poll interval
 
@@ -33,15 +33,19 @@ either way. Resending does not help, because a resent burst collides the same wa
 
 So commands are queued and sent one at a time, this many seconds apart. A scene covering every
 blind takes a few seconds to go out rather than arriving in one unusable burst — thirteen
-blinds at the 1.3 s default take about 16 seconds. Only commands are spaced; status reads and
+blinds at the 1.5 s default take about 20 seconds. Only commands are spaced; status reads and
 the push stream are unaffected, so the interface stays responsive while a batch drains.
 
-**When to change it.** The default was measured on a hub with thirteen blinds: at 1.0–1.2 s a
-few still missed, and at 1.3 s all thirteen responded. Hubs differ — more blinds, longer
-distances, a noisier radio environment — so:
+**When to change it.** The default was measured on a hub with thirteen blinds, and the two
+ways of measuring it disagreed. Sending the thirteen commands by hand, 1.0–1.2 s still lost a
+few and 1.3 s got them all; running the same scene through a Home Assistant automation kept
+dropping a blind now and then at 1.3 s. At **1.5 s** several consecutive whole-house runs
+dropped nothing, so that is the default — with a little margin deliberately left in, since the
+failure is silent when it happens. Hubs differ — more blinds, longer distances, a noisier
+radio environment — so:
 
-- **Raise it** if blinds still miss commands that were sent alongside others. Try 1.5 s, then
-  2 s. A blind that misses even when commanded on its own is a range problem, not a spacing
+- **Raise it** if blinds still miss commands that were sent alongside others. Try 2 s, then
+  2.5 s. A blind that misses even when commanded on its own is a range problem, not a spacing
   one, and raising this will not help.
 - **Lower it** only if large scenes feel slow *and* every blind is reliably acting on them.
   Below the 0.3 s floor there is no point: that is roughly the rate the hub serialises at
