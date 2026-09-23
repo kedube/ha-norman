@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from homeassistant.components.button import DOMAIN as BUTTON_DOMAIN
 from homeassistant.components.button import SERVICE_PRESS
 from homeassistant.const import ATTR_ENTITY_ID, EntityCategory
@@ -13,6 +15,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.norman.button import BUTTONS, HUB_BUTTONS
 from custom_components.norman.const import DOMAIN, HUB_COMMAND_SETTING, HUB_COMMAND_TRIGGER
+from custom_components.norman.coordinator import NormanCoordinator
 
 from .conftest import FakeHub
 from .const import UID_BEDROOM, UID_LIVING
@@ -317,3 +320,123 @@ async def test_hub_wide_buttons_are_config_entities(
         assert entry.disabled_by is None, key
     state = hass.states.get(_hub_button(hass, init_integration, "all_favorite").entity_id)
     assert state.attributes["friendly_name"] == "ShadeAuto Hub All blinds favorite position"
+
+
+async def _preset_watchdog_done(coordinator: NormanCoordinator, uid: int) -> None:
+    """Wait for the blind's preset watchdog to finish.
+
+    Not ``async_block_till_done(wait_background_tasks=True)``: that would also wait on the
+    notification listener, which never ends.
+    """
+    if task := coordinator._move_watchers.get(uid):
+        await task
+    await coordinator.hass.async_block_till_done()
+
+
+async def _press(hass: HomeAssistant, uid: int, key: str) -> None:
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _button(hass, uid, key).entity_id},
+        blocking=True,
+    )
+
+
+def _switches(fake_hub: FakeHub, uid: int) -> list[dict]:
+    """Every Switch command the hub received for ``uid`` (addressed by room + group)."""
+    return [c for c in fake_hub.control_calls if "Switch" in c and c.get("PeripheralUID") == uid]
+
+
+async def test_preset_watchdog_resends_a_preset_the_blind_ignored(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A preset the blind never acted on is asked about, then sent once more.
+
+    A preset has no position for the caller to aim at -- the blind resolves it to its own
+    stored one -- so the check is the blind's position converging on whatever target the hub
+    recorded. The hub acks a command it never delivers, so without this a missed Best
+    Privacy is silent.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    # Park the blind away from the hub's recorded target so it reads as "never arrived".
+    fake_hub.set_position(UID_LIVING, bottom=40, target_bottom=0)
+    await coordinator.async_refresh()
+
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        await _press(hass, UID_LIVING, "best_privacy")
+        await _preset_watchdog_done(coordinator, UID_LIVING)
+
+    assert len(_switches(fake_hub, UID_LIVING)) == 2, "the press, then the one resend"
+    status_requests = [c for c in fake_hub.control_calls if c.get("StatusRequest") == 0]
+    assert [c["PeripheralUID"] for c in status_requests] == [UID_LIVING]
+
+
+async def test_preset_watchdog_is_quiet_when_the_blind_arrives(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A blind sitting at the hub's recorded target gets no status request and no resend."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    fake_hub.set_position(UID_LIVING, bottom=0, target_bottom=0)
+    await coordinator.async_refresh()
+
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        await _press(hass, UID_LIVING, "best_privacy")
+        await _preset_watchdog_done(coordinator, UID_LIVING)
+
+    assert len(_switches(fake_hub, UID_LIVING)) == 1
+    assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+
+
+async def test_preset_watchdog_forgets_itself_when_it_finishes(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The finished watcher is removed from the registry rather than left behind.
+
+    Without this the dict keeps one completed task per blind that has ever run a preset, and
+    ``async_cancel_move_watch`` then "cancels" a task that has already returned.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    fake_hub.set_position(UID_LIVING, bottom=0, target_bottom=0)
+    await coordinator.async_refresh()
+
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        await _press(hass, UID_LIVING, "best_privacy")
+        assert UID_LIVING in coordinator._move_watchers, "scheduled while it runs"
+        await _preset_watchdog_done(coordinator, UID_LIVING)
+
+    assert UID_LIVING not in coordinator._move_watchers
+
+
+async def test_a_second_preset_keeps_the_replacement_watcher(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A preset pressed twice leaves the *live* watcher tracked, not the cancelled one.
+
+    The replacement cancels its predecessor and takes the slot; the cancelled task's cleanup
+    runs afterwards, so a cleanup that popped unconditionally would drop the live watcher and
+    leave nothing for a later stop to cancel.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    fake_hub.set_position(UID_LIVING, bottom=40, target_bottom=0)
+    await coordinator.async_refresh()
+
+    await _press(hass, UID_LIVING, "best_privacy")
+    first = coordinator._move_watchers[UID_LIVING]
+    await _press(hass, UID_LIVING, "best_view")
+    second = coordinator._move_watchers[UID_LIVING]
+
+    assert first is not second
+    await hass.async_block_till_done()
+    assert coordinator._move_watchers.get(UID_LIVING) is second, "the live watcher survives"
+
+    coordinator.async_cancel_move_watch(UID_LIVING)
+    assert UID_LIVING not in coordinator._move_watchers

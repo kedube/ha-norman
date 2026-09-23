@@ -10,11 +10,12 @@ from unittest.mock import patch
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.norman.api import NormanConnectionError
+from custom_components.norman.api import NormanApiClient, NormanConnectionError
 from custom_components.norman.const import (
     CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
@@ -37,6 +38,7 @@ from custom_components.norman.entity import hub_identifier
 
 from .conftest import HUB_MAC, FakeHub, cover_entity_id, settle
 from .const import (
+    HUB_HOST,
     HUB_SSID,
     MOCK_CONFIG,
     UID_BEDROOM,
@@ -673,3 +675,67 @@ async def test_control_interval_option_reaches_the_client(
     await hass.async_block_till_done()
 
     assert entry.runtime_data.api.control_interval == expected
+
+
+async def test_a_burst_of_notifications_coalesces_into_few_status_reads(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """A sweep's worth of notifications must not become one full status read each.
+
+    The hub answers a hub-wide ReportBatteryLevel with one notification *per blind* over
+    about 30 s (docs/NORMAN_API.md, "Waking a blind"), so refreshing immediately on each one
+    put a burst of full-hub reads on the wire -- contending with the very radio the control
+    pacing exists to protect. Refreshing through the coordinator's debouncer coalesces them;
+    it is immediate=True, so the first notification still refreshes at once.
+    """
+    before = len(fake_hub.calls_to("/NM/v1/status"))
+    for uid in (UID_LIVING, UID_BEDROOM) * 6:
+        await notifications.put({"Status": 1, "PeripheralList": [uid]})
+    for _ in range(50):
+        await asyncio.sleep(0)
+    await hass.async_block_till_done()
+
+    reads = len(fake_hub.calls_to("/NM/v1/status")) - before
+    assert 1 <= reads <= 3, f"twelve notifications became {reads} status reads"
+
+
+async def test_the_first_notification_still_refreshes_immediately(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Coalescing must not cost push responsiveness: one change is still picked up at once."""
+    fake_hub.set_position(UID_LIVING, bottom=7)
+    before = len(fake_hub.calls_to("/NM/v1/status"))
+    await notifications.put({"Status": 1, "PeripheralList": [UID_LIVING]})
+    for _ in range(50):
+        await asyncio.sleep(0)
+    await hass.async_block_till_done()
+
+    assert len(fake_hub.calls_to("/NM/v1/status")) > before
+    assert init_integration.runtime_data.data[UID_LIVING].bottom_rail_position == 7
+
+
+async def test_refresh_blinds_survives_an_empty_coordinator(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The sweep must not raise before the first refresh has populated ``data``.
+
+    Setup refreshes before the wake sweep is scheduled, so this is unreachable today; the
+    guard keeps a future reordering from turning into an AttributeError out of a timer
+    callback, where it would only ever be seen as a log line.
+    """
+    mock_config_entry.add_to_hass(hass)
+    coordinator = NormanCoordinator(
+        hass, mock_config_entry, NormanApiClient(HUB_HOST, async_get_clientsession(hass))
+    )
+    assert coordinator.data is None
+
+    await coordinator.async_refresh_blinds()
+
+    # The hub-wide sweep still went out; only the per-blind follow-ups had nothing to walk.
+    assert [c for c in fake_hub.control_calls if "ReportBatteryLevel" in c]

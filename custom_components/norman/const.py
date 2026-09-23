@@ -128,6 +128,14 @@ NOTIF_MAX_BUFFER = 64 * 1024
 # a user can attach to an issue.
 TRAFFIC_MAX_EXCHANGES = 200
 TRAFFIC_BODY_LIMIT = 16 * 1024
+# Separate, much larger limit for the last full response per endpoint. Those are kept
+# unclipped on purpose -- a truncated GetAllPeripheral is exactly the payload a "please
+# support my blind" report needs in full -- so the 16 KB body limit must not apply. They
+# still need *a* bound: the endpoint count is fixed and small (five), so the worst case here
+# is five times this, and 256 KB comfortably holds the largest real payload (a thirteen-blind
+# GetAllPeripheral runs about 55 KB) without letting a malformed multi-megabyte body sit in
+# memory for the life of the entry.
+TRAFFIC_LATEST_RAW_LIMIT = 256 * 1024
 
 # Keys the hub sends that identify the home or network rather than a blind. Redacted from
 # diagnostics and from the get_hub_data response wherever they appear, including inside raw

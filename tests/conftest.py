@@ -227,7 +227,28 @@ def cover_entity_id(hass: HomeAssistant, uid: int) -> str:
 
 
 async def settle(hass: HomeAssistant) -> None:
-    """Give the background notification listener a chance to run, then block till done."""
+    """Give the background notification listener a chance to run, then block till done.
+
+    Notifications refresh through the coordinator's debouncer (a hub-wide sweep answers with
+    one notification per blind, which would otherwise be one full status read each), so the
+    refresh a notification asks for may still be waiting out the cooldown when the loop goes
+    idle. Tests want the settled state, not the debouncer's schedule, so any pending call is
+    flushed here rather than by advancing the clock in each test.
+    """
+    for _ in range(25):
+        await asyncio.sleep(0)
+    await hass.async_block_till_done()
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        coordinator = getattr(entry, "runtime_data", None)
+        debouncer = getattr(coordinator, "_debounced_refresh", None)
+        if debouncer is None:
+            continue
+        # A pending call is one waiting out the cooldown timer; cancelling the timer is what
+        # lets the follow-up async_call() run now instead of re-scheduling behind it.
+        pending = debouncer._execute_at_end_of_timer
+        debouncer.async_cancel()
+        if pending:
+            await debouncer.async_call()
     for _ in range(25):
         await asyncio.sleep(0)
     await hass.async_block_till_done()

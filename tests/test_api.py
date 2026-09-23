@@ -366,6 +366,26 @@ async def test_recorder_truncates_large_bodies_but_not_latest_raw(
     assert len(traffic["latest_raw"]["/NM/v1/status"]) > client.traffic.body_limit
 
 
+async def test_recorder_bounds_latest_raw_too(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The per-endpoint copy is kept whole up to its own, much larger limit.
+
+    It is deliberately not clipped at ``body_limit`` -- a truncated GetAllPeripheral is
+    exactly the payload a "please support my blind" report needs in full -- but it still
+    needs a bound, or one malformed multi-megabyte body would sit in memory for the life of
+    the entry.
+    """
+    pad = "x" * (client.traffic.latest_raw_limit + 50_000)
+    aioclient_mock.post(STATUS, json={"Error": 0, "pad": pad})
+
+    await client.async_get_status()
+
+    latest = client.traffic.as_dict()["latest_raw"]["/NM/v1/status"]
+    assert len(latest) < client.traffic.latest_raw_limit + 64
+    assert "more bytes]" in latest
+
+
 async def test_recorder_captures_stream_chunks(
     client: NormanApiClient, aioclient_mock: AiohttpClientMocker
 ) -> None:

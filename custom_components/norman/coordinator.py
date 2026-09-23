@@ -175,7 +175,11 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         answers arrive as notifications over the next half minute, each refreshing the data.
         """
         await self.api.async_request_battery_report(room_id)
-        for device_id, device in self.data.items():
+        # ``data`` is None until the first refresh completes. Setup refreshes before the wake
+        # sweep is scheduled, so this is unreachable today -- but the guard costs nothing and
+        # keeps a future reordering (or a caller added before the first refresh) from turning
+        # into an AttributeError out of a timer callback.
+        for device_id, device in (self.data or {}).items():
             if device.type != COVER_TYPE_SINGLE_RAIL:
                 continue
             if room_id is not None and device.room_id != room_id:
@@ -204,6 +208,22 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         """Drop the watchdog for a blind (a stop means there is no target to reach)."""
         if task := self._move_watchers.pop(device_id, None):
             task.cancel()
+
+    def _forget_move_watch(self, device_id: int) -> None:
+        """Drop this blind's watcher entry, but only if it is still *this* task's.
+
+        A replacement watcher (a second move while the first is pending) cancels its
+        predecessor and takes the slot. The cancelled task's ``finally`` runs afterwards, so
+        an unconditional ``pop`` would delete the replacement's entry and leave the live
+        watcher untracked -- ``async_cancel_move_watch`` would then no longer be able to
+        stop it. Comparing against the running task makes the cleanup order-independent.
+        """
+        try:
+            current = asyncio.current_task()
+        except RuntimeError:  # pragma: no cover - only outside a running loop
+            current = None
+        if self._move_watchers.get(device_id) in (current, None):
+            self._move_watchers.pop(device_id, None)
 
     def _at_target(self, device_id: int, bottom: int, middle: int) -> bool:
         data = self.data.get(device_id)
@@ -243,26 +263,33 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     async def _async_watch_preset(
         self, device_id: int, resend: Callable[[], Awaitable[Any]]
     ) -> None:
-        await asyncio.sleep(MOVE_TIMEOUT)
-        if self._at_hub_target(device_id):
-            return
-        name = self.data[device_id].name if device_id in self.data else str(device_id)
         try:
-            await self.api.async_request_status(device_id)
-            await asyncio.sleep(MOVE_REPORT_WAIT)
-            await self.async_refresh()
+            await asyncio.sleep(MOVE_TIMEOUT)
             if self._at_hub_target(device_id):
                 return
-            _LOGGER.warning(
-                "%s did not reach the position its preset asked for within %.0f s and "
-                "reports it is not there; sending the command again",
-                name,
-                MOVE_TIMEOUT + MOVE_REPORT_WAIT,
-            )
-            await resend()
-            await self.async_refresh()
-        except (NormanApiError, NormanConnectionError) as err:
-            _LOGGER.warning("Could not chase the preset of %s: %s", name, err)
+            name = self.data[device_id].name if device_id in self.data else str(device_id)
+            try:
+                await self.api.async_request_status(device_id)
+                await asyncio.sleep(MOVE_REPORT_WAIT)
+                await self.async_refresh()
+                if self._at_hub_target(device_id):
+                    return
+                _LOGGER.warning(
+                    "%s did not reach the position its preset asked for within %.0f s and "
+                    "reports it is not there; sending the command again",
+                    name,
+                    MOVE_TIMEOUT + MOVE_REPORT_WAIT,
+                )
+                await resend()
+                await self.async_refresh()
+            except (NormanApiError, NormanConnectionError) as err:
+                _LOGGER.warning("Could not chase the preset of %s: %s", name, err)
+        finally:
+            # Drop the finished watcher, as _async_watch_move does. Without this the entry
+            # outlives the task: the dict keeps one stale, completed task per blind that has
+            # ever run a preset, and async_cancel_move_watch then "cancels" a task that has
+            # already returned.
+            self._forget_move_watch(device_id)
 
     async def _async_watch_move(self, device_id: int, bottom: int, middle: int) -> None:
         await asyncio.sleep(MOVE_TIMEOUT)
@@ -290,7 +317,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         except (NormanApiError, NormanConnectionError) as err:
             _LOGGER.warning("Could not chase the move of %s: %s", name, err)
         finally:
-            self._move_watchers.pop(device_id, None)
+            self._forget_move_watch(device_id)
 
     async def listen_notifications(self) -> None:
         """Continuously listen for hub notifications and refresh data on change.
@@ -308,7 +335,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                         # A rename, room edit, or hub rename in the Norman app: re-read
                         # the device list so names and rooms follow.
                         self._device_info = {}
-                    await self.async_refresh()
+                    # Debounced rather than immediate: the hub answers a sweep with one
+                    # notification *per blind* over ~30 s (docs/NORMAN_API.md, "Waking a
+                    # blind"), so a thirteen-blind hub would otherwise fire thirteen full
+                    # status reads in a burst -- contending with the very radio the control
+                    # pacing exists to protect. The debouncer is immediate=True, so the
+                    # first notification still refreshes at once and the rest coalesce.
+                    await self.async_request_refresh()
             except NormanConnectionError as err:
                 if not self._listener_offline:
                     self._listener_offline = True
@@ -325,8 +358,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 # path's responsiveness. Letting an unexpected error escape the loop would
                 # leave the integration loaded and apparently healthy while every change made
                 # at a remote or in the app went unnoticed until the next poll -- a far worse
-                # failure than a logged exception and a retry. async_refresh() is inside the try above and reaches
-                # the device registry, so this is not merely theoretical.
+                # failure than a logged exception and a retry. The refresh inside the try
+                # above reaches the device registry, so this is not merely theoretical.
                 _LOGGER.exception(
                     "Unexpected error in the Norman notification listener; retrying in %s seconds",
                     RECONNECT_INTERVAL,

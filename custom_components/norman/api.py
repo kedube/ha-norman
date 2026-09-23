@@ -39,6 +39,7 @@ from .const import (
     READ_CHUNK_SIZE,
     REQUEST_TIMEOUT,
     TRAFFIC_BODY_LIMIT,
+    TRAFFIC_LATEST_RAW_LIMIT,
     TRAFFIC_MAX_EXCHANGES,
 )
 
@@ -93,12 +94,18 @@ class TrafficRecorder:
 
     The coordinator's model drops every field it does not understand, so this is the only
     place an unknown blind type's payload or an unexpected status field can be seen. It is
-    always on: the buffer is bounded and bodies are truncated, so the cost is a few hundred
-    kilobytes at most. Everything here is exported by diagnostics.
+    always on, and every part of it is bounded: the ring buffer holds ``max_exchanges``
+    entries with bodies clipped to ``body_limit``, and the per-endpoint ``latest_raw`` keeps
+    one body per endpoint clipped to the much larger ``latest_raw_limit``. Worst case is
+    therefore about 3 MB of ring buffer plus 256 KB per endpoint; a realistic hub sits far
+    below that. Everything here is exported by diagnostics.
     """
 
     max_exchanges: int = TRAFFIC_MAX_EXCHANGES
     body_limit: int = TRAFFIC_BODY_LIMIT
+    # Applied to latest_raw only. Deliberately far above body_limit: these entries exist so
+    # that an unknown field survives into a bug report, which a 16 KB clip would defeat.
+    latest_raw_limit: int = TRAFFIC_LATEST_RAW_LIMIT
     exchanges: deque[HubExchange] = field(init=False)
     # Last complete raw response per endpoint, kept outside the ring buffer so a burst of
     # notifications cannot push the device list out of the export.
@@ -108,10 +115,16 @@ class TrafficRecorder:
         """Size the ring buffer."""
         self.exchanges = deque(maxlen=self.max_exchanges)
 
-    def _clip(self, body: str | None) -> str | None:
-        if body is None or len(body) <= self.body_limit:
+    @staticmethod
+    def _clip_to(body: str | None, limit: int) -> str | None:
+        """Truncate ``body`` to ``limit`` characters, noting how much was dropped."""
+        if body is None or len(body) <= limit:
             return body
-        return f"{body[: self.body_limit]}… [{len(body) - self.body_limit} more bytes]"
+        return f"{body[:limit]}… [{len(body) - limit} more bytes]"
+
+    def _clip(self, body: str | None) -> str | None:
+        """Clip a ring-buffer body."""
+        return self._clip_to(body, self.body_limit)
 
     def record(
         self,
@@ -126,7 +139,11 @@ class TrafficRecorder:
     ) -> None:
         """Append an exchange; ``started`` is a ``time.monotonic()`` reading."""
         if kind == "request" and response is not None and error is None:
-            self.latest_raw[endpoint] = response
+            # Clipped far more generously than the ring buffer (see latest_raw_limit), so an
+            # undocumented field still reaches the bug report it was kept for.
+            latest = self._clip_to(response, self.latest_raw_limit)
+            if latest is not None:
+                self.latest_raw[endpoint] = latest
         self.exchanges.append(
             HubExchange(
                 when=_utc_now_iso(),

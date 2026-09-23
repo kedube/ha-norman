@@ -5,6 +5,64 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **A refresh no longer floods the hub.** The hub answers a Refresh blinds sweep with one
+  notification *per blind* over about half a minute, and every one of them used to trigger a
+  full re-read of every blind on the hub — thirteen reads in a burst on the reference hub,
+  all competing for the same radio that commands are deliberately paced across. Those reads
+  are now batched: the first change is still picked up immediately, and the rest of the burst
+  collapses into it. Pressing Refresh blinds, a wake sweep, and a scene that moves the whole
+  house are all noticeably quieter on the network, with no change to how fast a single change
+  shows up. Reconnecting after an outage still re-reads at once, since that one must not wait.
+- **Presets that the blind ignored are now chased reliably.** The watchdog behind Best
+  privacy, Best view and Favorite left an entry behind every time it finished, so a blind
+  accumulated stale watchdog records for the life of the entry, and pressing a preset twice in
+  quick succession could leave the live watchdog untracked — after which a stop could no
+  longer cancel it. Both are fixed, and the same fault was present in the move watchdog's
+  bookkeeping for a repeated move.
+- **Diagnostics downloads stay a sensible size.** The last full response from each hub
+  endpoint is kept unclipped on purpose, because a truncated device list is exactly the
+  payload a "please support my blind" report needs whole. It had no upper bound at all,
+  though, so one malformed oversized response would sit in memory until the integration was
+  reloaded. It is now capped generously — far above the real payloads, which are nowhere near
+  it — so nothing you would actually report is lost.
+
+## 0.51 — 2026-09-21
+- **Command spacing raised to 1.5 seconds.** The gap was first measured by sending thirteen
+  commands by hand, where 1.3 s got every blind. Running the same scene through a Home
+  Assistant automation kept losing a blind now and then at that setting, so the hand test
+  had been the easier case; at 1.5 s several consecutive whole-house runs dropped nothing.
+  A whole-house scene takes a few seconds longer and stops silently missing blinds. The
+  value remains configurable per hub under **Command spacing**.
+
+## 0.50 — 2026-09-21
+- **Diagnostics keep enough history to show the run you are reporting.** The raw traffic
+  buffer held 50 exchanges, and a scene covering thirteen blinds produces roughly four times
+  the blind count — so the interesting run had already been pushed out of the buffer before
+  the download finished, hiding exactly what the report was meant to capture. It now holds
+  200, which covers a whole-house scene, its watchdog retries a minute later, and the
+  routine traffic around both, while keeping the file small enough to attach to an issue.
+
+## 0.49 — 2026-09-21
+- **Whole-house buttons on the hub.** **All blinds best privacy**, **All blinds best view**
+  and **All blinds favorite position** on the hub device, matching the Norman app's own All
+  Rooms screen. Each is a single request that the hub fans out over its own radio, so they
+  are not thirteen paced commands and finish far sooner than moving each blind in turn.
+  Verified on hardware with every blind staged at 50/50 first, single-rail blinds included.
+
+## 0.48 — 2026-09-21
+- **Scenes no longer silently lose blinds.** The hub has one radio and transmits to blinds
+  one at a time. A Best Privacy script that fired all thirteen blinds in the same second had
+  the hub acknowledge every one with `Error 0`, store every target — and eleven of the
+  thirteen never moved, having missed their transmission. Nothing in the reply distinguishes
+  that from success. Commands are now queued and sent one at a time with a measured gap
+  between them, so a scene covering several blinds reaches all of them. A burst takes longer
+  to dispatch, which is the trade for it actually working.
+- **Command spacing option.** The gap is a per-hub setting (**Command spacing**, 0.3 to 5
+  seconds) rather than a fixed constant, since hubs differ in blind count, range and radio
+  environment. Raise it if blinds still miss a command sent alongside others; lower it to
+  make large scenes finish sooner.
+
 ## 0.47 — 2026-09-19
 - **Wake a quiet blind.** A battery blind's radio sleeps between commands and the hub stops
   hearing from it; its battery, last-seen and position go stale, and the Norman app lists it
