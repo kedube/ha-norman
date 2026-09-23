@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.52 — 2026-09-23
 - **A refresh no longer floods the hub.** The hub answers a Refresh blinds sweep with one
   notification *per blind* over about half a minute, and every one of them used to trigger a
   full re-read of every blind on the hub — thirteen reads in a burst on the reference hub,
