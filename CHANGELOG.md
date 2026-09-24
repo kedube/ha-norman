@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.55 — 2026-09-24
 - **A two-rail blind's blackout is drawn in the same ivory as a single-rail shade.** The card
   drew it slate grey, which read as a different, darker product; only the light-filtering
   fabric above the middle rail is drawn differently now, see-through so the sky shows.
