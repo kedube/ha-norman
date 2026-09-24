@@ -128,8 +128,9 @@ const STYLES = `
   }
   [hidden] { display: none !important; }
 
-  /* The illustration's palette: painted trim, aluminium rails, an ivory light-filtering
-     fabric and a slate blackout. Dark themes dim the trim so the window does not glare. */
+  /* The illustration's palette: painted trim, aluminium rails, a see-through light-filtering
+     fabric and an ivory cloth for everything else -- a single-rail shade and a two-rail
+     shade's blackout alike. Dark themes dim the trim so the window does not glare. */
   ha-card {
     --n-trim: #f3f0ea;
     --n-trim-hi: #fdfcfa;
@@ -143,14 +144,10 @@ const STYLES = `
     --n-sheer: rgba(248, 244, 236, 0.4);
     --n-sheer-lo: rgba(232, 225, 212, 0.52);
     --n-sheer-crease: rgba(176, 164, 144, 0.7);
-    --n-single-hi: #fbf9f4;
-    --n-single: #f0ebe2;
-    --n-single-lo: #ddd5c7;
-    --n-single-crease: #bdb2a0;
-    --n-black-hi: #737c88;
-    --n-black: #5f6773;
-    --n-black-lo: #4b525d;
-    --n-black-crease: #363c45;
+    --n-cloth-hi: #fbf9f4;
+    --n-cloth: #f0ebe2;
+    --n-cloth-lo: #ddd5c7;
+    --n-cloth-crease: #bdb2a0;
     container-type: inline-size;
     padding: 16px 16px 18px;
     overflow: visible;
@@ -163,10 +160,10 @@ const STYLES = `
     --n-rail-hi: #f2f0ec;
     --n-rail-face: #d9d5ce;
     --n-rail-lo: #aba497;
-    --n-single-hi: #e6e1d8;
-    --n-single: #d6cfc3;
-    --n-single-lo: #c0b7a8;
-    --n-single-crease: #a39886;
+    --n-cloth-hi: #e6e1d8;
+    --n-cloth: #d6cfc3;
+    --n-cloth-lo: #c0b7a8;
+    --n-cloth-crease: #a39886;
   }
 
   /* ---- header ---------------------------------------------------------------------- */
@@ -506,12 +503,12 @@ const STYLES = `
         var(--n-lo) var(--n-pleat)
       );
   }
-  .fabric.single {
+  .fabric.single, .fabric.blackout {
     --n-side: rgba(90, 70, 40, 0.1);
-    --n-crease: var(--n-single-crease);
-    --n-lo: var(--n-single-lo);
-    --n-mid: var(--n-single);
-    --n-hi: var(--n-single-hi);
+    --n-crease: var(--n-cloth-crease);
+    --n-lo: var(--n-cloth-lo);
+    --n-mid: var(--n-cloth);
+    --n-hi: var(--n-cloth-hi);
   }
   /* The light-filtering fabric is see-through: the view -- sky, hills, glazing bars --
      shows through it softened, bright by day and dark at night, as it does in the room. */
@@ -525,7 +522,7 @@ const STYLES = `
     -webkit-backdrop-filter: blur(1.2px) brightness(1.06) saturate(0.85);
     backdrop-filter: blur(1.2px) brightness(1.06) saturate(0.85);
   }
-  .fabric.single::after {
+  .fabric.single::after, .fabric.blackout::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -533,17 +530,12 @@ const STYLES = `
     mix-blend-mode: soft-light;
   }
   ha-card[data-sky="night"] .fabric.single::after,
-  ha-card[data-sky="dusk"] .fabric.single::after { display: none; }
+  ha-card[data-sky="night"] .fabric.blackout::after,
+  ha-card[data-sky="dusk"] .fabric.single::after,
+  ha-card[data-sky="dusk"] .fabric.blackout::after { display: none; }
   ha-card[data-theme="dark"] .fabric,
   ha-card[data-theme="dark"] .rail,
   ha-card[data-theme="dark"] .headrail { filter: brightness(0.88); }
-  .fabric.blackout {
-    --n-side: rgba(0, 0, 0, 0.16);
-    --n-crease: var(--n-black-crease);
-    --n-lo: var(--n-black-lo);
-    --n-mid: var(--n-black);
-    --n-hi: var(--n-black-hi);
-  }
 
   /* Rails and the headrail: extruded aluminium, lit from above. */
   .rail, .headrail {

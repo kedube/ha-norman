@@ -4,7 +4,7 @@ The integration ships a Lovelace card, **Norman Shades**, that draws every blind
 with its shade hanging in it, grouped by room. The window is the control: **drag a rail's pull
 tab** to move it.
 
-<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — single-rail shades in ivory, two-rail shades with the see-through light-filtering fabric above the slate blackout." width="560">
+<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — single-rail shades in ivory, two-rail shades with the see-through light-filtering fabric above the blackout." width="560">
 
 *The card with seven blinds across three rooms. Den_2 is on its way down: the shade is drawn
 where it is going, the dashed line is where it is now, and its Stop button sits on the corner.
@@ -78,7 +78,8 @@ what the hub reports, so a command the hub dropped is visible rather than hidden
 On a **two-rail** blind the window shows both fabrics, arranged the way the blind is: the
 **light-filtering** fabric hangs from the headrail down to the **middle rail**, drawn
 see-through so the view shows through it — bright by day, dark at night — and the **blackout**
-(slate) hangs from the middle rail down to the **bottom rail**.
+hangs from the middle rail down to the **bottom rail**, drawn in the same ivory cloth as a
+single-rail shade.
 
 That is why the app's presets look the way they do:
 

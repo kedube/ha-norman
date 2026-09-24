@@ -5,13 +5,16 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **A two-rail blind's blackout is drawn in the same ivory as a single-rail shade.** The card
+  drew it slate grey, which read as a different, darker product; only the light-filtering
+  fabric above the middle rail is drawn differently now, see-through so the sky shows.
+
 ## 0.54 — 2026-09-24
 - **Command spacing raised to 1.6 seconds.** 1.5 s held up over several whole-house runs, but
   longer use still dropped a command from time to time. A thirteen-blind scene now takes about
   21 seconds to go out instead of 20. If you have saved the integration's options before, your
   hub keeps the value it saved: change **Command spacing** under **Configure** to pick this up.
-
-## 0.54 - 2026-09-24
 - **Either rail of a two-rail blind can be dragged at any time.** On the card, the two pull
   tabs now sit apart — the middle rail's on the left, the bottom rail's on the right — so both
   can be taken hold of when the rails are together. Before, a fully open blind only ever let
