@@ -5,11 +5,11 @@ This product includes software originally developed by Keito Uchiyama
 (https://github.com/keito/home-assistant-norman), Copyright 2025 Keito Uchiyama,
 licensed under the Apache License, Version 2.0.
 
-Roughly 80% of that original code has since been rewritten. The API client, the
-update coordinator, and every entity platform other than `cover` are new work, as
-are the dashboard card, the actions, the diagnostics, the translations, and the
-test suite. The data model and the cover entity's method structure remain closest
-to the original.
+About 96% of the code in this product is new since that original. The API client,
+the update coordinator, and every entity platform other than `cover` are new work,
+as are the dashboard card, the actions, the diagnostics, the translations, and the
+test suite. The data model, the config flow, and the cover entity's method
+structure remain closest to the original.
 
 Licensed under the Apache License, Version 2.0; you may not use this file except
 in compliance with the License. You may obtain a copy of the License at
