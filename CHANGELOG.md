@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.54 — 2026-09-24
 - **Command spacing raised to 1.6 seconds.** 1.5 s held up over several whole-house runs, but
   longer use still dropped a command from time to time. A thirteen-blind scene now takes about
   21 seconds to go out instead of 20. If you have saved the integration's options before, your
