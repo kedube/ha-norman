@@ -209,17 +209,20 @@ def test_card_shade_geometry_is_relative() -> None:
     card = (COMPONENT / "www" / CARD_FILENAME).read_text(encoding="utf-8")
     assert "aspect-ratio" in card, "the picture should get its height from an aspect ratio"
 
-    # The headbox depth is shared between the CSS token and the drawing arithmetic. It must
-    # be stated once and read, not written twice: if the two drift the fabric hangs off the
-    # bottom of the headbox instead of out of it. scripts/check_card.mjs asserts the two
-    # values are equal; this asserts the JS side reads a named constant at all.
-    token = re.search(r"--n-head:\s*([\d.]+)%", card)
-    assert token, "the headbox depth should be a --n-head percentage token"
-    constant = re.search(r"const SHADE_HEAD_PCT = ([\d.]+);", card)
-    assert constant, "the drawing code should read a named SHADE_HEAD_PCT, not a literal"
-    assert token.group(1) == constant.group(1), (
-        f"--n-head is {token.group(1)}% but SHADE_HEAD_PCT is {constant.group(1)}"
-    )
+    # The headrail depth and the rail thickness are shared between the CSS tokens and the
+    # drawing arithmetic. If a pair drifts, the fabric hangs off its rail instead of from it.
+    # scripts/check_card.mjs drives the geometry; this pins that each pair agrees at all.
+    for token_name, constant_name in (
+        ("--n-head", "SHADE_HEAD_PCT"),
+        ("--n-rail", "SHADE_RAIL_PCT"),
+    ):
+        token = re.search(rf"{token_name}:\s*([\d.]+)%", card)
+        assert token, f"the shade geometry should have a {token_name} percentage token"
+        constant = re.search(rf"const {constant_name} = ([\d.]+);", card)
+        assert constant, f"the drawing code should read a named {constant_name}, not a literal"
+        assert token.group(1) == constant.group(1), (
+            f"{token_name} is {token.group(1)}% but {constant_name} is {constant.group(1)}"
+        )
 
 
 def test_docs_do_not_pin_a_card_version() -> None:

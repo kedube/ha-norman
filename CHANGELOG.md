@@ -5,6 +5,27 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **The dashboard card is redesigned around the shade itself.** Every blind is now a window
+  with its shade hanging in it — a cellular shade with a headrail, pleats and a pull tab on
+  each rail — laid out in a grid per room. **Drag a pull tab to move that rail**, on single-rail
+  and two-rail blinds alike: both the middle and bottom rails of a day/night blind have their
+  own tab, and when the two are pressed together the direction you pull decides which one
+  moves. On a phone a swipe that does not start on a rail scrolls the page instead, so
+  scrolling past the card cannot move a blind. Each rail is also a keyboard slider.
+  - A moving blind is drawn where it is going, with a dashed line where it actually is, a
+    "Closing · 70%" status and a Stop button on its corner.
+  - The light-filtering fabric is drawn translucent and the blackout opaque, and the view
+    through the window follows the sun, from day through dusk to night.
+  - The header gains a one-line summary (shades open, moving, low batteries); the room presets
+    fold out of a **⋯** in each room heading instead of repeating on every row; battery levels
+    show as an icon, with the number only when it is low.
+  - `hide_picture: true` now gives a compact list with a slider per rail.
+  - A configured `rooms:` list now sets the order of the rooms, as documented; it was being
+    re-sorted alphabetically.
+  - The per-rail open/stop/close buttons are gone: drag a rail to either end to open or close
+    it, use the room's buttons for a whole room, or open the blind's details from its name.
+
 ## 0.52 — 2026-09-23
 - **A refresh no longer floods the hub.** The hub answers a Refresh blinds sweep with one
   notification *per blind* over about half a minute, and every one of them used to trigger a

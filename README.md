@@ -13,10 +13,10 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 [![Release](https://img.shields.io/github/v/release/kedube/ha-norman?sort=semver)](https://github.com/kedube/ha-norman/releases)
 
-<img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each rail a position bar with open, stop and close, and Privacy, View and Favorite buttons for each room and for the whole house." width="820">
+<img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each drawn as a window with its shade hanging in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
 
-*The bundled **Norman Shades** card. It registers itself, finds your blinds, and needs no
-configuration.*
+*The bundled **Norman Shades** card: drag a shade's pull tab to move it. It registers itself,
+finds your blinds, and needs no configuration.*
 
 ## Contents
 
@@ -204,9 +204,9 @@ Configuration, and the model, firmware and serial number come from the hub.*
 
 ### Dashboard card
 
-The integration ships a **Norman Shades** Lovelace card: every blind grouped by room, with its
-battery level and a percentage slider for each rail in steps of 10. It registers itself, so it
-is in the **Add card** picker with nothing to install and nothing to configure.
+The integration ships a **Norman Shades** Lovelace card: every blind, by room, drawn as a window
+you drag by each rail's pull tab. It registers itself, so it is in the **Add card** picker with
+nothing to install and nothing to configure.
 
 It is [pictured at the top of this page](#norman-smart-blinds-for-home-assistant). Full detail,
 options, and how to build the same thing from Home Assistant's own cards are in

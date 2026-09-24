@@ -1,16 +1,14 @@
 /**
  * Norman shades card.
  *
- * Groups every Norman blind by room. Each blind is drawn as a window with its fabric
- * hanging in it -- draggable, and showing where every rail actually is -- above a percentage
- * slider per rail in 10% steps, with the blind's battery level alongside. Written as a plain
- * custom element with no build step and no external dependencies, so the file that ships is
- * the file that runs.
+ * Every Norman blind, grouped by room, drawn as a window with its shade hanging in it. The
+ * picture is the control: each rail has a pull tab, and dragging it moves that rail. A
+ * two-rail (day/night) blind has two -- the middle rail between the two fabrics, and the
+ * bottom rail -- and they stack and part the way the real rails do.
  *
- * The window is drawn in CSS: the slats are a repeating gradient and the geometry is in
- * percent, so the picture themes itself, stays crisp at any pixel density, scales with the
- * card, and handles however many rails a blind has. (The card this one takes its shape from
- * uses three embedded PNGs for the same job, which is why its travel height is fixed.)
+ * Written as a plain custom element with no build step and no external dependencies, so the
+ * file that ships is the file that runs. The picture is drawn in CSS with its geometry in
+ * percent, so it follows the theme, stays crisp at any pixel density and scales with the card.
  *
  * Discovery is automatic: the card finds Norman cover entities through the entity registry
  * (via the hass object's `entities` map) and groups them by the area Home Assistant has each
@@ -24,12 +22,23 @@
 // without the stamp -- which is also the state a stale browser cache leaves behind.
 const CARD_VERSION = new URL(import.meta.url).searchParams.get("v") || "unknown";
 
-const STEP = 10;
-// The headbox depth, as a percentage of the picture's height. Shared between the CSS token
-// --n-head and the drawing arithmetic: the fabric hangs from the bottom of the headbox, so
-// if these two disagree the fabric detaches from it. Keep them equal.
-const SHADE_HEAD_PCT = 11.3;
 const DOMAIN = "norman";
+const STEP = 10;
+
+// The shade's geometry, as percentages of the window opening's height: the headrail's depth
+// and each rail's thickness. The CSS tokens --n-head and --n-rail draw the same two numbers,
+// so if they disagree the fabric detaches from its rails. Keep them equal.
+const SHADE_HEAD_PCT = 9;
+const SHADE_RAIL_PCT = 4.5;
+
+// How long a position the user chose is drawn before the hub must have taken it up. Past this
+// the card shows the hub's own values again, so a command the hub dropped is visible.
+const PENDING_MS = 15000;
+// Keyboard moves are gathered into one write: the hub drops commands sent closer together
+// than about 1.5 s, so one write per key press would lose most of them.
+const KEY_COMMIT_MS = 900;
+// How far (px) a press must travel before it becomes a drag, so a tap never moves a blind.
+const DRAG_SLOP = 4;
 
 // Entities are identified by their translation key, which the entity registry sends to the
 // frontend as `tk`. NOT by unique_id: the registry's display payload
@@ -42,17 +51,35 @@ const KEY_BOTTOM_POSITION = "bottom_rail_position";
 const KEY_MIDDLE_POSITION = "middle_rail_position";
 const KEY_BATTERY = "battery_level";
 
-// The Norman app's three presets, as chips. The short label is what is printed; the
-// title is the full name, used for the tooltip and for assistive technology.
+// The Norman app's three presets. The short label is what is printed; the title is the full
+// name, used for the tooltip and for assistive technology.
 const PRESETS = [
   { command: "best_privacy", icon: "mdi:blinds-horizontal", label: "Privacy", title: "Best privacy" },
   { command: "best_view", icon: "mdi:weather-sunny", label: "View", title: "Best view" },
   { command: "favorite", icon: "mdi:star", label: "Favorite", title: "Favorite" },
 ];
 
-const clampToStep = (value) => {
-  const clamped = Math.max(0, Math.min(100, Number(value) || 0));
-  return Math.round(clamped / STEP) * STEP;
+const ROOM_ACTIONS = [
+  ["mdi:arrow-up", "open_cover", "Open"],
+  ["mdi:stop", "stop_cover", "Stop"],
+  ["mdi:arrow-down", "close_cover", "Close"],
+];
+
+const clamp = (value, low = 0, high = 100) => Math.max(low, Math.min(high, value));
+const clampToStep = (value) => Math.round(clamp(Number(value) || 0) / STEP) * STEP;
+const round3 = (value) => Math.round(value * 1000) / 1000;
+
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+
+const haIcon = (name) => {
+  const node = document.createElement("ha-icon");
+  node.setAttribute("icon", name);
+  return node;
 };
 
 const batteryIcon = (level) => {
@@ -69,6 +96,614 @@ const batteryClass = (level) => {
   if (level <= 30) return "low";
   return "ok";
 };
+
+// The view through the window follows the sun, so the picture reads like the real window.
+const skyOf = (sun) => {
+  if (!sun) return "day";
+  const elevation = Number(sun.attributes?.elevation);
+  if (Number.isNaN(elevation)) return sun.state === "below_horizon" ? "night" : "day";
+  if (elevation > 8) return "day";
+  if (elevation > 0) return "golden";
+  if (elevation > -6) return "dusk";
+  return "night";
+};
+
+// "Middle rail" -> "Middle": the status line has room for a word, not a label.
+const shortLabel = (rail) => rail.label.split(" ")[0];
+
+const STYLES = `
+  :host {
+    --n-fg-rgb: var(--rgb-primary-text-color, 33, 33, 33);
+    --n-accent: var(--primary-color, #03a9f4);
+    --n-accent-rgb: var(--rgb-primary-color, 3, 169, 244);
+    --n-muted: var(--secondary-text-color, #6f7378);
+    --n-tile: 112px;
+    /* Shade geometry, in percent of the window opening. SHADE_HEAD_PCT and SHADE_RAIL_PCT
+       in the script are the same numbers. */
+    --n-head: 9%;
+    --n-rail: 4.5%;
+    --n-pleat: 6px;
+    --n-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+    display: block;
+  }
+  [hidden] { display: none !important; }
+
+  /* The illustration's palette: painted trim, aluminium rails, an ivory light-filtering
+     fabric and a slate blackout. Dark themes dim the trim so the window does not glare. */
+  ha-card {
+    --n-trim: #f3f0ea;
+    --n-trim-hi: #fdfcfa;
+    --n-trim-lo: #dcd6cc;
+    --n-trim-edge: rgba(92, 78, 58, 0.22);
+    --n-rail-hi: #ffffff;
+    --n-rail-face: #eeebe5;
+    --n-rail-lo: #cbc5ba;
+    --n-rail-edge: rgba(70, 60, 45, 0.35);
+    --n-sheer-hi: rgba(252, 250, 245, 0.9);
+    --n-sheer: rgba(240, 234, 224, 0.88);
+    --n-sheer-lo: rgba(222, 213, 198, 0.9);
+    --n-sheer-crease: rgba(176, 164, 145, 0.95);
+    --n-single-hi: #fbf9f4;
+    --n-single: #f0ebe2;
+    --n-single-lo: #ddd5c7;
+    --n-single-crease: #bdb2a0;
+    --n-black-hi: #737c88;
+    --n-black: #5f6773;
+    --n-black-lo: #4b525d;
+    --n-black-crease: #363c45;
+    container-type: inline-size;
+    padding: 16px 16px 18px;
+    overflow: visible;
+  }
+  ha-card[data-theme="dark"] {
+    --n-trim: #45484d;
+    --n-trim-hi: #53575c;
+    --n-trim-lo: #34373b;
+    --n-trim-edge: rgba(0, 0, 0, 0.45);
+    --n-rail-hi: #f2f0ec;
+    --n-rail-face: #d9d5ce;
+    --n-rail-lo: #aba497;
+    --n-single-hi: #e6e1d8;
+    --n-single: #d6cfc3;
+    --n-single-lo: #c0b7a8;
+    --n-single-crease: #a39886;
+  }
+
+  /* ---- header ---------------------------------------------------------------------- */
+  .header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+  }
+  .titles { flex: 1 1 160px; min-width: 0; }
+  .header-text {
+    font-size: var(--ha-card-header-font-size, 20px);
+    font-weight: var(--ha-card-header-font-weight, 500);
+    line-height: 1.25;
+    color: var(--ha-card-header-color, var(--primary-text-color));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .summary {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--n-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .summary > span:not(.sep) { white-space: nowrap; }
+  .summary .warn { color: var(--warning-color, #e39700); }
+  .summary .live { color: var(--n-accent); }
+
+  /* The app's presets, as one segmented control rather than three loose buttons. */
+  .segmented {
+    display: inline-flex;
+    flex: none;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
+    background: rgba(var(--n-fg-rgb), 0.06);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--primary-text-color);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.15s, box-shadow 0.15s, color 0.15s;
+  }
+  .chip ha-icon { --mdc-icon-size: 17px; color: var(--n-muted); transition: color 0.15s; }
+  .chip:hover {
+    background: var(--card-background-color, #fff);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  }
+  .chip:hover ha-icon, .chip.sent ha-icon, .chip.sent { color: var(--n-accent); }
+  .chip:active { transform: scale(0.97); }
+  .chip:focus-visible, .icon-btn:focus-visible, .name:focus-visible, .stop:focus-visible {
+    outline: 2px solid var(--n-accent);
+    outline-offset: 1px;
+  }
+  @container (max-width: 400px) {
+    .home-buttons .chip span { display: none; }
+    .home-buttons .chip { padding: 0 10px; }
+  }
+
+  /* ---- rooms ----------------------------------------------------------------------- */
+  .room { margin-top: 22px; }
+  .room:first-child { margin-top: 18px; }
+  .room-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    margin-bottom: 12px;
+  }
+  .room-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .icon-group {
+    display: inline-flex;
+    flex: none;
+    border-radius: 10px;
+    background: rgba(var(--n-fg-rgb), 0.05);
+  }
+  .icon-btn {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--primary-text-color);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .icon-btn ha-icon { --mdc-icon-size: 18px; }
+  .icon-btn:hover { background: rgba(var(--n-fg-rgb), 0.08); }
+  .icon-btn:active { transform: scale(0.94); }
+  .icon-btn.more { flex: none; }
+  .icon-btn.more.open { background: rgba(var(--n-accent-rgb), 0.14); color: var(--n-accent); }
+  .tray { margin: -4px 0 14px; }
+  .tray .segmented { display: flex; width: fit-content; max-width: 100%; }
+
+  /* ---- a blind: the window, then its name and state --------------------------------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--n-tile), 1fr));
+    gap: 20px 14px;
+  }
+  .tile { position: relative; min-width: 0; }
+  .meta { margin-top: 9px; padding: 0 1px; }
+  .meta-top { display: flex; align-items: center; gap: 6px; }
+  .name {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--primary-text-color);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.3;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .name:hover { text-decoration: underline; text-underline-offset: 2px; }
+  .battery {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    font-size: 11.5px;
+    color: var(--n-muted);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  .battery ha-icon { --mdc-icon-size: 15px; }
+  .battery span:empty { display: none; }
+  .battery.ok { opacity: 0.7; }
+  .battery.low { color: var(--warning-color, #e39700); }
+  .battery.critical { color: var(--error-color, #db4437); }
+  .meta-bottom { display: flex; align-items: flex-start; gap: 6px; min-height: 18px; }
+  .status {
+    flex: 1;
+    min-width: 0;
+    margin-top: 1px;
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: var(--n-muted);
+    font-variant-numeric: tabular-nums;
+    /* A two-rail blind's "Middle 70% · Bottom 30%" wraps between the rails, never inside one. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .status.moving { color: var(--n-accent); }
+
+  /* Stop, while a blind is travelling: on the window's corner in the grid, inline in the list. */
+  .stop {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    flex: none;
+    padding: 0;
+    border: 0;
+    color: var(--n-accent);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .stop ha-icon { --mdc-icon-size: 16px; }
+  .tile > .stop {
+    position: absolute;
+    top: -6px;
+    right: -2px;
+    z-index: 8;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--card-background-color, #fff);
+    box-shadow: 0 0 0 1.5px rgba(var(--n-accent-rgb), 0.5), 0 2px 6px rgba(0, 0, 0, 0.25);
+    animation: n-pop 0.2s var(--n-ease);
+  }
+  .tile > .stop span { display: none; }
+  .tile > .stop:hover { background: var(--n-accent); color: var(--text-primary-color, #fff); }
+  .row .stop {
+    height: 22px;
+    padding: 0 8px 0 5px;
+    border-radius: 11px;
+    background: rgba(var(--n-accent-rgb), 0.14);
+  }
+  .row .stop ha-icon { --mdc-icon-size: 14px; }
+  @keyframes n-pop { from { transform: scale(0.4); opacity: 0; } }
+  .tile.unavailable .win { filter: grayscale(1); opacity: 0.45; }
+
+  /* ---- the window -------------------------------------------------------------------
+     A painted casing and sill around a recessed opening. Everything that moves is placed
+     in percent of .opening, so the picture scales with the tile. */
+  .win {
+    position: relative;
+    aspect-ratio: 5 / 6;
+    cursor: grab;
+    touch-action: pan-y;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .win.dragging { cursor: grabbing; }
+  .win.disabled { cursor: default; }
+  .frame {
+    position: absolute;
+    left: 4%;
+    right: 4%;
+    top: 0;
+    bottom: 5%;
+    border-radius: 3px;
+    background: linear-gradient(to bottom, var(--n-trim-hi), var(--n-trim) 10%, var(--n-trim) 85%, var(--n-trim-lo));
+    box-shadow: 0 0 0 1px var(--n-trim-edge), 0 8px 18px -10px rgba(40, 30, 20, 0.45);
+  }
+  .sill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 7%;
+    border-radius: 2px;
+    background: linear-gradient(to bottom, var(--n-trim-hi), var(--n-trim) 35%, var(--n-trim-lo));
+    box-shadow: 0 0 0 1px var(--n-trim-edge), 0 5px 8px -5px rgba(40, 30, 20, 0.45);
+  }
+  .opening {
+    position: absolute;
+    top: 7%;
+    bottom: 5%;
+    left: 8.5%;
+    right: 8.5%;
+  }
+
+  /* The view: sky that follows the sun, a line of hills, the glazing bars and a glint. */
+  .view {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: linear-gradient(to bottom, #6ea6da, #a6cbee 55%, #d9eaf6);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2), inset 0 3px 6px rgba(0, 0, 0, 0.25);
+  }
+  .sun {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 76% 30%, rgba(255, 251, 235, 0.95) 0 5%, rgba(255, 244, 214, 0.45) 11%, transparent 32%);
+  }
+  .hills {
+    position: absolute;
+    left: -10%;
+    right: -10%;
+    bottom: 0;
+    height: 30%;
+    background:
+      radial-gradient(70% 100% at 22% 100%, #8fb09a 0 60%, transparent 61%),
+      radial-gradient(80% 85% at 82% 100%, #a9c4ae 0 60%, transparent 61%);
+  }
+  .mullion, .transom {
+    position: absolute;
+    background: var(--n-trim);
+    box-shadow: 0 0 0 0.5px var(--n-trim-edge), 0 1px 2px rgba(0, 0, 0, 0.18);
+  }
+  .mullion { top: 0; bottom: 0; left: 50%; width: 3.2%; transform: translateX(-50%); }
+  .transom { left: 0; right: 0; top: 48%; height: 2.8%; }
+  .glint {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(118deg, transparent 0 30%, rgba(255, 255, 255, 0.22) 30% 38%, transparent 38% 44%, rgba(255, 255, 255, 0.12) 44% 47%, transparent 47%);
+  }
+  ha-card[data-sky="golden"] .view { background: linear-gradient(to bottom, #7f9fd4, #e8b48d 62%, #f6d7ae); }
+  ha-card[data-sky="golden"] .sun { background: radial-gradient(circle at 70% 62%, rgba(255, 236, 196, 0.95) 0 6%, rgba(255, 206, 150, 0.45) 14%, transparent 38%); }
+  ha-card[data-sky="golden"] .hills { filter: saturate(0.6) brightness(0.8); }
+  ha-card[data-sky="dusk"] .view { background: linear-gradient(to bottom, #26325b, #6b5b88 58%, #d38e77); }
+  ha-card[data-sky="dusk"] .sun { background: none; }
+  ha-card[data-sky="dusk"] .hills { filter: brightness(0.38) saturate(0.5) hue-rotate(40deg); }
+  ha-card[data-sky="night"] .view { background: linear-gradient(to bottom, #0b1224, #16223f 60%, #243559); }
+  ha-card[data-sky="night"] .sun {
+    background:
+      radial-gradient(circle at 72% 24%, #f4f1e4 0 3.2%, rgba(244, 241, 228, 0.25) 5%, transparent 12%),
+      radial-gradient(circle at 18% 16%, #fff 0 0.5%, transparent 0.9%),
+      radial-gradient(circle at 36% 34%, #fff 0 0.4%, transparent 0.8%),
+      radial-gradient(circle at 58% 12%, #fff 0 0.35%, transparent 0.7%),
+      radial-gradient(circle at 88% 44%, #fff 0 0.4%, transparent 0.8%),
+      radial-gradient(circle at 12% 46%, #fff 0 0.3%, transparent 0.7%);
+  }
+  ha-card[data-sky="night"] .hills { filter: brightness(0.22) saturate(0.4); }
+  ha-card[data-sky="night"] .glint { opacity: 0.4; }
+
+  /* Fabric: cellular (honeycomb) pleats. Each cell is a crease, a shadowed lip, a lit
+     face and a darker belly, repeated up from the rail so the pleats travel with it. */
+  .fabric {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: var(--n-head);
+    height: 0;
+    z-index: 1;
+    transition: top 0.45s var(--n-ease), height 0.45s var(--n-ease);
+  }
+  /* The pleat, bottom to top: the glued fold, the shadowed underside of the cell, its lit
+     face, and a little shade where the cell above overhangs it. */
+  .fabric.sheer, .fabric.single, .fabric.blackout {
+    background:
+      linear-gradient(to right, var(--n-side), transparent 9%, transparent 91%, var(--n-side)),
+      repeating-linear-gradient(
+        to top,
+        var(--n-crease) 0,
+        var(--n-crease) 1px,
+        var(--n-lo) 1px,
+        var(--n-lo) calc(var(--n-pleat) * 0.3),
+        var(--n-hi) calc(var(--n-pleat) * 0.68),
+        var(--n-mid) calc(var(--n-pleat) * 0.92),
+        var(--n-lo) var(--n-pleat)
+      );
+  }
+  .fabric.single {
+    --n-side: rgba(90, 70, 40, 0.1);
+    --n-crease: var(--n-single-crease);
+    --n-lo: var(--n-single-lo);
+    --n-mid: var(--n-single);
+    --n-hi: var(--n-single-hi);
+  }
+  /* The light-filtering fabric is translucent: the view shows through it as a soft glow,
+     frosted rather than seen, and at night it goes dim with the sky behind it. */
+  .fabric.sheer {
+    --n-side: rgba(90, 70, 40, 0.1);
+    --n-crease: var(--n-sheer-crease);
+    --n-lo: var(--n-sheer-lo);
+    --n-mid: var(--n-sheer);
+    --n-hi: var(--n-sheer-hi);
+    -webkit-backdrop-filter: blur(6px) saturate(0.7);
+    backdrop-filter: blur(6px) saturate(0.7);
+  }
+  .fabric.single::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(90% 70% at 70% 30%, rgba(255, 250, 235, 0.55), transparent 70%);
+    mix-blend-mode: soft-light;
+  }
+  ha-card[data-sky="night"] .fabric.single::after,
+  ha-card[data-sky="dusk"] .fabric.single::after { display: none; }
+  ha-card[data-theme="dark"] .fabric,
+  ha-card[data-theme="dark"] .rail,
+  ha-card[data-theme="dark"] .headrail { filter: brightness(0.88); }
+  .fabric.blackout {
+    --n-side: rgba(0, 0, 0, 0.16);
+    --n-crease: var(--n-black-crease);
+    --n-lo: var(--n-black-lo);
+    --n-mid: var(--n-black);
+    --n-hi: var(--n-black-hi);
+  }
+
+  /* Rails and the headrail: extruded aluminium, lit from above. */
+  .rail, .headrail {
+    position: absolute;
+    background: linear-gradient(to bottom, var(--n-rail-hi), var(--n-rail-face) 40%, var(--n-rail-lo));
+  }
+  .rail {
+    left: 0;
+    right: 0;
+    top: var(--n-head);
+    height: var(--n-rail);
+    min-height: 4px;
+    z-index: 3;
+    border-radius: 1px;
+    box-shadow: 0 0 0 0.5px var(--n-rail-edge), 0 2px 3px -1px rgba(0, 0, 0, 0.4);
+    transition: top 0.45s var(--n-ease);
+  }
+  .rail.bottom { z-index: 4; }
+  .headrail {
+    left: -3%;
+    right: -3%;
+    top: 0;
+    height: var(--n-head);
+    z-index: 5;
+    border-radius: 2px 2px 1px 1px;
+    background: linear-gradient(to bottom, var(--n-rail-hi), var(--n-rail-face) 30%, var(--n-rail-face) 62%, var(--n-rail-lo));
+    box-shadow: 0 0 0 0.5px var(--n-rail-edge), 0 3px 5px -2px rgba(0, 0, 0, 0.45);
+  }
+
+  /* The pull tab: what a hand reaches for on a cordless shade, and what the card drags. */
+  .tab {
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    width: 26%;
+    min-width: 20px;
+    max-width: 38px;
+    height: 7px;
+    transform: translateX(-50%);
+    border-radius: 0 0 5px 5px;
+    background: linear-gradient(to bottom, var(--n-rail-face), var(--n-rail-lo));
+    box-shadow: 0 0 0 0.5px var(--n-rail-edge), 0 2px 3px -1px rgba(0, 0, 0, 0.4);
+    transition: background-color 0.15s, height 0.15s, box-shadow 0.15s;
+  }
+  .rail.hot .tab, .rail.held .tab {
+    height: 9px;
+    background: var(--n-accent);
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(var(--n-accent-rgb), 0.55);
+  }
+  .rail.moving:not(.held) .tab { animation: n-pulse 1.6s ease-in-out infinite; }
+  @keyframes n-pulse {
+    50% { background: var(--n-accent); box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25), 0 1px 6px rgba(var(--n-accent-rgb), 0.5); }
+  }
+
+  /* Where a rail actually is while it travels to where it was sent. */
+  .marker {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 0;
+    z-index: 2;
+    border-top: 2px dashed var(--n-accent);
+    transform: translateY(-1px);
+    opacity: 0;
+    transition: opacity 0.25s, top 0.8s linear;
+    filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9));
+    pointer-events: none;
+  }
+  .marker.on { opacity: 0.95; }
+
+  /* Grab zones: a band around each rail, the only place a touch starts a drag. Everywhere
+     else on the picture a finger scrolls the page, so swiping past cannot move a blind. */
+  .zone {
+    position: absolute;
+    left: -8%;
+    right: -8%;
+    height: 34px;
+    z-index: 6;
+    border-radius: 8px;
+    transform: translateY(-50%);
+    touch-action: none;
+    outline: none;
+    transition: top 0.45s var(--n-ease);
+  }
+  .zone:focus-visible { box-shadow: 0 0 0 2px var(--n-accent); }
+  .win.dragging .fabric, .win.dragging .rail, .win.dragging .zone { transition: none; }
+  .win.disabled .zone { touch-action: pan-y; }
+
+  .bubble {
+    position: absolute;
+    left: 50%;
+    z-index: 7;
+    padding: 3px 8px;
+    border-radius: 11px;
+    background: rgba(24, 26, 30, 0.86);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    transform: translate(-50%, calc(-100% - 10px));
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  .bubble.on { opacity: 1; }
+
+  /* ---- list layout (hide_picture) --------------------------------------------------- */
+  .list { display: flex; flex-direction: column; gap: 12px; }
+  .row .meta { margin: 0 0 2px; }
+  .row .meta-bottom { min-height: 0; }
+  .slider {
+    display: grid;
+    grid-template-columns: 64px 1fr 40px;
+    align-items: center;
+    gap: 10px;
+    min-height: 30px;
+  }
+  .slider-label { font-size: 12.5px; color: var(--n-muted); }
+  .slider-value {
+    text-align: right;
+    font-size: 13px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .slider input {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    margin: 0;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--n-accent) var(--n-fill, 0%), rgba(var(--n-fg-rgb), 0.12) var(--n-fill, 0%));
+    cursor: pointer;
+  }
+  .slider input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
+  .slider input::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
+  .slider input:focus-visible { outline: 2px solid var(--n-accent); outline-offset: 4px; }
+  .slider input:disabled { cursor: default; }
+  /* The sliders already say where each rail is; the status line only speaks up to say it
+     is moving or unavailable. */
+  .row .status.rest { display: none; }
+  .row.unavailable { opacity: 0.5; }
+
+  .empty { padding: 8px 0 4px; color: var(--n-muted); }
+`;
 
 class NormanShadesCard extends HTMLElement {
   static getConfigElement() {
@@ -87,26 +722,29 @@ class NormanShadesCard extends HTMLElement {
     this._hass = null;
     this._config = {};
     this._rendered = false;
-    // Sliders the user is currently dragging. While a thumb is held, incoming state
-    // updates must not yank it back to the hub's value, which lags the drag by a second
-    // or two. Keyed by entity id.
-    this._dragging = new Set();
-    // Values written optimistically, so the label reads what the user chose immediately
-    // rather than waiting for the hub to confirm. Cleared when the state catches up.
+    // Positions the user chose, drawn until the hub reports them as its target. Keyed by
+    // the entity the write went to; each entry is { value, at }.
     this._pending = new Map();
-    // The header's text node, when the header is drawn (see _update).
+    this._cells = [];
+    // The header's text node and summary line (see _render).
     this._headerText = null;
+    this._summary = null;
   }
 
   setConfig(config) {
     this._config = config || {};
     this._rendered = false;
+    this._signature = undefined;
     if (this.shadowRoot) this.shadowRoot.innerHTML = "";
   }
 
   getCardSize() {
     const blinds = this._hass ? this._collectBlinds().length : 3;
-    return Math.max(3, blinds + 1);
+    return 2 + Math.ceil(blinds / 3) * 4;
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6 };
   }
 
   set hass(hass) {
@@ -118,6 +756,8 @@ class NormanShadesCard extends HTMLElement {
       this._update();
     }
   }
+
+  // ---- data ------------------------------------------------------------------------
 
   /**
    * Every Norman blind visible to this dashboard, assembled from its entities.
@@ -182,8 +822,7 @@ class NormanShadesCard extends HTMLElement {
       ) {
         // The `!key` guard matters here as much as on the rails: without it, any Norman
         // sensor whose entity id happens to end in "_battery" is claimed as the battery
-        // even when its translation key says otherwise (a user-renamed entity keeps its
-        // key, so the key is the authority and the id is only a fallback).
+        // even when its translation key says otherwise.
         blind.battery = entityId;
       }
     }
@@ -193,18 +832,6 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /**
-   * The hub's name, as Home Assistant has it.
-   *
-   * The hub is the one Norman device with entities but no cover -- it carries the MAC
-   * address, Wi-Fi and time-zone sensors. Its name is what the user set in Home Assistant,
-   * falling back to the name the integration took from the Norman app, so the card header
-   * reads as their hub rather than a generic word. `name_by_user` wins, matching how Home
-   * Assistant shows the device everywhere else.
-   *
-   * Returns null when there is no hub to name (no Norman devices at all, or every Norman
-   * device has a cover), so the caller can fall back rather than print "null".
-   */
-  /**
    * The heading to show: the configured title, else the hub's name.
    *
    * A configured `title` always wins, whatever it says -- including `""` for a blank
@@ -212,16 +839,22 @@ class NormanShadesCard extends HTMLElement {
    * cards you can tell apart; "Shades" is only the fallback for when no hub device can be
    * found (an install with no Norman devices yet, or before the registry has loaded).
    *
-   * Note that cards added from the picker before v0.30 have `title: "Shades"` saved in
-   * their dashboard config, because `getStubConfig()` used to supply it. Those keep saying
-   * "Shades" until the title is removed -- the card cannot tell a saved default from a
-   * deliberate choice, and second-guessing a configured title is worse than honouring one.
+   * Cards added from the picker before v0.30 have `title: "Shades"` saved in their config,
+   * because `getStubConfig()` used to supply it. Those keep saying "Shades" until the title
+   * is removed -- the card cannot tell a saved default from a deliberate choice.
    */
   _headingText() {
     const configured = this._config.title;
     return configured !== undefined ? configured : (this._hubName() ?? "Shades");
   }
 
+  /**
+   * The hub's name, as Home Assistant has it.
+   *
+   * The hub is the one Norman device with entities but no cover -- it carries the MAC
+   * address, Wi-Fi and time-zone sensors. `name_by_user` wins, matching how Home Assistant
+   * shows the device everywhere else. Returns null when there is no hub to name.
+   */
   _hubName() {
     const hass = this._hass;
     if (!hass) return null;
@@ -246,18 +879,21 @@ class NormanShadesCard extends HTMLElement {
     return null;
   }
 
+  /** Blinds grouped by room: in the configured `rooms` order if one is given, else A-Z. */
   _roomsOf(blinds) {
-    const filter = this._config.rooms;
+    const filter =
+      Array.isArray(this._config.rooms) && this._config.rooms.length ? this._config.rooms : null;
     const rooms = new Map();
     for (const blind of blinds) {
-      if (Array.isArray(filter) && filter.length && !filter.includes(blind.room)) continue;
+      if (filter && !filter.includes(blind.room)) continue;
       if (!rooms.has(blind.room)) rooms.set(blind.room, []);
       rooms.get(blind.room).push(blind);
     }
     for (const list of rooms.values()) {
       list.sort((a, b) => a.name.localeCompare(b.name));
     }
-    return [...rooms.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const order = (room) => (filter ? filter.indexOf(room) : 0);
+    return [...rooms.entries()].sort((a, b) => order(a[0]) - order(b[0]) || a[0].localeCompare(b[0]));
   }
 
   _numberOf(entityId) {
@@ -267,16 +903,10 @@ class NormanShadesCard extends HTMLElement {
     return Number.isNaN(value) ? null : value;
   }
 
-  /** A rail's displayed position: the pending write while one is in flight, else the state. */
-  _railValue(rail) {
-    if (this._pending.has(rail.numberId)) return this._pending.get(rail.numberId);
-    const fromNumber = rail.numberId ? this._numberOf(rail.numberId) : null;
-    if (fromNumber !== null) return fromNumber;
-    const cover = this._hass.states[rail.coverId];
-    const position = cover?.attributes?.current_position;
-    return position === undefined || position === null ? null : Number(position);
-  }
-
+  /**
+   * A blind's rails, bottom first: `rails[0]` is the bottom rail and `rails[1]`, when there
+   * is one, the middle rail above it.
+   */
   _railsOf(blind) {
     const rails = [
       {
@@ -297,498 +927,60 @@ class NormanShadesCard extends HTMLElement {
     return rails;
   }
 
+  /** Where the hub says a rail is, and where it is sending it (equal when idle). */
+  _railState(rail) {
+    const cover = this._hass.states[rail.coverId];
+    let current = rail.numberId ? this._numberOf(rail.numberId) : null;
+    if (current === null) {
+      const position = cover?.attributes?.current_position;
+      current = position === undefined || position === null ? null : Number(position);
+    }
+    const heading = cover?.attributes?.target_position;
+    const target = heading === undefined || heading === null ? current : Number(heading);
+    return { current, target };
+  }
+
+  /**
+   * Where a rail is drawn: the position the user just chose while the hub takes it up,
+   * else where the hub is sending it. The picture shows where the shade is GOING; the
+   * marker and the status line say where it is on the way.
+   */
+  _railValue(rail) {
+    const pending = this._pending.get(rail.numberId || rail.coverId);
+    if (pending) return pending.value;
+    return this._railState(rail).target;
+  }
+
   _isUnavailable(blind) {
     const state = this._hass.states[blind.bottomCover];
     return !state || state.state === "unavailable";
   }
 
+  // ---- building --------------------------------------------------------------------
+
   _render() {
     const style = document.createElement("style");
-    style.textContent = `
-      /* Colour tokens. Home Assistant exposes the RGB triplets of its palette, which is
-         what lets the fills and tints here be translucent -- so they sit correctly on any
-         theme, light or dark, rather than assuming a white card. */
-      :host {
-        --n-fg-rgb: var(--rgb-primary-text-color, 33, 33, 33);
-        --n-accent-rgb: var(--rgb-primary-color, 3, 169, 244);
-        --n-bg-rgb: var(--rgb-card-background-color, 255, 255, 255);
-        --n-radius: 10px;
-        --n-control: 32px;
-        /* The shade picture, copied from the card this one is modelled on.
-           ----------------------------------------------------------------------------
-           Every value here was measured off its three PNGs rather than guessed:
-
-             picture (153x151): aspect 1.01 -- SQUARE, square corners, off-white frame
-                                (face 246, inner edge 228), headbox 0 -> 11.3%, travel
-                                12.6% -> 90.7%, curtain inset to 6%..94%, and the window
-                                interior fully TRANSPARENT.
-             slat (1x6px):      190, 202, 227, 236, 247 -- a hard dark fold at the top of
-                                each cell, ramping to a lit lip.
-             rail (137x7):      248, 237, 224, 232, 243, 222, 193.
-
-           The headbox stands PROUD of the frame: it is a valance mounted on the wall in
-           front of the window, so it overhangs the jambs rather than sitting between
-           them, and it casts a shadow onto the fabric below. */
-        /* The opening behind the fabric.
-           ----------------------------------------------------------------------------
-           BRIGHT, not dark. Rendering the reference card side by side with this one
-           settled it: its open window reads 250 (near white) and its closed fabric 191
-           (grey). So the window is LIT and the shade is what blocks the light -- open is
-           a bright hole, closed is darker slats over it. An earlier version had this
-           exactly inverted (dark opening, near-white fabric), which is why the picture
-           kept not looking like the reference however much the fabric was tuned.
-
-           Slightly cooler and dimmer at the top, as glass in a reveal. */
-        --n-opening: linear-gradient(to bottom, #f2f4f6, #fafafa 40%, #fdfdfd);
-        --n-frame: #f6f6f6;
-        --n-jamb: 6%;
-        --n-fold: #9e9e9e;
-        --n-cell: 6px;
-        --n-head: 11.3%;
-        --n-rail: 7px;
-      }
-      ha-card { padding: 4px 0 8px; }
-
-      /* Header: the hub's name, and the app's three whole-house presets. */
-      .header {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px 12px;
-        font-size: var(--ha-card-header-font-size, 22px);
-        font-weight: var(--ha-card-header-font-weight, 500);
-        color: var(--ha-card-header-color, var(--primary-text-color));
-        padding: 12px 16px 6px;
-      }
-      .header-text {
-        flex: 1 1 140px;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      /* Room: an uppercase heading with its controls; the blinds sit in a rounded group
-         beneath it so a room reads as one object, not a run of hairlines. */
-      .room { padding: 8px 12px 4px; }
-      .room-name {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px 10px;
-        font-size: 0.78rem;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--secondary-text-color);
-        padding: 4px 4px 8px;
-      }
-      .room-name-text {
-        flex: 1 1 120px;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .group {
-        border-radius: var(--n-radius);
-        background: rgba(var(--n-fg-rgb), 0.04);
-        overflow: hidden;
-      }
-
-      /* Blind: name and battery on one line, then one bar per rail. */
-      .blind { padding: 10px 12px 12px; }
-      .blind + .blind { border-top: 1px solid rgba(var(--n-fg-rgb), 0.08); }
-      .blind.unavailable { opacity: 0.5; }
-      .blind-head {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
-      }
-      .blind-name {
-        flex: 1;
-        min-width: 0;
-        font-weight: 500;
-        cursor: pointer;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .blind-name:hover { text-decoration: underline; }
-      .battery {
-        display: inline-flex;
-        align-items: center;
-        gap: 2px;
-        font-size: 0.8rem;
-        color: var(--secondary-text-color);
-        white-space: nowrap;
-        cursor: pointer;
-      }
-      .battery ha-icon { --mdc-icon-size: 18px; }
-      .battery.low { color: var(--warning-color, #ff9800); }
-      .battery.critical { color: var(--error-color, #f44336); }
-
-      /* The shade picture.
-         ------------------------------------------------------------------------------
-         A blind is drawn as a window: a frame, and fabric hanging from the head down to
-         each rail. Geometry is in PERCENT of the frame, never pixels, so the picture
-         scales with the card and a phone gets a smaller shade rather than a clipped one.
-
-         Two rails, drawn as two stacked bands. On a day/night cellular shade the middle
-         rail is the join between the two fabrics, so the band above it is the sheer
-         (light-filtering) cell and the band below it is the blackout cell; on a
-         top-down/bottom-up blind the same two bands read as the top and bottom halves.
-         Both are honest about the one thing that is always true: where each rail is.
-
-         Every band's top and height is written by one function (_drawShade), so the
-         fabric and its rail can never disagree about where the rail is. */
-      .shade {
-        position: relative;
-        width: 100%;
-        /* SQUARE, like the reference's 153x151 picture -- not 4:3. A window is about as
-           tall as it is wide, and a wide letterbox reads as a vent, not a window. */
-        aspect-ratio: var(--n-shade-aspect, 1 / 1);
-        /* No rounding: the reference has square corners, and so does a window. */
-        border-radius: 0;
-        overflow: hidden;
-        background: var(--n-opening);
-        cursor: ns-resize;
-        touch-action: none;
-        -webkit-user-select: none;
-        user-select: none;
-      }
-      .shade.disabled { cursor: not-allowed; }
-      .shade:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-
-      /* The window frame: a broad off-white surround, as in the reference (frame face 246,
-         inner edge 228, outer edge 242). Measured from its PNG: ~6% of the width at the
-         sides, with a deeper sill. Drawn as a ring over everything, so the fabric runs
-         behind it. */
-      /* The window frame, at the geometry measured off the reference's picture.png:
-         side jambs 2.6%..5.2% of the width, sill 95.4%..99.3% of the height. Off-white
-         (face 246, edges 228/242). The interior is left entirely to the opening: the
-         reference has NO centre mullion and no glazing bars -- its interior alpha is 0
-         all the way across, which I had misread off a low-resolution comparison.
-
-         Drawn with real edges rather than stacked box-shadow insets, which only ever
-         produce a uniform ring and so silently dropped the jambs. */
-      .shade-frame {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        z-index: 5;
-        border-left: var(--n-jamb) solid var(--n-frame);
-        border-right: var(--n-jamb) solid var(--n-frame);
-        box-shadow:
-          inset 1px 0 0 #d2d2d2,
-          inset -1px 0 0 #d2d2d2,
-          inset 0 0 0 1px rgba(0, 0, 0, 0.04);
-      }
-      /* The sill: the deeper bottom member (232 -> 241 in the reference). */
-      .shade-frame::after {
-        content: "";
-        position: absolute;
-        left: calc(var(--n-jamb) * -1);
-        right: calc(var(--n-jamb) * -1);
-        bottom: 0;
-        height: 4.6%;
-        min-height: 4px;
-        background: linear-gradient(to bottom, #e8e8e8, #f1f1f1);
-        border-top: 1px solid #d2d2d2;
-      }
-
-      /* The headbox: 0 -> 11.3% of the picture in the reference, a pale valance with a
-         dark lip at its bottom edge (229 at the top, 249 in the middle, 150 at the lip). */
-      .shade-head {
-        position: absolute;
-        /* Proud of the window: a valance is mounted in front of the opening, so it
-           overhangs the jambs on both sides and sits above the frame's own top member
-           rather than inside it. That overhang is what gives the blind its presence at
-           the top instead of looking recessed into a hole. */
-        top: 0;
-        left: 0;
-        right: 0;
-        height: var(--n-head);
-        min-height: 10px;
-        z-index: 6;
-        background: linear-gradient(
-          to bottom,
-          #fcfcfc 0%,
-          #f2f2f2 40%,
-          #e2e2e2 78%,
-          #cdcdcd 94%,
-          #8f8f8f 100%
-        );
-        /* A lit top edge, and a shadow thrown down onto the fabric. */
-        box-shadow:
-          inset 0 1px 0 #ffffff,
-          0 3px 5px -2px rgba(0, 0, 0, 0.4);
-      }
-
-      /* Fabric.
-         --------------------------------------------------------------------------------
-         Inset from the jambs, as the reference insets its curtain to 6%..94%, so the
-         fabric sits inside the window rather than running under the frame.
-
-         The cell is the reference tile (1x6px), decoded and composited on white:
-         190, 202, 227, 236, 247 -- a hard dark fold at the top of each cell, then a ramp
-         to a lit lip. --n-cell scales it: 6px is the reference's own value, which works
-         because its picture is a fixed 151px tall. */
-      .shade-band {
-        position: absolute;
-        left: var(--n-jamb);
-        right: var(--n-jamb);
-        transition: top 0.3s ease, height 0.3s ease;
-        z-index: 1;
-        background-position: bottom;
-        background-image: repeating-linear-gradient(
-          to bottom,
-          var(--n-fold) 0 1px,
-          #bcbcbc 1px 2px,
-          #cacaca 2px 3px,
-          #e3e3e3 3px 4px,
-          #ececec 4px 5px,
-          #f1f1f1 5px var(--n-cell)
-        );
-      }
-      /* The light-filtering cell: the same weave, warmer and brighter, because the upper
-         section of a day/night shade passes more light than the blackout below it. */
-      .shade-band.sheer {
-        background-image: repeating-linear-gradient(
-          to bottom,
-          rgba(200, 184, 144, 0.95) 0 1px,
-          #e8dcbe 1px 2px,
-          #f6efd8 2px 3px,
-          #fbf6e8 3px 4px,
-          #fffdf5 4px var(--n-cell)
-        );
-      }
-
-      /* A rail: the pale extrusion from the reference's picker.png, decoded as
-         248/237/224/232/243/222/193 top to bottom. */
-      .shade-rail {
-        position: absolute;
-        left: var(--n-jamb);
-        right: var(--n-jamb);
-        height: var(--n-rail);
-        z-index: 3;
-        background: linear-gradient(
-          to bottom,
-          #f8f8f8 0%,
-          #ededed 16%,
-          #e0e0e0 33%,
-          #e8e8e8 50%,
-          #f3f3f3 66%,
-          #dedede 83%,
-          #c1c1c1 100%
-        );
-        transition: top 0.3s ease;
-      }
-      /* The middle rail straddles the join between the two fabrics, so it is centred on
-         its position; the bottom rail hangs below its own. */
-      .shade-rail.middle { margin-top: calc(var(--n-rail) / -2); }
-
-      /* While a rail is held, nothing animates: the fabric must track the finger 1:1. */
-      .shade.dragging .shade-band,
-      .shade.dragging .shade-rail { transition: none; }
-
-      /* Where a rail is heading while it travels. */
-      .shade-target {
-        position: absolute;
-        left: var(--n-jamb);
-        right: var(--n-jamb);
-        height: 0;
-        border-top: 2px dashed var(--primary-color);
-        opacity: 0;
-        transition: opacity 0.25s ease, top 0.3s ease;
-        z-index: 2;
-      }
-      .shade-target.showing { opacity: 0.85; }
-
-      /* Per-rail readout, inside the window under the headbox. */
-      .shade-readouts {
-        position: absolute;
-        top: calc(var(--n-head) + 4px);
-        right: calc(var(--n-jamb) + 3px);
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 2px;
-        pointer-events: none;
-        z-index: 4;
-      }
-      .shade-readout {
-        font-size: 0.7rem;
-        line-height: 1.45;
-        font-variant-numeric: tabular-nums;
-        /* The readout sits over the fabric when the blind is down and over the dark
-           opening when it is up, so it carries its own light scrim rather than relying on
-           either. */
-        color: #23272e;
-        background: rgba(255, 255, 255, 0.9);
-        border-radius: 2px;
-        padding: 0 4px;
-        white-space: nowrap;
-      }
-      .shade-readout.moving { color: var(--primary-color); font-weight: 500; }
-
-      /* Rail: the controls under the picture, one row per rail. */
-      /* The bar is kept as the accessible control: a real range input, visually hidden
-         over the picture is not possible (the picture is the control), so it sits in the
-         rail row below where it is still reachable by keyboard and screen reader. */
-      .rail {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .rail + .rail { margin-top: 6px; }
-      .bar {
-        position: relative;
-        flex: 1;
-        min-width: 0;
-        height: var(--n-control);
-        border-radius: 8px;
-        background: rgba(var(--n-fg-rgb), 0.08);
-        overflow: hidden;
-      }
-      .bar:focus-within { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-      .bar.disabled { cursor: not-allowed; }
-      .bar-fill {
-        position: absolute;
-        top: 0; bottom: 0; left: 0;
-        width: 0;
-        background: rgba(var(--n-accent-rgb), 0.35);
-        transition: width 0.25s ease;
-      }
-      /* The handle: a short vertical bar at the fill's edge, as on a tile card. */
-      .bar-fill::after {
-        content: "";
-        position: absolute;
-        right: 0; top: 6px; bottom: 6px;
-        width: 3px;
-        border-radius: 2px;
-        background: var(--primary-color);
-      }
-      /* Where the blind is heading while it travels; the fill catches up over ~30 s. */
-      .bar-target {
-        position: absolute;
-        top: 4px; bottom: 4px;
-        width: 2px;
-        margin-left: -1px;
-        border-radius: 1px;
-        background: var(--primary-color);
-        opacity: 0;
-        transition: opacity 0.25s ease;
-      }
-      .bar.moving .bar-target { opacity: 0.55; }
-      .bar-label, .bar-value {
-        position: absolute;
-        top: 0; bottom: 0;
-        display: flex;
-        align-items: center;
-        pointer-events: none;
-        font-size: 0.8rem;
-        white-space: nowrap;
-      }
-      .bar-label { left: 10px; color: var(--secondary-text-color); }
-      .bar-value {
-        right: 10px;
-        font-variant-numeric: tabular-nums;
-        font-weight: 500;
-      }
-      .bar.moving .bar-value { color: var(--primary-color); }
-      .bar input[type="range"] {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        opacity: 0;
-        cursor: pointer;
-      }
-      .bar input[type="range"]:disabled { cursor: not-allowed; }
-
-      /* A segmented pill: one control with three parts, not three loose buttons. */
-      .pill {
-        display: inline-flex;
-        flex: none;
-        border-radius: 999px;
-        background: rgba(var(--n-fg-rgb), 0.06);
-      }
-      .pill ha-icon-button {
-        --mdc-icon-button-size: var(--n-control);
-        --mdc-icon-size: 18px;
-        color: var(--primary-text-color);
-      }
-      .pill ha-icon-button[disabled] { opacity: 0.35; }
-      .pill ha-icon-button.active { color: var(--primary-color); }
-
-      /* A labelled chip, for the app's presets: the word says what the icon cannot. */
-      .chips { display: inline-flex; flex: none; gap: 6px; }
-      .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        height: var(--n-control);
-        padding: 0 11px 0 9px;
-        border: 1px solid rgba(var(--n-fg-rgb), 0.16);
-        border-radius: 999px;
-        background: transparent;
-        color: var(--primary-text-color);
-        font: inherit;
-        font-size: 0.78rem;
-        font-weight: 500;
-        letter-spacing: normal;
-        text-transform: none;
-        line-height: 1;
-        cursor: pointer;
-      }
-      .chip ha-icon { --mdc-icon-size: 16px; color: var(--secondary-text-color); }
-      .chip:hover { background: rgba(var(--n-accent-rgb), 0.08); border-color: transparent; }
-      .chip:hover ha-icon { color: var(--primary-color); }
-      .chip:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-
-      /* Controls sit at the right of their heading and wrap beneath it when the width
-         runs out, keeping the name legible on a phone. */
-      .controls {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        margin-left: auto;
-      }
-      .empty { padding: 16px; color: var(--secondary-text-color); }
-    `;
+    style.textContent = STYLES;
 
     const card = document.createElement("ha-card");
     card.appendChild(style);
+    this._card = card;
 
-    // The header doubles as the house-wide control row, which is on by default. It needs
-    // somewhere to live, so it is drawn even when no title is configured.
-    //
     // With no configured title the header names the HUB rather than saying "Shades": a
-    // house with two hubs gets two cards, and "Shades" twice tells the user nothing about
-    // which is which. See _headingText for why a saved "Shades" counts as unset.
-    const title = this._headingText();
-    if (title || !this._config.hide_home_controls) {
-      const header = document.createElement("div");
-      header.className = "header";
+    // house with two hubs gets two cards, and "Shades" twice says nothing about which.
+    const header = el("div", "header");
+    const titles = el("div", "titles");
+    const text = el("div", "header-text", this._headingText());
+    // Kept so the heading can follow a hub rename, or fill in once the device registry has
+    // loaded -- _render() runs once, but the hub's name can arrive or change later.
+    this._headerText = text;
+    this._summary = el("div", "summary");
+    titles.append(text, this._summary);
+    header.appendChild(titles);
+    if (!this._config.hide_home_controls) header.appendChild(this._buildHomeControls());
+    card.appendChild(header);
 
-      const text = document.createElement("span");
-      text.className = "header-text";
-      text.textContent = title;
-      // Kept so the heading can follow a hub rename, or fill in once the device registry
-      // has loaded -- _render() runs once, but the hub's name can arrive or change later.
-      this._headerText = text;
-      header.appendChild(text);
-
-      if (!this._config.hide_home_controls) {
-        header.appendChild(this._buildHomeControls());
-      }
-      card.appendChild(header);
-    }
-
-    this._body = document.createElement("div");
+    this._body = el("div", "body");
     card.appendChild(this._body);
 
     this.shadowRoot.innerHTML = "";
@@ -799,161 +991,151 @@ class NormanShadesCard extends HTMLElement {
   _update() {
     if (!this._body || !this._hass) return;
 
-    // The header names the hub when no title is configured, so it has to track a rename
-    // (and the first load, where the device registry may arrive after the first render).
+    const sky = skyOf(this._hass.states["sun.sun"]);
+    if (this._card.dataset.sky !== sky) this._card.dataset.sky = sky;
+    const theme = this._hass.themes?.darkMode ? "dark" : "light";
+    if (this._card.dataset.theme !== theme) this._card.dataset.theme = theme;
+
     if (this._headerText) {
       const title = this._headingText();
       if (this._headerText.textContent !== title) this._headerText.textContent = title;
+      this._headerText.hidden = !title;
     }
 
-    const blinds = this._collectBlinds();
-    const rooms = this._roomsOf(blinds);
+    const rooms = this._roomsOf(this._collectBlinds());
 
-    // Rebuild only when the set of blinds changes; otherwise patch values in place so a
-    // slider being dragged is never replaced under the user's finger.
+    // Rebuild only when the set of blinds (or a name) changes; otherwise patch values in
+    // place so a rail being dragged is never replaced under the user's finger.
     const signature = rooms
-      .map(([room, list]) => `${room}:${list.map((b) => b.deviceId).join(",")}`)
+      .map(([room, list]) => `${room}:${list.map((b) => `${b.deviceId}=${b.name}`).join(",")}`)
       .join("|");
     if (signature !== this._signature) {
       this._signature = signature;
       this._build(rooms);
     }
+
+    // Home Assistant sets `hass` on every state change in the house. Redraw only when one of
+    // this card's own entities changed -- state objects are replaced, never mutated, so an
+    // identity check is enough.
+    const seen = this._watched.map((entityId) => this._hass.states[entityId]);
+    if (this._seen && seen.every((state, index) => state === this._seen[index])) return;
+    this._seen = seen;
     this._patch();
   }
 
   _build(rooms) {
     this._body.innerHTML = "";
     this._cells = [];
+    this._seen = null;
+    this._watched = [
+      ...rooms.flatMap(([, list]) =>
+        list.flatMap((blind) => [
+          blind.bottomCover,
+          blind.middleCover,
+          blind.bottomNumber,
+          blind.middleNumber,
+          blind.battery,
+        ]),
+      ),
+    ].filter(Boolean);
 
     if (!rooms.length) {
-      const empty = document.createElement("div");
-      empty.className = "empty";
-      empty.textContent =
-        "No Norman blinds found. Set up the Norman integration, or check that its cover " +
-        "entities are not hidden.";
-      this._body.appendChild(empty);
+      this._body.appendChild(
+        el(
+          "div",
+          "empty",
+          "No Norman blinds found. Set up the Norman integration, or check that its cover " +
+            "entities are not hidden.",
+        ),
+      );
       return;
     }
 
-    for (const [roomName, list] of rooms) {
-      const room = document.createElement("div");
-      room.className = "room";
+    // With the headings hidden the rooms run together as one grid.
+    const sections = this._config.hide_room_names
+      ? [[null, rooms.flatMap(([, list]) => list)]]
+      : rooms;
 
-      // Each room heading carries its own open/stop/close, so a whole room moves in one
-      // press. Set `hide_room_controls: true` for plain headings. They are skipped when the
-      // headings themselves are hidden, since there would be nothing to attach them to.
-      if (!this._config.hide_room_names) {
-        const label = document.createElement("div");
-        label.className = "room-name";
+    for (const [roomName, list] of sections) {
+      const room = el("section", "room");
+      if (roomName !== null) this._buildRoomHead(room, roomName, list);
 
-        const text = document.createElement("span");
-        text.className = "room-name-text";
-        text.textContent = roomName;
-        label.appendChild(text);
-
-        // Both control sets share one container so they wrap under the heading together.
-        const controls = document.createElement("div");
-        controls.className = "controls";
-        if (!this._config.hide_room_controls) {
-          controls.appendChild(this._buildRoomControls(roomName, list));
-        }
-        if (!this._config.hide_room_presets) {
-          controls.appendChild(this._buildRoomPresets(roomName));
-        }
-        if (controls.children.length) label.appendChild(controls);
-        room.appendChild(label);
-      }
-
-      // The room's blinds share one rounded group, so a room reads as one object.
-      const group = document.createElement("div");
-      group.className = "group";
-      for (const blind of list) {
-        group.appendChild(this._buildBlind(blind));
-      }
-      room.appendChild(group);
+      const grid = el("div", this._config.hide_picture ? "list" : "grid");
+      for (const blind of list) grid.appendChild(this._buildBlind(blind));
+      room.appendChild(grid);
       this._body.appendChild(room);
+    }
+  }
+
+  /**
+   * A room's heading: its name and count, open/stop/close for the whole room, and a button
+   * that folds out the app's three presets for the room.
+   */
+  _buildRoomHead(room, roomName, blinds) {
+    const head = el("div", "room-head");
+    head.appendChild(el("div", "room-name", roomName));
+    room.appendChild(head);
+
+    if (!this._config.hide_room_controls) {
+      head.appendChild(this._buildRoomControls(roomName, blinds));
+    }
+    if (!this._config.hide_room_presets) {
+      const tray = el("div", "tray");
+      tray.hidden = true;
+      tray.appendChild(this._buildRoomPresets(roomName));
+      const more = this._iconButton("mdi:dots-horizontal", `Presets for ${roomName}`, () => {
+        tray.hidden = !tray.hidden;
+        more.classList.toggle("open", !tray.hidden);
+        more.setAttribute("aria-expanded", String(!tray.hidden));
+      });
+      more.className = "icon-btn more";
+      more.setAttribute("aria-expanded", "false");
+      head.appendChild(more);
+      room.appendChild(tray);
     }
   }
 
   /**
    * Open / stop / close every rail of every blind in one room.
    *
-   * This is NOT the hub's own room verb, and it is not the same as the Norman app's room
-   * buttons. Close here sends close_cover to every rail, so a two-rail blind ends at
-   * bottom 0 AND middle 0 -- both fabrics down. The app's "Best Privacy" is bottom 0 with
-   * middle 100: private, but the sheer fabric fully open so the room stays lit. The hub
-   * verb that does that needs its own RoomID, which no entity exposes, so it lives in the
-   * norman.room_command action instead (see docs/services.md).
+   * This is NOT the hub's own room verb. Close here sends close_cover to every rail, so a
+   * two-rail blind ends at bottom 0 AND middle 0 -- both fabrics down. The app's "Best
+   * privacy" is bottom 0 with middle 100: private, but the sheer fabric fully open so the
+   * room stays lit. That one lives in the presets tray (norman.room_command).
    */
   _buildRoomControls(roomName, blinds) {
-    const controls = document.createElement("div");
-    controls.className = "pill room-buttons";
-
-    for (const [icon, service, label] of [
-      ["mdi:arrow-up", "open_cover", "Open"],
-      ["mdi:stop", "stop_cover", "Stop"],
-      ["mdi:arrow-down", "close_cover", "Close"],
-    ]) {
-      const button = document.createElement("ha-icon-button");
-      const inner = document.createElement("ha-icon");
-      inner.setAttribute("icon", icon);
-      button.appendChild(inner);
-      button.title = `${label} every blind in ${roomName}`;
-      button.setAttribute("aria-label", button.title);
-      button.addEventListener("click", () => {
-        // Every rail in the room: the bottom rails, plus the middle rails of two-rail
-        // blinds. One service call with a list, not one call per entity.
-        const entityId = [];
-        for (const blind of blinds) {
-          if (blind.bottomCover) entityId.push(blind.bottomCover);
-          if (blind.middleCover) entityId.push(blind.middleCover);
-        }
-        if (entityId.length) this._hass.callService("cover", service, { entity_id: entityId });
-      });
-      controls.appendChild(button);
+    const controls = el("div", "icon-group room-buttons");
+    for (const [icon, service, label] of ROOM_ACTIONS) {
+      controls.appendChild(
+        this._iconButton(icon, `${label} every blind in ${roomName}`, () => {
+          // Every rail in the room: the bottom rails, plus the middle rails of two-rail
+          // blinds. One service call with a list, not one call per entity.
+          const entityId = [];
+          for (const blind of blinds) {
+            if (blind.bottomCover) entityId.push(blind.bottomCover);
+            if (blind.middleCover) entityId.push(blind.middleCover);
+          }
+          if (entityId.length) this._hass.callService("cover", service, { entity_id: entityId });
+        }),
+      );
     }
     return controls;
   }
 
   /**
-   * The Norman app's own room buttons, via the norman.room_command action.
-   *
-   * These are the hub's room-wide verbs, not a fan-out: one request moves the room, and
-   * the rail positions are the hub's own. "Privacy" is bottom 0 with the middle rail fully
-   * open, which the cover services above cannot express, and "favorite" has no Home
-   * Assistant equivalent at all.
-   *
-   * The action matches on the HUB's room name. The card groups by Home Assistant area,
-   * which the integration seeds from those names -- so they agree until an area is
-   * renamed, and the action reports the names it knows if one does not match. That
-   * mismatch is why these were once opt-in, which was the wrong trade: it hid the app's
-   * three buttons from everyone to spare the few who rename an area, and those few get a
-   * named error listing the rooms the hub does know. Set `hide_room_presets: true` to
-   * drop them.
-   */
-  /**
    * The app's three buttons for the whole house, via the hub's own scope-less verb.
    *
-   * Omitting RoomID entirely is what makes the hub treat a command as house-wide, so this
-   * is one request no matter how many blinds there are. These are the same three buttons
-   * the app's own "All Rooms" screen sends, captured from it.
+   * Omitting RoomID is what makes the hub treat a command as house-wide, so this is one
+   * request however many blinds there are -- the same three the app's "All Rooms" screen
+   * sends. They carry the app's names rather than open/close arrows because they are not
+   * open and close: "Best privacy" leaves a two-rail blind's middle rail fully OPEN.
    *
-   * They carry the app's names and icons rather than open/close arrows, because they are
-   * not open and close: "Best privacy" is bottom 0 with the middle rail fully OPEN, so a
-   * two-rail blind ends private but still lit. Labelling that as a plain "close" would
-   * promise both fabrics down, which is not what the hub does. The room buttons in
-   * _buildRoomPresets are the same three verbs scoped to one room, and match deliberately.
-   *
-   * Every verb here works on single-rail blinds too: a per-blind capture of a single-rail
-   * shade shows the app sending Switch 0, Switch 1 and Favorite to it unchanged.
-   *
-   * There is deliberately no house-wide Stop: the hub's stop is per blind, so it would
-   * have to fan out over every cover, and a Stop that lags the blinds it is stopping is
-   * worse than none. Use a room's Stop, which does fan out over a smaller set.
+   * There is deliberately no house-wide Stop: the hub's stop is per blind, so it would have
+   * to fan out over every cover, and a Stop that lags the blinds it is stopping is worse
+   * than none. A room's Stop fans out over a smaller set.
    */
   _buildHomeControls() {
-    const controls = document.createElement("div");
-    controls.className = "chips home-buttons";
+    const controls = el("div", "segmented home-buttons");
     for (const preset of PRESETS) {
       controls.appendChild(
         this._buildChip(preset, `${preset.title} — every room`, () => {
@@ -965,9 +1147,15 @@ class NormanShadesCard extends HTMLElement {
     return controls;
   }
 
+  /**
+   * The same three, scoped to one room, via norman.room_command.
+   *
+   * The action matches on the HUB's room name while the card groups by Home Assistant area.
+   * The integration seeds areas from those names, so they agree until an area is renamed --
+   * and then the action names the rooms the hub does know.
+   */
   _buildRoomPresets(roomName) {
-    const presets = document.createElement("div");
-    presets.className = "chips room-presets";
+    const presets = el("div", "segmented room-presets");
     for (const preset of PRESETS) {
       presets.appendChild(
         this._buildChip(preset, `${preset.title} — ${roomName}`, () => {
@@ -981,230 +1169,278 @@ class NormanShadesCard extends HTMLElement {
     return presets;
   }
 
-  /**
-   * A labelled chip: an icon and a short word.
-   *
-   * The presets had been bare icons, and "blinds-horizontal" does not say "privacy" to
-   * anyone who has not already learned it. A word does. The icon stays because it is what
-   * the eye lands on first when scanning a row of rooms for the same control.
-   */
+  /** A preset: an icon and a word, since "blinds-horizontal" alone does not say "privacy". */
   _buildChip(preset, title, onClick) {
-    const chip = document.createElement("button");
-    chip.className = "chip";
+    const chip = el("button", "chip");
     chip.type = "button";
-    const icon = document.createElement("ha-icon");
-    icon.setAttribute("icon", preset.icon);
-    const text = document.createElement("span");
-    text.textContent = preset.label;
-    chip.append(icon, text);
+    chip.append(haIcon(preset.icon), el("span", null, preset.label));
     chip.title = title;
     chip.setAttribute("aria-label", title);
-    chip.addEventListener("click", onClick);
+    chip.addEventListener("click", () => {
+      onClick();
+      // The blinds take many seconds to answer, so the button acknowledges the press.
+      chip.classList.add("sent");
+      setTimeout(() => chip.classList.remove("sent"), 1500);
+    });
     return chip;
   }
 
+  _iconButton(icon, label, onClick) {
+    const button = el("button", "icon-btn");
+    button.type = "button";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.appendChild(haIcon(icon));
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  /** One blind: the window (or, with hide_picture, a slider per rail), its name and state. */
   _buildBlind(blind) {
-    const row = document.createElement("div");
-    row.className = "blind";
+    const rails = this._railsOf(blind);
+    const list = Boolean(this._config.hide_picture);
+    const tile = el("div", list ? "row" : "tile");
 
-    const head = document.createElement("div");
-    head.className = "blind-head";
+    const shade = list ? null : this._buildShade(blind, rails);
+    if (shade) tile.appendChild(shade.element);
 
-    const name = document.createElement("div");
-    name.className = "blind-name";
-    name.textContent = blind.name;
+    const meta = el("div", "meta");
+    const top = el("div", "meta-top");
+    const name = el("button", "name", blind.name);
+    name.type = "button";
+    name.title = `${blind.name} details`;
     name.addEventListener("click", () => this._showMore(blind.bottomCover));
-    head.appendChild(name);
+    top.appendChild(name);
 
     let batteryEl = null;
     if (blind.battery && !this._config.hide_battery) {
-      batteryEl = document.createElement("span");
-      batteryEl.className = "battery";
-      const icon = document.createElement("ha-icon");
-      const text = document.createElement("span");
-      batteryEl.append(icon, text);
-      // A bare "84%" next to a blind is ambiguous -- it reads as a position. The icon
-      // carries the meaning visually; the title and aria-label carry it for a screen
-      // reader and on hover.
-      batteryEl.title = "Battery";
+      batteryEl = el("span", "battery");
+      batteryEl.append(haIcon("mdi:battery"), el("span"));
+      // A bare "84%" next to a blind reads as a position; the icon, title and aria-label
+      // say it is the battery.
       batteryEl.setAttribute("role", "img");
       batteryEl.addEventListener("click", () => this._showMore(blind.battery));
-      head.appendChild(batteryEl);
+      top.appendChild(batteryEl);
     }
 
-    row.appendChild(head);
+    const bottom = el("div", "meta-bottom");
+    const status = el("span", "status");
+    const stop = el("button", "stop");
+    stop.type = "button";
+    stop.hidden = true;
+    stop.title = `Stop ${blind.name}`;
+    stop.setAttribute("aria-label", stop.title);
+    stop.append(haIcon("mdi:stop"), el("span", null, "Stop"));
+    stop.addEventListener("click", () => this._stop(rails));
+    bottom.appendChild(status);
+    // On the window's corner in the grid -- outside the window itself, so a press on it is
+    // never taken for the start of a drag.
+    (list ? bottom : tile).appendChild(stop);
+    meta.append(top, bottom);
+    tile.appendChild(meta);
 
-    // _railsOf returns the rail descriptors; _buildRail wraps each one with its elements.
-    // The picture needs the descriptors (it reads rail.label and the entity ids), so keep
-    // both rather than digging the descriptor back out of the wrapper.
-    const railDefs = this._railsOf(blind);
-    const rails = railDefs.map((rail) => this._buildRail(rail));
-    const shade = this._config.hide_picture ? null : this._buildShade(blind, railDefs);
-    if (shade) row.appendChild(shade.element);
-    for (const { element } of rails) row.appendChild(element);
+    // In the list layout the rails are sliders, top rail first as on the blind.
+    const sliders = list ? [...rails].reverse().map((rail) => this._buildSlider(rail, rails.length)) : [];
+    for (const slider of sliders) tile.appendChild(slider.row);
 
-    this._cells.push({ blind, row, batteryEl, rails, shade });
-    return row;
+    this._cells.push({ blind, rails, tile, shade, batteryEl, status, stop, sliders });
+    return tile;
   }
 
   /**
-   * The window picture for one blind: fabric hanging from the head down to each rail.
+   * The window for one blind: casing, sill, the view, and the shade hanging in it.
    *
-   * Draggable. A rail is picked up by pressing anywhere on the picture -- the nearest one
-   * takes the drag -- and follows the pointer until release, when the position is written
-   * once. Dragging tracks pointer deltas rather than absolute coordinates, so a tap with no
-   * movement leaves the blind exactly where it is instead of jumping to the tapped row: a
-   * mis-tap on a phone should do nothing, not move a blind across the room.
-   *
-   * The rails are ordered so that `rails[0]` is the bottom rail and `rails[1]`, when there
-   * is one, is the middle rail (see _railsOf).
+   * One fabric band, one rail and one grab zone per rail. On a two-rail blind the band from
+   * the headrail to the middle rail is the blackout and the band from the middle rail to
+   * the bottom rail the light-filtering sheer -- checked against the app's own presets:
+   * "Best privacy" (bottom 0, middle 100) stacks the blackout away and draws the sheer
+   * across the window, "closed for privacy, sheer fabric still open".
    */
   _buildShade(blind, rails) {
-    const element = document.createElement("div");
-    element.className = "shade";
+    const element = el("div", "win");
     element.setAttribute("role", "group");
-    element.setAttribute("aria-label", `${blind.name} position`);
+    element.setAttribute("aria-label", blind.name);
 
-    const head = document.createElement("div");
-    head.className = "shade-head";
+    const frame = el("div", "frame");
+    const opening = el("div", "opening");
+    const view = el("div", "view");
+    view.append(el("div", "sun"), el("div", "hills"), el("div", "mullion"), el("div", "transom"), el("div", "glint"));
 
-    // One band and one rail per rail entity, plus a target line. The band above the
-    // middle rail is the sheer cell, the one below it the blackout cell; a single-rail
-    // blind gets one blackout band, since there is no second fabric to distinguish.
-    const bands = [];
-    const railEls = [];
-    const targets = [];
     const twoRail = rails.length > 1;
-    for (let index = 0; index < rails.length; index += 1) {
-      const band = document.createElement("div");
-      // Which fabric this band is.
-      //
-      // On a day/night shade the BLACKOUT fabric hangs from the head down to the middle
-      // rail, and the SHEER hangs from the middle rail down to the bottom rail. So the
-      // band spanning head->middle (index 1, the middle rail's band) is the blackout, and
-      // the band spanning middle->bottom (index 0) is the sheer.
-      //
-      // Checked against the app's own presets: "Best privacy" is bottom 0 / middle 100,
-      // which stacks the blackout away at the head and draws the sheer across the whole
-      // window -- "closed for privacy, sheer fabric still open" (docs/entities.md). Fully
-      // closed (both 0) draws the blackout across the whole window. Getting this backwards
-      // makes a closed blind look like a sheer one, which is a privacy question, not a
-      // cosmetic one.
-      //
-      // A single-rail blind has one fabric and no second cell to distinguish, so it is
-      // drawn as the opaque one.
-      band.className = `shade-band ${twoRail && index === 0 ? "sheer" : "blackout"}`;
-      bands.push(band);
-
-      const railEl = document.createElement("div");
-      railEl.className = `shade-rail ${index === 1 ? "middle" : "bottom"}`;
-      railEls.push(railEl);
-
-      const target = document.createElement("div");
-      target.className = "shade-target";
-      targets.push(target);
-    }
-
-    const readouts = document.createElement("div");
-    readouts.className = "shade-readouts";
-    const readoutEls = rails.map(() => {
-      const readout = document.createElement("div");
-      readout.className = "shade-readout";
-      readouts.appendChild(readout);
-      return readout;
+    const bands = rails.map((_, index) =>
+      el("div", `fabric ${twoRail ? (index === 1 ? "blackout" : "sheer") : "single"}`),
+    );
+    const markers = rails.map(() => el("div", "marker"));
+    const railEls = rails.map((_, index) => {
+      const rail = el("div", `rail ${index === 0 ? "bottom" : "middle"}`);
+      rail.appendChild(el("div", "tab"));
+      return rail;
     });
+    const zones = rails.map((rail, index) => {
+      const zone = el("div", "zone");
+      zone.tabIndex = 0;
+      zone.dataset.index = String(index);
+      zone.setAttribute("role", "slider");
+      zone.setAttribute("aria-orientation", "vertical");
+      zone.setAttribute("aria-valuemin", "0");
+      zone.setAttribute("aria-valuemax", "100");
+      zone.setAttribute("aria-label", twoRail ? `${blind.name} ${rail.label.toLowerCase()}` : blind.name);
+      return zone;
+    });
+    const bubble = el("div", "bubble");
 
-    // The frame goes on last so its reveal and sill sit over the fabric's edges.
-    const frame = document.createElement("div");
-    frame.className = "shade-frame";
+    opening.append(view, ...bands, ...markers, ...railEls, el("div", "headrail"), ...zones, bubble);
+    frame.appendChild(opening);
+    element.append(frame, el("div", "sill"));
 
-    element.append(head, ...bands, ...railEls, ...targets, readouts, frame);
-
-    const shade = { element, bands, railEls, targets, readoutEls, rails };
-    this._bindShadeDrag(shade);
+    const shade = { element, opening, bands, markers, railEls, zones, bubble, rails, dragValues: {} };
+    this._bindShade(shade);
     return shade;
   }
 
   /**
-   * Make the picture draggable: press to pick up the nearest rail, drag, release to write.
+   * Dragging and keys.
    *
-   * Deltas, not absolute position. `pointerdown` records where the pointer started and
-   * where that rail already was; every `pointermove` applies the difference. A press with
-   * no movement therefore writes nothing at all.
-   *
-   * A two-rail blind's rails cannot cross: the middle rail is physically above the bottom
-   * one, so each is clamped against the other's current position. Without that, dragging
-   * the middle rail past the bottom one would draw a negative-height band and ask the hub
-   * for a geometry the blind cannot make.
+   * A mouse can press anywhere on the window and the nearest rail follows; a finger has to
+   * start on a rail's grab zone, so the rest of the picture still scrolls the page. The
+   * drag follows the pointer's movement rather than its position, so a press never makes a
+   * rail jump, and nothing is written until release -- a tap writes nothing at all.
    */
-  _bindShadeDrag(shade) {
-    const { element } = shade;
-    let active = null;
+  _bindShade(shade) {
+    const { element, opening } = shade;
+    let press = null;
 
-    const positionFromEvent = (event) => {
-      // getBoundingClientRect is read once per drag, on pickup: the card can scroll under
-      // the finger mid-drag, and re-reading would make the shade jump.
-      const fraction = (event.clientY - active.top) / active.height;
-      // The picture reads top-down (0% of travel at the head) but a cover position is
-      // 100 = open, so the two run opposite ways.
-      return clampToStep(100 - fraction * 100);
+    const setHot = (index) => {
+      shade.railEls.forEach((rail, i) => rail.classList.toggle("hot", i === index));
+    };
+    const nearest = (event) => {
+      const rect = opening.getBoundingClientRect();
+      const y = ((event.clientY - rect.top) / rect.height) * 100;
+      let best = 0;
+      let distance = Infinity;
+      shade.rails.forEach((_, index) => {
+        const center = this._railTop(shade, index, this._shadeValue(shade, index)) + SHADE_RAIL_PCT / 2;
+        if (Math.abs(center - y) < distance) {
+          distance = Math.abs(center - y);
+          best = index;
+        }
+      });
+      return best;
     };
 
     element.addEventListener("pointerdown", (event) => {
-      if (element.classList.contains("disabled")) return;
-      const rect = element.getBoundingClientRect();
+      if (shade.disabled || press) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const onZone = event.target?.classList?.contains("zone");
+      if (event.pointerType !== "mouse" && !onZone) return;
+      const rect = opening.getBoundingClientRect();
       if (!rect.height) return;
-
-      // Whichever rail is nearest the press takes the drag.
-      const pressed = 100 - ((event.clientY - rect.top) / rect.height) * 100;
-      let index = 0;
-      let best = Infinity;
-      for (let i = 0; i < shade.rails.length; i += 1) {
-        const value = this._railValue(shade.rails[i]);
-        const distance = Math.abs((value === null ? 0 : value) - pressed);
-        if (distance < best) {
-          best = distance;
-          index = i;
-        }
-      }
-
-      active = { index, top: rect.top, height: rect.height };
-      shade.holding = true;
-      const rail = shade.rails[index];
-      this._dragging.add(rail.numberId || rail.coverId);
-      element.classList.add("dragging");
+      const index = onZone ? Number(event.target.dataset.index) : nearest(event);
+      press = { id: event.pointerId, index, y0: event.clientY, rect, started: false, step: null };
       element.setPointerCapture?.(event.pointerId);
       event.preventDefault();
     });
 
     element.addEventListener("pointermove", (event) => {
-      if (!active) return;
-      shade.dragValues ||= {};
-      shade.dragValues[active.index] = this._clampRail(
-        shade,
-        active.index,
-        positionFromEvent(event),
-      );
+      if (!press) {
+        if (event.pointerType === "mouse" && !shade.disabled) setHot(nearest(event));
+        return;
+      }
+      if (event.pointerId !== press.id) return;
+      const dy = event.clientY - press.y0;
+      if (!press.started) {
+        if (Math.abs(dy) < DRAG_SLOP) return;
+        // Rails pressed together can only part, so the direction decides which one moves.
+        press.index = this._railFor(shade, press.index, dy < 0 ? 1 : -1);
+        press.started = true;
+        press.start = this._shadeValue(shade, press.index) ?? 0;
+        press.travel = (press.rect.height * this._travelPct(shade)) / 100;
+        element.classList.add("dragging");
+        shade.railEls[press.index].classList.add("held");
+        setHot(press.index);
+      }
+      const value = this._clampRail(shade, press.index, clamp(press.start - (dy / press.travel) * 100));
+      shade.dragValues[press.index] = value;
       this._drawShade(shade);
+      const step = clampToStep(value);
+      this._showBubble(shade, press.index, step);
+      if (press.step !== null && step !== press.step) navigator.vibrate?.(4);
+      press.step = step;
     });
 
-    const release = (event) => {
-      if (!active) return;
-      const { index } = active;
-      const rail = shade.rails[index];
-      const chosen = shade.dragValues?.[index];
-      active = null;
-      shade.holding = false;
+    const finish = (event, commit) => {
+      if (!press || event.pointerId !== press.id) return;
+      const { index, started } = press;
+      press = null;
+      element.releasePointerCapture?.(event.pointerId);
       element.classList.remove("dragging");
-      this._dragging.delete(rail.numberId || rail.coverId);
-      if (shade.dragValues) delete shade.dragValues[index];
-      // No movement, no write: a tap must not move the blind.
-      if (chosen !== undefined) this._setRail(rail, chosen);
-      else this._drawShade(shade);
-      if (event) element.releasePointerCapture?.(event.pointerId);
+      shade.railEls[index].classList.remove("held");
+      if (event.pointerType !== "mouse") setHot(-1);
+      this._hideBubble(shade);
+      if (!started) return;
+      const value = shade.dragValues[index];
+      delete shade.dragValues[index];
+      const rail = shade.rails[index];
+      // Round to the 10% step, but never across the other rail.
+      const chosen = this._clampRail(shade, index, clampToStep(value));
+      if (commit && chosen !== this._railValue(rail)) this._setRail(rail, chosen);
+      this._patch();
     };
-    element.addEventListener("pointerup", release);
-    element.addEventListener("pointercancel", release);
+    element.addEventListener("pointerup", (event) => finish(event, true));
+    // A cancelled pointer (the browser took the gesture) puts the rail back.
+    element.addEventListener("pointercancel", (event) => finish(event, false));
+    element.addEventListener("pointerleave", (event) => {
+      if (!press && event.pointerType === "mouse") setHot(-1);
+    });
+
+    shade.zones.forEach((zone, index) => {
+      zone.addEventListener("focus", () => setHot(index));
+      zone.addEventListener("blur", () => setHot(-1));
+      zone.addEventListener("keydown", (event) => this._onKey(shade, index, event));
+    });
+  }
+
+  /** Arrow keys move a rail a step; the write goes out once the keys stop. */
+  _onKey(shade, index, event) {
+    if (shade.disabled) return;
+    const now = this._shadeValue(shade, index) ?? 0;
+    const moves = {
+      ArrowUp: now + STEP,
+      ArrowRight: now + STEP,
+      ArrowDown: now - STEP,
+      ArrowLeft: now - STEP,
+      PageUp: now + 3 * STEP,
+      PageDown: now - 3 * STEP,
+      Home: 0,
+      End: 100,
+    };
+    if (!(event.key in moves)) return;
+    event.preventDefault();
+    const value = this._clampRail(shade, index, clampToStep(moves[event.key]));
+    shade.dragValues[index] = value;
+    this._drawShade(shade);
+    this._showBubble(shade, index, value);
+    clearTimeout(shade.keyTimer);
+    shade.keyTimer = setTimeout(() => {
+      delete shade.dragValues[index];
+      this._hideBubble(shade);
+      const rail = shade.rails[index];
+      if (value !== this._railValue(rail)) this._setRail(rail, value);
+      this._patch();
+    }, KEY_COMMIT_MS);
+  }
+
+  /**
+   * The rail a drag should move. Rails pressed together can only part: up can only be the
+   * middle rail and down only the bottom one, so a drag that starts on the stack picks the
+   * rail that can go that way. `direction` is +1 for up (opening), -1 for down.
+   */
+  _railFor(shade, index, direction) {
+    if (shade.rails.length < 2) return index;
+    const bottom = this._shadeValue(shade, 0);
+    const middle = this._shadeValue(shade, 1);
+    if (bottom === null || middle === null || middle - bottom >= STEP / 2) return index;
+    return direction > 0 ? 1 : 0;
   }
 
   /** Keep a rail on its own side of the other one, so the fabric never inverts. */
@@ -1217,232 +1453,265 @@ class NormanShadesCard extends HTMLElement {
     return index === 0 ? Math.min(value, other) : Math.max(value, other);
   }
 
-  /** What a rail should currently be drawn at: the drag, else a pending write, else state. */
+  /** What a rail is drawn at right now: a drag or key press, else _railValue. */
   _shadeValue(shade, index) {
     const dragged = shade.dragValues?.[index];
     if (dragged !== undefined) return dragged;
-    const rail = shade.rails[index];
-    const pending = this._pending.get(rail.numberId || rail.coverId);
-    if (pending !== undefined) return pending;
-    return this._railValue(rail);
+    return this._railValue(shade.rails[index]);
+  }
+
+  /** The distance a rail travels, as a percentage of the opening: what the rails leave. */
+  _travelPct(shade) {
+    return 100 - SHADE_HEAD_PCT - shade.rails.length * SHADE_RAIL_PCT;
   }
 
   /**
-   * Write every coupled measurement of one picture in a single pass.
-   *
-   * Fabric geometry and rail geometry are the same numbers, so they are set together here
-   * rather than in separate places that could disagree and leave a rail floating off its
-   * fabric's edge.
+   * Where a rail's top edge sits, in percent down the opening. Open (100) is tucked under
+   * the headrail -- or under the middle rail, for the bottom rail of a two-rail blind --
+   * and closed (0) rests on the sill.
+   */
+  _railTop(shade, index, value) {
+    const above = shade.rails.length - 1 - index;
+    const position = value === null || value === undefined ? 0 : value;
+    return SHADE_HEAD_PCT + above * SHADE_RAIL_PCT + ((100 - position) / 100) * this._travelPct(shade);
+  }
+
+  /**
+   * Place every band, rail and grab zone of one picture in a single pass, top rail first:
+   * each band hangs from the edge above it (the headrail, or the rail above) to its rail.
    */
   _drawShade(shade) {
-    const head = SHADE_HEAD_PCT;
-    const travel = 100 - head;
-    // Where each rail sits, as a percentage down the picture: a cover position of 100
-    // (open) puts the rail at the head, 0 (closed) at the sill.
-    const dropOf = (value) => head + ((100 - (value === null ? 0 : value)) / 100) * travel;
-
-    for (let index = 0; index < shade.rails.length; index += 1) {
-      const value = this._shadeValue(shade, index);
-      const drop = dropOf(value);
-      // The band above this rail starts at the head, or at the rail above it.
-      const above = index + 1 < shade.rails.length ? dropOf(this._shadeValue(shade, index + 1)) : head;
+    let edge = SHADE_HEAD_PCT;
+    for (let index = shade.rails.length - 1; index >= 0; index -= 1) {
+      const top = this._railTop(shade, index, this._shadeValue(shade, index));
       const band = shade.bands[index];
-      band.style.top = `${above}%`;
-      band.style.height = `${Math.max(0, drop - above)}%`;
-      shade.railEls[index].style.top = `${drop}%`;
+      band.style.top = `${round3(edge)}%`;
+      band.style.height = `${round3(Math.max(0, top - edge))}%`;
+      shade.railEls[index].style.top = `${round3(top)}%`;
+      shade.zones[index].style.top = `${round3(top + SHADE_RAIL_PCT / 2)}%`;
+      edge = top + SHADE_RAIL_PCT;
     }
   }
 
-  _buildRail(rail) {
-    const element = document.createElement("div");
-    element.className = "rail";
-
-    // The bar carries its own label and value, so the row is just bar + pill and the bar
-    // gets the width a slider needs. Layered back to front: fill, target marker, label
-    // and value, then the invisible range input that actually takes the pointer.
-    const bar = document.createElement("div");
-    bar.className = "bar";
-
-    const fill = document.createElement("div");
-    fill.className = "bar-fill";
-
-    const targetMark = document.createElement("div");
-    targetMark.className = "bar-target";
-
-    const label = document.createElement("div");
-    label.className = "bar-label";
-    label.textContent = rail.label;
-
-    const value = document.createElement("div");
-    value.className = "bar-value";
-
-    const slider = document.createElement("input");
-    slider.type = "range";
-    slider.min = "0";
-    slider.max = "100";
-    slider.step = String(STEP);
-    slider.setAttribute("aria-label", `${rail.label} position`);
-
-    bar.append(fill, targetMark, label, value, slider);
-
-    // Open / stop / close for THIS rail. Each rail is its own cover entity, so the middle
-    // rail of a two-rail blind gets the same controls as the bottom rail rather than the
-    // buttons silently driving the bottom one.
-    const buttons = document.createElement("div");
-    buttons.className = "pill";
-    const railButtons = [];
-    for (const [icon, service, label] of [
-      ["mdi:arrow-up", "open_cover", "Open"],
-      ["mdi:stop", "stop_cover", "Stop"],
-      ["mdi:arrow-down", "close_cover", "Close"],
-    ]) {
-      const button = document.createElement("ha-icon-button");
-      const inner = document.createElement("ha-icon");
-      inner.setAttribute("icon", icon);
-      button.appendChild(inner);
-      button.title = `${label} ${rail.label.toLowerCase()}`;
-      button.setAttribute("aria-label", button.title);
-      if (rail.coverId) {
-        button.addEventListener("click", () =>
-          this._hass.callService("cover", service, { entity_id: rail.coverId }),
-        );
-      }
-      buttons.appendChild(button);
-      railButtons.push(button);
-    }
-
-    const target = rail.numberId || rail.coverId;
-    slider.addEventListener("pointerdown", () => this._dragging.add(target));
-    slider.addEventListener("input", () => {
-      // Follow the thumb while it is held, so the fill tracks the finger.
-      const chosen = clampToStep(slider.value);
-      value.textContent = `${chosen}%`;
-      fill.style.width = `${chosen}%`;
-    });
-    slider.addEventListener("change", () => {
-      this._dragging.delete(target);
-      this._setRail(rail, clampToStep(slider.value));
-    });
-
-    element.append(bar, buttons);
-    return { rail, element, slider, value, buttons: railButtons, bar, fill, targetMark };
+  _showBubble(shade, index, value) {
+    const { bubble } = shade;
+    bubble.textContent = `${Math.round(value)}%`;
+    bubble.style.top = `${round3(this._railTop(shade, index, this._shadeValue(shade, index)))}%`;
+    bubble.classList.add("on");
   }
 
-  /** Where the hub says a rail is heading, or null if it does not say. */
-  _railTarget(rail) {
-    const cover = this._hass.states[rail.coverId];
-    const target = cover?.attributes?.target_position;
-    return target === undefined || target === null ? null : Number(target);
+  _hideBubble(shade) {
+    shade.bubble.classList.remove("on");
   }
+
+  /** The list layout's control for one rail: a plain range input, in 10% steps. */
+  _buildSlider(rail, railCount) {
+    const row = el("label", "slider");
+    const label = el("span", "slider-label", railCount > 1 ? shortLabel(rail) : "Position");
+    const input = el("input");
+    input.type = "range";
+    input.min = "0";
+    input.max = "100";
+    input.step = String(STEP);
+    input.setAttribute("aria-label", `${rail.label} position`);
+    const value = el("span", "slider-value");
+    const slider = { rail, row, input, value, holding: false };
+    input.addEventListener("pointerdown", () => {
+      slider.holding = true;
+    });
+    input.addEventListener("input", () => {
+      value.textContent = `${clampToStep(input.value)}%`;
+      input.style.setProperty?.("--n-fill", `${input.value}%`);
+    });
+    input.addEventListener("change", () => {
+      slider.holding = false;
+      const chosen = clampToStep(input.value);
+      if (chosen !== this._railValue(rail)) this._setRail(rail, chosen);
+      this._patch();
+    });
+    row.append(label, input, value);
+    return slider;
+  }
+
+  // ---- writing ---------------------------------------------------------------------
 
   /** Write a rail position, preferring the number entity so the 10% step is enforced. */
   _setRail(rail, position) {
-    const target = rail.numberId || rail.coverId;
-    this._pending.set(target, position);
+    const key = rail.numberId || rail.coverId;
+    const entry = { value: position, at: Date.now() };
+    this._pending.set(key, entry);
     const call = rail.numberId
-      ? this._hass.callService("number", "set_value", {
-          entity_id: rail.numberId,
-          value: position,
-        })
-      : this._hass.callService("cover", "set_cover_position", {
-          entity_id: rail.coverId,
-          position,
-        });
-    Promise.resolve(call).finally(() => {
-      // Keep the optimistic value briefly: the hub reports the blind mid-travel, so
-      // clearing immediately would snap the label back to where the blind still is.
-      setTimeout(() => {
-        this._pending.delete(target);
-        this._patch();
-      }, 3000);
+      ? this._hass.callService("number", "set_value", { entity_id: rail.numberId, value: position })
+      : this._hass.callService("cover", "set_cover_position", { entity_id: rail.coverId, position });
+    const retire = () => {
+      if (this._pending.get(key) !== entry) return;
+      this._pending.delete(key);
+      this._patch();
+    };
+    // A failed call is reported by Home Assistant; the picture goes back to the hub's values.
+    Promise.resolve(call).catch(retire);
+    setTimeout(retire, PENDING_MS);
+  }
+
+  /** Call a cover service on the rail's own entity -- never the blind's bottom rail. */
+  _coverService(rail, service) {
+    if (rail.coverId) this._hass.callService("cover", service, { entity_id: rail.coverId });
+  }
+
+  /**
+   * Stop a blind. The hub's stop is per blind, so one call on a moving rail stops them all;
+   * a second would only queue behind it at the hub's pace.
+   */
+  _stop(rails) {
+    const moving = rails.find((rail) => {
+      const { current, target } = this._railState(rail);
+      return current !== null && target !== null && Math.round(current) !== Math.round(target);
+    });
+    for (const rail of rails) this._pending.delete(rail.numberId || rail.coverId);
+    this._coverService(moving || rails[0], "stop_cover");
+    this._patch();
+  }
+
+  // ---- patching --------------------------------------------------------------------
+
+  _patch() {
+    if (!this._cells || !this._hass) return;
+    let open = 0;
+    let moving = 0;
+    let lowBattery = 0;
+
+    for (const cell of this._cells) {
+      const { blind, rails, shade } = cell;
+      const unavailable = this._isUnavailable(blind);
+      cell.tile.classList.toggle("unavailable", unavailable);
+
+      const states = rails.map((rail) => {
+        const state = this._railState(rail);
+        const key = rail.numberId || rail.coverId;
+        const pending = this._pending.get(key);
+        // The hub has taken the choice up once it reports it as the target.
+        if (pending && state.target !== null && Math.round(state.target) === pending.value) {
+          this._pending.delete(key);
+        }
+        const shown = this._railValue(rail);
+        return {
+          ...state,
+          shown,
+          moving:
+            !unavailable &&
+            state.current !== null &&
+            shown !== null &&
+            Math.round(shown) !== Math.round(state.current),
+        };
+      });
+
+      if (shade) this._patchShade(shade, states, unavailable);
+      for (const slider of cell.sliders) this._patchSlider(slider, unavailable);
+
+      const status = this._statusOf(rails, states, unavailable);
+      cell.status.textContent = status;
+      const isMoving = states.some((state) => state.moving);
+      cell.status.classList.toggle("moving", isMoving);
+      cell.status.classList.toggle("rest", !isMoving && !unavailable);
+      cell.stop.hidden = !isMoving;
+
+      if (cell.batteryEl) {
+        const level = this._numberOf(blind.battery);
+        const kind = batteryClass(level);
+        cell.batteryEl.className = `battery ${kind}`;
+        cell.batteryEl.firstChild.setAttribute("icon", batteryIcon(level));
+        const shown = level === null ? "—" : `${Math.round(level)}%`;
+        cell.batteryEl.lastChild.textContent = kind === "low" || kind === "critical" ? shown : "";
+        cell.batteryEl.title = level === null ? "Battery level unknown" : `Battery ${shown}`;
+        cell.batteryEl.setAttribute("aria-label", cell.batteryEl.title);
+        if (kind === "low" || kind === "critical") lowBattery += 1;
+      }
+
+      if ((states[0].shown ?? 0) > 0) open += 1;
+      if (isMoving) moving += 1;
+    }
+
+    this._patchSummary(this._cells.length, open, moving, lowBattery);
+  }
+
+  _patchShade(shade, states, unavailable) {
+    shade.disabled = unavailable;
+    shade.element.classList.toggle("disabled", unavailable);
+    this._drawShade(shade);
+    states.forEach((state, index) => {
+      const held = shade.dragValues[index] !== undefined;
+      const marker = shade.markers[index];
+      const showMarker = state.moving && !held;
+      marker.classList.toggle("on", showMarker);
+      if (showMarker) {
+        marker.style.top = `${round3(this._railTop(shade, index, state.current) + SHADE_RAIL_PCT / 2)}%`;
+      }
+      shade.railEls[index].classList.toggle("moving", state.moving);
+      const zone = shade.zones[index];
+      const value = Math.round(this._shadeValue(shade, index) ?? 0);
+      zone.setAttribute("aria-valuenow", String(value));
+      zone.setAttribute("aria-valuetext", `${value}% open`);
+      zone.setAttribute("aria-disabled", String(unavailable));
     });
   }
 
-  _patch() {
-    if (!this._cells) return;
-    for (const cell of this._cells) {
-      const unavailable = this._isUnavailable(cell.blind);
-      cell.row.classList.toggle("unavailable", unavailable);
+  _patchSlider(slider, unavailable) {
+    const { rail, input, value } = slider;
+    input.disabled = unavailable;
+    if (slider.holding) return;
+    const shown = this._railValue(rail);
+    input.value = String(clampToStep(shown ?? 0));
+    input.style.setProperty?.("--n-fill", `${shown ?? 0}%`);
+    value.textContent = shown === null ? "—" : `${Math.round(shown)}%`;
+  }
 
-      if (cell.shade) {
-        const shade = cell.shade;
-        shade.element.classList.toggle("disabled", unavailable);
-        // Never redraw a rail the user is holding: the hub's value lags the finger.
-        if (!shade.holding) this._drawShade(shade);
-
-        const head = SHADE_HEAD_PCT;
-        const travel = 100 - head;
-        for (let index = 0; index < shade.rails.length; index += 1) {
-          const rail = shade.rails[index];
-          const key = rail.numberId || rail.coverId;
-          const current = this._railValue(rail);
-          const heading = this._railTarget(rail);
-          const pending = this._pending.has(key);
-          const moving =
-            !pending &&
-            heading !== null &&
-            current !== null &&
-            Math.round(heading) !== Math.round(current);
-
-          const target = shade.targets[index];
-          target.classList.toggle("showing", moving);
-          if (moving) target.style.top = `${head + ((100 - heading) / 100) * travel}%`;
-
-          const readout = shade.readoutEls[index];
-          const label = shade.rails.length > 1 ? `${rail.label}: ` : "";
-          readout.classList.toggle("moving", moving);
-          if (current === null) readout.textContent = `${label}—`;
-          else if (moving) {
-            readout.textContent = `${label}${Math.round(current)}% → ${Math.round(heading)}%`;
-          } else readout.textContent = `${label}${Math.round(current)}%`;
-        }
-      }
-
-      if (cell.batteryEl) {
-        const level = this._numberOf(cell.blind.battery);
-        cell.batteryEl.className = `battery ${batteryClass(level)}`;
-        cell.batteryEl.firstChild.setAttribute("icon", batteryIcon(level));
-        const shown = level === null ? "—" : `${Math.round(level)}%`;
-        cell.batteryEl.lastChild.textContent = shown;
-        cell.batteryEl.title = level === null ? "Battery level unknown" : `Battery ${shown}`;
-        cell.batteryEl.setAttribute("aria-label", cell.batteryEl.title);
-      }
-
-      for (const { rail, slider, value, buttons, bar, fill, targetMark } of cell.rails) {
-        const key = rail.numberId || rail.coverId;
-        const current = this._railValue(rail);
-        const heading = this._railTarget(rail);
-        slider.disabled = unavailable;
-        bar.classList.toggle("disabled", unavailable);
-        // A rail with no cover entity (a slider-only rail) has nothing to open or stop.
-        for (const button of buttons) button.disabled = unavailable || !rail.coverId;
-
-        // A blind takes up to ~30 s to travel, and the hub reports where it IS the whole
-        // way. The target tells the user the press registered: "40% → 80%", a ghost mark
-        // at 80, and the stop button lit -- until the two numbers meet. While a write is
-        // pending the chosen value is shown alone: the hub's target is still the old one.
-        const pending = this._pending.has(key);
-        const moving =
-          !pending && heading !== null && current !== null && Math.round(heading) !== Math.round(current);
-        bar.classList.toggle("moving", moving);
-        buttons[1]?.classList.toggle("active", moving);
-        if (current === null) {
-          value.textContent = "—";
-        } else if (moving) {
-          value.textContent = `${Math.round(current)}% → ${Math.round(heading)}%`;
-        } else {
-          value.textContent = `${Math.round(current)}%`;
-        }
-        if (moving) targetMark.style.left = `${Math.round(heading)}%`;
-
-        // Never move a slider (or its fill) the user is holding.
-        if (!this._dragging.has(key)) {
-          const shown = clampToStep(current === null ? 0 : current);
-          slider.value = String(shown);
-          fill.style.width = `${current === null ? 0 : Math.round(current)}%`;
-        }
-      }
+  /**
+   * A blind's state in a few words. At rest: "Open", "Closed", "60% open" -- or, on a
+   * two-rail blind, "Privacy" for the app's preset and both rails otherwise. On the move:
+   * which way, and where it has got to.
+   */
+  _statusOf(rails, states, unavailable) {
+    if (unavailable) return "Unavailable";
+    const travelling = states.findIndex((state) => state.moving);
+    if (travelling >= 0) {
+      const { current, shown } = states[travelling];
+      const verb = shown > current ? "Opening" : "Closing";
+      const which = rails.length > 1 ? `${shortLabel(rails[travelling])}\u00a0` : "";
+      return `${verb} · ${which}${Math.round(current)}%`;
     }
+    const [bottom, middle] = states.map((state) => (state.shown === null ? null : Math.round(state.shown)));
+    if (bottom === null) return "Position unknown";
+    if (rails.length < 2 || middle === null) {
+      if (bottom >= 100) return "Open";
+      if (bottom <= 0) return "Closed";
+      return `${bottom}% open`;
+    }
+    if (bottom >= 100 && middle >= 100) return "Open";
+    if (bottom <= 0 && middle <= 0) return "Closed";
+    if (bottom <= 0 && middle >= 100) return "Privacy";
+    return `${shortLabel(rails[1])}\u00a0${middle}%\u00a0· ${shortLabel(rails[0])}\u00a0${bottom}%`;
+  }
+
+  _patchSummary(total, open, moving, lowBattery) {
+    const summary = this._summary;
+    if (!summary) return;
+    const parts = [[`${total} ${total === 1 ? "shade" : "shades"}`, ""]];
+    if (total) {
+      if (open === 0) parts.push(["all closed", ""]);
+      else if (open === total) parts.push([total === 1 ? "open" : "all open", ""]);
+      else parts.push([`${open} open`, ""]);
+    }
+    if (moving) parts.push([`${moving} moving`, "live"]);
+    if (lowBattery) parts.push([`${lowBattery} low ${lowBattery === 1 ? "battery" : "batteries"}`, "warn"]);
+
+    const key = parts.map((part) => part.join(":")).join("|");
+    if (summary.dataset.key === key) return;
+    summary.dataset.key = key;
+    summary.innerHTML = "";
+    parts.forEach(([text, kind], index) => {
+      if (index) summary.appendChild(el("span", "sep", " · "));
+      summary.appendChild(el("span", kind || null, text));
+    });
   }
 
   _showMore(entityId) {
@@ -1453,7 +1722,20 @@ class NormanShadesCard extends HTMLElement {
   }
 }
 
-/** Minimal visual editor so the card can be configured without YAML. */
+/**
+ * The visual editor. Home Assistant's own form when it is available, so the options look
+ * like every other card's; plain inputs otherwise.
+ */
+const EDITOR_FIELDS = [
+  { key: "title", label: "Title (leave empty to use the hub's name)", type: "text" },
+  { key: "hide_picture", label: "List layout (sliders instead of windows)", type: "boolean" },
+  { key: "hide_battery", label: "Hide battery levels", type: "boolean" },
+  { key: "hide_room_names", label: "Hide room headings", type: "boolean" },
+  { key: "hide_room_controls", label: "Hide room open / stop / close", type: "boolean" },
+  { key: "hide_room_presets", label: "Hide room presets", type: "boolean" },
+  { key: "hide_home_controls", label: "Hide whole-house presets", type: "boolean" },
+];
+
 class NormanShadesCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
@@ -1462,54 +1744,61 @@ class NormanShadesCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    if (this._form) this._form.hass = hass;
+  }
+
+  _changed(config) {
+    const next = { ...config };
+    for (const { key } of EDITOR_FIELDS) {
+      if (next[key] === "" || next[key] === false) delete next[key];
+    }
+    this._config = next;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", { detail: { config: next }, bubbles: true, composed: true }),
+    );
   }
 
   _render() {
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = "";
 
-    const wrap = document.createElement("div");
-    wrap.style.padding = "8px 0";
-
-    const fields = [
-      { key: "title", label: "Title", type: "text" },
-      { key: "hide_picture", label: "Hide the window picture", type: "checkbox" },
-      { key: "hide_battery", label: "Hide battery levels", type: "checkbox" },
-      { key: "hide_room_names", label: "Hide room headings", type: "checkbox" },
-      { key: "hide_room_controls", label: "Hide whole-room open/close", type: "checkbox" },
-      { key: "hide_room_presets", label: "Hide the app's room buttons", type: "checkbox" },
-      { key: "hide_home_controls", label: "Hide the app's whole-house buttons", type: "checkbox" },
-    ];
-
-    for (const field of fields) {
-      const row = document.createElement("div");
-      row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 0;";
-
-      const label = document.createElement("label");
-      label.textContent = field.label;
-      label.style.flex = "1";
-
-      const input = document.createElement("input");
-      input.type = field.type;
-      if (field.type === "checkbox") input.checked = Boolean(this._config[field.key]);
-      else input.value = this._config[field.key] ?? "";
-
-      input.addEventListener("change", () => {
-        const value = field.type === "checkbox" ? input.checked : input.value;
-        this._config = { ...this._config, [field.key]: value };
-        if (value === "" || value === false) delete this._config[field.key];
-        const event = new CustomEvent("config-changed", {
-          detail: { config: this._config },
-          bubbles: true,
-          composed: true,
-        });
-        this.dispatchEvent(event);
-      });
-
-      row.append(label, input);
-      wrap.appendChild(row);
+    if (customElements.get("ha-form")) {
+      const form = document.createElement("ha-form");
+      form.hass = this._hass;
+      form.data = this._config;
+      form.schema = EDITOR_FIELDS.map(({ key, type }) => ({
+        name: key,
+        selector: type === "boolean" ? { boolean: {} } : { text: {} },
+      }));
+      const labels = Object.fromEntries(EDITOR_FIELDS.map(({ key, label }) => [key, label]));
+      form.computeLabel = (field) => labels[field.name] || field.name;
+      form.addEventListener("value-changed", (event) => this._changed(event.detail.value));
+      this._form = form;
+      this.shadowRoot.appendChild(form);
+      return;
     }
 
+    // ha-form is loaded lazily by the dashboard editor; redraw with it once it arrives.
+    customElements.whenDefined?.("ha-form").then(() => this._render());
+    const wrap = document.createElement("div");
+    wrap.style.padding = "8px 0";
+    for (const field of EDITOR_FIELDS) {
+      const row = document.createElement("label");
+      row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 0;";
+      const text = document.createElement("span");
+      text.textContent = field.label;
+      text.style.flex = "1";
+      const input = document.createElement("input");
+      input.type = field.type === "boolean" ? "checkbox" : "text";
+      if (field.type === "boolean") input.checked = Boolean(this._config[field.key]);
+      else input.value = this._config[field.key] ?? "";
+      input.addEventListener("change", () => {
+        const value = field.type === "boolean" ? input.checked : input.value;
+        this._changed({ ...this._config, [field.key]: value });
+      });
+      row.append(text, input);
+      wrap.appendChild(row);
+    }
     this.shadowRoot.appendChild(wrap);
   }
 }
@@ -1527,7 +1816,7 @@ if (!window.customCards.some((card) => card.type === "norman-shades-card")) {
   window.customCards.push({
     type: "norman-shades-card",
     name: "Norman Shades",
-    description: "Norman blinds grouped by room, with battery levels and per-rail sliders.",
+    description: "Norman blinds grouped by room, each drawn as a window you drag to move.",
     preview: true,
     documentationURL: "https://github.com/kedube/ha-norman/blob/main/docs/dashboard.md",
   });

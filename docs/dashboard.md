@@ -1,24 +1,20 @@
 # Dashboard card
 
-The integration ships a Lovelace card, **Norman Shades**, that shows every blind grouped by
-room: each one drawn as a window with its fabric hanging in it, which you can drag to move a
-rail, above a position bar per rail and the blind's battery level.
+The integration ships a Lovelace card, **Norman Shades**, that draws every blind as a window
+with its shade hanging in it, grouped by room. The window is the control: **drag a rail's pull
+tab** to move it.
 
-<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub name and three preset chips in the header, then each room with its own open, stop and close pill and preset chips, and each blind showing a filled position bar per rail." width="820">
+<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — single-rail shades in ivory, two-rail shades with a slate blackout above the ivory light-filtering fabric." width="560">
 
-*The card on a real hub. Every blind is at 100% here; a blind that is **moving** reads
-"20% → 50%" instead, with a dashed line at the target on the picture and its stop button
-highlighted, until it arrives.*
-
-> **Note:** this screenshot predates the window picture and shows the earlier bars-only
-> layout. The controls below each picture are unchanged.
+*The card with seven blinds across three rooms. Den_2 is on its way down: the shade is drawn
+where it is going, the dashed line is where it is now, and its Stop button sits on the corner.
+The two-rail blinds in the middle row show Best privacy (the light-filtering fabric across the
+window), both rails part-way, and closed (the blackout across the window).*
 
 The card header is named after your **hub** — the name it has in Home Assistant, which the
 integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
-to override it, or `title: ""` for no heading text at all.
-
-The header carries **Privacy / View / Favorite** for the whole house, and each room heading
-carries open/stop/close plus the same three for that room.
+to override it, or `title: ""` for no heading text at all. Under the name, a summary line counts
+the shades, how many are open, any that are moving, and any low batteries.
 
 If your card was added before v0.30 it may already have `title: Shades` saved in its config —
 the card picker used to supply that automatically. Remove the `title` line to get the hub name.
@@ -44,51 +40,77 @@ URL, which is `/norman/norman-shades-card.js?v=<integration version>`.
 
 Blinds are grouped by their Home Assistant **area**, which the integration seeds from the
 hub's own room names, so the grouping matches the Norman app out of the box. Moving a blind to
-a different area in Home Assistant moves it on the card.
+a different area in Home Assistant moves it on the card. Each room's blinds sit in a grid that
+fits as many windows across as the card has room for.
 
 | Element | Notes |
 |---|---|
-| Room heading | The area name. Blinds with no area are grouped under "Unassigned". |
+| Room heading | The area name, with **▲ ■ ▼** for the whole room and **⋯** for the room's presets. Blinds with no area are grouped under "Unassigned". |
+| The window | The blind, drawn where the hub says each rail is. **Drag a pull tab** to move that rail; the percentage shows above it as you drag, in steps of 10, and the position is sent when you let go. |
 | Blind name | Click it to open the usual more-info dialog. |
-| Battery | From the blind's battery sensor, with the icon following the level. Amber below 30%, red below 15%. |
-| The picture | A window with the blind's fabric hanging in it, drawn from where the hub says each rail is. **Drag it** to move a rail: press anywhere and the nearest rail follows your finger; the position is sent when you let go. A press without movement does nothing, so a mis-tap cannot move a blind. |
-| Bottom rail | A position bar under the picture, 0–100% in steps of 10: tap or drag anywhere on it, or use the arrow keys once it has focus. Beside it, one **▲ ■ ▼** pill (open, stop, close) for that rail. |
-| Middle rail | The same bar again, on two-rail blinds (day/night, top-down/bottom-up) only. Each rail's controls act on that rail alone. |
-| While moving | The rail's readout reads "current → target" (for example "20% → 50%"), a dashed line sits at the target on the picture, and the stop button is highlighted. This comes from the cover's `target_position` attribute, so it needs no extra configuration. |
+| Battery | The battery icon, filled to the level. The number appears only when it needs attention: amber at 30% and below, red at 15% and below. Hover for the exact level. |
+| Status | "Open", "Closed", "40% open"; on a two-rail blind "Privacy" for the app's preset, or both rails, e.g. "Middle 70% · Bottom 30%". |
+| While moving | The shade is drawn where it is **going**, a dashed line marks where the rail actually **is**, the status reads "Closing · 70%", and a **■ Stop** button appears on the window's corner until it arrives. |
 
-A blind the hub has stopped reporting is dimmed, and its picture and bars are disabled.
+A blind the hub has stopped reporting is greyed out, reads "Unavailable", and cannot be dragged.
 
-### The picture
+### Moving a blind
 
-On a **two-rail** blind the picture shows both fabrics, arranged the way the blind is: the
-**blackout** cell hangs from the head rail down to the **middle rail**, and the **sheer**,
-light-filtering cell hangs from the middle rail down to the **bottom rail**. The sheer is drawn
-translucent and warmer, so you can see at a glance that the upper part of the window is passing
-more light than the lower part.
+- **Mouse:** press anywhere on the window and the nearest rail follows the pointer.
+- **Touch:** start on a rail — the pull tab, or anywhere across the width of the rail. A swipe
+  that starts elsewhere on the window scrolls the page instead, so scrolling past a row of
+  windows cannot move a blind.
+- **Keyboard:** Tab to a rail, then ↑ / ↓ (10%), Page Up / Page Down (30%), Home (closed) and
+  End (open). The position is sent once you stop pressing keys, because the hub drops commands
+  that arrive closer together than about 1.5 seconds.
+
+A press that does not move sends nothing, so a mis-tap cannot move a blind. The drag follows
+your finger's movement rather than jumping to where you pressed.
+
+After you let go, the shade stays where you put it while the hub takes the command up. If the
+hub has not reported that position as its target within 15 seconds, the window goes back to
+what the hub reports, so a command the hub dropped is visible rather than hidden.
+
+### Two-rail blinds
+
+On a **two-rail** blind the window shows both fabrics, arranged the way the blind is: the
+**blackout** (slate) hangs from the headrail down to the **middle rail**, and the
+**light-filtering** fabric (ivory, lit by the view behind it) hangs from the middle rail down to
+the **bottom rail**. Each rail has its own pull tab.
 
 That is why the app's presets look the way they do:
 
-| Preset | Rails | The picture shows |
+| Preset | Rails | The window shows |
 |---|---|---|
-| **Best view** | both 100 | A clear opening — both fabrics stacked at the head. |
-| **Best privacy** | bottom 0, middle 100 | The **sheer** across the whole window: private, but still bright. |
+| **Best view** | both 100 | A clear window — both rails tucked under the headrail. |
+| **Best privacy** | bottom 0, middle 100 | The **light-filtering** fabric across the whole window: private, but still bright. |
 | Closed | both 0 | The **blackout** across the whole window. |
 
-On a top-down/bottom-up blind the same two bands read as the top and bottom halves of the
-covering.
+The two rails cannot cross: drag the bottom rail up into the middle rail and it stops there,
+because the blind cannot make that shape either. When the rails are pressed together — both up,
+or both down — pull the stack the way you want to go: **down** takes the bottom rail, **up**
+takes the middle rail, since those are the only moves the blind can make from there.
 
-The two rails cannot cross: drag the middle rail down onto the bottom one and it stops there,
-because the blind cannot make that shape either.
+On a top-down/bottom-up blind the same two bands read as the open top and the covered bottom.
 
-On a **single-rail** blind there is one band and one rail.
+### The view
 
-The picture is drawn entirely in CSS, so it follows your theme, stays sharp on any screen, and
-scales with the card rather than being a fixed-size image. To go back to bars alone:
+The window's view follows the sun (`sun.sun`): blue sky by day, a warm low sun near sunrise and
+sunset, dusk, and a night sky with a moon. On a dark theme the window's trim darkens with the
+card. The picture is drawn entirely in CSS — no images — so it follows your theme, stays sharp
+on any screen, and scales with the card.
+
+### List layout
+
+For a compact card with a slider per rail instead of the windows:
 
 ```yaml
 type: custom:norman-shades-card
 hide_picture: true
 ```
+
+The sliders drive the integration's `number` entities, so they move in the same 10% steps as
+those entities and never disagree with the covers.
 
 ### Whole-room control
 
@@ -104,39 +126,38 @@ hide_room_controls: true
 ```
 
 The buttons live in the heading, so `hide_room_names: true` removes them too — there is
-nowhere left to put them.
+nowhere left to put them, and the rooms run together as one grid.
 
 These buttons fan out over Home Assistant's cover entities, so **close** puts *both* rails of a
 two-rail blind down. That is not the same as the Norman app's **Best Privacy**, which closes the
-bottom fabric while opening the sheer middle rail fully — private, but still lit.
+bottom fabric while opening the middle rail fully — private, but still lit.
 
 ### The app's room buttons
 
-Each heading also carries the app's own three, to the right of the open/stop/close. For
-headings without them:
+The **⋯** at the end of each room heading folds out the app's own three for that room. To
+remove it:
 
 ```yaml
 type: custom:norman-shades-card
 hide_room_presets: true
 ```
 
-They are labelled chips rather than bare icons, so a row of rooms scans without a legend:
-
-| Chip | Does |
+| Button | Does |
 |---|---|
-| 🪟 **Privacy** (Best privacy) | Bottom rail to 0, middle rail to 100 |
-| ☀ **View** (Best view) | Both rails to 100 |
-| ★ **Favorite** | The room's stored favorite position |
+| **Privacy** (Best privacy) | Bottom rail to 0, middle rail to 100 |
+| **View** (Best view) | Both rails to 100 |
+| **Favorite** | The room's stored favorite position |
 
 These send the hub's own room verbs through the
 [`norman.room_command`](services.md#normanroom_command) action — one request for the room, not
 one per blind — so they behave exactly as the app does. Favorite has no Home Assistant
-equivalent and is only reachable this way.
+equivalent and is only reachable this way. Each button flashes when pressed, since the blinds
+take a while to answer.
 
 ### The whole house
 
 The same three buttons sit in the card's own header, where they move **every** blind on the
-hub. To leave the header plain:
+hub. On a narrow card they shrink to their icons. To leave the header plain:
 
 ```yaml
 type: custom:norman-shades-card
@@ -162,19 +183,12 @@ single-rail shade shows it sending the same three verbs unchanged.
 
 There is no house-wide **stop**: the hub's stop is per blind, so it would have to fan out over
 every cover, and a stop that lags the blinds it is stopping is worse than none. Use a room's
-stop instead.
-
-The header is drawn for these buttons even if you set no title.
+stop, or the **■ Stop** on a moving blind, instead.
 
 The room presets match on the **hub's** room name while the card groups by Home Assistant
 **area**. The integration seeds areas from the hub's room names, so they agree out of the box; if
 you rename an area, the preset buttons for it will report that the room is unknown, and name the
 ones the hub does know. The house buttons carry no room at all, so nothing there can mismatch.
-
-The sliders drive the integration's `number` entities, so they move in the same 10% steps as
-those entities and never disagree with the covers. While you drag a thumb the card holds it in
-place rather than letting an incoming hub update pull it back, and the percentage it shows is
-what you chose until the blind finishes moving.
 
 ## Options
 
@@ -183,21 +197,21 @@ Every option is optional; the card works with none of them.
 ```yaml
 type: custom:norman-shades-card
 title: Norman Hub          # omit to use the hub's own name
-hide_picture: false        # bars only, no window picture
+hide_picture: false        # list layout: a slider per rail instead of the windows
 hide_battery: false        # hide the battery readings
-hide_room_names: false     # one flat list instead of room headings
+hide_room_names: false     # one grid instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading
-hide_room_presets: false   # remove the app's Best privacy / Best view / Favorite per room
-hide_home_controls: false  # remove the same three buttons for the whole house, in the header
+hide_room_presets: false   # remove each room's ⋯ presets
+hide_home_controls: false  # remove the whole-house presets from the header
 rooms:                     # only these areas, in this order
   - Master Bedroom
   - Den
 default_room: Unassigned   # heading for blinds with no area
-bottom_label: Bottom rail  # rename the rail rows
+bottom_label: Bottom rail  # rename the rails (the status line uses the first word)
 middle_label: Middle rail
 ```
 
-`title`, `hide_picture`, `hide_battery`, `hide_room_names`, `hide_room_controls`, `hide_room_presets`, and `hide_home_controls` are also available in the card's visual editor.
+`title` and the `hide_*` options are also available in the card's visual editor.
 
 ## Using the built-in cards instead
 
