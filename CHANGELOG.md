@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.53 — 2026-09-24
 - **The dashboard card is redesigned around the shade itself.** Every blind is now a window
   with its shade hanging in it — a cellular shade with a headrail, pleats and a pull tab on
   each rail — laid out in a grid per room. **Drag a pull tab to move that rail**, on single-rail
