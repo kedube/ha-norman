@@ -55,7 +55,7 @@
         "data_description": {
           "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub. Plus bas détecte plus tôt une position obsolète ; plus haut sollicite moins le hub. 0 désactive l'interrogation, laissant les mises à jour aux seules notifications du hub.",
           "wake_interval": "À quelle fréquence demander à chaque store de se signaler (batterie, position, dernier contact), comme le fait l'actualisation de l'app Norman. Cela rafraîchit le cache du hub lui-même, que l'interrogation ci-dessus ne fait que relire. 0 désactive ; sinon de 600 à 86400 secondes.",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.5 seconds."
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds."
         }
       }
     },

@@ -59,7 +59,7 @@ def _fake_arp() -> AsyncGenerator[None]:
 def _no_control_pacing(monkeypatch: pytest.MonkeyPatch) -> None:
     """Send control commands without the inter-command gap.
 
-    Real sends are spaced by the entry's command-spacing option (1.5 s by default) because
+    Real sends are spaced by the entry's command-spacing option (1.6 s by default) because
     the hub's radio drops commands that arrive faster; see const.py. That is wall-clock
     time the tests would otherwise wait through on every command, so the gap is zeroed
     here -- the option keeps its real default -- and the pacing is covered in test_api.py.

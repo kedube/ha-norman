@@ -35,7 +35,7 @@ const SHADE_RAIL_PCT = 4.5;
 // the card shows the hub's own values again, so a command the hub dropped is visible.
 const PENDING_MS = 15000;
 // Keyboard moves are gathered into one write: the hub drops commands sent closer together
-// than about 1.5 s, so one write per key press would lose most of them.
+// than about 1.6 s, so one write per key press would lose most of them.
 const KEY_COMMIT_MS = 900;
 // How far (px) a press must travel before it becomes a drag, so a tap never moves a blind.
 const DRAG_SLOP = 4;

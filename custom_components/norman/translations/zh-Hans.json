@@ -55,7 +55,7 @@
         "data_description": {
           "poll_interval": "从中枢重新读取每个窗帘位置的频率。较低能更快发现过时位置，较高则负载更小。0 表示关闭轮询，仅依赖中枢的通知。",
           "wake_interval": "多久让每个窗帘上报一次（电量、位置、最后上报），与 Norman 应用的刷新相同。这会更新网关自身的缓存，而上面的轮询只是重新读取缓存。0 为关闭；否则为 600 到 86400 秒。",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.5 seconds."
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds."
         }
       }
     },

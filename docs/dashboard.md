@@ -64,7 +64,7 @@ A blind the hub has stopped reporting is greyed out, reads "Unavailable", and ca
   windows cannot move a blind.
 - **Keyboard:** Tab to a rail, then ↑ / ↓ (10%), Page Up / Page Down (30%), Home (closed) and
   End (open). The position is sent once you stop pressing keys, because the hub drops commands
-  that arrive closer together than about 1.5 seconds.
+  that arrive closer together than about 1.6 seconds.
 
 A press that does not move sends nothing, so a mis-tap cannot move a blind. The drag follows
 your finger's movement rather than jumping to where you pressed.

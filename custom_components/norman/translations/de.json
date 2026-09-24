@@ -55,7 +55,7 @@
         "data_description": {
           "poll_interval": "Wie oft die Position jedes Rollos vom Hub neu gelesen wird. Niedriger erkennt eine veraltete Position früher; höher verursacht weniger Last. 0 deaktiviert die Abfrage, sodass nur noch die Benachrichtigungen des Hubs zählen.",
           "wake_interval": "Wie oft sich jede Jalousie melden soll (Batterie, Position, zuletzt gesehen), wie beim Aktualisieren in der Norman-App. Das erneuert den Zwischenspeicher des Hubs, den die Abfrage oben nur ausliest. 0 schaltet es aus; sonst 600 bis 86400 Sekunden.",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.5 seconds."
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds."
         }
       }
     },

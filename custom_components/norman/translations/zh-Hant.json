@@ -55,7 +55,7 @@
         "data_description": {
           "poll_interval": "從中樞重新讀取每個窗簾位置的頻率。較低能更快發現過時位置，較高則負載更小。0 表示關閉輪詢，僅依賴中樞的通知。",
           "wake_interval": "多久讓每個窗簾回報一次（電量、位置、最後回報），與 Norman 應用程式的重新整理相同。這會更新集線器本身的快取，而上面的輪詢只是重新讀取快取。0 為關閉；否則為 600 到 86400 秒。",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.5 seconds."
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds."
         }
       }
     },

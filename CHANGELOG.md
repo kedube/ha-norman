@@ -28,6 +28,10 @@ version heading and publishes it as the release's Highlights.
   across it.
 - **The card shows each blind's battery percentage** beside its battery icon again, next to the
   blind's status.
+- **Command spacing raised to 1.6 seconds.** 1.5 s held up over several whole-house runs, but
+  longer use still dropped a command from time to time. A thirteen-blind scene now takes about
+  21 seconds to go out instead of 20. If you have saved the integration's options before, your
+  hub keeps the value it saved: change **Command spacing** under **Configure** to pick this up.
 
 ## 0.53 — 2026-09-24
 - **The dashboard card is redesigned around the shade itself.** Every blind is now a window

@@ -55,7 +55,7 @@
         "data_description": {
           "poll_interval": "Con qué frecuencia se vuelve a leer la posición de cada persiana desde el hub. Un valor menor detecta antes una posición obsoleta; uno mayor genera menos carga. 0 desactiva el sondeo y deja las actualizaciones solo a las notificaciones del hub.",
           "wake_interval": "Cada cuánto pedir a todas las persianas que informen (batería, posición, última vez visto), como hace la actualización de la app Norman. Esto renueva la caché del propio hub, que el sondeo de arriba solo vuelve a leer. 0 lo desactiva; si no, de 600 a 86400 segundos.",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.5 seconds."
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds."
         }
       }
     },

@@ -703,12 +703,13 @@ The gap was measured on the reference hub by sending the same thirteen commands 
 fixed delay between them: at 1.0–1.2 s a few blinds still missed, and at **1.3 s all
 thirteen responded**. The same scene driven from a Home Assistant automation kept losing a
 blind occasionally at 1.3 s, so the hand test was the easier case; at **1.5 s** several
-consecutive whole-house runs dropped nothing, and that is the shipped default.
+consecutive whole-house runs dropped nothing, but longer use at 1.5 s still lost a command from
+time to time, so the shipped default is **1.6 s**.
 
 So `_async_control` holds an `asyncio.Lock` and spaces every `/control` send by the entry's
-command-spacing option (const.py, `DEFAULT_CONTROL_INTERVAL`, 1.5 s), measured from the end
+command-spacing option (const.py, `DEFAULT_CONTROL_INTERVAL`, 1.6 s), measured from the end
 of the previous send so that a slow hub reply counts towards the gap rather than adding to
-it. Concurrent callers queue rather than collide; thirteen commands take ~20 s to dispatch.
+it. Concurrent callers queue rather than collide; thirteen commands take ~21 s to dispatch.
 
 Only `/control` is gated. `status` reads, `GetAllPeripheral` and the notification stream are
 unaffected and still run concurrently, so the UI stays responsive while a batch drains.
