@@ -343,8 +343,9 @@ ATTR_COMMAND = "command"
 # The room-wide commands the Norman app's room screen offers, and the control fields each
 # sends. Captured from the app (docs/NORMAN_API.md, "Room-wide and hub-wide control"):
 # Switch sets BOTH rails to a fixed pair: 0 -> bottom 0 / middle 100, 1 -> both 100. That is
-# what makes "best privacy" meaningful on a day/night shade -- the bottom fabric closes while
-# the sheer middle opens fully, so the room is private but still lit. Verified on hardware.
+# what makes "best privacy" meaningful on a day/night shade -- the middle rail goes fully up,
+# stacking away the light-filtering sheer that hangs above it, and the bottom rail fully down,
+# drawing the blackout below it across the window. Verified on hardware.
 ROOM_COMMANDS: dict[str, dict[str, int]] = {
     "best_privacy": {"Switch": 0},
     "best_view": {"Switch": 1},

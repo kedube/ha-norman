@@ -150,7 +150,7 @@ async def _async_room_command(call: ServiceCall) -> None:
     """Run one of the app's room-wide commands, for one room or the whole hub.
 
     These are the Norman app's own room buttons: ``best_privacy`` puts the bottom rail at 0
-    and the middle rail at 100 (private, but the sheer fabric still open), ``best_view``
+    and the middle rail at 100 (the blackout across the window, the sheer stacked open), ``best_view``
     opens both rails, and ``favorite`` runs to the stored favorite position. Each is a
     single request to the hub, not one per blind, and ``favorite`` has no Home Assistant
     equivalent.

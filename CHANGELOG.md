@@ -5,6 +5,30 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Either rail of a two-rail blind can be dragged at any time.** On the card, the two pull
+  tabs now sit apart — the middle rail's on the left, the bottom rail's on the right — so both
+  can be taken hold of when the rails are together. Before, a fully open blind only ever let
+  you pick up the bottom rail. A rail dragged past the other now carries it along instead of
+  stopping at it: pull the middle rail down from fully open and the bottom rail comes with it.
+- **Moving one rail of a two-rail blind past the other carries the other along.** The middle
+  rail hangs above the bottom rail, but a command that moved one rail sent the other back
+  unchanged even when the two would cross — "open" on the bottom rail with the middle rail
+  half-way asked the hub for a shape the blind cannot make. Now the other rail goes with it in
+  the same command: raising the bottom rail above the middle rail raises the middle rail too,
+  and lowering the middle rail below the bottom rail lowers the bottom rail. This applies to
+  the covers, the tilt commands, the sliders, the nudge actions and the card alike; moves that
+  do not cross are unchanged, and single-rail blinds are unaffected.
+- **The card draws a two-rail blind's fabrics the right way up.** The light-filtering fabric
+  hangs *above* the middle rail and the blackout below it; 0.53 had them the other way round.
+  The light-filtering fabric is now drawn see-through, so the sky shows through it by day and
+  the night sky after dark. The documentation had the same mix-up and described Best privacy
+  as "private, but still lit": it stacks the light-filtering fabric away and draws the
+  blackout across the window. Putting both rails down is what leaves the light-filtering fabric
+  across it.
+- **The card shows each blind's battery percentage** beside its battery icon again, next to the
+  blind's status.
+
 ## 0.53 — 2026-09-24
 - **The dashboard card is redesigned around the shade itself.** Every blind is now a window
   with its shade hanging in it — a cellular shade with a headrail, pleats and a pull tab on

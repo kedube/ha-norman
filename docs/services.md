@@ -65,7 +65,7 @@ matter how many blinds the room holds — the same request the app sends.
 
 | Command | Sends | Effect |
 |---|---|---|
-| `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that is the point: the room is private behind the closed fabric, but the sheer middle is fully open so it still lets light in. |
+| `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that draws the blackout, which hangs below the middle rail, across the window, with the light-filtering sheer above it stacked fully open. |
 | `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. |
 | `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant has no equivalent, so this action is the only way to reach it for a whole room. |
 | `refresh` | `{"ReportBatteryLevel": 0, "RoomID": …}` | Asks every blind in the room to **report in** — battery, position and last-seen — the same request the app's refresh sends on its device & battery status screen. Nothing moves. On hardware all three blinds in a room answered within five seconds; hub-wide, every battery blind over about half a minute. The hub-wide sweep skips wired (single-rail) blinds, so each of those in scope gets its own `StatusRequest` afterwards. The answers arrive as the hub's own notifications, so the entities follow a few seconds after the call returns. The **Request status** button does this for one blind and **Refresh blinds** on the hub for all of them (see [docs/entities.md](entities.md#hub-buttons)). |

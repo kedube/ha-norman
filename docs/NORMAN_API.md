@@ -207,6 +207,12 @@ whether through the **Middle rail** cover, the middle-rail slider, or a tilt com
 bottom rail's back. A capture therefore always shows both fields, even when the user touched
 only one.
 
+On a two-rail blind the middle rail hangs above the bottom rail, so the rail sent back is
+**carried along** when the move would pass it: raising the bottom rail above the middle rail
+sends the middle rail up to the same position, and lowering the middle rail below the bottom
+rail sends the bottom rail down with it. Both go in the one request, so the hub is never
+asked for a shape the blind cannot make. Single-rail blinds are unaffected.
+
 Request:
 
 ```json
@@ -335,8 +341,9 @@ watching the targets it produced:
 | Best View | `{"Switch": 1, "RoomID": …}` | bottom **100**, middle **100** |
 | Remote Favorite | `{"Favorite": 0, "RoomID": …}` | the blind's stored favorite (0/50 on the reference hub) |
 
-"Best Privacy" therefore means bottom fabric closed, sheer middle fully open: private, but
-still lit. Reading this from a capture alone is misleading -- a room that is already at middle
+"Best Privacy" therefore means the middle rail fully up and the bottom rail fully down: on a
+day/night shade the light-filtering sheer, which hangs above the middle rail, is stacked away
+and the blackout below it covers the window. Reading this from a capture alone is misleading -- a room that is already at middle
 100 shows no middle movement, which is what made an earlier revision of this document claim
 `Switch` left the middle rail untouched. Stage a blind away from both rails' end positions
 before drawing conclusions.

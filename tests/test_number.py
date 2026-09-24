@@ -77,7 +77,7 @@ async def test_single_rail_blinds_have_no_middle_slider(
     ("key", "value", "expected"),
     [
         ("bottom_rail_position", 30, (30, 60)),
-        ("middle_rail_position", 20, (40, 20)),
+        ("middle_rail_position", 70, (40, 70)),
     ],
 )
 async def test_setting_a_slider_moves_only_that_rail(

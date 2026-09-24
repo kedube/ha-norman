@@ -121,12 +121,11 @@ async def test_entity_state_and_attributes(
 @pytest.mark.parametrize(
     ("service", "data", "expected"),
     [
-        (SERVICE_OPEN_COVER, {}, (100, 60)),
+        (SERVICE_SET_COVER_POSITION, {ATTR_POSITION: 60}, (60, 60)),
         (SERVICE_CLOSE_COVER, {}, (0, 60)),
         (SERVICE_SET_COVER_POSITION, {ATTR_POSITION: 25}, (25, 60)),
         (SERVICE_OPEN_COVER_TILT, {}, (40, 100)),
-        (SERVICE_CLOSE_COVER_TILT, {}, (40, 0)),
-        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 33}, (40, 33)),
+        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 53}, (40, 53)),
     ],
 )
 async def test_cover_commands_preserve_the_other_rail(
@@ -137,7 +136,11 @@ async def test_cover_commands_preserve_the_other_rail(
     data: dict,
     expected: tuple[int, int],
 ) -> None:
-    """Every command sends both rails; the untouched one keeps its current target."""
+    """Every command sends both rails; the untouched one keeps its current target.
+
+    Each move here stays on its own side of the other rail. Moves that would pass it are in
+    test_a_rail_moved_past_the_other_carries_it_along.
+    """
     status_calls = len(fake_hub.calls_to("/status"))
 
     await _call(hass, COVER_DOMAIN, service, **data)
@@ -224,8 +227,8 @@ async def test_two_rail_blinds_get_a_middle_rail_cover(
     ("service", "data", "expected"),
     [
         (SERVICE_OPEN_COVER, {}, (40, 100)),
-        (SERVICE_CLOSE_COVER, {}, (40, 0)),
-        (SERVICE_SET_COVER_POSITION, {ATTR_POSITION: 25}, (40, 25)),
+        (SERVICE_SET_COVER_POSITION, {ATTR_POSITION: 40}, (40, 40)),
+        (SERVICE_SET_COVER_POSITION, {ATTR_POSITION: 75}, (40, 75)),
     ],
 )
 async def test_middle_rail_commands_move_only_the_middle_rail(
@@ -243,6 +246,59 @@ async def test_middle_rail_commands_move_only_the_middle_rail(
         {ATTR_ENTITY_ID: middle_rail_entity_id(hass, UID_LIVING), **data},
         blocking=True,
     )
+    assert _last_control(fake_hub) == (UID_LIVING, *expected)
+
+
+@pytest.mark.parametrize(
+    ("domain", "service", "entity", "data", "expected"),
+    [
+        # The bottom rail (40) raised above the middle rail (60) takes the middle rail up.
+        (COVER_DOMAIN, SERVICE_OPEN_COVER, "cover", {}, (100, 100)),
+        (COVER_DOMAIN, SERVICE_SET_COVER_POSITION, "cover", {ATTR_POSITION: 80}, (80, 80)),
+        ("number", "set_value", "bottom_rail_position", {"value": 70}, (70, 70)),
+        # The middle rail lowered below the bottom rail takes the bottom rail down.
+        (COVER_DOMAIN, SERVICE_CLOSE_COVER_TILT, "cover", {}, (0, 0)),
+        (
+            COVER_DOMAIN,
+            SERVICE_SET_COVER_TILT_POSITION,
+            "cover",
+            {ATTR_TILT_POSITION: 33},
+            (33, 33),
+        ),
+        (COVER_DOMAIN, SERVICE_CLOSE_COVER, "middle", {}, (0, 0)),
+        (COVER_DOMAIN, SERVICE_SET_COVER_POSITION, "middle", {ATTR_POSITION: 25}, (25, 25)),
+        ("number", "set_value", "middle_rail_position", {"value": 20}, (20, 20)),
+    ],
+)
+async def test_a_rail_moved_past_the_other_carries_it_along(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    domain: str,
+    service: str,
+    entity: str,
+    data: dict,
+    expected: tuple[int, int],
+) -> None:
+    """A two-rail blind's middle rail hangs above its bottom rail, so they cannot cross.
+
+    Sending one rail past the other would ask the hub for a shape the blind cannot make, so
+    the other rail goes with it in the same command -- whichever entity started the move.
+    This is also what lets the dashboard card pull the middle rail down from fully open.
+    """
+    if entity == "cover":
+        entity_id = cover_entity_id(hass, UID_LIVING)
+    elif entity == "middle":
+        entity_id = middle_rail_entity_id(hass, UID_LIVING)
+    else:
+        entity_id = er.async_get(hass).async_get_entity_id(
+            "number", DOMAIN, f"{UID_LIVING}_{entity}"
+        )
+
+    await hass.services.async_call(
+        domain, service, {ATTR_ENTITY_ID: entity_id, **data}, blocking=True
+    )
+
     assert _last_control(fake_hub) == (UID_LIVING, *expected)
 
 
@@ -315,10 +371,12 @@ async def test_commands_fall_back_to_current_then_open(
     [
         ("nudge_position", 10, (50, 60)),
         ("nudge_position", -10, (30, 60)),
-        ("nudge_position", 100, (100, 60)),
+        # Nudged past the middle rail (60), the bottom rail takes it along.
+        ("nudge_position", 100, (100, 100)),
         ("nudge_position", -100, (0, 60)),
         ("nudge_tilt", 30, (40, 90)),
-        ("nudge_tilt", -100, (40, 0)),
+        # Nudged past the bottom rail (40), the middle rail takes it along.
+        ("nudge_tilt", -100, (0, 0)),
         ("nudge_tilt", 100, (40, 100)),
     ],
 )
@@ -342,12 +400,12 @@ async def test_nudge_is_relative_to_target_while_moving(
     notifications: asyncio.Queue,
 ) -> None:
     """Two quick nudges add up instead of both being measured from the stale position."""
-    fake_hub.set_position(UID_LIVING, target_bottom=80)
+    fake_hub.set_position(UID_LIVING, target_bottom=80, target_middle=100)
     await notifications.put({"PeripheralList": []})
     await settle(hass)
 
     await _call(hass, DOMAIN, "nudge_position", step=5)
-    assert _last_control(fake_hub) == (UID_LIVING, 85, 60)
+    assert _last_control(fake_hub) == (UID_LIVING, 85, 100)
 
 
 @pytest.mark.parametrize("step", [101, -101, "lots"])

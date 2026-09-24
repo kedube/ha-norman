@@ -4,12 +4,13 @@ The integration ships a Lovelace card, **Norman Shades**, that draws every blind
 with its shade hanging in it, grouped by room. The window is the control: **drag a rail's pull
 tab** to move it.
 
-<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — single-rail shades in ivory, two-rail shades with a slate blackout above the ivory light-filtering fabric." width="560">
+<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — single-rail shades in ivory, two-rail shades with the see-through light-filtering fabric above the slate blackout." width="560">
 
 *The card with seven blinds across three rooms. Den_2 is on its way down: the shade is drawn
 where it is going, the dashed line is where it is now, and its Stop button sits on the corner.
-The two-rail blinds in the middle row show Best privacy (the light-filtering fabric across the
-window), both rails part-way, and closed (the blackout across the window).*
+The two-rail blinds in the middle row show Best privacy (the blackout across the window), both
+rails part-way, and both rails down (the light-filtering fabric across the window, with the view
+showing through it).*
 
 The card header is named after your **hub** — the name it has in Home Assistant, which the
 integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
@@ -48,7 +49,7 @@ fits as many windows across as the card has room for.
 | Room heading | The area name, with **▲ ■ ▼** for the whole room and **⋯** for the room's presets. Blinds with no area are grouped under "Unassigned". |
 | The window | The blind, drawn where the hub says each rail is. **Drag a pull tab** to move that rail; the percentage shows above it as you drag, in steps of 10, and the position is sent when you let go. |
 | Blind name | Click it to open the usual more-info dialog. |
-| Battery | The battery icon, filled to the level. The number appears only when it needs attention: amber at 30% and below, red at 15% and below. Hover for the exact level. |
+| Battery | Beside the status: the battery icon, filled to the level, and the percentage. Amber at 30% and below, red at 15% and below. |
 | Status | "Open", "Closed", "40% open"; on a two-rail blind "Privacy" for the app's preset, or both rails, e.g. "Middle 70% · Bottom 30%". |
 | While moving | The shade is drawn where it is **going**, a dashed line marks where the rail actually **is**, the status reads "Closing · 70%", and a **■ Stop** button appears on the window's corner until it arrives. |
 
@@ -56,7 +57,8 @@ A blind the hub has stopped reporting is greyed out, reads "Unavailable", and ca
 
 ### Moving a blind
 
-- **Mouse:** press anywhere on the window and the nearest rail follows the pointer.
+- **Mouse:** press anywhere on the window and the nearest rail follows the pointer. Where a
+  two-rail blind's rails are together, press on the side of the tab you want.
 - **Touch:** start on a rail — the pull tab, or anywhere across the width of the rail. A swipe
   that starts elsewhere on the window scrolls the page instead, so scrolling past a row of
   windows cannot move a blind.
@@ -74,22 +76,25 @@ what the hub reports, so a command the hub dropped is visible rather than hidden
 ### Two-rail blinds
 
 On a **two-rail** blind the window shows both fabrics, arranged the way the blind is: the
-**blackout** (slate) hangs from the headrail down to the **middle rail**, and the
-**light-filtering** fabric (ivory, lit by the view behind it) hangs from the middle rail down to
-the **bottom rail**. Each rail has its own pull tab.
+**light-filtering** fabric hangs from the headrail down to the **middle rail**, drawn
+see-through so the view shows through it — bright by day, dark at night — and the **blackout**
+(slate) hangs from the middle rail down to the **bottom rail**.
 
 That is why the app's presets look the way they do:
 
 | Preset | Rails | The window shows |
 |---|---|---|
 | **Best view** | both 100 | A clear window — both rails tucked under the headrail. |
-| **Best privacy** | bottom 0, middle 100 | The **light-filtering** fabric across the whole window: private, but still bright. |
-| Closed | both 0 | The **blackout** across the whole window. |
+| **Best privacy** | bottom 0, middle 100 | The **blackout** across the whole window, the light-filtering fabric stacked away. |
+| Both down | both 0 | The **light-filtering** fabric across the whole window, the blackout stacked on the sill. |
 
-The two rails cannot cross: drag the bottom rail up into the middle rail and it stops there,
-because the blind cannot make that shape either. When the rails are pressed together — both up,
-or both down — pull the stack the way you want to go: **down** takes the bottom rail, **up**
-takes the middle rail, since those are the only moves the blind can make from there.
+Each rail has its own pull tab, and either one can be moved at any time: the **left** tab is the
+middle rail, the **right** tab the bottom rail. They sit apart so that both can still be reached
+when the rails are together — fully open, both down, or anywhere between. The middle rail always
+hangs above the bottom rail, so a rail taken past the other carries it along, as it does on the
+blind: pull the middle rail down from fully open and the bottom rail comes down with it; push
+the bottom rail up past the middle rail and the middle rail goes up. The card sends one command
+for the rail you moved, and the integration moves the other rail in the same command.
 
 On a top-down/bottom-up blind the same two bands read as the open top and the covered bottom.
 
@@ -115,7 +120,7 @@ those entities and never disagree with the covers.
 ### Whole-room control
 
 Each room heading carries **▲ ■ ▼** of its own, acting on every blind in that room at once —
-including the middle rails of two-rail blinds, so "close the bedroom" closes both fabrics. It
+including the middle rails of two-rail blinds, so "close the bedroom" puts both rails down. It
 is one service call per press, not one per blind.
 
 This is on by default. For plain headings:
@@ -129,8 +134,9 @@ The buttons live in the heading, so `hide_room_names: true` removes them too —
 nowhere left to put them, and the rooms run together as one grid.
 
 These buttons fan out over Home Assistant's cover entities, so **close** puts *both* rails of a
-two-rail blind down. That is not the same as the Norman app's **Best Privacy**, which closes the
-bottom fabric while opening the middle rail fully — private, but still lit.
+two-rail blind down, which leaves the light-filtering fabric across the window. That is not the
+same as the Norman app's **Best Privacy**, which raises the middle rail fully and lowers the
+bottom rail — the blackout across the window.
 
 ### The app's room buttons
 
@@ -176,7 +182,8 @@ blinds you have. These are the same three buttons the app's own **All Rooms** sc
 Because they are the hub's own verbs this is not a fan-out and needs no room-name match.
 
 They deliberately carry the app's names rather than open/close arrows. **Best privacy** is not a
-close: it leaves the middle rail fully open, so a two-rail blind ends private but still lit.
+close: it raises the middle rail fully, so a two-rail blind ends with the blackout across the
+window rather than the light-filtering fabric.
 
 All three work on single-rail blinds as well as two-rail ones — a capture of the app driving a
 single-rail shade shows it sending the same three verbs unchanged.

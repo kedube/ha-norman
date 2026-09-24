@@ -363,10 +363,10 @@ for (const cfg of [{}, { hide_picture:true }]) {
   check("every blind is a tile with a window", byClass(c.shadowRoot, "tile").length === 2 && byClass(c.shadowRoot, "win").length === 2);
   check("the summary counts the shades and the low battery",
         renderedText().includes("2 shades") && renderedText().includes("1 low battery"), renderedText().slice(0, 160));
-  // The battery icon carries the level; the number is printed only when it needs attention.
   const [fbBattery, denBattery] = ["d1", "d2"].map(id => c._cells.find(x => x.blind.deviceId === id).batteryEl);
-  check("a healthy battery shows its icon, not a number", fbBattery.lastChild.textContent === "" && fbBattery.title === "Battery 84%");
-  check("a low battery shows its number", denBattery.lastChild.textContent === "12%" && denBattery.className.includes("critical"));
+  check("every battery shows its percentage", fbBattery.lastChild.textContent === "84%" && fbBattery.title === "Battery 84%",
+        fbBattery.lastChild.textContent);
+  check("a low battery is marked", denBattery.lastChild.textContent === "12%" && denBattery.className.includes("critical"));
 }
 
 {
@@ -484,6 +484,9 @@ check("the CSS rail and the JS constant agree",
 const pictureCard = () => { const c = new Card(); c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass; return c; };
 const twoRail = pictureCard();
 const twoRailBlind = twoRail._collectBlinds().find(b => b.middleCover);
+const oneRail = pictureCard();
+const oneRailBlind = oneRail._collectBlinds().find(b => !b.middleCover);
+const oneRailCarried = () => oneRail._carried(oneRail._railsOf(oneRailBlind), 0, 50);
 const shadeFor = (c, blind, values) => {
   const shade = c._buildShade(blind, c._railsOf(blind));
   // Drive the drawing off explicit values rather than whatever the fake hub reports.
@@ -502,48 +505,79 @@ check("closed: the bottom rail rests on the sill", near(top(closed.railEls[0]) +
 check("closed: the middle rail rests on the bottom rail", near(top(closed.railEls[1]) + RAIL, top(closed.railEls[0])));
 
 const mixed = shadeFor(twoRail, twoRailBlind, [20, 80]);
-const [sheer, blackout] = mixed.bands;
-check("mixed: the upper band starts at the headrail", near(top(blackout), HEAD), blackout.style.top);
-check("mixed: the upper band ends on the middle rail", near(top(blackout) + height(blackout), top(mixed.railEls[1])));
-check("mixed: the lower band hangs from the middle rail", near(top(sheer), top(mixed.railEls[1]) + RAIL));
-check("mixed: the lower band ends on the bottom rail", near(top(sheer) + height(sheer), top(mixed.railEls[0])));
+const [lower, upper] = mixed.bands;
+check("mixed: the upper band starts at the headrail", near(top(upper), HEAD), upper.style.top);
+check("mixed: the upper band ends on the middle rail", near(top(upper) + height(upper), top(mixed.railEls[1])));
+check("mixed: the lower band hangs from the middle rail", near(top(lower), top(mixed.railEls[1]) + RAIL));
+check("mixed: the lower band ends on the bottom rail", near(top(lower) + height(lower), top(mixed.railEls[0])));
 check("mixed: the middle rail sits above the bottom rail", top(mixed.railEls[1]) < top(mixed.railEls[0]));
 check("mixed: each grab zone is centred on its rail",
       mixed.zones.every((z, i) => near(top(z), top(mixed.railEls[i]) + RAIL / 2)));
 
-// Which fabric covers the window, per the app's own presets. A closed blind drawn as the
-// sheer fabric tells the user the window is see-through when it is not.
+// Which fabric covers the window. On the blind the light-filtering sheer hangs above the
+// middle rail and the blackout below it, so the app's Best privacy (bottom 0, middle 100)
+// draws the blackout across the window and everything down draws the sheer.
 const TRAVEL = 100 - HEAD - 2 * RAIL;
 const covering = (values) => shadeFor(twoRail, twoRailBlind, values).bands
   .map((b) => ({ kind: b.className.includes("sheer") ? "sheer" : b.className.includes("blackout") ? "blackout" : "?", h: height(b) }))
   .filter((b) => b.h > 0.05)
   .map((b) => `${b.kind}:${Math.round(b.h)}`)
   .join(" ");
-check("closed (0/0) is covered by the BLACKOUT fabric", covering([0, 0]) === `blackout:${Math.round(TRAVEL)}`, covering([0, 0]));
-check("Best privacy (0/100) is covered by the SHEER fabric", covering([0, 100]) === `sheer:${Math.round(TRAVEL)}`, covering([0, 100]));
+check("closed (0/0) is covered by the SHEER fabric", covering([0, 0]) === `sheer:${Math.round(TRAVEL)}`, covering([0, 0]));
+check("Best privacy (0/100) is covered by the BLACKOUT fabric", covering([0, 100]) === `blackout:${Math.round(TRAVEL)}`, covering([0, 100]));
 check("open (100/100) leaves the opening clear", covering([100, 100]) === "", covering([100, 100]));
-check("part-open: blackout above the middle rail, sheer below",
-      covering([20, 80]) === `sheer:${Math.round(TRAVEL * 0.6)} blackout:${Math.round(TRAVEL * 0.2)}`, covering([20, 80]));
+check("part-open: sheer above the middle rail, blackout below",
+      covering([20, 80]) === `blackout:${Math.round(TRAVEL * 0.6)} sheer:${Math.round(TRAVEL * 0.2)}`, covering([20, 80]));
+check("the sheer is drawn see-through", /\.fabric\.sheer \{[^}]*backdrop-filter/.test(cardSource));
 
-// Clamping: the rails are physically stacked and must never cross.
-const clampShade = shadeFor(twoRail, twoRailBlind, [20, 80]);
-check("clamp: the bottom rail cannot rise above the middle", twoRail._clampRail(clampShade, 0, 95) === 80);
-check("clamp: the middle rail cannot drop below the bottom", twoRail._clampRail(clampShade, 1, 5) === 20);
-check("clamp: a legal drag is left alone", twoRail._clampRail(clampShade, 0, 10) === 10);
+// Either rail can be moved anywhere. The middle rail hangs above the bottom one, so a rail
+// taken past the other carries it along -- on the blind, and so in the picture.
+{
+  const rails2 = twoRail._railsOf(twoRailBlind);   // bottom 60, middle 80 from the fake hub
+  check("carry: the bottom rail raised past the middle takes it up", twoRail._carried(rails2, 0, 95) === 95);
+  check("carry: the middle rail lowered past the bottom takes it down", twoRail._carried(rails2, 1, 30) === 30);
+  check("carry: a move that passes nothing leaves the other rail alone",
+        twoRail._carried(rails2, 0, 10) === 80 && twoRail._carried(rails2, 1, 90) === 60);
+  check("carry: a single-rail blind has nothing to carry", oneRailCarried() === null);
 
-// Rails pressed together can only part, so the drag's direction picks the rail.
-const stackedOpen = shadeFor(twoRail, twoRailBlind, [100, 100]);
-check("stacked open: a drag down takes the BOTTOM rail", twoRail._railFor(stackedOpen, 1, -1) === 0);
-const stackedShut = shadeFor(twoRail, twoRailBlind, [0, 0]);
-check("stacked closed: a drag up takes the MIDDLE rail", twoRail._railFor(stackedShut, 0, 1) === 1);
-check("apart, the pressed rail keeps the drag", twoRail._railFor(clampShade, 0, 1) === 0 && twoRail._railFor(clampShade, 1, -1) === 1);
+  const s2 = twoRail._buildShade(twoRailBlind, rails2);
+  twoRail._dragTo(s2, 1, 30);
+  check("dragging the middle rail below the bottom rail draws both moving",
+        s2.dragValues[1] === 30 && s2.dragValues[0] === 30, JSON.stringify(s2.dragValues));
+  twoRail._dragTo(s2, 1, 70);
+  check("dragging back up puts the bottom rail back where it was", s2.dragValues[0] === undefined, JSON.stringify(s2.dragValues));
 
-// A single-rail blind has one band, one rail, and nothing to clamp against.
-const oneRail = pictureCard();
-const oneRailBlind = oneRail._collectBlinds().find(b => !b.middleCover);
+  // Released: ONE write, for the rail that was moved. The integration carries the other in
+  // the same hub command; two writes could cross in flight and undo each other.
+  const writes = [];
+  const record = (d, sv, data) => { writes.push([d, sv, data]); return Promise.resolve(); };
+  const c = new Card(); c._hass = { ...hass, callService: record };
+  c.setConfig({ type:"custom:norman-shades-card" });
+  c._hass = { ...hass, callService: record };
+  const r = c._railsOf(twoRailBlind);
+  c._move(r, 1, 20);
+  check("moving the middle rail past the bottom rail writes once", writes.length === 1, JSON.stringify(writes));
+  check("...to the middle rail", writes[0]?.[2]?.entity_id === "number.front_bedroom_1_middle_rail_position" && writes[0][2].value === 20,
+        JSON.stringify(writes[0]));
+  check("...and draws the bottom rail carried along", c._railValue(r[0]) === 20 && c._railValue(r[1]) === 20);
+  writes.length = 0;
+  c._move(r, 1, 20);
+  check("moving a rail to where it already is writes nothing", writes.length === 0, JSON.stringify(writes));
+}
+
+// The tabs sit apart on a two-rail blind, so both can be reached when the rails are together.
+check("the middle rail's tab is left of the bottom rail's",
+      twoRail._tabX(twoRail._railsOf(twoRailBlind), 1) < 50 && twoRail._tabX(twoRail._railsOf(twoRailBlind), 0) > 50);
+{
+  check("rails together are marked stacked, so the middle tab reaches past the bottom rail",
+        shadeFor(twoRail, twoRailBlind, [100, 100]).element.classList.contains("stacked"));
+  check("rails apart are not", !shadeFor(twoRail, twoRailBlind, [20, 80]).element.classList.contains("stacked"));
+}
+
+// A single-rail blind has one band and one rail, with its tab in the middle.
 const single = shadeFor(oneRail, oneRailBlind, [40]);
 check("single-rail: one band only", single.bands.length === 1, String(single.bands.length));
-check("single-rail: nothing to clamp against", oneRail._clampRail(single, 0, 90) === 90);
+check("single-rail: the tab is centred", oneRail._tabX(oneRail._railsOf(oneRailBlind), 0) === 50);
 check("single-rail: closed rests on the sill", near(top(shadeFor(oneRail, oneRailBlind, [0]).railEls[0]) + RAIL, 100));
 check("single-rail: open tucks under the headrail", near(top(shadeFor(oneRail, oneRailBlind, [100]).railEls[0]), HEAD));
 check("each rail is a keyboard slider",

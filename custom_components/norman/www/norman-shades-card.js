@@ -139,10 +139,10 @@ const STYLES = `
     --n-rail-face: #eeebe5;
     --n-rail-lo: #cbc5ba;
     --n-rail-edge: rgba(70, 60, 45, 0.35);
-    --n-sheer-hi: rgba(252, 250, 245, 0.9);
-    --n-sheer: rgba(240, 234, 224, 0.88);
-    --n-sheer-lo: rgba(222, 213, 198, 0.9);
-    --n-sheer-crease: rgba(176, 164, 145, 0.95);
+    --n-sheer-hi: rgba(255, 253, 248, 0.5);
+    --n-sheer: rgba(248, 244, 236, 0.4);
+    --n-sheer-lo: rgba(232, 225, 212, 0.52);
+    --n-sheer-crease: rgba(176, 164, 144, 0.7);
     --n-single-hi: #fbf9f4;
     --n-single: #f0ebe2;
     --n-single-lo: #ddd5c7;
@@ -293,10 +293,9 @@ const STYLES = `
   }
   .tile { position: relative; min-width: 0; }
   .meta { margin-top: 9px; padding: 0 1px; }
-  .meta-top { display: flex; align-items: center; gap: 6px; }
   .name {
-    flex: 1;
-    min-width: 0;
+    display: block;
+    width: 100%;
     padding: 0;
     border: 0;
     background: none;
@@ -316,6 +315,8 @@ const STYLES = `
     display: inline-flex;
     align-items: center;
     flex: none;
+    margin: 1px 0 0 auto;
+    line-height: 16px;
     font-size: 11.5px;
     color: var(--n-muted);
     font-variant-numeric: tabular-nums;
@@ -323,7 +324,6 @@ const STYLES = `
   }
   .battery ha-icon { --mdc-icon-size: 15px; }
   .battery span:empty { display: none; }
-  .battery.ok { opacity: 0.7; }
   .battery.low { color: var(--warning-color, #e39700); }
   .battery.critical { color: var(--error-color, #db4437); }
   .meta-bottom { display: flex; align-items: flex-start; gap: 6px; min-height: 18px; }
@@ -513,16 +513,17 @@ const STYLES = `
     --n-mid: var(--n-single);
     --n-hi: var(--n-single-hi);
   }
-  /* The light-filtering fabric is translucent: the view shows through it as a soft glow,
-     frosted rather than seen, and at night it goes dim with the sky behind it. */
+  /* The light-filtering fabric is see-through: the view -- sky, hills, glazing bars --
+     shows through it softened, bright by day and dark at night, as it does in the room. */
   .fabric.sheer {
-    --n-side: rgba(90, 70, 40, 0.1);
+    --n-side: rgba(90, 70, 40, 0.08);
     --n-crease: var(--n-sheer-crease);
     --n-lo: var(--n-sheer-lo);
     --n-mid: var(--n-sheer);
     --n-hi: var(--n-sheer-hi);
-    -webkit-backdrop-filter: blur(6px) saturate(0.7);
-    backdrop-filter: blur(6px) saturate(0.7);
+    background-color: rgba(252, 249, 243, 0.14);
+    -webkit-backdrop-filter: blur(1.2px) brightness(1.06) saturate(0.85);
+    backdrop-filter: blur(1.2px) brightness(1.06) saturate(0.85);
   }
   .fabric.single::after {
     content: "";
@@ -560,7 +561,8 @@ const STYLES = `
     box-shadow: 0 0 0 0.5px var(--n-rail-edge), 0 2px 3px -1px rgba(0, 0, 0, 0.4);
     transition: top 0.45s var(--n-ease);
   }
-  .rail.bottom { z-index: 4; }
+  .rail.middle { z-index: 4; }
+  .win.stacked .rail.middle .tab { height: calc(100% + 7px); }
   .headrail {
     left: -3%;
     right: -3%;
@@ -653,8 +655,11 @@ const STYLES = `
 
   /* ---- list layout (hide_picture) --------------------------------------------------- */
   .list { display: flex; flex-direction: column; gap: 12px; }
-  .row .meta { margin: 0 0 2px; }
-  .row .meta-bottom { min-height: 0; }
+  /* One line per blind: the name, then its status (while moving), Stop and battery. */
+  .row .meta { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; }
+  .row .name { flex: 1; width: auto; min-width: 0; }
+  .row .meta-bottom { flex: none; align-items: center; min-height: 0; }
+  .row .battery { margin-top: 0; }
   .slider {
     display: grid;
     grid-template-columns: 64px 1fr 40px;
@@ -1099,9 +1104,10 @@ class NormanShadesCard extends HTMLElement {
    * Open / stop / close every rail of every blind in one room.
    *
    * This is NOT the hub's own room verb. Close here sends close_cover to every rail, so a
-   * two-rail blind ends at bottom 0 AND middle 0 -- both fabrics down. The app's "Best
-   * privacy" is bottom 0 with middle 100: private, but the sheer fabric fully open so the
-   * room stays lit. That one lives in the presets tray (norman.room_command).
+   * two-rail blind ends at bottom 0 AND middle 0 -- both rails down, which leaves the
+   * light-filtering sheer across the window. The app's "Best privacy" is bottom 0 with
+   * middle 100: the sheer stacked away and the blackout across the window instead. That one
+   * lives in the presets tray (norman.room_command).
    */
   _buildRoomControls(roomName, blinds) {
     const controls = el("div", "icon-group room-buttons");
@@ -1205,12 +1211,14 @@ class NormanShadesCard extends HTMLElement {
     if (shade) tile.appendChild(shade.element);
 
     const meta = el("div", "meta");
-    const top = el("div", "meta-top");
     const name = el("button", "name", blind.name);
     name.type = "button";
     name.title = `${blind.name} details`;
     name.addEventListener("click", () => this._showMore(blind.bottomCover));
-    top.appendChild(name);
+
+    const bottom = el("div", "meta-bottom");
+    const status = el("span", "status");
+    bottom.appendChild(status);
 
     let batteryEl = null;
     if (blind.battery && !this._config.hide_battery) {
@@ -1220,11 +1228,9 @@ class NormanShadesCard extends HTMLElement {
       // say it is the battery.
       batteryEl.setAttribute("role", "img");
       batteryEl.addEventListener("click", () => this._showMore(blind.battery));
-      top.appendChild(batteryEl);
+      bottom.appendChild(batteryEl);
     }
 
-    const bottom = el("div", "meta-bottom");
-    const status = el("span", "status");
     const stop = el("button", "stop");
     stop.type = "button";
     stop.hidden = true;
@@ -1232,15 +1238,14 @@ class NormanShadesCard extends HTMLElement {
     stop.setAttribute("aria-label", stop.title);
     stop.append(haIcon("mdi:stop"), el("span", null, "Stop"));
     stop.addEventListener("click", () => this._stop(rails));
-    bottom.appendChild(status);
     // On the window's corner in the grid -- outside the window itself, so a press on it is
     // never taken for the start of a drag.
     (list ? bottom : tile).appendChild(stop);
-    meta.append(top, bottom);
+    meta.append(name, bottom);
     tile.appendChild(meta);
 
     // In the list layout the rails are sliders, top rail first as on the blind.
-    const sliders = list ? [...rails].reverse().map((rail) => this._buildSlider(rail, rails.length)) : [];
+    const sliders = list ? [...rails].reverse().map((rail) => this._buildSlider(rails, rail)) : [];
     for (const slider of sliders) tile.appendChild(slider.row);
 
     this._cells.push({ blind, rails, tile, shade, batteryEl, status, stop, sliders });
@@ -1251,10 +1256,13 @@ class NormanShadesCard extends HTMLElement {
    * The window for one blind: casing, sill, the view, and the shade hanging in it.
    *
    * One fabric band, one rail and one grab zone per rail. On a two-rail blind the band from
-   * the headrail to the middle rail is the blackout and the band from the middle rail to
-   * the bottom rail the light-filtering sheer -- checked against the app's own presets:
-   * "Best privacy" (bottom 0, middle 100) stacks the blackout away and draws the sheer
-   * across the window, "closed for privacy, sheer fabric still open".
+   * the headrail to the middle rail is the light-filtering sheer and the band from the
+   * middle rail to the bottom rail the blackout. The app's "Best privacy" (bottom 0,
+   * middle 100) therefore stacks the sheer away and draws the blackout across the window:
+   * "closed for privacy, sheer fabric still open".
+   *
+   * The two rails' pull tabs sit apart -- the middle rail's left of centre, the bottom
+   * rail's right -- so that both can still be taken hold of when the rails are together.
    */
   _buildShade(blind, rails) {
     const element = el("div", "win");
@@ -1268,12 +1276,14 @@ class NormanShadesCard extends HTMLElement {
 
     const twoRail = rails.length > 1;
     const bands = rails.map((_, index) =>
-      el("div", `fabric ${twoRail ? (index === 1 ? "blackout" : "sheer") : "single"}`),
+      el("div", `fabric ${twoRail ? (index === 1 ? "sheer" : "blackout") : "single"}`),
     );
     const markers = rails.map(() => el("div", "marker"));
     const railEls = rails.map((_, index) => {
       const rail = el("div", `rail ${index === 0 ? "bottom" : "middle"}`);
-      rail.appendChild(el("div", "tab"));
+      const tab = el("div", "tab");
+      tab.style.left = `${this._tabX(rails, index)}%`;
+      rail.appendChild(tab);
       return rail;
     });
     const zones = rails.map((rail, index) => {
@@ -1313,17 +1323,21 @@ class NormanShadesCard extends HTMLElement {
     const setHot = (index) => {
       shade.railEls.forEach((rail, i) => rail.classList.toggle("hot", i === index));
     };
-    const nearest = (event) => {
+    // Which rail a press means: the nearest one, or -- where the two rails are together and
+    // so equally near -- the one whose tab is on that side.
+    const pick = (event) => {
       const rect = opening.getBoundingClientRect();
       const y = ((event.clientY - rect.top) / rect.height) * 100;
+      const centers = shade.rails.map(
+        (_, index) => this._railTop(shade, index, this._shadeValue(shade, index)) + SHADE_RAIL_PCT / 2,
+      );
+      if (shade.rails.length > 1 && centers[0] - centers[1] < SHADE_RAIL_PCT * 2.5) {
+        const nearStack = y > centers[1] - SHADE_RAIL_PCT * 3 && y < centers[0] + SHADE_RAIL_PCT * 3;
+        if (nearStack) return event.clientX - rect.left < rect.width / 2 ? 1 : 0;
+      }
       let best = 0;
-      let distance = Infinity;
-      shade.rails.forEach((_, index) => {
-        const center = this._railTop(shade, index, this._shadeValue(shade, index)) + SHADE_RAIL_PCT / 2;
-        if (Math.abs(center - y) < distance) {
-          distance = Math.abs(center - y);
-          best = index;
-        }
+      centers.forEach((center, index) => {
+        if (Math.abs(center - y) < Math.abs(centers[best] - y)) best = index;
       });
       return best;
     };
@@ -1335,23 +1349,20 @@ class NormanShadesCard extends HTMLElement {
       if (event.pointerType !== "mouse" && !onZone) return;
       const rect = opening.getBoundingClientRect();
       if (!rect.height) return;
-      const index = onZone ? Number(event.target.dataset.index) : nearest(event);
-      press = { id: event.pointerId, index, y0: event.clientY, rect, started: false, step: null };
+      press = { id: event.pointerId, index: pick(event), y0: event.clientY, rect, started: false, step: null };
       element.setPointerCapture?.(event.pointerId);
       event.preventDefault();
     });
 
     element.addEventListener("pointermove", (event) => {
       if (!press) {
-        if (event.pointerType === "mouse" && !shade.disabled) setHot(nearest(event));
+        if (event.pointerType === "mouse" && !shade.disabled) setHot(pick(event));
         return;
       }
       if (event.pointerId !== press.id) return;
       const dy = event.clientY - press.y0;
       if (!press.started) {
         if (Math.abs(dy) < DRAG_SLOP) return;
-        // Rails pressed together can only part, so the direction decides which one moves.
-        press.index = this._railFor(shade, press.index, dy < 0 ? 1 : -1);
         press.started = true;
         press.start = this._shadeValue(shade, press.index) ?? 0;
         press.travel = (press.rect.height * this._travelPct(shade)) / 100;
@@ -1359,9 +1370,8 @@ class NormanShadesCard extends HTMLElement {
         shade.railEls[press.index].classList.add("held");
         setHot(press.index);
       }
-      const value = this._clampRail(shade, press.index, clamp(press.start - (dy / press.travel) * 100));
-      shade.dragValues[press.index] = value;
-      this._drawShade(shade);
+      const value = clamp(press.start - (dy / press.travel) * 100);
+      this._dragTo(shade, press.index, value);
       const step = clampToStep(value);
       this._showBubble(shade, press.index, step);
       if (press.step !== null && step !== press.step) navigator.vibrate?.(4);
@@ -1379,11 +1389,8 @@ class NormanShadesCard extends HTMLElement {
       this._hideBubble(shade);
       if (!started) return;
       const value = shade.dragValues[index];
-      delete shade.dragValues[index];
-      const rail = shade.rails[index];
-      // Round to the 10% step, but never across the other rail.
-      const chosen = this._clampRail(shade, index, clampToStep(value));
-      if (commit && chosen !== this._railValue(rail)) this._setRail(rail, chosen);
+      shade.dragValues = {};
+      if (commit) this._move(shade.rails, index, clampToStep(value));
       this._patch();
     };
     element.addEventListener("pointerup", (event) => finish(event, true));
@@ -1416,41 +1423,63 @@ class NormanShadesCard extends HTMLElement {
     };
     if (!(event.key in moves)) return;
     event.preventDefault();
-    const value = this._clampRail(shade, index, clampToStep(moves[event.key]));
-    shade.dragValues[index] = value;
-    this._drawShade(shade);
+    const value = clampToStep(moves[event.key]);
+    this._dragTo(shade, index, value);
     this._showBubble(shade, index, value);
     clearTimeout(shade.keyTimer);
     shade.keyTimer = setTimeout(() => {
-      delete shade.dragValues[index];
+      shade.dragValues = {};
       this._hideBubble(shade);
-      const rail = shade.rails[index];
-      if (value !== this._railValue(rail)) this._setRail(rail, value);
+      this._move(shade.rails, index, value);
       this._patch();
     }, KEY_COMMIT_MS);
   }
 
   /**
-   * The rail a drag should move. Rails pressed together can only part: up can only be the
-   * middle rail and down only the bottom one, so a drag that starts on the stack picks the
-   * rail that can go that way. `direction` is +1 for up (opening), -1 for down.
+   * Where a two-rail blind's other rail ends up when rail `index` goes to `value`.
+   *
+   * The middle rail always hangs above the bottom rail, so the other rail stays where it is
+   * unless `value` would pass it -- and then it is carried along, as it is on the blind: the
+   * middle rail pulled down past the bottom rail takes the bottom rail with it, and the
+   * bottom rail pushed up past the middle rail takes the middle rail up. The integration
+   * does the same when it sends the move, in the one command. Null on a single-rail blind.
    */
-  _railFor(shade, index, direction) {
-    if (shade.rails.length < 2) return index;
-    const bottom = this._shadeValue(shade, 0);
-    const middle = this._shadeValue(shade, 1);
-    if (bottom === null || middle === null || middle - bottom >= STEP / 2) return index;
-    return direction > 0 ? 1 : 0;
+  _carried(rails, index, value) {
+    if (rails.length < 2) return null;
+    const other = this._railValue(rails[1 - index]);
+    if (other === null) return null;
+    return index === 0 ? Math.max(other, value) : Math.min(other, value);
   }
 
-  /** Keep a rail on its own side of the other one, so the fabric never inverts. */
-  _clampRail(shade, index, value) {
-    if (shade.rails.length < 2) return value;
-    const other = this._shadeValue(shade, index === 0 ? 1 : 0);
-    if (other === null) return value;
-    // rails[0] is the bottom rail and rails[1] the middle: the bottom can never be above
-    // the middle, which in cover terms (100 = open = high) means bottom <= middle.
-    return index === 0 ? Math.min(value, other) : Math.max(value, other);
+  /** Draw rail `index` at `value` mid-drag, with the other rail carried if it is passed. */
+  _dragTo(shade, index, value) {
+    shade.dragValues = { [index]: value };
+    const carried = this._carried(shade.rails, index, value);
+    if (carried !== null && carried !== this._railValue(shade.rails[1 - index])) {
+      shade.dragValues[1 - index] = carried;
+    }
+    this._drawShade(shade);
+  }
+
+  /**
+   * Send rail `index` to `value`. One write: the integration carries the other rail along
+   * in the same hub command when it has to, so that rail is only drawn there until the hub
+   * reports it -- never written separately, where two commands could cross in flight.
+   */
+  _move(rails, index, value) {
+    const rail = rails[index];
+    if (value === this._railValue(rail)) return;
+    const carried = this._carried(rails, index, value);
+    if (carried !== null && carried !== this._railValue(rails[1 - index])) {
+      this._expect(rails[1 - index], carried);
+    }
+    this._setRail(rail, value);
+  }
+
+  /** Where a two-rail blind's pull tab sits across the rail, in percent: apart, so both can be reached. */
+  _tabX(rails, index) {
+    if (rails.length < 2) return 50;
+    return index === 1 ? 32 : 68;
   }
 
   /** What a rail is drawn at right now: a drag or key press, else _railValue. */
@@ -1481,6 +1510,10 @@ class NormanShadesCard extends HTMLElement {
    * each band hangs from the edge above it (the headrail, or the rail above) to its rail.
    */
   _drawShade(shade) {
+    if (shade.rails.length > 1) {
+      const together = this._shadeValue(shade, 1) - this._shadeValue(shade, 0) < 1;
+      shade.element.classList.toggle("stacked", together);
+    }
     let edge = SHADE_HEAD_PCT;
     for (let index = shade.rails.length - 1; index >= 0; index -= 1) {
       const top = this._railTop(shade, index, this._shadeValue(shade, index));
@@ -1497,6 +1530,7 @@ class NormanShadesCard extends HTMLElement {
     const { bubble } = shade;
     bubble.textContent = `${Math.round(value)}%`;
     bubble.style.top = `${round3(this._railTop(shade, index, this._shadeValue(shade, index)))}%`;
+    bubble.style.left = `${this._tabX(shade.rails, index)}%`;
     bubble.classList.add("on");
   }
 
@@ -1505,9 +1539,9 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /** The list layout's control for one rail: a plain range input, in 10% steps. */
-  _buildSlider(rail, railCount) {
+  _buildSlider(rails, rail) {
     const row = el("label", "slider");
-    const label = el("span", "slider-label", railCount > 1 ? shortLabel(rail) : "Position");
+    const label = el("span", "slider-label", rails.length > 1 ? shortLabel(rail) : "Position");
     const input = el("input");
     input.type = "range";
     input.min = "0";
@@ -1525,8 +1559,7 @@ class NormanShadesCard extends HTMLElement {
     });
     input.addEventListener("change", () => {
       slider.holding = false;
-      const chosen = clampToStep(input.value);
-      if (chosen !== this._railValue(rail)) this._setRail(rail, chosen);
+      this._move(rails, rails.indexOf(rail), clampToStep(input.value));
       this._patch();
     });
     row.append(label, input, value);
@@ -1535,22 +1568,32 @@ class NormanShadesCard extends HTMLElement {
 
   // ---- writing ---------------------------------------------------------------------
 
-  /** Write a rail position, preferring the number entity so the 10% step is enforced. */
-  _setRail(rail, position) {
+  /**
+   * Draw a rail at `position` until the hub reports it as the rail's target. Past
+   * PENDING_MS the hub's own value is shown again, so a move that never happened shows.
+   * Returns a function that drops the expectation early (a failed call).
+   */
+  _expect(rail, position) {
     const key = rail.numberId || rail.coverId;
     const entry = { value: position, at: Date.now() };
     this._pending.set(key, entry);
-    const call = rail.numberId
-      ? this._hass.callService("number", "set_value", { entity_id: rail.numberId, value: position })
-      : this._hass.callService("cover", "set_cover_position", { entity_id: rail.coverId, position });
     const retire = () => {
       if (this._pending.get(key) !== entry) return;
       this._pending.delete(key);
       this._patch();
     };
+    setTimeout(retire, PENDING_MS);
+    return retire;
+  }
+
+  /** Write a rail position, preferring the number entity so the 10% step is enforced. */
+  _setRail(rail, position) {
+    const retire = this._expect(rail, position);
+    const call = rail.numberId
+      ? this._hass.callService("number", "set_value", { entity_id: rail.numberId, value: position })
+      : this._hass.callService("cover", "set_cover_position", { entity_id: rail.coverId, position });
     // A failed call is reported by Home Assistant; the picture goes back to the hub's values.
     Promise.resolve(call).catch(retire);
-    setTimeout(retire, PENDING_MS);
   }
 
   /** Call a cover service on the rail's own entity -- never the blind's bottom rail. */
@@ -1621,7 +1664,7 @@ class NormanShadesCard extends HTMLElement {
         cell.batteryEl.className = `battery ${kind}`;
         cell.batteryEl.firstChild.setAttribute("icon", batteryIcon(level));
         const shown = level === null ? "—" : `${Math.round(level)}%`;
-        cell.batteryEl.lastChild.textContent = kind === "low" || kind === "critical" ? shown : "";
+        cell.batteryEl.lastChild.textContent = shown;
         cell.batteryEl.title = level === null ? "Battery level unknown" : `Battery ${shown}`;
         cell.batteryEl.setAttribute("aria-label", cell.batteryEl.title);
         if (kind === "low" || kind === "critical") lowBattery += 1;

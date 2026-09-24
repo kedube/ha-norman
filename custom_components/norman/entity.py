@@ -139,9 +139,23 @@ class NormanRailMixin(NormanEntity):
         action: str,
         value: int | None = None,
     ) -> None:
-        """Send both rail positions to the hub; ``None`` keeps a rail where it is heading."""
+        """Send both rail positions to the hub; ``None`` keeps a rail where it is heading.
+
+        On a two-rail blind the middle rail always hangs above the bottom rail, so a rail
+        kept where it is heading is carried along when the other would pass it: lowering
+        the middle rail below the bottom rail takes the bottom rail down with it, and raising
+        the bottom rail above the middle rail takes the middle rail up. Both go in the one
+        command, so the hub is never asked for a shape the blind cannot make, and the
+        dashboard card can move either rail from anywhere -- fully open included.
+        """
         bottom_val = self._target_or_current_bottom() if bottom is None else clamp_position(bottom)
         middle_val = self._target_or_current_middle() if middle is None else clamp_position(middle)
+        data = self._data
+        if data is not None and data.type == COVER_TYPE_TWO_RAIL:
+            if middle is None:
+                middle_val = max(middle_val, bottom_val)
+            elif bottom is None:
+                bottom_val = min(bottom_val, middle_val)
 
         try:
             await self.coordinator.api.async_set_position(self._device_id, bottom_val, middle_val)
