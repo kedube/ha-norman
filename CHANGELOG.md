@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.57 — 2026-09-25
 - **A dropped preset is now resent.** Best privacy, Best view and Favorite sent to a single
   blind are checked the way moves are, but the check compared the blind with the hub's target
   *after* asking the blind to report in — and the report-in resets that target to wherever the
