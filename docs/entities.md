@@ -83,11 +83,35 @@ It becomes available again automatically on the next successful refresh.
 
 **Move watchdog.** A blind can answer a move with `Error 0` and then not move: the hub keeps
 reporting the old position with the new target, indefinitely, until the blind next reports in
-(blind 8399 sat at middle 0 with target 100 for twelve minutes on 2026-09-18). So after every
-move the integration waits 60 seconds; if the blind has not confirmed the target it is asked to
-report in (a `StatusRequest`), and if the report shows it still is not there the move is sent
-once more, with a warning in the log. A new move for the same blind replaces the watch and a
-stop cancels it. Nothing happens for a blind that arrives.
+(blind 8399 sat at middle 0 with target 100 for twelve minutes on 2026-09-18). Nothing the hub
+says at the time tells a delivered command from a dropped one, so every move and every preset
+press (Best privacy, Best view, Favorite) is followed by a check that runs in the background —
+it never holds up the next command.
+
+- The check listens to the updates the hub pushes anyway. As soon as the blind reports it has
+  moved towards where it was sent, the check ends; a blind that moves costs no extra requests.
+- A blind still silent after 60 seconds is asked to report in (a `StatusRequest`). If its
+  answer shows it never moved, the command is sent again, with a warning in the log — up to
+  three sends in all.
+- A blind that ignores all three raises a **repair issue** naming it (Settings → System →
+  Repairs), and fires a `norman_command_failed` event. The issue clears itself the next time a
+  command to that blind is confirmed.
+
+For a preset, the check aims at the position the hub records when it accepts the command. It
+has to read that straight away: once the blind reports in, the hub replaces its target with
+wherever the blind actually is. A new move for the same blind replaces the check and a stop
+cancels it. Room-wide and hub-wide commands (the room and hub buttons, `norman.room_command`)
+are sent to every blind by the hub itself and are not checked.
+
+The event's data, for automations that want to notify someone or try something else:
+
+| Field | Value |
+|---|---|
+| `device_id` | the blind's Home Assistant device id |
+| `peripheral_uid` | the blind's hub id |
+| `name` | the blind's name on the hub |
+| `attempts` | how many times the command was sent (3) |
+| `bottom_rail_position`, `middle_rail_position` | where it was sent (`middle_rail_position` is `null` on a single-rail blind) |
 
 Updates are pushed. The integration holds a long-poll open to the hub and refreshes every
 cover whenever the hub reports a change, including changes made with a remote or the Norman

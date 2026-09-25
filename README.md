@@ -281,8 +281,8 @@ actions:
   a timer ([docs/options.md](docs/options.md)).
 - **Commands are paced.** The hub has one radio and drops commands sent faster than it can
   transmit them, so they are queued and spaced ([docs/options.md](docs/options.md#command-spacing)).
-- **Ignored commands are chased.** A minute after a move or a preset press, a blind that has
-  not confirmed it is asked to report in and, if still not there, sent the command again.
+- **Ignored commands are chased.** A blind silent a minute after a command is asked to report
+  in and resent, up to three sends, then flagged in Repairs ([more](docs/entities.md#data-updates)).
 - **Reconnects.** The long-poll is recycled every 5 minutes (old connections go quiet), and
   re-established 15 seconds after any drop. Every reconnect re-reads the list of blinds, so a
   blind paired after setup shows up without a restart.

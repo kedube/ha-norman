@@ -34,15 +34,26 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceNotSupported
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import (
+    device_registry as dr,
+)
+from homeassistant.helpers import (
+    entity_registry as er,
+)
+from homeassistant.helpers import (
+    issue_registry as ir,
+)
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
 from custom_components.norman.const import (
     DOMAIN,
+    EVENT_COMMAND_FAILED,
     HUB_BUSY_RETRIES,
     HUB_CMD_STOP,
     HUB_COMMAND_TRIGGER,
+    ISSUE_BLIND_NOT_RESPONDING,
+    MOVE_ATTEMPTS,
 )
 from custom_components.norman.coordinator import NormanCoordinator
 
@@ -563,15 +574,41 @@ def _moves(fake_hub: FakeHub, uid: int) -> list[dict[str, Any]]:
     ]
 
 
+def _status_requests(fake_hub: FakeHub, uid: int) -> list[dict[str, Any]]:
+    return [
+        c
+        for c in fake_hub.control_calls
+        if c.get("StatusRequest") == 0 and c.get("PeripheralUID") == uid
+    ]
+
+
+def _not_responding_issue(hass: HomeAssistant, uid: int) -> ir.IssueEntry | None:
+    return ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_BLIND_NOT_RESPONDING}_{uid}")
+
+
+def _registry_id(hass: HomeAssistant, entry: MockConfigEntry, uid: int) -> str:
+    registry = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if (DOMAIN, str(uid)) in device.identifiers:
+            return device.id
+    raise KeyError(uid)
+
+
+def _reports_in(fake_hub: FakeHub, uid: int, bottom: int) -> None:
+    """The blind reports in at ``bottom``: its position and its last-heard stamp move."""
+    fake_hub.set_position(uid, bottom=bottom)
+    fake_hub.peripheral_status(uid)["Timestamp"] += 30
+
+
 async def test_move_watchdog_chases_a_blind_that_never_moved(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """A move the blind ignored is followed by a status request, then sent once more.
+    """A blind that stays silent is asked where it is, then sent the move again.
 
     Captured 2026-09-18: blind 8399 answered a move to middle 100 with Error 0 and then
-    sat at middle 0 with target 100 for twelve minutes, until a report-in cleared it. So
-    after the travel time the blind is asked to report in; if it is still not at the
-    target, the move goes again -- once, with no further chase.
+    sat at middle 0 with target 100 for twelve minutes, until a report-in cleared it. So a
+    blind that has not reported moving after the travel time is asked to report in, and if
+    it still has not moved the move goes again -- up to MOVE_ATTEMPTS sends in all.
     """
     coordinator: NormanCoordinator = init_integration.runtime_data
     with (
@@ -583,11 +620,93 @@ async def test_move_watchdog_chases_a_blind_that_never_moved(
 
     calls = fake_hub.control_calls
     moves = _moves(fake_hub, UID_LIVING)
-    assert len(moves) == 2, "the move, then the one retry"
-    assert moves[0] == moves[1] | {"Timestamp": moves[0]["Timestamp"], "TaskID": moves[0]["TaskID"]}
-    status_requests = [c for c in calls if c.get("StatusRequest") == 0]
-    assert [c["PeripheralUID"] for c in status_requests] == [UID_LIVING]
-    assert calls.index(status_requests[0]) < calls.index(moves[1])
+    assert len(moves) == MOVE_ATTEMPTS, "the move, then one resend per further attempt"
+    unstamped = {"Timestamp": 0, "TaskID": 0}
+    assert all(move | unstamped == moves[0] | unstamped for move in moves)
+    requests = _status_requests(fake_hub, UID_LIVING)
+    assert len(requests) == MOVE_ATTEMPTS, "one before each resend, and one before giving up"
+    for request, resend in zip(requests, moves[1:], strict=False):
+        assert calls.index(request) < calls.index(resend)
+
+
+async def test_a_blind_that_ignores_every_attempt_raises_an_issue_and_an_event(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Giving up is not silent: a repair issue names the blind, and an event fires.
+
+    The next command the blind does act on withdraws the issue.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    events = async_capture_events(hass, EVENT_COMMAND_FAILED)
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+        await _watchdog_done(coordinator, UID_LIVING)
+
+    issue = _not_responding_issue(hass, UID_LIVING)
+    assert issue is not None
+    assert issue.translation_key == ISSUE_BLIND_NOT_RESPONDING
+    assert issue.translation_placeholders == {
+        "name": "Living Drape",
+        "attempts": str(MOVE_ATTEMPTS),
+    }
+    assert [event.data for event in events] == [
+        {
+            "device_id": _registry_id(hass, init_integration, UID_LIVING),
+            "peripheral_uid": UID_LIVING,
+            "name": "Living Drape",
+            "attempts": MOVE_ATTEMPTS,
+            "bottom_rail_position": 10,
+            "middle_rail_position": 60,
+        }
+    ]
+
+    # The blind comes back: a move it acts on clears the issue.
+    await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 20})
+    _reports_in(fake_hub, UID_LIVING, 20)
+    await coordinator.async_refresh()
+    await _watchdog_done(coordinator, UID_LIVING)
+    assert _not_responding_issue(hass, UID_LIVING) is None
+    assert len(events) == 1
+
+
+async def test_move_watchdog_stops_as_soon_as_the_blind_reports_moving(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The watch waits on the hub's own updates, not a timer, and asks nothing of a blind that moved.
+
+    With the real one-minute timeout in force, it finishes the moment the blind reports in
+    partway there: movement towards the goal is proof the command arrived.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+    task = coordinator._move_watchers[UID_LIVING]
+    assert not task.done(), "the command returned while its watch carries on"
+
+    _reports_in(fake_hub, UID_LIVING, 25)
+    await coordinator.async_refresh()
+    await asyncio.wait_for(task, 1)
+
+    assert len(_moves(fake_hub, UID_LIVING)) == 1
+    assert not _status_requests(fake_hub, UID_LIVING)
+
+
+async def test_a_report_away_from_the_goal_does_not_confirm_the_move(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A blind finishing an earlier move reports in, but not towards this move's goal."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+    task = coordinator._move_watchers[UID_LIVING]
+
+    _reports_in(fake_hub, UID_LIVING, 70)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert not task.done(), "still waiting for this move"
+    coordinator.async_cancel_move_watch(UID_LIVING)
 
 
 async def test_move_watchdog_is_quiet_when_the_blind_arrives(
@@ -614,6 +733,38 @@ async def test_move_watchdog_is_quiet_when_the_blind_arrives(
 
     assert len(_moves(fake_hub, UID_LIVING)) == 1
     assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+
+
+async def test_a_resend_the_blind_acts_on_ends_the_chase(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The first send is dropped, the resend lands: no further resends and no issue."""
+    orig = fake_hub._control
+    sends = 0
+
+    async def _second_lands(method, url, data):  # noqa: ANN001
+        nonlocal sends
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if "BottomRailPosition" in body:
+            sends += 1
+            if sends == 2:
+                _reports_in(fake_hub, UID_LIVING, body["BottomRailPosition"])
+        return await orig(method, url, data)
+
+    events = async_capture_events(hass, EVENT_COMMAND_FAILED)
+    with (
+        patch.object(fake_hub, "_control", _second_lands),
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+        await _watchdog_done(init_integration.runtime_data, UID_LIVING)
+
+    assert len(_moves(fake_hub, UID_LIVING)) == 2
+    assert _not_responding_issue(hass, UID_LIVING) is None
+    assert not events
 
 
 async def test_stop_cancels_the_move_watchdog(

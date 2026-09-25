@@ -260,5 +260,11 @@
     "hub_button_failed": {
       "message": "{command} konnte nicht an den Hub gesendet werden: {error}"
     }
+  },
+  "issues": {
+    "blind_not_responding": {
+      "title": "{name} reagiert nicht auf Befehle",
+      "description": "{name} hat sich nach {attempts} Versuchen nicht bewegt. Der Hub hat jeden Befehl angenommen, aber der Rollo hat nie eine Bewegung gemeldet. Prüfe die Batterie und ob er in Reichweite des Hubs ist, und drücke dann seine Schaltfläche **Status anfordern** oder bewege ihn erneut. Dieser Hinweis verschwindet von selbst, sobald ein Befehl an {name} bestätigt wird."
+    }
   }
 }

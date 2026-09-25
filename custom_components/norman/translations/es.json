@@ -260,5 +260,11 @@
     "hub_button_failed": {
       "message": "No se pudo enviar {command} al hub: {error}"
     }
+  },
+  "issues": {
+    "blind_not_responding": {
+      "title": "{name} no responde a los comandos",
+      "description": "{name} no se movió tras {attempts} intentos. El hub aceptó cada uno, pero la persiana nunca informó de que se moviera. Comprueba su batería y que esté al alcance del hub; después pulsa su botón **Solicitar estado** o vuelve a moverla. Este aviso desaparece solo la próxima vez que se confirme un comando a {name}."
+    }
   }
 }

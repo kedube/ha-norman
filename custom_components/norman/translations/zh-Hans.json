@@ -260,5 +260,11 @@
     "hub_button_failed": {
       "message": "无法将 {command} 发送到网关：{error}"
     }
+  },
+  "issues": {
+    "blind_not_responding": {
+      "title": "{name} 未响应命令",
+      "description": "{name} 在 {attempts} 次尝试后仍未移动。集线器接受了每一条命令，但窗帘从未报告移动。请检查其电池以及是否在集线器的信号范围内，然后按下它的 **请求状态** 按钮或再次移动它。下次发往 {name} 的命令得到确认时，此通知会自动消失。"
+    }
   }
 }

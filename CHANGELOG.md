@@ -5,6 +5,21 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **A dropped preset is now resent.** Best privacy, Best view and Favorite sent to a single
+  blind are checked the way moves are, but the check compared the blind with the hub's target
+  *after* asking the blind to report in — and the report-in resets that target to wherever the
+  blind is, so a blind that ignored the preset always looked arrived and was never resent. The
+  check now keeps the target the hub recorded when it accepted the command.
+- **Commands are checked without waiting and resent up to three times.** The check after each
+  move or preset runs in the background and listens to the updates the hub already pushes: a
+  blind that reports moving ends it with no further requests. A blind still silent after a
+  minute is asked to report in and, if it has not moved, sent the command again — now up to
+  three sends in all rather than two.
+- **A blind that ignores every attempt is flagged.** It raises a repair issue naming the blind,
+  which clears itself the next time a command to it is confirmed, and fires a
+  `norman_command_failed` event for automations.
+
 ## 0.55 — 2026-09-24
 - **A two-rail blind's blackout is drawn in the same ivory as a single-rail shade.** The card
   drew it slate grey, which read as a different, darker product; only the light-filtering

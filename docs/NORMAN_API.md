@@ -425,8 +425,11 @@ blind 8399 answered a move to middle 100 with `Error: 0` at 22:00:00 and `status
 showed `MiddleRailPosition: 0, TargetMiddleRailPosition: 100` until a room-wide
 `ReportBatteryLevel` at 22:12:10 had it report in, at which point the target snapped to 0.
 Neither `status` nor the notification stream reveals either case on their own. The
-integration's move watchdog (a `StatusRequest` 60 s after any unconfirmed move, then one
-retry) and its optional wake sweep exist for exactly these two.
+integration's move watchdog (a `StatusRequest` 60 s after any move the blind has not
+reported, then a resend if it still has not moved, up to three sends) and its optional wake
+sweep exist for exactly these two. The report-in also **overwrites the target** with the
+blind's actual position, so a check that compares position with target after asking the blind
+to report in always passes; the watchdog keeps the target it read when the command was sent.
 
 ### Pairing mode
 

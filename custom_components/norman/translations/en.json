@@ -260,5 +260,11 @@
     "hub_button_failed": {
       "message": "Failed to send {command} to the hub: {error}"
     }
+  },
+  "issues": {
+    "blind_not_responding": {
+      "title": "{name} is not responding to commands",
+      "description": "{name} did not move after {attempts} attempts. The hub accepted every one, but the blind never reported moving. Check its battery and that it is in range of the hub, then press its **Request status** button or move it again. This notice clears itself the next time a command to {name} is confirmed."
+    }
   }
 }

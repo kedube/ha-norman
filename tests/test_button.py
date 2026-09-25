@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 from homeassistant.components.button import DOMAIN as BUTTON_DOMAIN
@@ -10,11 +11,18 @@ from homeassistant.const import ATTR_ENTITY_ID, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.norman.button import BUTTONS, HUB_BUTTONS
-from custom_components.norman.const import DOMAIN, HUB_COMMAND_SETTING, HUB_COMMAND_TRIGGER
+from custom_components.norman.const import (
+    DOMAIN,
+    HUB_COMMAND_SETTING,
+    HUB_COMMAND_TRIGGER,
+    ISSUE_BLIND_NOT_RESPONDING,
+    MOVE_ATTEMPTS,
+)
 from custom_components.norman.coordinator import NormanCoordinator
 
 from .conftest import FakeHub
@@ -350,12 +358,12 @@ def _switches(fake_hub: FakeHub, uid: int) -> list[dict]:
 async def test_preset_watchdog_resends_a_preset_the_blind_ignored(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """A preset the blind never acted on is asked about, then sent once more.
+    """A preset the blind never acted on is asked about, then sent again.
 
     A preset has no position for the caller to aim at -- the blind resolves it to its own
-    stored one -- so the check is the blind's position converging on whatever target the hub
-    recorded. The hub acks a command it never delivers, so without this a missed Best
-    Privacy is silent.
+    stored one -- so the goal is whatever target the hub recorded when it took the command.
+    The hub acks a command it never delivers, so without this a missed Best Privacy is
+    silent.
     """
     coordinator: NormanCoordinator = init_integration.runtime_data
     # Park the blind away from the hub's recorded target so it reads as "never arrived".
@@ -369,9 +377,50 @@ async def test_preset_watchdog_resends_a_preset_the_blind_ignored(
         await _press(hass, UID_LIVING, "best_privacy")
         await _preset_watchdog_done(coordinator, UID_LIVING)
 
-    assert len(_switches(fake_hub, UID_LIVING)) == 2, "the press, then the one resend"
+    assert len(_switches(fake_hub, UID_LIVING)) == MOVE_ATTEMPTS, "the press, then resends"
     status_requests = [c for c in fake_hub.control_calls if c.get("StatusRequest") == 0]
-    assert [c["PeripheralUID"] for c in status_requests] == [UID_LIVING]
+    assert [c["PeripheralUID"] for c in status_requests] == [UID_LIVING] * MOVE_ATTEMPTS
+
+
+async def test_preset_watchdog_is_not_fooled_when_the_hub_overwrites_its_target(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A blind reporting in resets the hub's target to wherever the blind is.
+
+    Diagnostics, 2026-09-21: blind 9943 ignored Best Privacy (target 0, still at 100), was
+    asked to report in, and the hub then showed its target as 100 -- matching its position.
+    The watch compared against that overwritten target, called the blind arrived, and never
+    resent. It now keeps the goal the hub recorded when the preset went out.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    fake_hub.set_position(UID_LIVING, bottom=100, middle=100)
+    await coordinator.async_refresh()
+    orig = fake_hub._control
+
+    async def _hub(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        peripheral = fake_hub.peripheral_status(UID_LIVING)
+        if "Switch" in body:
+            # Stored on accept, whether or not the blind ever hears the command.
+            peripheral["TargetBottomRailPosition"] = 0
+        if "StatusRequest" in body:
+            # The blind reports in where it is, and the hub's target follows it there.
+            peripheral["TargetBottomRailPosition"] = peripheral["BottomRailPosition"]
+            peripheral["Timestamp"] += 5
+        return await orig(method, url, data)
+
+    with (
+        patch.object(fake_hub, "_control", _hub),
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _press(hass, UID_LIVING, "best_privacy")
+        await _preset_watchdog_done(coordinator, UID_LIVING)
+
+    assert len(_switches(fake_hub, UID_LIVING)) == MOVE_ATTEMPTS
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_BLIND_NOT_RESPONDING}_{UID_LIVING}")
 
 
 async def test_preset_watchdog_is_quiet_when_the_blind_arrives(

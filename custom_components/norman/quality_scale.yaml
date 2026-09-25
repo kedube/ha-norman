@@ -62,9 +62,7 @@ rules:
     status: exempt
     comment: The cover device class provides the icons.
   reconfiguration-flow: done
-  repair-issues:
-    status: exempt
-    comment: Nothing is user-fixable beyond the hub address, which reconfigure covers.
+  repair-issues: done
   stale-devices: done
 
   # Platinum

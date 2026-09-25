@@ -260,5 +260,11 @@
     "hub_button_failed": {
       "message": "無法將 {command} 傳送至集線器：{error}"
     }
+  },
+  "issues": {
+    "blind_not_responding": {
+      "title": "{name} 未回應指令",
+      "description": "{name} 在 {attempts} 次嘗試後仍未移動。集線器接受了每一道指令，但窗簾從未回報移動。請檢查其電池以及是否在集線器的訊號範圍內，然後按下它的 **要求狀態** 按鈕或再次移動它。下次傳送給 {name} 的指令獲得確認時，此通知會自動消失。"
+    }
   }
 }

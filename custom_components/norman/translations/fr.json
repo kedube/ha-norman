@@ -260,5 +260,11 @@
     "hub_button_failed": {
       "message": "Impossible d'envoyer {command} au hub : {error}"
     }
+  },
+  "issues": {
+    "blind_not_responding": {
+      "title": "{name} ne répond pas aux commandes",
+      "description": "{name} n'a pas bougé après {attempts} tentatives. Le hub a accepté chacune d'elles, mais le store n'a jamais signalé de mouvement. Vérifiez sa batterie et qu'il est à portée du hub, puis appuyez sur son bouton **Demander l'état** ou déplacez-le à nouveau. Cet avis disparaît de lui-même dès qu'une commande envoyée à {name} est confirmée."
+    }
   }
 }

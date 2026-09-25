@@ -6,11 +6,12 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 import logging
-from typing import Any
+from typing import Any, NamedTuple
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -25,6 +26,8 @@ from .const import (
     DEFAULT_POLL_INTERVAL,
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
+    EVENT_COMMAND_FAILED,
+    ISSUE_BLIND_NOT_RESPONDING,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
     MAX_CONTROL_INTERVAL,
@@ -34,6 +37,7 @@ from .const import (
     MIN_POLL_INTERVAL,
     MIN_WAKE_INTERVAL,
     MODULE_TYPE_COVER_TYPES,
+    MOVE_ATTEMPTS,
     MOVE_REPORT_WAIT,
     MOVE_TIMEOUT,
     POLL_DISABLED,
@@ -45,6 +49,34 @@ from .models import NormanDevices, NormanHubData, NormanPeripheralData
 _LOGGER = logging.getLogger(__name__)
 
 type NormanConfigEntry = ConfigEntry[NormanCoordinator]
+
+# A blind's two rails, (bottom, middle); the middle is None on a single-rail blind.
+type _Rails = tuple[int | None, int | None]
+
+
+class _Sighting(NamedTuple):
+    """Where the hub last saw a blind, and when it last heard from it (its ``Timestamp``)."""
+
+    rails: _Rails
+    heard: Any
+
+
+def _rails(data: NormanPeripheralData) -> _Rails:
+    middle = None if data.type == COVER_TYPE_SINGLE_RAIL else data.middle_rail_position
+    return (data.bottom_rail_position, middle)
+
+
+def _distance(rails: _Rails, goal: _Rails) -> int:
+    """How far the rails are from the goal, over the rails both sides have a value for."""
+    return sum(
+        abs(rail - target)
+        for rail, target in zip(rails, goal, strict=True)
+        if rail is not None and target is not None
+    )
+
+
+def _not_responding_issue_id(device_id: int) -> str:
+    return f"{ISSUE_BLIND_NOT_RESPONDING}_{device_id}"
 
 
 def hub_identifier(entry: ConfigEntry) -> str:
@@ -188,19 +220,47 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
     @callback
     def async_watch_move(self, device_id: int, bottom: int, middle: int) -> None:
-        """After a move, make sure the blind actually went.
+        """After a move, make sure the blind actually went -- without holding anything up.
 
-        A blind that ignores a move leaves the hub reporting the old position with the
-        new target, indefinitely, until it next reports in (const.py, ``MOVE_TIMEOUT``).
-        So: wait for the travel time; if the blind has not confirmed the target, ask it to
-        report in; if the report shows it is still not there, send the move once more.
-        A new move for the same blind replaces the watch; a stop cancels it.
+        The hub acks a move it never transmits, so the only proof a blind acted is it
+        reporting a new position (const.py, ``MOVE_TIMEOUT``). The watch runs in the
+        background and costs nothing while it waits: it listens to the updates the hub pushes
+        anyway and ends as soon as the blind reports it moved. Only a blind that stays silent
+        is asked to report in, and only one that then shows it never moved is sent the move
+        again (``_async_supervise``). A new move for the same blind replaces the watch; a
+        stop cancels it.
         """
+
+        async def resend() -> None:
+            await self.api.async_set_position(device_id, bottom, middle)
+
+        self._async_start_watch(device_id, (bottom, middle), resend, "move")
+
+    @callback
+    def async_watch_preset(self, device_id: int, resend: Callable[[], Awaitable[Any]]) -> None:
+        """After a preset verb (Best Privacy, Best View, Favorite), make sure it arrived.
+
+        A preset has no position for the caller to aim at: the blind resolves it to its own
+        stored one. The hub records that in its target fields as soon as it accepts the
+        command -- for a command it then drops, too -- so the watch reads its goal from there
+        first and then supervises it exactly like a move.
+        """
+        self._async_start_watch(device_id, None, resend, "preset")
+
+    @callback
+    def _async_start_watch(
+        self,
+        device_id: int,
+        goal: _Rails | None,
+        resend: Callable[[], Awaitable[Any]],
+        kind: str,
+    ) -> None:
         self.async_cancel_move_watch(device_id)
+        start = self._sighting(device_id)
         self._move_watchers[device_id] = self.config_entry.async_create_background_task(
             self.hass,
-            self._async_watch_move(device_id, bottom, middle),
-            name=f"norman-move-watch-{device_id}",
+            self._async_supervise(device_id, start, goal, resend),
+            name=f"norman-{kind}-watch-{device_id}",
         )
 
     @callback
@@ -225,99 +285,202 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         if self._move_watchers.get(device_id) in (current, None):
             self._move_watchers.pop(device_id, None)
 
-    def _at_target(self, device_id: int, bottom: int, middle: int) -> bool:
-        data = self.data.get(device_id)
-        if data is None:
-            return True  # gone from the hub; nothing to chase
-        if data.bottom_rail_position != bottom:
-            return False
-        return data.type == COVER_TYPE_SINGLE_RAIL or data.middle_rail_position == middle
-
-    @callback
-    def async_watch_preset(self, device_id: int, resend: Callable[[], Awaitable[Any]]) -> None:
-        """After a preset verb (Best Privacy, Best View, Favorite), make sure it arrived.
-
-        A preset has no position for the caller to aim at: the blind resolves it to its own
-        stored one, and the hub records that in ``TargetBottomRailPosition``. So the target
-        cannot be checked against the request -- only the blind's *position* converging on
-        whatever target the hub ended up with. The hub acks a command it never delivers, so
-        without this a missed preset is silent (const.py, ``CONTROL_MIN_INTERVAL``).
-        """
-        self.async_cancel_move_watch(device_id)
-        self._move_watchers[device_id] = self.config_entry.async_create_background_task(
-            self.hass,
-            self._async_watch_preset(device_id, resend),
-            name=f"norman-preset-watch-{device_id}",
-        )
-
-    def _at_hub_target(self, device_id: int) -> bool:
-        """True when the blind sits where the hub says it should."""
-        data = self.data.get(device_id)
-        if data is None:
-            return True  # gone from the hub; nothing to chase
-        target = data.target_bottom_rail_position
-        if target is None:
-            return True  # no target recorded; nothing to compare against
-        return data.bottom_rail_position == target
-
-    async def _async_watch_preset(
-        self, device_id: int, resend: Callable[[], Awaitable[Any]]
+    async def _async_supervise(
+        self,
+        device_id: int,
+        start: _Sighting,
+        goal: _Rails | None,
+        resend: Callable[[], Awaitable[Any]],
     ) -> None:
+        """Confirm a command reached the blind, resending it only while the blind is silent.
+
+        Each attempt waits up to ``MOVE_TIMEOUT`` for the blind to report that it moved. A
+        blind that stays quiet is asked to report in (one ``StatusRequest``); if its answer
+        shows it never moved, the command goes again. After ``MOVE_ATTEMPTS`` sends the blind
+        is reported as not responding, with a repair issue and a ``norman_command_failed``
+        event. Nothing here holds up other commands: the requests it does send queue with
+        everything else, paced like any other.
+        """
+        name = self._blind_name(device_id)
         try:
-            await asyncio.sleep(MOVE_TIMEOUT)
-            if self._at_hub_target(device_id):
-                return
-            name = self.data[device_id].name if device_id in self.data else str(device_id)
-            try:
-                await self.api.async_request_status(device_id)
-                await asyncio.sleep(MOVE_REPORT_WAIT)
+            if goal is None:
+                # A preset: read the position the hub resolved it to, now. The hub replaces
+                # its target with the blind's actual position whenever the blind reports in,
+                # so a target read after asking the blind to report in always matches -- which
+                # is how a dropped preset used to go unnoticed (blind 9943, 2026-09-21).
                 await self.async_refresh()
-                if self._at_hub_target(device_id):
+                goal = self._hub_target(device_id)
+                if goal is None:
                     return
+            for attempt in range(1, MOVE_ATTEMPTS + 1):
+                if await self._async_wait_for_progress(device_id, start, goal):
+                    self._async_command_confirmed(device_id)
+                    return
+                # Silent for the whole travel time: ask the blind where it is.
+                asked = self._sighting(device_id)
+                await self.api.async_request_status(device_id)
+                await self._async_wait_for_report(device_id, asked)
+                if self._made_progress(device_id, start, goal):
+                    self._async_command_confirmed(device_id)
+                    return
+                if attempt == MOVE_ATTEMPTS:
+                    break
                 _LOGGER.warning(
-                    "%s did not reach the position its preset asked for within %.0f s and "
-                    "reports it is not there; sending the command again",
+                    "%s reports it has not moved %.0f s after the command; sending it again "
+                    "(attempt %s of %s)",
                     name,
                     MOVE_TIMEOUT + MOVE_REPORT_WAIT,
+                    attempt + 1,
+                    MOVE_ATTEMPTS,
                 )
+                # Measure the next attempt from where the blind has just said it is.
+                start = self._sighting(device_id)
                 await resend()
-                await self.async_refresh()
-            except (NormanApiError, NormanConnectionError) as err:
-                _LOGGER.warning("Could not chase the preset of %s: %s", name, err)
+            self._async_command_failed(device_id, name, goal)
+        except (NormanApiError, NormanConnectionError) as err:
+            _LOGGER.warning("Could not confirm the command to %s: %s", name, err)
         finally:
-            # Drop the finished watcher, as _async_watch_move does. Without this the entry
-            # outlives the task: the dict keeps one stale, completed task per blind that has
-            # ever run a preset, and async_cancel_move_watch then "cancels" a task that has
-            # already returned.
             self._forget_move_watch(device_id)
 
-    async def _async_watch_move(self, device_id: int, bottom: int, middle: int) -> None:
-        await asyncio.sleep(MOVE_TIMEOUT)
-        if self._at_target(device_id, bottom, middle):
-            return
-        name = self.data[device_id].name if device_id in self.data else str(device_id)
-        try:
-            await self.api.async_request_status(device_id)
-            await asyncio.sleep(MOVE_REPORT_WAIT)
-            # The blind's answer normally arrives as a notification that refreshes the data;
+    async def _async_wait_for_progress(
+        self, device_id: int, start: _Sighting, goal: _Rails
+    ) -> bool:
+        """Wait up to ``MOVE_TIMEOUT`` for the blind to report it moved towards ``goal``.
+
+        Only a report made since the command counts early on: a blind still finishing an
+        earlier move can be sitting on the new goal in the hub's cache without having heard
+        the new command. Once the time is up, being at the goal is enough -- a blind that was
+        already there has nothing to report.
+        """
+        if await self._async_wait_until(
+            lambda: (
+                self._heard_since(device_id, start) and self._made_progress(device_id, start, goal)
+            ),
+            MOVE_TIMEOUT,
+        ):
+            return True
+        return self._made_progress(device_id, start, goal)
+
+    async def _async_wait_for_report(self, device_id: int, asked: _Sighting) -> None:
+        """Wait up to ``MOVE_REPORT_WAIT`` for the blind to answer a status request."""
+        if not await self._async_wait_until(
+            lambda: self._heard_since(device_id, asked), MOVE_REPORT_WAIT
+        ):
+            # The answer normally arrives as a notification that refreshes the data;
             # re-read in case it did not.
             await self.async_refresh()
-            if self._at_target(device_id, bottom, middle):
-                return
-            _LOGGER.warning(
-                "%s did not reach %s/%s within %.0f s of the move and reports it is not "
-                "there; sending the move again",
-                name,
-                bottom,
-                middle,
-                MOVE_TIMEOUT + MOVE_REPORT_WAIT,
-            )
-            await self.api.async_set_position(device_id, bottom, middle)
-            await self.async_refresh()
-        except (NormanApiError, NormanConnectionError) as err:
-            _LOGGER.warning("Could not chase the move of %s: %s", name, err)
+
+    async def _async_wait_until(self, condition: Callable[[], bool], timeout: float) -> bool:
+        """Wait until an update makes ``condition`` true, or ``timeout`` passes.
+
+        Nothing is polled: the check runs on the refreshes the hub's notifications trigger
+        anyway.
+        """
+        if condition():
+            return True
+        met = asyncio.Event()
+
+        @callback
+        def _check() -> None:
+            if condition():
+                met.set()
+
+        remove = self.async_add_listener(_check)
+        try:
+            async with asyncio.timeout(timeout):
+                await met.wait()
+        except TimeoutError:
+            return False
         finally:
-            self._forget_move_watch(device_id)
+            remove()
+        return True
+
+    def _sighting(self, device_id: int) -> _Sighting:
+        """Where the hub last saw this blind, and when it last heard from it."""
+        data = (self.data or {}).get(device_id)
+        if data is None:
+            return _Sighting((None, None), None)
+        return _Sighting(_rails(data), data.last_update)
+
+    def _heard_since(self, device_id: int, before: _Sighting) -> bool:
+        """Whether the blind has reported in since ``before`` was taken.
+
+        The hub's ``Timestamp`` moves on every report, moved or not. A hub that leaves it
+        out falls back to the position changing.
+        """
+        now = self._sighting(device_id)
+        if now.heard is not None and before.heard is not None:
+            return now.heard != before.heard
+        return now.rails != before.rails
+
+    def _made_progress(self, device_id: int, start: _Sighting, goal: _Rails) -> bool:
+        """At the goal, or nearer to it than when the command went out.
+
+        Any movement towards the goal proves the blind received the command. One that stopped
+        short -- an obstruction, a stall -- is not helped by being sent it again.
+        """
+        data = (self.data or {}).get(device_id)
+        if data is None or data.bottom_rail_position is None:
+            return True  # gone from the hub, or no position to judge by; nothing to chase
+        remaining = _distance(_rails(data), goal)
+        return remaining == 0 or remaining < _distance(start.rails, goal)
+
+    def _hub_target(self, device_id: int) -> _Rails | None:
+        """The position the hub has recorded as this blind's target, if any."""
+        data = (self.data or {}).get(device_id)
+        if data is None or data.target_bottom_rail_position is None:
+            return None
+        middle = None if data.type == COVER_TYPE_SINGLE_RAIL else data.target_middle_rail_position
+        return (data.target_bottom_rail_position, middle)
+
+    def _blind_name(self, device_id: int) -> str:
+        data = (self.data or {}).get(device_id)
+        return data.name if data is not None else str(device_id)
+
+    @callback
+    def _async_command_confirmed(self, device_id: int) -> None:
+        """The blind acted on a command: withdraw any "not responding" issue it had."""
+        ir.async_delete_issue(self.hass, DOMAIN, _not_responding_issue_id(device_id))
+
+    @callback
+    def _async_command_failed(self, device_id: int, name: str, goal: _Rails) -> None:
+        """Tell the user, and any automation listening, that a blind ignored every send."""
+        _LOGGER.warning(
+            "%s did not move after %s attempts; giving up. Check its battery and that it is "
+            "in range of the hub",
+            name,
+            MOVE_ATTEMPTS,
+        )
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            _not_responding_issue_id(device_id),
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_BLIND_NOT_RESPONDING,
+            translation_placeholders={"name": name, "attempts": str(MOVE_ATTEMPTS)},
+        )
+        self.hass.bus.async_fire(
+            EVENT_COMMAND_FAILED,
+            {
+                "device_id": self._registry_device_id(device_id),
+                "peripheral_uid": device_id,
+                "name": name,
+                "attempts": MOVE_ATTEMPTS,
+                "bottom_rail_position": goal[0],
+                "middle_rail_position": goal[1],
+            },
+        )
+
+    def _registry_device_id(self, device_id: int) -> str | None:
+        """The Home Assistant device id for a blind, for automations to match on."""
+        registry = dr.async_get(self.hass)
+        # Looked up through the entry: identifiers are no longer unique across config
+        # entries in Home Assistant 2026.9 (see _sync_device_names).
+        for device in dr.async_entries_for_config_entry(registry, self.config_entry.entry_id):
+            if (DOMAIN, str(device_id)) in device.identifiers:
+                return device.id
+        return None
 
     async def listen_notifications(self) -> None:
         """Continuously listen for hub notifications and refresh data on change.

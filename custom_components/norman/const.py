@@ -63,14 +63,24 @@ MAX_WAKE_INTERVAL = 86400
 SUGGESTED_WAKE_INTERVAL = 3600
 CONF_WAKE_INTERVAL = "wake_interval"
 
-# The move watchdog. A blind that ignores a move leaves the hub reporting the old position
-# with the new target -- indefinitely, until the blind next reports in (blind 8399 sat at
-# middle 0 / target 100 for twelve minutes on 2026-09-18 after answering the move with
-# Error 0). So after a move, if the blind has not confirmed the target within MOVE_TIMEOUT,
-# it is asked to report in; if the report shows it never moved, the move is sent once more.
-# A large shade takes ~30 s to travel end to end, so the timeout leaves a margin over that.
+# The move watchdog. The hub answers Error 0 for a command it never transmits, and nothing
+# it says straight away tells the two apart: the reply echoes the command, and the
+# notification that follows is stamped the same millisecond, so it is the hub announcing its
+# own stored target (diagnostics, 2026-09-21). A blind that ignores a move leaves the hub
+# reporting the old position with the new target -- indefinitely, until the blind next
+# reports in (blind 8399 sat at middle 0 / target 100 for twelve minutes on 2026-09-18). The
+# only proof of delivery is the blind reporting a new position, which it does when it stops
+# moving, 10-45 s later. So each command is followed by a background watch that ends as soon
+# as the blind reports progress; if it stays silent for MOVE_TIMEOUT it is asked to report in,
+# and if it then shows it never moved the command is sent again, up to MOVE_ATTEMPTS sends in
+# all. A large shade takes ~30 s to travel end to end, so the timeout leaves a margin.
 MOVE_TIMEOUT = 60.0
 MOVE_REPORT_WAIT = 10.0
+MOVE_ATTEMPTS = 3
+# What a blind that ignored every attempt raises: a repair issue (one per blind, withdrawn the
+# next time a command to it is confirmed) and an event automations can trigger on.
+ISSUE_BLIND_NOT_RESPONDING = "blind_not_responding"
+EVENT_COMMAND_FAILED = f"{DOMAIN}_command_failed"
 
 # Minimum gap between two `control` sends. The hub has one radio and transmits to blinds
 # one at a time: a Best Privacy script that fired all thirteen blinds in the same second
