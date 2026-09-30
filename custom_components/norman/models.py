@@ -22,6 +22,8 @@ class NormanPeripheralData:
     middle_rail_position: int | None = None
     target_bottom_rail_position: int | None = None
     target_middle_rail_position: int | None = None
+    position: int | None = None  # a Shutter's louvers, 0-7 (the hub's Position)
+    target_position: int | None = None  # TargetPosition
     battery_level: int | None = None  # percent; the hub calls the field BatteryVoltage
     signal_strength: int | None = None  # RssiMean, a unitless radio quality index
     firmware_version: str | None = None  # the hub's FirmwareVersion field

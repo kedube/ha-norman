@@ -5,6 +5,30 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Every product the Norman app knows is supported.** The app (ShadeAuto 0.8.33) decides from
+  a blind's `ModuleType` and `ModuleDetail` what it is and which controls it gets, and the
+  integration now follows the same table: Shutter (1), Cellular Shade (32, with 32/3–5 a
+  top-down/bottom-up shade on two rails), dual Cellular Shade (33), Roller Shade, Roman Shade
+  and PerfectSheer (48 and 49, by detail), and SmartDrape (80). None of them logs the
+  unknown-type warning. Types 1 and 49, and the Roman Shade, PerfectSheer and top-down/bottom-up
+  details, follow the app alone: nobody has reported one from a hub yet.
+- **SmartDrape vanes move to the app's seven stops.** 0.58 treated them as a plain 0–100
+  tilt, so "open tilt" sent 100 — which on a SmartDrape closes the vanes the other way. They
+  are open at 50 and closed at both ends: the tilt is now how open they are (0, 33, 67, 100),
+  and a tilt sent from here is one of the seven values the app sends. A nudge moves at least
+  one stop.
+- **Shutter: one cover, named Louvers.** Its louvers are the hub's `Position` 0–7; the tilt is
+  how open they are, in five steps, and open and close turn them. The dashboard card draws it
+  as a plantation shutter whose tilt rod you drag, and a room's Stop leaves it out.
+- **PerfectSheer: one `shade` cover**, the shade as position and its vanes as tilt, moving
+  independently.
+- **Device models carry the app's product names**: type 32 is now "Cellular Shade", and 48 and
+  49 are named Roller Shade, Roman Shade or PerfectSheer by detail.
+- The `nudge_tilt` step no longer says a negative step "tilts left": positive opens, on every
+  product. The API reference no longer claims the hub needs both rails in every move — the app
+  sends one on its own — though the integration still sends both.
+
 ## 0.58 — 2026-09-30
 - **Roller Shades (`ModuleType` 48) are single-rail.** They fell back to two rails, so Best
   privacy and Best view sent to a shade already at that position were judged on a middle rail

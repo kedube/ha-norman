@@ -443,7 +443,7 @@ async def test_preset_watchdog_is_quiet_when_the_blind_arrives(
 
 
 async def test_a_preset_a_roller_shade_is_already_at_is_not_resent(
-    hass: HomeAssistant, init_with_roller_and_drape: MockConfigEntry, fake_hub: FakeHub
+    hass: HomeAssistant, init_with_every_product: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
     """Issue #2: a nightly Best Privacy to closed roller shades warned on every one of them.
 
@@ -452,7 +452,7 @@ async def test_a_preset_a_roller_shade_is_already_at_is_not_resent(
     it was asked to report in, sent the preset twice more, and given up on. As a single-rail
     shade only its bottom rail counts, and that is already where Best Privacy puts it.
     """
-    coordinator: NormanCoordinator = init_with_roller_and_drape.runtime_data
+    coordinator: NormanCoordinator = init_with_every_product.runtime_data
 
     with (
         patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),

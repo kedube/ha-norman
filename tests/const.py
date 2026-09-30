@@ -177,6 +177,72 @@ SMARTDRAPE_STATUS: dict[str, Any] = {
 }
 
 
+# The rest of the Norman app's module table (ShadeAuto 0.8.33). None of these has been seen
+# from a hub yet: the records are built from the fields the app's parsers read, so they pin
+# the integration to the app rather than to a capture.
+UID_SHUTTER = 3001
+UID_ROMAN = 3002
+UID_SHEER = 3003
+UID_ROLLER_MRS2 = 3004
+UID_TDBU = 3005
+
+
+def _device(uid: int, name: str, module_type: int, module_detail: int) -> dict[str, Any]:
+    return {
+        "PeripheralUID": str(uid),
+        "PeripheralName": name,
+        "ModuleType": str(module_type),
+        "ModuleDetail": str(module_detail),
+    }
+
+
+def _rails(uid: int, module_type: int, module_detail: int, bottom: int, middle: int) -> dict:
+    return {
+        "PeripheralUID": uid,
+        "ModuleType": module_type,
+        "ModuleDetail": module_detail,
+        "BottomRailPosition": bottom,
+        "MiddleRailPosition": middle,
+        "TargetBottomRailPosition": bottom,
+        "TargetMiddleRailPosition": middle,
+        "Timestamp": 1700000000,
+    }
+
+
+# Louvers fully closed: Position 7.
+SHUTTER_DEVICE = _device(UID_SHUTTER, "Study Shutter", 1, 1)
+SHUTTER_STATUS: dict[str, Any] = {
+    "PeripheralUID": UID_SHUTTER,
+    "ModuleType": 1,
+    "ModuleDetail": 1,
+    "Position": 7,
+    "TargetPosition": 7,
+    "Angle": 0,
+    "BatteryVoltage": 80,
+    "FirmwareVersion": "1.0.0",
+    "Timestamp": 1700000000,
+}
+ROMAN_DEVICE = _device(UID_ROMAN, "Den Roman", 48, 2)
+ROMAN_STATUS = _rails(UID_ROMAN, 48, 2, bottom=60, middle=0)
+SHEER_DEVICE = _device(UID_SHEER, "Hall Sheer", 49, 3)
+SHEER_STATUS = {**_rails(UID_SHEER, 49, 3, bottom=0, middle=40), "Mrs2Status": 0}
+ROLLER_MRS2_DEVICE = _device(UID_ROLLER_MRS2, "Office Roller", 49, 1)
+ROLLER_MRS2_STATUS = {**_rails(UID_ROLLER_MRS2, 49, 1, bottom=100, middle=0), "Mrs2Status": 0}
+TDBU_DEVICE = _device(UID_TDBU, "Nursery", 32, 4)
+TDBU_STATUS = _rails(UID_TDBU, 32, 4, bottom=30, middle=80)
+
+# Every product the app knows beyond the reference hub's two, as (device, status) pairs.
+EVERY_NEW_PRODUCT: tuple[tuple[dict[str, Any], dict[str, Any]], ...] = (
+    (ROLLER_DEVICE, ROLLER_STATUS),
+    (SMARTDRAPE_DEVICE, SMARTDRAPE_STATUS),
+    (SHUTTER_DEVICE, SHUTTER_STATUS),
+    (ROMAN_DEVICE, ROMAN_STATUS),
+    (SHEER_DEVICE, SHEER_STATUS),
+    (ROLLER_MRS2_DEVICE, ROLLER_MRS2_STATUS),
+    (TDBU_DEVICE, TDBU_STATUS),
+)
+
+
 def devices_payload() -> dict[str, Any]:
     """A fresh copy of the GetAllPeripheral response."""
     return copy.deepcopy(_DEVICES)

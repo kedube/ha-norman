@@ -82,7 +82,7 @@
       "fields": {
         "step": {
           "name": "Step",
-          "description": "Amount to tilt by, -100 to 100. Direction depends on the blind; for SmartDrape, negative tilts left."
+          "description": "Amount to tilt by, -100 to 100. Positive opens: it raises a two-rail blind's middle rail and opens a SmartDrape's vanes or a Shutter's louvers, by at least one stop for any step."
         }
       }
     },
@@ -140,6 +140,9 @@
       },
       "middle_rail": {
         "name": "Middle rail"
+      },
+      "louvers": {
+        "name": "Louvers"
       }
     },
     "number": {

@@ -47,6 +47,8 @@ const DRAG_SLOP = 4;
 // `unique_id` is never sent, so reading it yields undefined for every entity.
 const KEY_BOTTOM_RAIL = "bottom_rail";
 const KEY_MIDDLE_RAIL = "middle_rail";
+// A Shutter's one cover: its louvers, driven through the cover's tilt.
+const KEY_LOUVERS = "louvers";
 const KEY_BOTTOM_POSITION = "bottom_rail_position";
 const KEY_MIDDLE_POSITION = "middle_rail_position";
 const KEY_BATTERY = "battery_level";
@@ -66,7 +68,17 @@ const ROOM_ACTIONS = [
 ];
 
 const clamp = (value, low = 0, high = 100) => Math.max(low, Math.min(high, value));
-const clampToStep = (value) => Math.round(clamp(Number(value) || 0) / STEP) * STEP;
+const clampToStep = (value, step = STEP) => Math.round(clamp(Number(value) || 0) / step) * step;
+// A Shutter's louvers open in five steps (closed, a quarter ... fully open), so they move in 25s.
+const LOUVER_STEP = 25;
+const LOUVER_COUNT = 9;
+// How far the louvers turn at fully open: nearly edge-on, as a real louver stops short.
+const LOUVER_OPEN_DEG = 78;
+// The part of the opening a drag has to cover to take the louvers from closed to open.
+const LOUVER_TRAVEL_PCT = 70;
+// Below this raw Position the hub reports the louvers turned the other way (the app's 0-2).
+const LOUVER_HORIZONTAL = 3;
+const stepOf = (rail) => (rail.louvers ? LOUVER_STEP : STEP);
 const round3 = (value) => Math.round(value * 1000) / 1000;
 
 const el = (tag, className, text) => {
@@ -645,6 +657,72 @@ const STYLES = `
   }
   .bubble.on { opacity: 1; }
 
+  /* ---- a Shutter ---------------------------------------------------------------------
+     Painted louvers in a frame of stiles and rails, set into the window. Each louver turns
+     about its long axis -- flat and overlapping when shut, nearly edge-on when open -- and
+     the tilt rod down their middle is what a hand, and the card, moves. */
+  .win.shutter .panel {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+  .win.shutter .panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background:
+      linear-gradient(to right, var(--n-trim) 0 7%, transparent 7% 93%, var(--n-trim) 93%),
+      linear-gradient(to bottom, var(--n-trim-hi) 0, var(--n-trim) 2%, var(--n-trim) 6%, transparent 6% 94%, var(--n-trim) 94%, var(--n-trim-lo));
+    box-shadow: inset 0 0 0 1px var(--n-trim-edge), 0 1px 2px rgba(40, 30, 20, 0.25);
+  }
+  /* Tucked a little under the frame, so no sky shows where a shut louver meets a stile. */
+  .win.shutter .louvers {
+    position: absolute;
+    top: 5.5%;
+    bottom: 5.5%;
+    left: 6.5%;
+    right: 6.5%;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    perspective: 260px;
+    box-shadow: inset 0 2px 4px rgba(40, 30, 20, 0.25);
+  }
+  .win.shutter .louver {
+    flex: 1 1 0;
+    margin: -0.8% 0;
+    border-radius: 1px;
+    background: linear-gradient(to bottom, var(--n-trim-hi), var(--n-trim) 42%, var(--n-trim) 70%, var(--n-trim-lo));
+    box-shadow: 0 0 0 0.5px var(--n-trim-edge), 0 1px 1.5px rgba(60, 45, 25, 0.3);
+    transform: rotateX(0deg);
+    transition: transform 0.45s var(--n-ease);
+  }
+  .win.shutter .rod {
+    position: absolute;
+    left: 50%;
+    top: 7%;
+    bottom: 7%;
+    width: 3.4%;
+    min-width: 3px;
+    z-index: 3;
+    border-radius: 2px;
+    background: linear-gradient(to right, var(--n-trim-lo), var(--n-trim-hi) 45%, var(--n-trim) 70%, var(--n-trim-lo));
+    box-shadow: 0 0 0 0.5px var(--n-trim-edge), 1px 1px 2px rgba(0, 0, 0, 0.3);
+    transform: translate(-50%, 0);
+    transition: transform 0.45s var(--n-ease), background-color 0.15s, box-shadow 0.15s;
+  }
+  .win.shutter .rod.hot, .win.shutter .rod.held {
+    background: var(--n-accent);
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25), 0 0 8px rgba(var(--n-accent-rgb), 0.55);
+  }
+  .win.shutter .rod.moving:not(.held) { animation: n-pulse 1.6s ease-in-out infinite; }
+  .win.shutter .rod-zone { left: 32%; right: 32%; top: 50%; height: 86%; }
+  .win.shutter .marker { display: none; }
+  .win.dragging .louver, .win.dragging .rod { transition: none; }
+  ha-card[data-theme="dark"] .win.shutter .panel { filter: brightness(0.88); }
+
   /* ---- list layout (hide_picture) --------------------------------------------------- */
   .list { display: flex; flex-direction: column; gap: 12px; }
   /* One line per blind: the name, then its status (while moving), Stop and battery. */
@@ -781,6 +859,7 @@ class NormanShadesCard extends HTMLElement {
           room: area.name || this._config.default_room || "Unassigned",
           bottomCover: null,
           middleCover: null,
+          louvers: false,
           bottomNumber: null,
           middleNumber: null,
           battery: null,
@@ -804,6 +883,9 @@ class NormanShadesCard extends HTMLElement {
       if (domain === "cover") {
         if (key === KEY_MIDDLE_RAIL || (!key && idEndsWith("_middle_rail"))) {
           blind.middleCover = entityId;
+        } else if (key === KEY_LOUVERS) {
+          blind.bottomCover = entityId;
+          blind.louvers = true;
         } else if (key === KEY_BOTTOM_RAIL || !key) {
           blind.bottomCover = entityId;
         }
@@ -905,6 +987,19 @@ class NormanShadesCard extends HTMLElement {
    * is one, the middle rail above it.
    */
   _railsOf(blind) {
+    if (blind.louvers) {
+      // A Shutter has no rails: its one control is the louvers, which the cover exposes as
+      // tilt -- how open they are, 0 (shut) to 100 (horizontal).
+      return [
+        {
+          key: "louvers",
+          label: "Louvers",
+          coverId: blind.bottomCover,
+          numberId: null,
+          louvers: true,
+        },
+      ];
+    }
     const rails = [
       {
         key: "bottom",
@@ -927,6 +1022,12 @@ class NormanShadesCard extends HTMLElement {
   /** Where the hub says a rail is, and where it is sending it (equal when idle). */
   _railState(rail) {
     const cover = this._hass.states[rail.coverId];
+    if (rail.louvers) {
+      const tilt = cover?.attributes?.current_tilt_position;
+      const current = tilt === undefined || tilt === null ? null : Number(tilt);
+      const heading = cover?.attributes?.target_tilt;
+      return { current, target: heading === undefined || heading === null ? current : Number(heading) };
+    }
     let current = rail.numberId ? this._numberOf(rail.numberId) : null;
     if (current === null) {
       const position = cover?.attributes?.current_position;
@@ -1110,6 +1211,8 @@ class NormanShadesCard extends HTMLElement {
           // blinds. One service call with a list, not one call per entity.
           const entityId = [];
           for (const blind of blinds) {
+            // A Shutter's open and close turn its louvers; it has no stop to send.
+            if (service === "stop_cover" && blind.louvers) continue;
             if (blind.bottomCover) entityId.push(blind.bottomCover);
             if (blind.middleCover) entityId.push(blind.middleCover);
           }
@@ -1257,6 +1360,7 @@ class NormanShadesCard extends HTMLElement {
    * rail's right -- so that both can still be taken hold of when the rails are together.
    */
   _buildShade(blind, rails) {
+    if (blind.louvers) return this._buildShutter(blind, rails);
     const element = el("div", "win");
     element.setAttribute("role", "group");
     element.setAttribute("aria-label", blind.name);
@@ -1296,6 +1400,64 @@ class NormanShadesCard extends HTMLElement {
     element.append(frame, el("div", "sill"));
 
     const shade = { element, opening, bands, markers, railEls, zones, bubble, rails, dragValues: {} };
+    this._bindShade(shade);
+    return shade;
+  }
+
+  /**
+   * A Shutter in its window: a painted frame of stiles and rails, a column of louvers, and
+   * the tilt rod down their middle -- the rod is what the card drags, as a hand would.
+   *
+   * The louvers turn about their long axis, so how open they are is drawn as a rotation:
+   * flat and overlapping when shut, nearly edge-on with the view between them when open.
+   * They lean the other way when the hub reports them turned past horizontal (its
+   * Positions 0-2, which a remote or the app can choose).
+   */
+  _buildShutter(blind, rails) {
+    const element = el("div", "win shutter");
+    element.setAttribute("role", "group");
+    element.setAttribute("aria-label", blind.name);
+
+    const frame = el("div", "frame");
+    const opening = el("div", "opening");
+    const view = el("div", "view");
+    view.append(el("div", "sun"), el("div", "hills"), el("div", "mullion"), el("div", "transom"), el("div", "glint"));
+
+    const panel = el("div", "panel");
+    const louverBox = el("div", "louvers");
+    const louverEls = Array.from({ length: LOUVER_COUNT }, () => el("div", "louver"));
+    louverBox.append(...louverEls);
+    const rod = el("div", "rod");
+    panel.append(louverBox, rod);
+
+    const zone = el("div", "zone rod-zone");
+    zone.tabIndex = 0;
+    zone.dataset.index = "0";
+    zone.setAttribute("role", "slider");
+    zone.setAttribute("aria-orientation", "vertical");
+    zone.setAttribute("aria-valuemin", "0");
+    zone.setAttribute("aria-valuemax", "100");
+    zone.setAttribute("aria-label", `${blind.name} louvers`);
+    const marker = el("div", "marker");
+    const bubble = el("div", "bubble");
+
+    opening.append(view, panel, zone, bubble);
+    frame.appendChild(opening);
+    element.append(frame, el("div", "sill"));
+
+    const shade = {
+      element,
+      opening,
+      bands: [],
+      markers: [marker],
+      railEls: [rod],
+      zones: [zone],
+      bubble,
+      rails,
+      louverEls,
+      louvers: true,
+      dragValues: {},
+    };
     this._bindShade(shade);
     return shade;
   }
@@ -1364,7 +1526,7 @@ class NormanShadesCard extends HTMLElement {
       }
       const value = clamp(press.start - (dy / press.travel) * 100);
       this._dragTo(shade, press.index, value);
-      const step = clampToStep(value);
+      const step = clampToStep(value, stepOf(shade.rails[press.index]));
       this._showBubble(shade, press.index, step);
       if (press.step !== null && step !== press.step) navigator.vibrate?.(4);
       press.step = step;
@@ -1382,7 +1544,7 @@ class NormanShadesCard extends HTMLElement {
       if (!started) return;
       const value = shade.dragValues[index];
       shade.dragValues = {};
-      if (commit) this._move(shade.rails, index, clampToStep(value));
+      if (commit) this._move(shade.rails, index, clampToStep(value, stepOf(shade.rails[index])));
       this._patch();
     };
     element.addEventListener("pointerup", (event) => finish(event, true));
@@ -1403,19 +1565,20 @@ class NormanShadesCard extends HTMLElement {
   _onKey(shade, index, event) {
     if (shade.disabled) return;
     const now = this._shadeValue(shade, index) ?? 0;
+    const step = stepOf(shade.rails[index]);
     const moves = {
-      ArrowUp: now + STEP,
-      ArrowRight: now + STEP,
-      ArrowDown: now - STEP,
-      ArrowLeft: now - STEP,
-      PageUp: now + 3 * STEP,
-      PageDown: now - 3 * STEP,
+      ArrowUp: now + step,
+      ArrowRight: now + step,
+      ArrowDown: now - step,
+      ArrowLeft: now - step,
+      PageUp: now + 3 * step,
+      PageDown: now - 3 * step,
       Home: 0,
       End: 100,
     };
     if (!(event.key in moves)) return;
     event.preventDefault();
-    const value = clampToStep(moves[event.key]);
+    const value = clampToStep(moves[event.key], step);
     this._dragTo(shade, index, value);
     this._showBubble(shade, index, value);
     clearTimeout(shade.keyTimer);
@@ -1483,6 +1646,7 @@ class NormanShadesCard extends HTMLElement {
 
   /** The distance a rail travels, as a percentage of the opening: what the rails leave. */
   _travelPct(shade) {
+    if (shade.louvers) return LOUVER_TRAVEL_PCT;
     return 100 - SHADE_HEAD_PCT - shade.rails.length * SHADE_RAIL_PCT;
   }
 
@@ -1502,6 +1666,10 @@ class NormanShadesCard extends HTMLElement {
    * each band hangs from the edge above it (the headrail, or the rail above) to its rail.
    */
   _drawShade(shade) {
+    if (shade.louvers) {
+      this._drawLouvers(shade);
+      return;
+    }
     if (shade.rails.length > 1) {
       const together = this._shadeValue(shade, 1) - this._shadeValue(shade, 0) < 1;
       shade.element.classList.toggle("stacked", together);
@@ -1518,10 +1686,31 @@ class NormanShadesCard extends HTMLElement {
     }
   }
 
+  /**
+   * Turn every louver to how open the Shutter is drawn: 0 flat (shut), 100 nearly edge-on.
+   * The tilt rod rides with them, a little lower as they open.
+   */
+  _drawLouvers(shade) {
+    const open = (this._shadeValue(shade, 0) ?? 0) / 100;
+    // The side the louvers lean: the hub's own Position says when they are turned past
+    // horizontal. While a drag or a sent value is showing, they turn the way the
+    // integration sends them.
+    const cover = this._hass?.states?.[shade.rails[0].coverId];
+    const raw = cover?.attributes?.louver_position;
+    const showingHub = shade.dragValues[0] === undefined && !this._pending.has(shade.rails[0].coverId);
+    const lean = showingHub && typeof raw === "number" && raw < LOUVER_HORIZONTAL ? -1 : 1;
+    const angle = round3(lean * open * LOUVER_OPEN_DEG);
+    for (const louver of shade.louverEls) louver.style.transform = `rotateX(${angle}deg)`;
+    shade.railEls[0].style.transform = `translate(-50%, ${round3(open * 6)}%)`;
+    shade.element.classList.toggle("shut", open <= 0);
+  }
+
   _showBubble(shade, index, value) {
     const { bubble } = shade;
     bubble.textContent = `${Math.round(value)}%`;
-    bubble.style.top = `${round3(this._railTop(shade, index, this._shadeValue(shade, index)))}%`;
+    bubble.style.top = shade.louvers
+      ? "50%"
+      : `${round3(this._railTop(shade, index, this._shadeValue(shade, index)))}%`;
     bubble.style.left = `${this._tabX(shade.rails, index)}%`;
     bubble.classList.add("on");
   }
@@ -1533,12 +1722,12 @@ class NormanShadesCard extends HTMLElement {
   /** The list layout's control for one rail: a plain range input, in 10% steps. */
   _buildSlider(rails, rail) {
     const row = el("label", "slider");
-    const label = el("span", "slider-label", rails.length > 1 ? shortLabel(rail) : "Position");
+    const label = el("span", "slider-label", rail.louvers ? "Louvers" : rails.length > 1 ? shortLabel(rail) : "Position");
     const input = el("input");
     input.type = "range";
     input.min = "0";
     input.max = "100";
-    input.step = String(STEP);
+    input.step = String(stepOf(rail));
     input.setAttribute("aria-label", `${rail.label} position`);
     const value = el("span", "slider-value");
     const slider = { rail, row, input, value, holding: false };
@@ -1546,12 +1735,12 @@ class NormanShadesCard extends HTMLElement {
       slider.holding = true;
     });
     input.addEventListener("input", () => {
-      value.textContent = `${clampToStep(input.value)}%`;
+      value.textContent = `${clampToStep(input.value, stepOf(rail))}%`;
       input.style.setProperty?.("--n-fill", `${input.value}%`);
     });
     input.addEventListener("change", () => {
       slider.holding = false;
-      this._move(rails, rails.indexOf(rail), clampToStep(input.value));
+      this._move(rails, rails.indexOf(rail), clampToStep(input.value, stepOf(rail)));
       this._patch();
     });
     row.append(label, input, value);
@@ -1581,9 +1770,17 @@ class NormanShadesCard extends HTMLElement {
   /** Write a rail position, preferring the number entity so the 10% step is enforced. */
   _setRail(rail, position) {
     const retire = this._expect(rail, position);
-    const call = rail.numberId
-      ? this._hass.callService("number", "set_value", { entity_id: rail.numberId, value: position })
-      : this._hass.callService("cover", "set_cover_position", { entity_id: rail.coverId, position });
+    let call;
+    if (rail.louvers) {
+      call = this._hass.callService("cover", "set_cover_tilt_position", {
+        entity_id: rail.coverId,
+        tilt_position: position,
+      });
+    } else if (rail.numberId) {
+      call = this._hass.callService("number", "set_value", { entity_id: rail.numberId, value: position });
+    } else {
+      call = this._hass.callService("cover", "set_cover_position", { entity_id: rail.coverId, position });
+    }
     // A failed call is reported by Home Assistant; the picture goes back to the hub's values.
     Promise.resolve(call).catch(retire);
   }
@@ -1648,7 +1845,8 @@ class NormanShadesCard extends HTMLElement {
       const isMoving = states.some((state) => state.moving);
       cell.status.classList.toggle("moving", isMoving);
       cell.status.classList.toggle("rest", !isMoving && !unavailable);
-      cell.stop.hidden = !isMoving;
+      // A Shutter's louvers turn in a moment and take no stop.
+      cell.stop.hidden = !isMoving || Boolean(blind.louvers);
 
       if (cell.batteryEl) {
         const level = this._numberOf(blind.battery);
@@ -1676,7 +1874,7 @@ class NormanShadesCard extends HTMLElement {
     states.forEach((state, index) => {
       const held = shade.dragValues[index] !== undefined;
       const marker = shade.markers[index];
-      const showMarker = state.moving && !held;
+      const showMarker = state.moving && !held && !shade.louvers;
       marker.classList.toggle("on", showMarker);
       if (showMarker) {
         marker.style.top = `${round3(this._railTop(shade, index, state.current) + SHADE_RAIL_PCT / 2)}%`;
@@ -1695,7 +1893,7 @@ class NormanShadesCard extends HTMLElement {
     input.disabled = unavailable;
     if (slider.holding) return;
     const shown = this._railValue(rail);
-    input.value = String(clampToStep(shown ?? 0));
+    input.value = String(clampToStep(shown ?? 0, stepOf(rail)));
     input.style.setProperty?.("--n-fill", `${shown ?? 0}%`);
     value.textContent = shown === null ? "—" : `${Math.round(shown)}%`;
   }

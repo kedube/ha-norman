@@ -82,7 +82,7 @@
       "fields": {
         "step": {
           "name": "Pas",
-          "description": "Valeur d'inclinaison, de -100 à 100. Le sens dépend du store ; sur SmartDrape, une valeur négative incline vers la gauche."
+          "description": "Valeur d'inclinaison, de -100 à 100. Une valeur positive ouvre : elle remonte le rail intermédiaire d'un store à deux rails et ouvre les lames d'un SmartDrape ou d'un volet, d'au moins un cran quelle que soit la valeur."
         }
       }
     },
@@ -140,6 +140,9 @@
       },
       "middle_rail": {
         "name": "Rail intermédiaire"
+      },
+      "louvers": {
+        "name": "Lames"
       }
     },
     "number": {

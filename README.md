@@ -180,12 +180,12 @@ Assistant.
 | Entity property | Meaning |
 |---|---|
 | `current_position` | Bottom rail: 0 closed, 100 open |
-| `current_tilt_position` | Middle rail as tilt (for drapes; shades use the Middle rail cover instead): 0–100 |
+| `current_tilt_position` | The middle rail as tilt; on a SmartDrape, PerfectSheer or Shutter, how open its vanes or louvers are: 0–100 |
 | `target_position`, `target_tilt` (attributes) | Where each rail is heading while the blind moves |
 
 Each cover is named for the rail it drives ("Living Drape Bottom rail", "Living Drape Middle
-rail"). Each rail also has a **position slider** (a `number` entity, 0–100% in steps of 10),
-which is often easier to place on a dashboard than a cover's own slider.
+rail"; a Shutter's is "Louvers"). Each rail also has a **position slider** (a `number` entity,
+0–100% in steps of 10), which is often easier to place on a dashboard than a cover's own slider.
 
 Each blind also has **buttons** for best privacy, best view, its favorite position, jog up,
 jog down and **request status** (ask a quiet blind to report in); diagnostic sensors for
@@ -218,8 +218,8 @@ complete dashboard you can paste into the raw configuration editor.
 Alongside the standard cover actions, the integration provides five of its own:
 
 - `norman.nudge_position` — move by `step` (positive opens, negative closes).
-- `norman.nudge_tilt` — tilt by `step` (direction depends on the blind; on SmartDrape,
-  negative tilts left).
+- `norman.nudge_tilt` — tilt by `step` (positive opens: a two-rail blind's middle rail, or
+  a SmartDrape's, PerfectSheer's or Shutter's vanes and louvers).
 - `norman.room_command` — run a Norman app room button (`best_privacy`, `best_view`,
   `favorite`) against every blind in a room, in one request to the hub.
 - `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports.
@@ -308,31 +308,31 @@ shows. Error messages are translated as well.
 
 ## Supported devices
 
-| Device | Hub `ModuleType` | Exposed as |
+| Device | `ModuleType` / `ModuleDetail` | Exposed as |
 |---|---|---|
 | Norman Hub (`NienMadeHub`, firmware 6.x) | — | Required. The integration only talks to the hub. |
-| Two-rail coverings (day/night cellular, top-down/bottom-up) | 33 | Two covers: the primary (bottom rail, with the middle rail also as tilt) and a **Middle rail** shade for the second fabric. |
-| Single-rail coverings (roller and honeycomb style; 48 is a Roller Shade) | 32, 48 | Cover with position only, `shade` device class. |
-| SmartDrape | 80 | One cover, `curtain` device class: how far the drape is drawn as position, the vanes as tilt. The two move independently. |
+| Cellular Shade, dual rail (day/night) | 33 | Two covers: the primary (bottom rail, with the middle rail also as tilt) and a **Middle rail** shade for the second fabric. |
+| Cellular Shade, top-down/bottom-up | 32 / 3–5 | The same two covers: the middle rail is the top rail. |
+| Cellular Shade | 32 / 0, 2 | Cover with position only, `shade` device class. |
+| Roller Shade, Roman Shade | 48, 49 / 1, 2 | Cover with position only, `shade` device class. |
+| PerfectSheer | 48, 49 / 3 | One `shade` cover: the shade as position, its vanes as tilt, moving independently. |
+| SmartDrape | 80 / 1 | One `curtain` cover: how far it is drawn as position, the vanes as tilt, in the app's seven stops. |
+| Shutter | 1 | One `shutter` cover, **Louvers**: how open the louvers are as tilt, in five steps; open and close turn them. |
 | Anything else | other | Treated as two-rail, and a warning asks you to report the type. |
 
-**Tested on:** motorized cellular shades, both single-rail and day/night, in day-to-day use;
-and SmartDrape, which is what the tilt behaviour was originally worked out on.
-
-The integration is not specific to those, though. It drives whatever the hub reports, so any
-Norman covering built around a bottom rail — with or without a middle rail — should work. What
-varies between products is the `ModuleType` code, and that is a one-line mapping.
-
-If your blind logs the unknown-type warning, or behaves differently from its type, run the
-`norman.get_hub_data` action and attach the response to an issue. Contributions of hub data for
-new covering types are welcome and are the main thing that broadens this table.
+**Tested on:** cellular shades (32/2 and 33/3) in day-to-day use, and a Roller Shade and a
+SmartDrape by their owner ([#2](https://github.com/kedube/ha-norman/issues/2)). The other rows
+follow the Norman app itself (ShadeAuto 0.8.33): the controls it shows for each product and the
+values it sends. Nobody has reported them from a hub yet, so if you have one, a
+`norman.get_hub_data` response in an issue confirms it — as it does for anything that logs the
+unknown-type warning or behaves differently from its row.
 
 ## Known limitations
 
 - **No authentication on the hub.** That is the vendor protocol, not a choice of this
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
-- **Only four `ModuleType` codes are mapped** (32 and 48 single-rail, 33 two-rail, 80
-  SmartDrape); anything else falls back to two-rail with a warning ([Supported devices](#supported-devices)).
+- **Four of the six `ModuleType` codes come from the Norman app alone** (1, 49, and the
+  PerfectSheer and top-down/bottom-up details); see [Supported devices](#supported-devices).
 - **No speed, direction, or limit-setting entities.** The limit-setting and calibration verbs
   were captured from the Norman app and can be sent with `send_hub_command` (see
   [docs/services.md](docs/services.md#hub-verbs)); they have no entity because they change how
@@ -401,9 +401,9 @@ not move" for a preset it was already at. Run `norman.get_hub_data` and open an 
 response and what the product is.
 
 **Open/close moves the tilt too (or vice versa).**
-The hub has no single-rail command, so the integration sends the untouched rail's current
-target along with the change. If the hub reports no target and no position for that rail, it
-falls back to 100 (open). A [diagnostics export](#diagnostics) shows what the hub reports.
+Every move carries both rails (so a two-rail shade's rails can carry each other), and the
+untouched rail goes with its current target. If the hub reports no target and no position for
+that rail, it falls back to 100 (open). A [diagnostics export](#diagnostics) shows what it reports.
 
 **I commanded several blinds at once and only some of them moved.**
 Raise the **Command spacing** option — see [docs/options.md](docs/options.md#command-spacing).

@@ -82,7 +82,7 @@
       "fields": {
         "step": {
           "name": "Schritt",
-          "description": "Betrag der Neigung, -100 bis 100. Die Richtung hängt vom Rollo ab; bei SmartDrape neigt negativ nach links."
+          "description": "Neigungsbetrag, -100 bis 100. Positiv öffnet: hebt die mittlere Schiene eines Zweischienen-Rollos an und öffnet die Lamellen eines SmartDrape oder eines Shutters, bei jedem Betrag um mindestens eine Stufe."
         }
       }
     },
@@ -140,6 +140,9 @@
       },
       "middle_rail": {
         "name": "Mittlere Schiene"
+      },
+      "louvers": {
+        "name": "Lamellen"
       }
     },
     "number": {

@@ -32,15 +32,12 @@ from custom_components.norman.api import NormanApiClient
 from custom_components.norman.const import DOMAIN
 
 from .const import (
+    EVERY_NEW_PRODUCT,
     HUB_HOST,
     HUB_THING_NAME,
     HUB_URL,
     MOCK_CONFIG,
     REGISTRATION_RESPONSE,
-    ROLLER_DEVICE,
-    ROLLER_STATUS,
-    SMARTDRAPE_DEVICE,
-    SMARTDRAPE_STATUS,
     devices_payload,
     status_payload,
 )
@@ -241,15 +238,19 @@ async def init_integration(
 
 
 @pytest.fixture
-async def init_with_roller_and_drape(
+async def init_with_every_product(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
     fake_hub: FakeHub,
     notifications: asyncio.Queue,
 ) -> AsyncGenerator[MockConfigEntry]:
-    """``init_integration``, with issue #2's roller shade and SmartDrape paired as well."""
-    fake_hub.add_blind(ROLLER_DEVICE, ROLLER_STATUS)
-    fake_hub.add_blind(SMARTDRAPE_DEVICE, SMARTDRAPE_STATUS)
+    """``init_integration``, with every product in the Norman app's module table paired too.
+
+    That is issue #2's roller shade and SmartDrape, plus a Shutter, a Roman Shade, a
+    PerfectSheer, an MRS2 roller and a top-down/bottom-up Cellular Shade.
+    """
+    for device, status in EVERY_NEW_PRODUCT:
+        fake_hub.add_blind(device, status)
     async with loaded(hass, mock_config_entry) as entry:
         yield entry
 

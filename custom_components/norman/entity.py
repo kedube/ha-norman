@@ -13,31 +13,40 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import NormanApiError, NormanConnectionError
-from .const import COVER_TYPE_SINGLE_RAIL, COVER_TYPE_TWO_RAIL, DOMAIN, MANUFACTURER
+from .const import COVER_TYPE_TWO_RAIL, DOMAIN, MANUFACTURER
 from .coordinator import NormanConfigEntry, NormanCoordinator, hub_identifier
 from .models import NormanPeripheralData
 
-# Model names follow the Norman app's product catalogue (its General_Display_* strings).
-# ModuleType 33 matches the app's dual-rail Cellular Shade (Japanese: "honeycomb screen,
-# twin, up/down"), which is what every type-33 blind on the reference hub is. 48 and 80 are
-# what their owner identified them as (issue #2). ModuleType 32 has not been matched to a
-# catalogue entry yet (Roller Shade, single Cellular Shade, PerfectSheer, and Shutter are the
-# candidates), so it keeps a descriptive name from COVER_TYPE_MODELS.
+# Model names are the Norman app's (its General_Display_* strings, English and Japanese), as
+# the app picks them from ModuleType and ModuleDetail. 32 and 33 are both "Cellular Shade" in
+# the app; the Japanese tells them apart as single and "twin, up/down", kept here as "dual
+# rail". The roller family (48, 49) is named by ModuleDetail, 1-3, the way the app's pairing
+# list names a newly found blind; another detail keeps the family's name.
 MODULE_TYPE_MODELS: dict[int, str] = {
+    1: "Shutter",
+    32: "Cellular Shade",
     33: "Cellular Shade (dual rail)",
     48: "Roller Shade",
+    49: "Roller Shade",
     80: "SmartDrape",
 }
-COVER_TYPE_MODELS = {
-    COVER_TYPE_SINGLE_RAIL: "Single-rail window covering",
+MODULE_DETAIL_MODELS: dict[tuple[int, int], str] = {
+    (48, 2): "Roman Shade",
+    (48, 3): "PerfectSheer",
+    (49, 2): "Roman Shade",
+    (49, 3): "PerfectSheer",
 }
 
 
 def _model(data: NormanPeripheralData) -> str:
-    """The product name for a blind, or a description of how it is driven."""
-    if data.module_type in MODULE_TYPE_MODELS:
-        return MODULE_TYPE_MODELS[data.module_type]
-    return COVER_TYPE_MODELS.get(data.type, "Window covering")
+    """The product name for a blind, or "Window covering" for a type the app does not know."""
+    if data.module_type is None:
+        return "Window covering"
+    if data.module_detail is not None:
+        model = MODULE_DETAIL_MODELS.get((data.module_type, data.module_detail))
+        if model is not None:
+            return model
+    return MODULE_TYPE_MODELS.get(data.module_type, "Window covering")
 
 
 def _via_hub(coordinator: NormanCoordinator, entry: NormanConfigEntry) -> dict:

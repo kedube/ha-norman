@@ -25,7 +25,7 @@ from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import COVER_TYPE_TWO_RAIL
+from .const import COVER_TYPE_SHUTTER, COVER_TYPE_TWO_RAIL
 from .coordinator import NormanConfigEntry, NormanCoordinator
 from .entity import NormanRailMixin, async_add_entities_for_new_devices, async_remove_entity
 from .models import NormanPeripheralData
@@ -40,7 +40,23 @@ PARALLEL_UPDATES = 0
 # the nudge actions are for.
 POSITION_STEP = 10
 
+BOTTOM_RAIL_POSITION = "bottom_rail_position"
 MIDDLE_RAIL_POSITION = "middle_rail_position"
+
+
+def _rails_for(cover_type: str) -> frozenset[str]:
+    """The rail sliders a cover type gets.
+
+    Only a two-rail shade gets a middle-rail slider. A single-rail blind reports that rail as
+    a constant 0; on a drape or a PerfectSheer it is the vane tilt, which the cover already
+    offers -- and a slider for it would have the dashboard card draw a second fabric. A
+    Shutter has no rails at all: its louvers are the cover's tilt.
+    """
+    if cover_type == COVER_TYPE_SHUTTER:
+        return frozenset()
+    if cover_type == COVER_TYPE_TWO_RAIL:
+        return frozenset({BOTTOM_RAIL_POSITION, MIDDLE_RAIL_POSITION})
+    return frozenset({BOTTOM_RAIL_POSITION})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -54,8 +70,8 @@ class NormanNumberDescription(NumberEntityDescription):
 
 NUMBERS: tuple[NormanNumberDescription, ...] = (
     NormanNumberDescription(
-        key="bottom_rail_position",
-        translation_key="bottom_rail_position",
+        key=BOTTOM_RAIL_POSITION,
+        translation_key=BOTTOM_RAIL_POSITION,
         value_fn=lambda data: data.bottom_rail_position,
         position_fn=lambda value: (value, None),
     ),
@@ -77,19 +93,13 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
 
     def _numbers_for(device_id: int) -> list[NormanNumber]:
-        # Only a two-rail shade gets a middle-rail slider. A single-rail blind reports that
-        # rail as a constant 0; on a drape it is the vane tilt, which the drape's cover
-        # already offers -- and a slider for it would have the dashboard card draw a second
-        # fabric.
-        two_rail = coordinator.data[device_id].type == COVER_TYPE_TWO_RAIL
         numbers: list[NormanNumber] = []
+        rails = _rails_for(coordinator.data[device_id].type)
         for description in NUMBERS:
-            if two_rail or description.key != MIDDLE_RAIL_POSITION:
+            if description.key in rails:
                 numbers.append(NormanNumber(coordinator, device_id, entry, description))
             else:
-                async_remove_entity(
-                    hass, entry, NUMBER_DOMAIN, f"{device_id}_{MIDDLE_RAIL_POSITION}"
-                )
+                async_remove_entity(hass, entry, NUMBER_DOMAIN, f"{device_id}_{description.key}")
         return numbers
 
     async_add_entities_for_new_devices(entry, async_add_entities, _numbers_for)

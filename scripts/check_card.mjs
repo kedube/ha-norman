@@ -604,5 +604,83 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
         JSON.stringify(calls[0]));
 }
 
+// A Shutter: no rails, one cover whose tilt is how open its louvers are.
+{
+  const sCalls = [];
+  const louvers = (tilt, raw) => ({ state: tilt === 0 ? "closed" : "open",
+    attributes: { current_tilt_position: tilt, target_tilt: tilt, louver_position: raw } });
+  const sHass = {
+    entities: {
+      "cover.study_shutter_louvers": { platform:"norman", device_id:"s1", translation_key:"louvers" },
+      "sensor.study_shutter_battery": { platform:"norman", device_id:"s1", translation_key:"battery_level" },
+    },
+    devices: { s1:{ name:"Study Shutter", area_id:"a3" } },
+    areas: { a3:{ name:"Study" } },
+    states: { "cover.study_shutter_louvers": louvers(50, 5), "sensor.study_shutter_battery": { state:"80" } },
+    callService: (d, s, data) => { sCalls.push([d, s, data]); return Promise.resolve(); },
+  };
+  const c = new Card();
+  c._hass = sHass;
+  c.setConfig({ type:"custom:norman-shades-card" });
+  c._hass = sHass;
+  const [shutter] = c._collectBlinds();
+  check("a Shutter is found by its louvers cover",
+        shutter?.bottomCover === "cover.study_shutter_louvers" && shutter.louvers === true, JSON.stringify(shutter));
+  const rails = c._railsOf(shutter);
+  check("a Shutter has one control, its louvers", rails.length === 1 && rails[0].louvers && rails[0].label === "Louvers");
+  check("the louvers read the cover's tilt", c._railValue(rails[0]) === 50, String(c._railValue(rails[0])));
+
+  const shade = c._buildShade(shutter, rails);
+  const angle = () => shade.louverEls[0].style.transform;
+  c._drawShade(shade);
+  check("a Shutter is drawn with louvers and a tilt rod, not fabric",
+        shade.louverEls.length > 1 && shade.bands.length === 0 && String(shade.railEls[0].className) === "rod");
+  check("half-open louvers are turned half way", shade.louverEls.every((l) => l.style.transform === "rotateX(39deg)"), angle());
+  sHass.states["cover.study_shutter_louvers"] = louvers(0, 7);
+  c._drawShade(shade);
+  check("shut louvers lie flat", angle() === "rotateX(0deg)", angle());
+  check("...and the window says so", shade.element.classList.contains("shut"));
+  sHass.states["cover.study_shutter_louvers"] = louvers(100, 3);
+  c._drawShade(shade);
+  check("open louvers are nearly edge-on", angle() === "rotateX(78deg)", angle());
+  sHass.states["cover.study_shutter_louvers"] = louvers(50, 1);
+  c._drawShade(shade);
+  check("louvers turned past horizontal lean the other way", angle() === "rotateX(-39deg)", angle());
+
+  sCalls.length = 0;
+  c._move(rails, 0, 75);
+  check("moving the louvers sets the cover's tilt",
+        sCalls[0]?.[1] === "set_cover_tilt_position" && sCalls[0][2].entity_id === "cover.study_shutter_louvers" &&
+        sCalls[0][2].tilt_position === 75, JSON.stringify(sCalls[0]));
+
+  const rod = shade.zones[0];
+  check("the tilt rod is a keyboard slider", rod.attrs.role === "slider" && rod.tabIndex === 0);
+  let prevented = false;
+  c._onKey(shade, 0, { key: "ArrowUp", preventDefault: () => { prevented = true; } });
+  check("an arrow key moves the louvers a quarter", prevented && shade.dragValues[0] === 100, JSON.stringify(shade.dragValues));
+  clearTimeout(shade.keyTimer);
+
+  check("a Shutter's status reads how open its louvers are",
+        c._statusOf(rails, [{ current: 50, target: 50, shown: 50, moving: false }], false) === "50% open");
+
+  sCalls.length = 0;
+  const room = c._buildRoomControls("Study", [shutter, den]);
+  room.children[1]._on?.click?.();
+  check("room stop leaves the Shutter out: it has no stop",
+        sCalls.length === 1 && JSON.stringify(sCalls[0][2].entity_id) === JSON.stringify(["cover.den_1_bottom_rail"]),
+        JSON.stringify(sCalls));
+  sCalls.length = 0;
+  room.children[0]._on?.click?.();
+  check("room open turns the Shutter's louvers too",
+        sCalls[0]?.[1] === "open_cover" && sCalls[0][2].entity_id.includes("cover.study_shutter_louvers"), JSON.stringify(sCalls));
+
+  const list = new Card();
+  list._hass = sHass;
+  list.setConfig({ type:"custom:norman-shades-card", hide_picture:true });
+  list._hass = sHass;
+  const slider = list._buildSlider(rails, rails[0]);
+  check("the list layout's louver slider moves in quarters", slider.input.step === "25", String(slider.input.step));
+}
+
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);

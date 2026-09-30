@@ -28,6 +28,7 @@ from .const import (
     HUB_CMD_PAIRING_MODE,
     HUB_CMD_REPORT_BATTERY,
     HUB_CMD_REQUEST_STATUS,
+    HUB_CMD_SHUTTER_POSITION,
     HUB_CMD_STOP,
     HUB_COMMAND_SETTING,
     HUB_COMMAND_TRIGGER,
@@ -440,16 +441,36 @@ class NormanApiClient:
             bottom_rail_position: Bottom rail position (0=closed, 100=open)
             middle_rail_position: Middle rail position (0=closed, 100=open)
 
+        Both rails always go together. The hub also accepts one on its own (the Norman
+        app's group screen sends ``MiddleRailPosition`` alone), but sending both is what
+        lets the integration carry a two-rail shade's other rail along in the same command.
+        """
+        await self._async_move(
+            device_id,
+            {
+                "BottomRailPosition": bottom_rail_position,
+                "MiddleRailPosition": middle_rail_position,
+            },
+        )
+
+    async def async_set_louvers(self, device_id: int, position: int) -> None:
+        """Turn a Shutter's louvers to ``position``, 0-7 (7 closed, 3 horizontal).
+
+        ``{"Position": n, "PeripheralUID": ...}`` is what the Norman app's network library
+        builds for a Shutter (its CreateNormanPeripheral:position:). Not yet sent to a real
+        Shutter from here.
+        """
+        await self._async_move(device_id, {HUB_CMD_SHUTTER_POSITION: position})
+
+    async def _async_move(self, device_id: int, fields: dict[str, Any]) -> None:
+        """Send a move, retrying while the hub answers busy.
+
         A move the hub answers with ``Error 2`` is retried, ``HUB_BUSY_RETRIES`` times and
         ``HUB_BUSY_RETRY_DELAY`` seconds apart, before the error is raised. Every move sent
         while the hub was sweeping its blinds after a refresh answered 2, and the same moves
         succeeded once the sweep was over (const.py, ``HUB_ERROR_BUSY``), so a wait is the
         fix. Any other error is raised at once.
         """
-        fields = {
-            "BottomRailPosition": bottom_rail_position,
-            "MiddleRailPosition": middle_rail_position,
-        }
         for attempt in range(HUB_BUSY_RETRIES + 1):
             try:
                 await self.async_send_control(device_id, fields)

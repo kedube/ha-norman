@@ -7,8 +7,8 @@ sensor, and five buttons.
 
 | | Per blind | On the hub |
 |---|---|---|
-| Cover | Bottom rail; Middle rail on two-rail blinds | — |
-| Number | Bottom rail position; Middle rail position on two-rail blinds | — |
+| Cover | Bottom rail (Louvers on a Shutter); Middle rail on two-rail blinds | — |
+| Number | Bottom rail position (not on a Shutter); Middle rail position on two-rail blinds | — |
 | Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | All blinds best privacy, All blinds best view, All blinds favorite position, Refresh blinds, Start pairing |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
 | Binary sensor | Connection | Pairing mode |
@@ -27,7 +27,7 @@ sensors plus the Request status button and the connection sensor (added after th
 | Device | Identifiers | Notes |
 |---|---|---|
 | Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address; the MAC address is attached as a network connection when it can be resolved (see below). |
-| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman product name where the type has been identified ("Cellular Shade (dual rail)" for `ModuleType` 33, "Roller Shade" for 48, "SmartDrape" for 80; type 32 is still "Single-rail window covering", and an unmapped type "Window covering") with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
+| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman app's product name for its `ModuleType` and `ModuleDetail` — "Shutter", "Cellular Shade", "Cellular Shade (dual rail)", "Roller Shade", "Roman Shade", "PerfectSheer" or "SmartDrape" (see [Cover entities](#cover-entities)); a type the app does not know is "Window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
 
 The device page therefore mirrors the app's blind details: room (area), battery (sensor),
 version, module type (model id), and serial number.
@@ -39,14 +39,24 @@ app's name shows underneath it as the device's original name. Room changes updat
 
 ## Cover entities
 
-The hub's `ModuleType` decides what kind of cover a blind gets:
+The hub's `ModuleType`, and for some types its `ModuleDetail`, decide what kind of cover a
+blind gets. The table is the Norman app's own (ShadeAuto 0.8.33): the controls it shows each
+product and the values it sends. The reference hub's 32/2 and 33/3, and issue #2's 48/1 and
+80/1, have been seen from a hub; the rest follow the app alone.
 
-| `ModuleType` | Cover entities | Device class | Features |
-|---|---|---|---|
-| 33 | two-rail (day/night cellular, top-down/bottom-up): the **primary** cover, plus a **Middle rail** cover | `blind`, `shade` | primary: open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt. Middle rail: open, close, set position, stop |
-| 32, 48 | single-rail (roller and honeycomb style; 48 is a Roller Shade) | `shade` | open, close, set position, stop |
-| 80 | SmartDrape: one cover | `curtain` | open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt |
-| other | treated as two-rail; a warning asks for a report | `blind` | as two-rail |
+| `ModuleType` / `ModuleDetail` | Product | Cover entities | Device class | Features |
+|---|---|---|---|---|
+| 33 | Cellular Shade (dual rail: day/night) | two-rail: the **primary** cover, plus a **Middle rail** cover | `blind`, `shade` | primary: open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt. Middle rail: open, close, set position, stop |
+| 32 / 3–5 | Cellular Shade, top-down/bottom-up | as 33; the middle rail is the top rail | `blind`, `shade` | as 33 |
+| 32 / 0, 2 | Cellular Shade | single-rail | `shade` | open, close, set position, stop |
+| 48, 49 / 1 | Roller Shade | single-rail | `shade` | open, close, set position, stop |
+| 48, 49 / 2 | Roman Shade | single-rail | `shade` | open, close, set position, stop |
+| 48, 49 / 3 | PerfectSheer | one cover: the shade, and its vanes as tilt | `shade` | open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt |
+| 80 / 1 | SmartDrape | one cover: the draw, and its vanes as tilt | `curtain` | as PerfectSheer |
+| 1 | Shutter | one cover, **Louvers** | `shutter` | open, close, open tilt, close tilt, set tilt position |
+| other | — | treated as two-rail; a warning asks for a report | `blind` | as two-rail |
+
+48 and 49 are two generations of the app's roller module (MRS1 and MRS2), named alike.
 
 **Two-rail blinds are two covers.** Each is named for the rail it drives: **Bottom rail** and
 **Middle rail**, so a blind called "Living Drape" has entities named "Living Drape Bottom rail"
@@ -63,14 +73,33 @@ other carries the other along.
 
 **A SmartDrape is one cover.** The hub reports it in the same two fields as a two-rail shade,
 but they mean how far the drape is drawn (`BottomRailPosition`, the cover's position) and how
-its vanes are tilted (`MiddleRailPosition`, the cover's tilt). Those are independent: opening
-the drape leaves the vanes as they are, and tilting the vanes does not move the drape. It gets
+its vanes are turned (`MiddleRailPosition`, the cover's tilt). Those are independent: opening
+the drape leaves the vanes as they are, and turning the vanes does not move the drape. It gets
 no Middle rail cover or slider, since its tilt already is one.
 
+The vanes take seven positions and nothing else — the app sends only 0, 17, 33, 50, 66, 83 and
+100 — and they are open at 50 and closed at both ends, turned opposite ways. So the tilt is how
+open they are: **0, 33, 67 or 100**, with either closed end reading 0. A tilt set here goes to
+the nearest of those, closing towards 100 (where Best privacy puts them): tilt 100 sends 50,
+67 sends 66, 33 sends 83 and 0 sends 100. A nudge moves at least one stop.
+
+**A PerfectSheer is one cover.** The bottom rail is the shade and the middle rail the vanes
+between its two sheers, 0 closed to 100 open, as the tilt. They move independently, like a
+SmartDrape's. The app draws the vanes only while the shade is fully lowered, which is
+presumably the only place they open.
+
+**A Shutter is one cover, named Louvers.** It has no rails: the hub reports its louvers as
+`Position` 0–7 — 7 fully closed, 3 horizontal, and 0 as far as they turn the other way, which
+still lets light in. The tilt is how open they are, **0, 25, 50, 75 or 100**, so both sides of
+horizontal read alike; a tilt set here turns them on the 7–3 side, the one the app's "Fully
+Close" and calibration start from. Open and close turn the louvers too (horizontal and shut),
+so "open the shutters" does what it says. The `louver_position` attribute carries the hub's
+own 0–7 value. A Shutter has no stop and no position sliders.
+
 **Upgrading from the fallback.** A blind whose `ModuleType` was unmapped was given two-rail
-entities. Once its type is mapped as something else, the Middle rail cover and slider it no
-longer has are deleted from the entity registry at startup, so they do not linger as "no longer
-provided" or show up on the dashboard card as a second fabric.
+entities. Once its type is mapped as something else, the Middle rail cover and the sliders it
+no longer has are deleted from the entity registry at startup, so they do not linger as "no
+longer provided" or show up on the dashboard card as a second fabric.
 
 Entity ids are derived from the blind's name in the Norman app, prefixed with its area on Home
 Assistant 2026.9 and newer (`cover.living_room_living_drape` for a blind called "Living Drape" in
@@ -79,11 +108,12 @@ peripheral the hub reports status for but does not list by name gets `Norman <ui
 
 | Property | Source | Notes |
 |---|---|---|
-| State | bottom rail | `closed` when the position is 0, otherwise `open`; `unknown` if the hub has not reported a position. |
+| State | bottom rail | `closed` when the position is 0, otherwise `open`; `unknown` if the hub has not reported a position. A Shutter is `closed` only at `Position` 7. |
 | `current_position` | `BottomRailPosition` | 0 = closed, 100 = open, matching Home Assistant's convention. |
-| `current_tilt_position` | `MiddleRailPosition` | Two-rail and SmartDrape only. 0–100. On a SmartDrape this is the vane tilt; on two-rail blinds it is the middle rail. |
+| `current_tilt_position` | `MiddleRailPosition`; a Shutter's `Position` | Two-rail blinds: the middle rail, 0–100. PerfectSheer: how open the vanes are. SmartDrape and Shutter: how open the vanes or louvers are, in their stops (see above). |
 | `target_position` (attribute) | `TargetBottomRailPosition` | Where the bottom rail is heading. Equal to `current_position` when idle. |
-| `target_tilt` (attribute) | `TargetMiddleRailPosition` | Two-rail and SmartDrape only. Where the middle rail (or the vanes) is heading. |
+| `target_tilt` (attribute) | `TargetMiddleRailPosition`; a Shutter's `TargetPosition` | Where the tilt is heading, in the same terms as `current_tilt_position`. |
+| `louver_position` (attribute) | `Position` | Shutter only. The hub's own 0–7. |
 
 ### Availability
 
@@ -126,7 +156,8 @@ The event's data, for automations that want to notify someone or try something e
 | `peripheral_uid` | the blind's hub id |
 | `name` | the blind's name on the hub |
 | `attempts` | how many times the command was sent (3) |
-| `bottom_rail_position`, `middle_rail_position` | where it was sent (`middle_rail_position` is `null` on a single-rail blind) |
+| `bottom_rail_position`, `middle_rail_position` | where it was sent (`middle_rail_position` is `null` on a single-rail blind; both are `null` on a Shutter) |
+| `louver_position` | a Shutter's `Position` it was sent to, 0–7; `null` on every other blind |
 
 Updates are pushed. The integration holds a long-poll open to the hub and refreshes every
 cover whenever the hub reports a change, including changes made with a remote or the Norman
@@ -158,7 +189,7 @@ The bundled [dashboard card](dashboard.md) puts all of this on one card, grouped
 
 | Entity | Rail | Range |
 |---|---|---|
-| Bottom rail position | `BottomRailPosition` | 0–100%, in steps of 10 |
+| Bottom rail position | `BottomRailPosition` | 0–100%, in steps of 10. Every blind but a Shutter. |
 | Middle rail position | `MiddleRailPosition` | 0–100%, in steps of 10. Two-rail blinds only. |
 
 These are `number` entities and they read and write exactly what the covers do, so the two

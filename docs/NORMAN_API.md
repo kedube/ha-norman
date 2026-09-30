@@ -185,9 +185,10 @@ Response:
 | Field | Meaning | Exposed as |
 |---|---|---|
 | `BottomRailPosition` | 0 = closed, 100 = open | cover `current_position` |
-| `MiddleRailPosition` | 0–100; the second fabric on a day/night shade, the top rail on top-down/bottom-up, the vane tilt on SmartDrape; always 0 on a single-rail blind | the **Middle rail** cover's position, and the primary cover's `current_tilt_position` |
+| `MiddleRailPosition` | 0–100; the second fabric on a day/night shade, the top rail on top-down/bottom-up, the vanes on a PerfectSheer (0 closed, 100 open) or a SmartDrape (seven stops, open at 50); always 0 on a single-rail blind | the **Middle rail** cover's position, and the primary cover's `current_tilt_position` |
 | `TargetBottomRailPosition` | where the bottom rail is heading | `target_position` attribute |
 | `TargetMiddleRailPosition` | where the middle rail is heading | `target_tilt` attribute |
+| `Position`, `TargetPosition` | a Shutter's louvers, 0–7, and where they are heading | the Shutter's `current_tilt_position` / `target_tilt`, and `louver_position` |
 | `BatteryVoltage` | a **percentage**, 0–100, despite the field name (see [Observed fields](#observed-fields)) | **Battery** sensor |
 | `RssiMean` | radio quality, unitless (0 or 34 seen) | opt-in **Signal strength** sensor |
 | `FirmwareVersion` | blind firmware | device `sw_version` and the opt-in **Firmware version** sensor, except when `RfFirmwareVersion` is also present, which is shown instead (only single-rail blinds have been seen to report both) |
@@ -199,13 +200,21 @@ which the entity reports as an unknown position. A peripheral that appears here 
 
 ### POST /NM/v1/control
 
-Moves a covering. The call **always takes both rails**; there is no way to move one and leave
-the other untouched, so the integration fills the untouched rail with its current target
-(falling back to its current position, then to 100). It works in both directions: moving the
-bottom rail sends the middle rail's current target back with it, and moving the middle rail —
-whether through the **Middle rail** cover, the middle-rail slider, or a tilt command — sends the
-bottom rail's back. A capture therefore always shows both fields, even when the user touched
-only one.
+Moves a covering. The hub accepts either rail on its own — the Norman app's group screen sends
+`MiddleRailPosition` alone, and its per-blind screen a single-rail blind's
+`BottomRailPosition` alone — but the integration **always sends both**, filling the untouched
+rail with its current target (falling back to its current position, then to 100). That is what
+lets it carry a two-rail shade's other rail along in the same request (below). It works in both
+directions: moving the bottom rail sends the middle rail's current target back with it, and
+moving the middle rail — whether through the **Middle rail** cover, the middle-rail slider, or
+a tilt command — sends the bottom rail's back. A capture therefore always shows both fields,
+even when the user touched only one.
+
+A **Shutter** (`ModuleType` 1) has no rails. Its louvers are one field, `Position` 0–7 (7 shut,
+3 horizontal, 0 turned fully the other way), sent alone: `{"PeripheralUID": …, "Position": 3}`.
+That is what the app's network library builds for a Shutter; it has not been sent to a real
+one from here. The app's library can also send `Position1` / `Position2` (and read their
+`Target…` counterparts), a pair for split-panel shutters that no product in the app uses yet.
 
 On a two-rail blind the middle rail hangs above the bottom rail, so the rail sent back is
 **carried along** when the move would pass it: raising the bottom rail above the middle rail
@@ -580,19 +589,36 @@ documented here must be catalogued and vice versa.
 | `Timestamp` | status | epoch seconds | **used** (last-seen sensor, connection sensor). When the hub last **heard from** the blind: it moves when a blind reports in with nothing changed, not only on a state change. |
 | `MSDStackType` | GetAllPeripheral (type 80 only) | `"left"` | not used. Presumably the side a SmartDrape stacks to when it is drawn open; only `"left"` has been seen. |
 | `MsdStatus` | status (type 80 only) | `0` | not used; only `0` has been seen |
+| `Position`, `TargetPosition` | status (type 1, from the app) | `0`–`7` | **used**: a Shutter's louvers (7 shut, 3 horizontal). Known from the app's parsers, not yet seen from a hub. |
+| `Position1`, `Position2`, `TargetPosition1`, `TargetPosition2` | status (from the app) | | not used. A split-panel pair the app's library can read and send; no product in ShadeAuto 0.8.33 shows controls for it. |
+| `Angle` | status (from the app) | | not used. Read by the app's library alongside the louvers; its meaning is unknown. |
+| `Mrs2Status` | status (type 49, from the app) | | not used; the MRS2 roller's counterpart of `MsdStatus`. |
 | `PacketReceiveRate` | status | `0` | not used. Has been `0` on every blind in every capture, including blinds that are plainly reachable, so it is either unimplemented in this firmware or counts something the hub never populates. |
 | `StallCurrent` | status (type 33 only) | `4100`, `1240` | not used. Despite the name it reads as a **stall threshold, not a measurement**: the current draw at which the motor decides it has hit an obstruction (or a limit) and stops. It does not vary during travel -- it holds one value through a full open and close, in both directions, and at rest. It is not fixed per blind either: two blinds read `4100` in captures a day apart and `1240` afterwards, with no setting changed in the app, so the motor appears to adapt it. A **falling** value on one blind is therefore the interesting signal (a motor deciding it needs less force to call something a stall), not the absolute number. Both blinds that changed are in one room, and one of them (`58850`) is the blind a `Calibration` was run against the day before -- so calibration, or the limit-setting around it, is the likeliest cause. Unconfirmed: the other blind was not calibrated. Not exposed as an entity while its meaning rests on a single observation. |
 | `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. |
 
 ### Cover types
 
-| `ModuleType`/`ModuleDetail` | Firmware seen | Behaviour | Integration |
-|---|---|---|---|
-| 33 / 3 | 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); the reference hub's are day/night cellular shades | primary cover (bottom rail, middle as tilt) + Middle rail cover; two position sliders |
-| 32 / 2 | 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only; one position slider |
-| 48 / 1 | 2.4.1 | Roller Shade, per its owner ([#2](https://github.com/kedube/ha-norman/issues/2)). Only the bottom rail moves; the middle rail reads 0, but `Switch` still records a middle-rail target | single-rail cover, position only; one position slider |
-| 80 / 1 | 0.2.3, with `MSDStackType` / `MsdStatus` | SmartDrape, per its owner ([#2](https://github.com/kedube/ha-norman/issues/2)). Bottom rail = how far the drape is drawn, middle rail = vane tilt; independent of each other | one `curtain` cover, draw as position and vanes as tilt; one position slider |
-| other | | | two-rail by default, warning logged once |
+| `ModuleType`/`ModuleDetail` | App name (code) | Seen | Behaviour | Integration |
+|---|---|---|---|---|
+| 1 | Shutter (MS4) | app only | louvers as `Position` 0–7; no rails | one `shutter` cover, Louvers: tilt = how open, open/close turn them; no sliders |
+| 32 / 2 | Cellular Shade (MCS) | reference hub, 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only; one position slider |
+| 32 / 0 | Cellular Shade (MCS) | app only | the app shows one slider | as 32/2 |
+| 32 / 3–5 | Cellular Shade (MCS) | app only | the app shows two sliders: a top-down/bottom-up shade | as 33 |
+| 33 / 3 | Cellular Shade (DMCS; Japanese "twin, up/down") | reference hub, 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); day/night cellular shades | primary cover (bottom rail, middle as tilt) + Middle rail cover; two position sliders |
+| 33 / 4–5 | Cellular Shade (DMCS) | app only | the app accepts them like 33/3 | as 33/3 |
+| 48 / 1 | Roller Shade (MRS1) | issue [#2](https://github.com/kedube/ha-norman/issues/2), 2.4.1 | only the bottom rail moves; the middle rail reads 0, but `Switch` still records a middle-rail target | single-rail cover, position only; one position slider |
+| 48 / 2 | Roman Shade (MRS1) | app only | one slider | as 48/1 |
+| 48 / 3 | PerfectSheer (MRS1) | app only | two sliders: the shade, and its vanes on the middle rail (0 closed, 100 open), drawn only while the shade is down | one `shade` cover, shade as position and vanes as tilt, independent; one position slider |
+| 49 / 1–3 | as 48 (MRS2), with `Mrs2Status` | app only | a second generation of the roller module | as 48 |
+| 80 / 1 | SmartDrape (MSD) | issue [#2](https://github.com/kedube/ha-norman/issues/2), 0.2.3, with `MSDStackType` / `MsdStatus` | bottom rail = how far the drape is drawn; middle rail = vanes in seven stops (0, 17, 33, 50, 66, 83, 100), open at 50 and closed at both ends | one `curtain` cover, draw as position and vane openness as tilt, independent; one position slider |
+| other | — | | | two-rail by default, warning logged once |
+
+ShadeAuto 0.8.33 knows exactly these six `ModuleType`s: its firmware-update list, its device
+details page ("Module Type": MS4, MCS, DMCS, MRS1, MRS2, "MDS"), its pairing list and the
+sliders it shows each product all switch on them, and anything else it calls "Unknown". The
+ModuleDetail splits are the app's too: it names the roller family by detail (1 Roller Shade,
+2 Roman Shade, 3 PerfectSheer) and gives 32/3–5, 33, 48/3 and 80 two sliders.
 
 A single-rail product left on the two-rail default misreports presets as failed. `Switch`
 records a middle-rail target of 100 for Best privacy and Best view on every blind, and a blind

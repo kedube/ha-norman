@@ -21,6 +21,8 @@ from custom_components.norman.const import (
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
     COVER_TYPE_DRAPE,
+    COVER_TYPE_SHEER,
+    COVER_TYPE_SHUTTER,
     COVER_TYPE_SINGLE_RAIL,
     COVER_TYPE_TWO_RAIL,
     DEFAULT_CONTROL_INTERVAL,
@@ -34,7 +36,12 @@ from custom_components.norman.const import (
     POLL_DISABLED,
     WAKE_DISABLED,
 )
-from custom_components.norman.coordinator import NormanCoordinator, _poll_interval, _wake_interval
+from custom_components.norman.coordinator import (
+    NormanCoordinator,
+    _poll_interval,
+    _wake_interval,
+    cover_type,
+)
 from custom_components.norman.entity import hub_identifier
 
 from .conftest import HUB_MAC, FakeHub, cover_entity_id, settle
@@ -45,6 +52,7 @@ from .const import (
     UID_BEDROOM,
     UID_LIVING,
     UID_ROLLER,
+    UID_SHUTTER,
     UID_SMARTDRAPE,
     UID_STATUS_ONLY,
     devices_payload,
@@ -230,23 +238,62 @@ async def test_unknown_module_type_is_warned_about_once(
     assert len(unknown_type_warnings()) == 1
 
 
-async def test_roller_shade_and_smartdrape_types_are_mapped(
+@pytest.mark.parametrize(
+    ("module_type", "module_detail", "expected"),
+    [
+        (1, 1, COVER_TYPE_SHUTTER),
+        (32, 2, COVER_TYPE_SINGLE_RAIL),  # the reference hub's single-rail shades
+        (32, 0, COVER_TYPE_SINGLE_RAIL),
+        (32, 3, COVER_TYPE_TWO_RAIL),  # top-down/bottom-up: the app gives it two sliders
+        (32, 5, COVER_TYPE_TWO_RAIL),
+        (33, 3, COVER_TYPE_TWO_RAIL),
+        (48, 1, COVER_TYPE_SINGLE_RAIL),  # Roller Shade (issue #2)
+        (48, 2, COVER_TYPE_SINGLE_RAIL),  # Roman Shade
+        (48, 3, COVER_TYPE_SHEER),  # PerfectSheer
+        (49, 1, COVER_TYPE_SINGLE_RAIL),
+        (49, 3, COVER_TYPE_SHEER),
+        (80, 1, COVER_TYPE_DRAPE),  # SmartDrape (issue #2)
+        (7, 1, COVER_TYPE_TWO_RAIL),  # unknown: the two-rail fallback
+        (None, None, COVER_TYPE_TWO_RAIL),
+        (48, None, COVER_TYPE_SINGLE_RAIL),  # no detail: the type's own mapping
+    ],
+)
+def test_cover_types_follow_the_apps_module_table(
+    module_type: int | None, module_detail: int | None, expected: str
+) -> None:
+    """The ModuleType/ModuleDetail pairs the Norman app knows, and how each is driven."""
+    assert cover_type(module_type, module_detail) == expected
+
+
+async def test_every_product_in_the_apps_table_is_mapped(
     hass: HomeAssistant,
-    init_with_roller_and_drape: MockConfigEntry,
+    init_with_every_product: MockConfigEntry,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Issue #2's two ModuleTypes: 48 is a roller shade (one rail), 80 a SmartDrape.
-
-    Neither is warned about as unknown any more.
-    """
-    coordinator: NormanCoordinator = init_with_roller_and_drape.runtime_data
+    """None of the app's six ModuleTypes is warned about as unknown."""
+    coordinator: NormanCoordinator = init_with_every_product.runtime_data
     assert coordinator.data[UID_ROLLER].type == COVER_TYPE_SINGLE_RAIL
     assert coordinator.data[UID_SMARTDRAPE].type == COVER_TYPE_DRAPE
+    assert coordinator.data[UID_SHUTTER].type == COVER_TYPE_SHUTTER
+    assert coordinator.data[UID_SHUTTER].position == 7
 
     records = [*caplog.get_records("setup"), *caplog.get_records("call")]
     warned = [r.getMessage() for r in records if "unknown ModuleType" in r.getMessage()]
-    assert warned, "the status-only peripheral still is"
-    assert not [m for m in warned if f" {UID_ROLLER} " in m or f" {UID_SMARTDRAPE} " in m]
+    assert len(warned) == 1, "only the status-only peripheral, which has no type at all"
+    assert f"peripheral {UID_STATUS_ONLY} " in warned[0]
+
+
+def test_louver_positions_are_clamped_to_the_shutters_range() -> None:
+    """A Shutter's Position is 0-7; anything outside is clamped, junk dropped."""
+    status = {
+        "Peripherals": [
+            {"PeripheralUID": 1, "ModuleType": 1, "Position": 9, "TargetPosition": -2},
+            {"PeripheralUID": 2, "ModuleType": 1, "Position": "x"},
+        ]
+    }
+    devices = process({}, status)
+    assert (devices[1].position, devices[1].target_position) == (7, 0)
+    assert devices[2].position is None
 
 
 async def test_hub_data_is_refreshed(
@@ -310,7 +357,7 @@ async def test_undocumented_fields_are_logged_once_each(
 
 async def test_documented_fields_are_not_logged(
     hass: HomeAssistant,
-    init_with_roller_and_drape: MockConfigEntry,
+    init_with_every_product: MockConfigEntry,
     fake_hub: FakeHub,
     notifications: asyncio.Queue,
     caplog: pytest.LogCaptureFixture,
@@ -319,7 +366,8 @@ async def test_documented_fields_are_not_logged(
 
     If this fails, a field was added to the test payloads without adding it to
     KNOWN_HUB_FIELDS / KNOWN_PERIPHERAL_FIELDS in const.py (and to docs/NORMAN_API.md). The
-    SmartDrape's MSDStackType and MsdStatus are included.
+    Every product in the app's table is paired, so the SmartDrape's MSDStackType and
+    MsdStatus, the Shutter's Position fields and the MRS2's Mrs2Status are included.
     """
     with caplog.at_level(logging.DEBUG, logger="custom_components.norman.coordinator"):
         await notifications.put({"PeripheralList": [UID_LIVING]})

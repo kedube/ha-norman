@@ -99,11 +99,23 @@ for the rail you moved, and the integration moves the other rail in the same com
 
 On a top-down/bottom-up blind the same two bands read as the open top and the covered bottom.
 
-### SmartDrape
+### Shutters
 
-A SmartDrape is drawn as a single shade for now: the band shows how far the drape is drawn
-across the window, and dragging it draws the drape open or closed. The card has no control for
-the vanes; tilt them from the blind's more-info dialog (click its name).
+A Shutter is drawn as a plantation shutter in its window: a painted frame, a column of louvers
+and the tilt rod down their middle. The louvers turn as they do on the shutter — flat and
+overlapping when shut, nearly edge-on with the view between them when open — and lean the
+other way when the hub reports them turned past horizontal. **Drag the tilt rod** up to open
+them and down to close them, in quarters (shut, 25, 50, 75, open); the keyboard moves them a
+quarter per arrow. The status reads "Closed", "Open" or "50% open".
+
+The room's open and close turn a Shutter's louvers along with every other blind; Stop leaves it
+out, since louvers take no stop.
+
+### SmartDrape and PerfectSheer
+
+Both are drawn as a single shade for now: the band shows how far a SmartDrape is drawn across
+the window, or how far a PerfectSheer is lowered, and dragging it moves that. The card has no
+control for their vanes; turn them from the blind's more-info dialog (click its name).
 
 ### The view
 

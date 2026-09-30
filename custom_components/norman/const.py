@@ -230,6 +230,17 @@ KNOWN_PERIPHERAL_FIELDS = frozenset(
         # status code seen as 0. Neither is read.
         "MSDStackType",
         "MsdStatus",
+        # Known from the Norman app's parsers rather than seen from a hub: a Shutter's
+        # louvers (Position / TargetPosition, read), the split-panel pair no product in the
+        # app uses yet, a louver angle, and the MRS2 roller's counterpart of MsdStatus.
+        "Position",
+        "TargetPosition",
+        "Position1",
+        "Position2",
+        "TargetPosition1",
+        "TargetPosition2",
+        "Angle",
+        "Mrs2Status",
         # the command vocabulary advertised by registration
         "RequestModuleInfo",
         "Switch",
@@ -328,15 +339,20 @@ HUB_BUSY_RETRY_DELAY = 5.0
 # binary sensor uses the same rule so Home Assistant and the app agree.
 UNRESPONSIVE_AFTER = timedelta(hours=24)
 
-# Cover types, derived from the hub's ModuleType. Observed on real hubs:
-#   33 (ModuleDetail 3): two rails, the middle rail tracks 0-100 -> position + tilt
-#   32 (ModuleDetail 2): middle rail always 0 -> single rail, position only
-#   48 (ModuleDetail 1): a roller shade (issue #2); only the bottom rail moves and the middle
-#                        rail always reads 0 -> single rail
-#   80 (ModuleDetail 1): a SmartDrape (issue #2) -> drape. The bottom rail is how far the
-#                        drape is drawn and the middle rail its vane tilt: two independent
-#                        motions, where a two-rail shade's rails hang one above the other and
-#                        carry each other when they would cross.
+# Cover types, derived from the hub's ModuleType and ModuleDetail. The Norman app (ShadeAuto
+# 0.8.33, decoded 2026-09-29) knows exactly six ModuleTypes, and decides from the pair which
+# sliders a blind gets (its getPositionTypes) and what it is called:
+#   1        Shutter (MS4). Driven by one louver field, Position 0-7, not by the rails.
+#   32       Cellular Shade (MCS). ModuleDetail 3-5 get two sliders (a top-down/bottom-up
+#            shade); 0 and 2 one. The reference hub's are 32/2: middle rail always 0.
+#   33       Cellular Shade, dual (DMCS), ModuleDetail 3-5: two rails for its two fabrics.
+#   48, 49   The roller family (MRS1, MRS2), named by ModuleDetail: 1 Roller Shade and
+#            2 Roman Shade (one rail), 3 PerfectSheer (the rail plus a vane control on the
+#            middle rail). 48/1 confirmed as a roller shade in issue #2.
+#   80       SmartDrape (MSD), ModuleDetail 1. Bottom rail = how far the drape is drawn,
+#            middle rail = vane tilt in seven stops (MSD_VANE_STOPS). Seen in issue #2.
+# A two-rail shade's rails hang one above the other and carry each other when they would
+# cross; a drape's or a PerfectSheer's two values are independent motions.
 # Unknown types fall back to two-rail -- the safer default, since a two-rail blind driven as
 # single-rail would leave its middle rail unreachable -- and are logged once so the owner can
 # report the hub payload. The fallback is not free on a single-rail product: Best Privacy and
@@ -346,16 +362,47 @@ UNRESPONSIVE_AFTER = timedelta(hours=24)
 COVER_TYPE_TWO_RAIL = "two_rail"
 COVER_TYPE_SINGLE_RAIL = "single_rail"
 COVER_TYPE_DRAPE = "drape"
+COVER_TYPE_SHEER = "sheer"
+COVER_TYPE_SHUTTER = "shutter"
 MODULE_TYPE_COVER_TYPES: dict[int, str] = {
+    1: COVER_TYPE_SHUTTER,
     32: COVER_TYPE_SINGLE_RAIL,
     33: COVER_TYPE_TWO_RAIL,
     48: COVER_TYPE_SINGLE_RAIL,
+    49: COVER_TYPE_SINGLE_RAIL,
     80: COVER_TYPE_DRAPE,
+}
+# Where the ModuleDetail changes what the ModuleType alone would give.
+MODULE_DETAIL_COVER_TYPES: dict[tuple[int, int], str] = {
+    (32, 3): COVER_TYPE_TWO_RAIL,
+    (32, 4): COVER_TYPE_TWO_RAIL,
+    (32, 5): COVER_TYPE_TWO_RAIL,
+    (48, 3): COVER_TYPE_SHEER,
+    (49, 3): COVER_TYPE_SHEER,
 }
 DEFAULT_COVER_TYPE = COVER_TYPE_TWO_RAIL
 
+# A SmartDrape's vanes take seven positions and nothing else: the app sends only these
+# values for its seven-stop vane slider, and draws them symmetrically -- 0 and 100 fully
+# closed, tilted opposite ways, and 50 fully open (its convertMSDSliderValue: and vane
+# images). The cover's tilt is how open the vanes are, which folds the two closed ends onto
+# 0; a tilt the integration sends closes them towards 100, the side Best Privacy uses.
+MSD_VANE_STOPS: tuple[int, ...] = (0, 17, 33, 50, 66, 83, 100)
+MSD_VANE_OPEN_STOP = 3  # index of 50 in MSD_VANE_STOPS
+
+# A Shutter's louvers: Position 0-7. From the app's calibration steps and louver drawings,
+# 7 is fully closed ("Fully Close"), the louvers move down through 3, horizontal and fully
+# open, to 0, the furthest they tilt the other way -- which still lets light through. As for
+# the SmartDrape, the cover's tilt is how open the louvers are, and a tilt the integration
+# sends uses the 7-3 side, the one "Fully Close" and calibration start from.
+SHUTTER_CLOSED = 7
+SHUTTER_OPEN = 3
+SHUTTER_LOWEST = 0
+HUB_CMD_SHUTTER_POSITION = "Position"
+
 ATTR_TARGET_POSITION = "target_position"
 ATTR_TARGET_TILT = "target_tilt"
+ATTR_LOUVER_POSITION = "louver_position"  # a Shutter's raw Position, 0-7
 ATTR_STEP = "step"
 
 SERVICE_NUDGE_POSITION = "nudge_position"

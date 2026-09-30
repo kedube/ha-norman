@@ -120,19 +120,22 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
 
 ## Adding support for another Norman product
 
-Four `ModuleType` values are mapped (33 two-rail, 32 and 48 single-rail, 80 SmartDrape);
-anything else is treated as two-rail with a warning. To map another product:
+Every `ModuleType` the Norman app knows is mapped (1, 32, 33, 48, 49, 80; see the cover-type
+table in `docs/NORMAN_API.md`), four of them from the app alone. Anything else is treated as
+two-rail with a warning. To map another product, or confirm one of the app-only ones:
 
 1. Get the raw hub payloads with the product paired: run the `norman.get_hub_data` action
    from Developer tools, or take a [diagnostics export](README.md#diagnostics) and read
    `hub_traffic.latest_raw`. Note the peripheral's `ModuleType` and `ModuleDetail` and how its
    rails behave when it moves.
-2. Add the `ModuleType` to `MODULE_TYPE_COVER_TYPES` in `const.py`, adding a cover type
-   constant if none of the existing ones fits.
+2. Add the `ModuleType` to `MODULE_TYPE_COVER_TYPES` in `const.py` — or, where one type covers
+   several products, the pair to `MODULE_DETAIL_COVER_TYPES` — adding a cover type constant if
+   none of the existing ones fits.
 3. If it needs new behaviour, add an entity class in `cover.py` (subclass `NormanCoverBase`)
-   and register it in `COVER_CLASSES`. Add its product name to `MODULE_TYPE_MODELS` in
-   `entity.py` if the product is known.
-4. Add the payload to `tests/const.py` and cover the new behaviour in `tests/test_cover.py`.
+   and register it in `COVER_CLASSES`. Add its product name to `MODULE_TYPE_MODELS` (or
+   `MODULE_DETAIL_MODELS`) in `entity.py`.
+4. Add the payload to `tests/const.py` (and to `EVERY_NEW_PRODUCT` there) and cover the new
+   behaviour in `tests/test_products.py`.
    Only a two-rail type gets middle-rail entities; a type that used to fall back to two-rail
    has its old ones deleted at startup (`async_remove_entity` in `entity.py`).
 5. Update the **Supported devices** table in the README and the type tables in

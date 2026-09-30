@@ -20,6 +20,7 @@ from .const import (
     CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
+    COVER_TYPE_SHUTTER,
     COVER_TYPE_SINGLE_RAIL,
     DEFAULT_CONTROL_INTERVAL,
     DEFAULT_COVER_TYPE,
@@ -36,12 +37,14 @@ from .const import (
     MIN_CONTROL_INTERVAL,
     MIN_POLL_INTERVAL,
     MIN_WAKE_INTERVAL,
+    MODULE_DETAIL_COVER_TYPES,
     MODULE_TYPE_COVER_TYPES,
     MOVE_ATTEMPTS,
     MOVE_REPORT_WAIT,
     MOVE_TIMEOUT,
     POLL_DISABLED,
     RECONNECT_INTERVAL,
+    SHUTTER_CLOSED,
     WAKE_DISABLED,
 )
 from .models import NormanDevices, NormanHubData, NormanPeripheralData
@@ -62,8 +65,19 @@ class _Sighting(NamedTuple):
 
 
 def _rails(data: NormanPeripheralData) -> _Rails:
+    """What a blind reports it is at. A Shutter's louvers stand in for the bottom rail."""
+    if data.type == COVER_TYPE_SHUTTER:
+        return (data.position, None)
     middle = None if data.type == COVER_TYPE_SINGLE_RAIL else data.middle_rail_position
     return (data.bottom_rail_position, middle)
+
+
+def _targets(data: NormanPeripheralData) -> _Rails:
+    """What the hub has recorded as a blind's target, in the same shape as ``_rails``."""
+    if data.type == COVER_TYPE_SHUTTER:
+        return (data.target_position, None)
+    middle = None if data.type == COVER_TYPE_SINGLE_RAIL else data.target_middle_rail_position
+    return (data.target_bottom_rail_position, middle)
 
 
 def _distance(rails: _Rails, goal: _Rails) -> int:
@@ -235,6 +249,15 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             await self.api.async_set_position(device_id, bottom, middle)
 
         self._async_start_watch(device_id, (bottom, middle), resend, "move")
+
+    @callback
+    def async_watch_louvers(self, device_id: int, position: int) -> None:
+        """``async_watch_move`` for a Shutter: its louvers take the bottom rail's place."""
+
+        async def resend() -> None:
+            await self.api.async_set_louvers(device_id, position)
+
+        self._async_start_watch(device_id, (position, None), resend, "louver")
 
     @callback
     def async_watch_preset(self, device_id: int, resend: Callable[[], Awaitable[Any]]) -> None:
@@ -420,7 +443,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         short -- an obstruction, a stall -- is not helped by being sent it again.
         """
         data = (self.data or {}).get(device_id)
-        if data is None or data.bottom_rail_position is None:
+        if data is None or _rails(data)[0] is None:
             return True  # gone from the hub, or no position to judge by; nothing to chase
         remaining = _distance(_rails(data), goal)
         return remaining == 0 or remaining < _distance(start.rails, goal)
@@ -428,10 +451,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     def _hub_target(self, device_id: int) -> _Rails | None:
         """The position the hub has recorded as this blind's target, if any."""
         data = (self.data or {}).get(device_id)
-        if data is None or data.target_bottom_rail_position is None:
+        if data is None:
             return None
-        middle = None if data.type == COVER_TYPE_SINGLE_RAIL else data.target_middle_rail_position
-        return (data.target_bottom_rail_position, middle)
+        targets = _targets(data)
+        return None if targets[0] is None else targets
 
     def _blind_name(self, device_id: int) -> str:
         data = (self.data or {}).get(device_id)
@@ -460,6 +483,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             translation_key=ISSUE_BLIND_NOT_RESPONDING,
             translation_placeholders={"name": name, "attempts": str(MOVE_ATTEMPTS)},
         )
+        data = (self.data or {}).get(device_id)
+        # A Shutter's goal is its louvers, not a rail (see _rails).
+        louvers = data is not None and data.type == COVER_TYPE_SHUTTER
         self.hass.bus.async_fire(
             EVENT_COMMAND_FAILED,
             {
@@ -467,8 +493,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 "peripheral_uid": device_id,
                 "name": name,
                 "attempts": MOVE_ATTEMPTS,
-                "bottom_rail_position": goal[0],
+                "bottom_rail_position": None if louvers else goal[0],
                 "middle_rail_position": goal[1],
+                "louver_position": goal[0] if louvers else None,
             },
         )
 
@@ -707,16 +734,17 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                         continue
 
                     module_type = _parse_int(peripheral.get("ModuleType"))
+                    module_detail = _parse_int(peripheral.get("ModuleDetail"))
                     devices[peripheral_uid] = NormanPeripheralData(
                         id=peripheral_uid,
                         name=peripheral.get("PeripheralName") or f"Norman {peripheral_uid}",
-                        type=_cover_type(module_type),
+                        type=cover_type(module_type, module_detail),
                         room_id=_parse_int(room_id),
                         room_name=room_name,
                         group_id=_parse_int(group_id),
                         group_name=group_name,
                         module_type=module_type,
-                        module_detail=_parse_int(peripheral.get("ModuleDetail")),
+                        module_detail=module_detail,
                     )
 
         # Add status information
@@ -728,12 +756,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             if peripheral_uid not in devices:
                 # Create minimal device if not found in device_info
                 module_type = _parse_int(peripheral.get("ModuleType"))
+                module_detail = _parse_int(peripheral.get("ModuleDetail"))
                 devices[peripheral_uid] = NormanPeripheralData(
                     id=peripheral_uid,
                     name=f"Norman {peripheral_uid}",
-                    type=_cover_type(module_type),
+                    type=cover_type(module_type, module_detail),
                     module_type=module_type,
-                    module_detail=_parse_int(peripheral.get("ModuleDetail")),
+                    module_detail=module_detail,
                 )
 
             device = devices[peripheral_uid]
@@ -745,6 +774,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             device.target_middle_rail_position = _parse_position(
                 peripheral.get("TargetMiddleRailPosition")
             )
+            device.position = _parse_louvers(peripheral.get("Position"))
+            device.target_position = _parse_louvers(peripheral.get("TargetPosition"))
             # Despite its name the field is a 0-100 level on every hub seen so far
             device.battery_level = _parse_position(peripheral.get("BatteryVoltage"))
             device.signal_strength = _parse_int(peripheral.get("RssiMean"))
@@ -755,10 +786,12 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         return devices
 
 
-def _cover_type(module_type: int | None) -> str:
-    """The cover type for a ModuleType, defaulting when it is unknown or missing."""
+def cover_type(module_type: int | None, module_detail: int | None = None) -> str:
+    """The cover type for a ModuleType/ModuleDetail, defaulting when the type is unknown."""
     if module_type is None:
         return DEFAULT_COVER_TYPE
+    if module_detail is not None and (module_type, module_detail) in MODULE_DETAIL_COVER_TYPES:
+        return MODULE_DETAIL_COVER_TYPES[(module_type, module_detail)]
     return MODULE_TYPE_COVER_TYPES.get(module_type, DEFAULT_COVER_TYPE)
 
 
@@ -801,3 +834,9 @@ def _parse_position(raw: Any) -> int | None:
     """Coerce a rail position to an int clamped to 0-100, or None if unusable."""
     value = _parse_int(raw)
     return None if value is None else max(0, min(100, value))
+
+
+def _parse_louvers(raw: Any) -> int | None:
+    """Coerce a Shutter's louver position to an int clamped to 0-7, or None if unusable."""
+    value = _parse_int(raw)
+    return None if value is None else max(0, min(SHUTTER_CLOSED, value))

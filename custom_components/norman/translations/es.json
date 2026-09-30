@@ -82,7 +82,7 @@
       "fields": {
         "step": {
           "name": "Paso",
-          "description": "Cantidad de inclinación, de -100 a 100. La dirección depende de la persiana; en SmartDrape, un valor negativo inclina a la izquierda."
+          "description": "Cantidad de inclinación, de -100 a 100. Un valor positivo abre: sube el riel intermedio de una persiana de dos rieles y abre las lamas de un SmartDrape o de una contraventana, al menos una posición con cualquier valor."
         }
       }
     },
@@ -140,6 +140,9 @@
       },
       "middle_rail": {
         "name": "Riel intermedio"
+      },
+      "louvers": {
+        "name": "Lamas"
       }
     },
     "number": {
