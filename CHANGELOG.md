@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.59 — 2026-09-30
 - **Every product the Norman app knows is supported.** The app (ShadeAuto 0.8.33) decides from
   a blind's `ModuleType` and `ModuleDetail` what it is and which controls it gets, and the
   integration now follows the same table: Shutter (1), Cellular Shade (32, with 32/3–5 a
