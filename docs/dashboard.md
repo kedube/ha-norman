@@ -4,13 +4,14 @@ The integration ships a Lovelace card, **Norman Shades**, that draws every blind
 with its shade hanging in it, grouped by room. The window is the control: **drag a rail's pull
 tab** to move it.
 
-<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — single-rail shades in ivory, two-rail shades with the see-through light-filtering fabric above the blackout." width="560">
+<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — single-rail shades in ivory, two-rail shades with the see-through light-filtering fabric above the blackout, and two shutters with their louvers half open and open." width="560">
 
-*The card with seven blinds across three rooms. Den_2 is on its way down: the shade is drawn
+*The card with eight blinds across three rooms. Den_2 is on its way down: the shade is drawn
 where it is going, the dashed line is where it is now, and its Stop button sits on the corner.
 The two-rail blinds in the middle row show Best privacy (the blackout across the window), both
 rails part-way, and both rails down (the light-filtering fabric across the window, with the view
-showing through it).*
+showing through it). The Study's two Shutters have their louvers half open and open; Study_2's
+battery is the low one the summary counts.*
 
 The card header is named after your **hub** — the name it has in Home Assistant, which the
 integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`

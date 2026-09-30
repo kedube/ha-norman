@@ -19,8 +19,8 @@ sensor, and five buttons.
 
 *Everything in that table, on one blind's device page. **Controls** holds the covers and
 sliders, **Configuration** the five buttons that move or set something, and **Diagnostic** the
-sensors plus the Request status button and the connection sensor (added after this screenshot)
-— Home Assistant sorts them by the entity category each one declares.*
+sensors plus the Request status button — Home Assistant sorts them by the entity category each
+one declares.*
 
 ## Devices
 

@@ -13,10 +13,10 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 [![Release](https://img.shields.io/github/v/release/kedube/ha-norman?sort=semver)](https://github.com/kedube/ha-norman/releases)
 
-<img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each drawn as a window with its shade hanging in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
+<img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each drawn as a window with its shade or shutter in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
 
-*The bundled **Norman Shades** card: drag a shade's pull tab to move it. It registers itself,
-finds your blinds, and needs no configuration.*
+*The bundled **Norman Shades** card: drag a shade's pull tab, or a shutter's tilt rod, to move it.
+It registers itself, finds your blinds, and needs no configuration.*
 
 ## Contents
 
@@ -150,7 +150,7 @@ makes a DHCP address change self-healing; a **fixed address** (a DHCP reservatio
 is still the simplest setup. Entries created by versions before 0.11 are re-keyed to the hub's
 name automatically on their next load. Several hubs can be added, each as its own entry.
 
-<img src="images/integration.png" alt="The Norman integration page listing one hub and its blinds, each showing its product type, room and entity count." width="820">
+<img src="images/integration.png" alt="The Norman integration page listing one hub and its blinds — cellular, dual-rail cellular, roller, SmartDrape and Shutter — each showing its product type, room and entity count." width="820">
 
 *After setup. Every blind the hub knows about appears with the name and room it has in the
 Norman app, and its product type — no manual entity configuration.*
@@ -197,7 +197,7 @@ buttons (the app's All Rooms header, one request for the whole house); **refresh
 **start pairing** and a **pairing mode** sensor. Full detail, including
 availability rules, is in [docs/entities.md](docs/entities.md).
 
-<img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, firmware version, last seen and signal strength." width="820">
+<img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, connection, last seen and Request status; Activity with the rails' recent moves." width="820">
 
 *A two-rail blind. Both rails get their own controls and slider; the five buttons sit under
 Configuration, and the model, firmware and serial number come from the hub.*
