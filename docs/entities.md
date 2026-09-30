@@ -81,7 +81,9 @@ The vanes take seven positions and nothing else — the app sends only 0, 17, 33
 100 — and they are open at 50 and closed at both ends, turned opposite ways. So the tilt is how
 open they are: **0, 33, 67 or 100**, with either closed end reading 0. A tilt set here goes to
 the nearest of those, closing towards 100 (where Best privacy puts them): tilt 100 sends 50,
-67 sends 66, 33 sends 83 and 0 sends 100. A nudge moves at least one stop.
+67 sends 66, 33 sends 83 and 0 sends 100. A nudge moves at least one stop. The `stack`
+attribute says which side the drape gathers to when open (`left`, `right` or `split`), from the
+hub's device list; the dashboard card draws it there.
 
 **A PerfectSheer is one cover.** The bottom rail is the shade and the middle rail the vanes
 between its two sheers, 0 closed to 100 open, as the tilt. They move independently, like a
@@ -114,6 +116,7 @@ peripheral the hub reports status for but does not list by name gets `Norman <ui
 | `target_position` (attribute) | `TargetBottomRailPosition` | Where the bottom rail is heading. Equal to `current_position` when idle. |
 | `target_tilt` (attribute) | `TargetMiddleRailPosition`; a Shutter's `TargetPosition` | Where the tilt is heading, in the same terms as `current_tilt_position`. |
 | `louver_position` (attribute) | `Position` | Shutter only. The hub's own 0–7. |
+| `stack` (attribute) | `MSDStackType` | SmartDrape only. The side it gathers to when open: `left`, `right` or `split`. |
 
 ### Availability
 

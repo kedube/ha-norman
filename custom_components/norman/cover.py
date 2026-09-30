@@ -25,6 +25,7 @@ import voluptuous as vol
 from .api import NormanApiError, NormanConnectionError
 from .const import (
     ATTR_LOUVER_POSITION,
+    ATTR_STACK,
     ATTR_STEP,
     ATTR_TARGET_POSITION,
     ATTR_TARGET_TILT,
@@ -311,7 +312,7 @@ class NormanDrape(NormanBlind):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """The draw's target, and how open the vanes are heading to be."""
+        """The draw's target, how open the vanes are heading to be, and the stack side."""
         data = self._data
         target = data.target_middle_rail_position if data else None
         return {
@@ -319,6 +320,8 @@ class NormanDrape(NormanBlind):
             ATTR_TARGET_TILT: None
             if target is None
             else _percent(_vane_level(target), VANE_LEVELS),
+            # Which side the drape gathers to when open; the dashboard card draws it there.
+            ATTR_STACK: data.stack if data else None,
         }
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:

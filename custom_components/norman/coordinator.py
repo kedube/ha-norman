@@ -42,6 +42,7 @@ from .const import (
     MOVE_ATTEMPTS,
     MOVE_REPORT_WAIT,
     MOVE_TIMEOUT,
+    MSD_STACK_SIDES,
     POLL_DISABLED,
     RECONNECT_INTERVAL,
     SHUTTER_CLOSED,
@@ -812,6 +813,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                         group_name=group_name,
                         module_type=module_type,
                         module_detail=module_detail,
+                        stack=_parse_stack(peripheral.get("MSDStackType")),
                     )
 
         # Add status information
@@ -901,6 +903,13 @@ def _parse_position(raw: Any) -> int | None:
     """Coerce a rail position to an int clamped to 0-100, or None if unusable."""
     value = _parse_int(raw)
     return None if value is None else max(0, min(100, value))
+
+
+def _parse_stack(raw: Any) -> str | None:
+    """A SmartDrape's stack side from ``MSDStackType``, by name or the app's number."""
+    if raw is None:
+        return None
+    return MSD_STACK_SIDES.get(str(raw).strip().lower())
 
 
 def _parse_louvers(raw: Any) -> int | None:

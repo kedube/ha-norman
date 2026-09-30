@@ -5,6 +5,16 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **The dashboard card draws roller shades and SmartDrapes as themselves.** Both used to be
+  drawn as a pleated cellular shade. A Roller Shade now hangs plain woven fabric off a roll
+  that grows as the shade winds up, with brackets at the ends and a hem bar to drag. A
+  SmartDrape is drawn as fabric vanes on a sheer, gathered to the side it stacks to when open
+  (left, right or split) and drawn sideways by its leading edge; its vanes turn with its tilt.
+  The card tells them apart by the device's model (`ModuleType`/`ModuleDetail`).
+- **SmartDrape: new `stack` attribute**, the side the drape gathers to (`left`, `right` or
+  `split`), from the hub's `MSDStackType`.
+
 ## 0.61 — 2026-09-30
 - **Setting both rails at once no longer loses one.** A command that moves one rail sends the
   other where it is heading, and that came from the hub's target alone — which still showed the

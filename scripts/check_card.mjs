@@ -682,5 +682,134 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   check("the list layout's louver slider moves in quarters", slider.input.step === "25", String(slider.input.step));
 }
 
+// Roller shades and SmartDrapes: told apart by their device's model_id (the hub's
+// ModuleType/ModuleDetail), and drawn as themselves rather than as a cellular shade.
+{
+  const pCalls = [];
+  const drape = (position, tilt, stack) => ({ state: position ? "open" : "closed",
+    attributes: { current_position: position, target_position: position, current_tilt_position: tilt, target_tilt: tilt, stack } });
+  const pHass = {
+    entities: {
+      "cover.kitchen_1_bottom_rail": { platform:"norman", device_id:"k1", translation_key:"bottom_rail" },
+      "number.kitchen_1_bottom_rail_position": { platform:"norman", device_id:"k1", translation_key:"bottom_rail_position" },
+      "cover.roman_1_bottom_rail": { platform:"norman", device_id:"m1", translation_key:"bottom_rail" },
+      "cover.sheer_1_bottom_rail": { platform:"norman", device_id:"h1", translation_key:"bottom_rail" },
+      "cover.living_1_bottom_rail": { platform:"norman", device_id:"l1", translation_key:"bottom_rail" },
+      "number.living_1_bottom_rail_position": { platform:"norman", device_id:"l1", translation_key:"bottom_rail_position" },
+      "cover.patio_1_bottom_rail": { platform:"norman", device_id:"p1", translation_key:"bottom_rail" },
+      "cover.den_1_bottom_rail": { platform:"norman", device_id:"c1", translation_key:"bottom_rail" },
+    },
+    devices: {
+      k1:{ name:"Kitchen_1", area_id:"a4", model_id:"48/1" },
+      m1:{ name:"Roman_1", area_id:"a4", model_id:"48/2" },
+      h1:{ name:"Sheer_1", area_id:"a4", model_id:"49/3" },
+      l1:{ name:"Living_1", area_id:"a4", model_id:"80/1" },
+      p1:{ name:"Patio_1", area_id:"a4", model_id:"80/1" },
+      c1:{ name:"Den_1", area_id:"a4", model_id:"32/2" },
+    },
+    areas: { a4:{ name:"Downstairs" } },
+    states: {
+      "cover.kitchen_1_bottom_rail": { state:"open", attributes:{ current_position:60, target_position:60 } },
+      "number.kitchen_1_bottom_rail_position": { state:"60" },
+      "cover.roman_1_bottom_rail": { state:"open", attributes:{ current_position:60 } },
+      "cover.sheer_1_bottom_rail": { state:"open", attributes:{ current_position:60 } },
+      "cover.living_1_bottom_rail": drape(100, 100, "left"),
+      "number.living_1_bottom_rail_position": { state:"100" },
+      "cover.patio_1_bottom_rail": drape(50, 0, "split"),
+      "cover.den_1_bottom_rail": { state:"open", attributes:{ current_position:60 } },
+    },
+    callService: (d, s, data) => { pCalls.push([d, s, data]); return Promise.resolve(); },
+  };
+  const c = new Card();
+  c._hass = pHass;
+  c.setConfig({ type:"custom:norman-shades-card" });
+  c._hass = pHass;
+  const found = Object.fromEntries(c._collectBlinds().map((b) => [b.name, b]));
+  check("a roller shade (48/1) is recognised from its model_id", found.Kitchen_1?.product === "roller", String(found.Kitchen_1?.product));
+  check("a SmartDrape (80/1) is recognised, with the side it stacks to",
+        found.Living_1?.product === "drape" && found.Living_1.stack === "left", JSON.stringify(found.Living_1));
+  check("Roman shades, PerfectSheers and cellular shades keep the cellular picture",
+        [found.Roman_1, found.Sheer_1, found.Den_1].every((b) => b.product === null));
+  pHass.states["cover.living_1_bottom_rail"] = drape(100, 100, "sideways");
+  check("an unknown stack side is drawn gathering left",
+        c._collectBlinds().find((b) => b.name === "Living_1").stack === "left");
+  pHass.states["cover.living_1_bottom_rail"] = drape(100, 100, "left");
+
+  // The roller: plain fabric off a roll that grows as the shade winds up.
+  const kitchen = found.Kitchen_1;
+  const kRails = c._railsOf(kitchen);
+  const roller = c._buildShade(kitchen, kRails);
+  c._drawShade(roller);
+  check("a roller shade is drawn with a roll and plain fabric, not a headrail and pleats",
+        roller.roll && String(roller.roll.className) === "roll" && String(roller.bands[0].className) === "fabric roller" &&
+        String(roller.element.className) === "win roller");
+  const rollAt = (value) => { roller.dragValues = { 0: value }; c._drawShade(roller); return height(roller.roll); };
+  check("the roll is thickest with the shade up and thinnest with it down",
+        near(rollAt(100), HEAD - 0.5) && near(rollAt(0), 4) && rollAt(50) > 4 && rollAt(50) < HEAD - 0.5,
+        `${rollAt(100)} ${rollAt(0)}`);
+  roller.dragValues = { 0: 0 };
+  c._drawShade(roller);
+  check("the fabric comes off the roll's underside", near(top(roller.bands[0]), 0.5 + 4 / 2), String(top(roller.bands[0])));
+  check("...and the bottom bar still closes onto the sill",
+        near(top(roller.railEls[0]) + RAIL, 100), String(top(roller.railEls[0])));
+  roller.dragValues = {};
+
+  // The SmartDrape: drawn sideways from the side it gathers to.
+  const living = found.Living_1;
+  const lRails = c._railsOf(living);
+  const drapeShade = c._buildShade(living, lRails);
+  check("a SmartDrape is drawn as vanes with a leading edge, not fabric bands",
+        drapeShade.drape && drapeShade.bands.length === 0 && drapeShade.parts.length === 1 &&
+        drapeShade.parts[0].vanes.length === 14 && String(drapeShade.element.className) === "win drape");
+  const lead = () => parseFloat(drapeShade.parts[0].lead.style.left);
+  c._drawShade(drapeShade);
+  check("open, it is gathered to the left", near(lead(), 16), String(lead()));
+  drapeShade.dragValues = { 0: 0 };
+  c._drawShade(drapeShade);
+  check("drawn, its edge reaches the far side", near(lead(), 100), String(lead()));
+  drapeShade.dragValues = {};
+  const vaneTurn = () => drapeShade.parts[0].vanes[0].style.transform;
+  c._drawShade(drapeShade);
+  check("open vanes are turned nearly edge-on", vaneTurn() === "rotateY(75deg)", vaneTurn());
+  pHass.states["cover.living_1_bottom_rail"] = drape(100, 0, "left");
+  c._drawShade(drapeShade);
+  check("closed vanes lie flat", vaneTurn() === "rotateY(0deg)", vaneTurn());
+  const zone = drapeShade.zones[0];
+  check("its edge is a horizontal keyboard slider",
+        zone.attrs.role === "slider" && zone.attrs["aria-orientation"] === "horizontal" && zone.dataset.side === "left");
+  c._onKey(drapeShade, 0, { key: "ArrowRight", preventDefault: () => {} }, "left");
+  check("ArrowRight draws a left-stacking drape across (closes it)", drapeShade.dragValues[0] === 90, JSON.stringify(drapeShade.dragValues));
+  clearTimeout(drapeShade.keyTimer);
+  c._onKey(drapeShade, 0, { key: "ArrowLeft", preventDefault: () => {} }, "left");
+  check("...and ArrowLeft gathers it back", drapeShade.dragValues[0] === 100, JSON.stringify(drapeShade.dragValues));
+  clearTimeout(drapeShade.keyTimer);
+  drapeShade.dragValues = {};
+  pCalls.length = 0;
+  c._move(lRails, 0, 40);
+  check("moving the drape writes its position slider",
+        pCalls[0]?.[1] === "set_value" && pCalls[0][2].entity_id === "number.living_1_bottom_rail_position" && pCalls[0][2].value === 40,
+        JSON.stringify(pCalls[0]));
+
+  // A split drape: half to each side, both edges on the one position.
+  const patio = found.Patio_1;
+  const split = c._buildShade(patio, c._railsOf(patio));
+  c._drawShade(split);
+  const [left, right] = split.parts;
+  check("a split drape has an edge per half, on the one position",
+        split.parts.length === 2 && left.vanes.length === 7 && right.vanes.length === 7 &&
+        split.zones.every((z) => z.dataset.index === "0"));
+  const leftEdge = parseFloat(left.lead.style.left), rightEdge = parseFloat(right.lead.style.left);
+  check("half drawn, its edges stand the same way off each side", near(leftEdge, 100 - rightEdge) && leftEdge < 50,
+        `${leftEdge} ${rightEdge}`);
+  split.dragValues = { 0: 0 };
+  c._drawShade(split);
+  check("drawn, its halves meet in the middle",
+        near(parseFloat(left.lead.style.left), 50) && near(parseFloat(right.lead.style.left), 50));
+  split.dragValues = {};
+  c._onKey(split, 0, { key: "ArrowRight", preventDefault: () => {} }, "right");
+  check("ArrowRight on the right half gathers it (opens)", split.dragValues[0] === 60, JSON.stringify(split.dragValues));
+  clearTimeout(split.keyTimer);
+}
+
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);

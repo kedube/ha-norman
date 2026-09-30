@@ -296,6 +296,34 @@ def test_louver_positions_are_clamped_to_the_shutters_range() -> None:
     assert devices[2].position is None
 
 
+@pytest.mark.parametrize(
+    ("raw", "stack"),
+    [
+        ("left", "left"),
+        ("Right", "right"),
+        (" split ", "split"),
+        (1, "left"),
+        ("2", "split"),
+        (3, "right"),
+        ("middle", None),
+        (None, None),
+    ],
+)
+def test_a_smartdrapes_stack_side_is_read_by_name_or_number(raw: object, stack: str | None) -> None:
+    """The hub has sent the name; the app numbers them 1 left, 2 split, 3 right."""
+    peripheral = {"PeripheralUID": "7", "ModuleType": "80", "ModuleDetail": "1"}
+    if raw is not None:
+        peripheral["MSDStackType"] = raw
+    device_list = {
+        "results": {
+            "RoomList": [
+                {"RoomID": 1, "GroupList": [{"GroupID": 1, "PeripheralList": [peripheral]}]}
+            ]
+        }
+    }
+    assert process(device_list, {})[7].stack == stack
+
+
 async def test_hub_data_is_refreshed(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:

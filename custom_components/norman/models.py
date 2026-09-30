@@ -18,6 +18,7 @@ class NormanPeripheralData:
     group_name: str | None = None
     module_type: int | None = None
     module_detail: int | None = None
+    stack: str | None = None  # a SmartDrape's MSDStackType: "left", "right" or "split"
     bottom_rail_position: int | None = None
     middle_rail_position: int | None = None
     target_bottom_rail_position: int | None = None

@@ -79,6 +79,35 @@ const LOUVER_TRAVEL_PCT = 70;
 // Below this raw Position the hub reports the louvers turned the other way (the app's 0-2).
 const LOUVER_HORIZONTAL = 3;
 const stepOf = (rail) => (rail.louvers ? LOUVER_STEP : STEP);
+
+// A roller shade's fabric winds onto a roll at the top: thickest with the shade up, thinnest
+// with it down. In percent of the opening's height. Fully up, the roll's underside is where a
+// cellular shade's headrail ends, so the bottom bar tucks beneath it the same way.
+const ROLL_TOP_PCT = 0.5;
+const ROLL_MIN_PCT = 4;
+const ROLL_MAX_PCT = SHADE_HEAD_PCT - ROLL_TOP_PCT;
+
+// A SmartDrape: fabric vanes on a sheer, hung from a track and drawn across the window
+// sideways. Widths are percent of the opening's width.
+const DRAPE_VANES = 14; // across the whole window; a split drape has half on each side
+const DRAPE_STACK_PCT = 16; // how much of the window the drape covers gathered to one side
+const DRAPE_TRACK_PCT = 4.5; // the track's depth, in percent of the opening's height
+const DRAPE_VANE_OVERLAP = 1.15; // a vane's width over its share of the closed drape
+// How far the vanes turn at fully open: nearly edge-on to the window, as the real ones stop.
+const VANE_OPEN_DEG = 75;
+// The sides a drape gathers to when open, by the cover's `stack` attribute.
+const STACK_SIDES = { left: ["left"], right: ["right"], split: ["left", "right"] };
+
+// Which picture a blind gets, from its device's model_id: the hub's ModuleType/ModuleDetail
+// ("48/1"), as the integration records it. Roller shades (48 and 49, but not detail 2, a
+// Roman shade, or 3, a PerfectSheer) and SmartDrapes (80) are drawn as themselves; anything
+// else is drawn as a cellular shade.
+const productOf = (device) => {
+  const [type, detail] = String(device?.model_id ?? "").split("/").map(Number);
+  if (type === 80) return "drape";
+  if ((type === 48 || type === 49) && detail !== 2 && detail !== 3) return "roller";
+  return null;
+};
 const round3 = (value) => Math.round(value * 1000) / 1000;
 
 const el = (tag, className, text) => {
@@ -547,7 +576,9 @@ const STYLES = `
   ha-card[data-sky="dusk"] .fabric.blackout::after { display: none; }
   ha-card[data-theme="dark"] .fabric,
   ha-card[data-theme="dark"] .rail,
-  ha-card[data-theme="dark"] .headrail { filter: brightness(0.88); }
+  ha-card[data-theme="dark"] .headrail,
+  ha-card[data-theme="dark"] .roll,
+  ha-card[data-theme="dark"] .hanging { filter: brightness(0.88); }
 
   /* Rails and the headrail: extruded aluminium, lit from above. */
   .rail, .headrail {
@@ -656,6 +687,153 @@ const STYLES = `
     pointer-events: none;
   }
   .bubble.on { opacity: 1; }
+
+  /* ---- a roller shade ---------------------------------------------------------------
+     Plain woven fabric off a roll at the top: no pleats, and the roll grows as the shade
+     winds up onto it. The bottom bar is the shade's weighted hem. */
+  .win.roller .roll {
+    position: absolute;
+    left: -1.5%;
+    right: -1.5%;
+    top: 0.5%;
+    height: 8.5%;
+    z-index: 5;
+    border-radius: 999px;
+    background: linear-gradient(to bottom, var(--n-cloth-lo), var(--n-cloth-hi) 24%, var(--n-cloth) 52%, var(--n-cloth-lo) 80%, var(--n-cloth-crease));
+    box-shadow: 0 0 0 0.5px rgba(90, 70, 40, 0.3), 0 2px 3px -1px rgba(0, 0, 0, 0.35);
+    transition: height 0.45s var(--n-ease);
+  }
+  .win.roller .jamb {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 4;
+    background: linear-gradient(to bottom, var(--n-trim-lo), var(--n-trim));
+    transition: height 0.45s var(--n-ease);
+  }
+  /* The brackets the roll turns in, at each end. */
+  .win.roller .bracket {
+    position: absolute;
+    top: 0;
+    height: var(--n-head);
+    width: 4%;
+    min-width: 3px;
+    z-index: 6;
+    border-radius: 1px;
+    background: linear-gradient(to right, var(--n-rail-lo), var(--n-rail-hi) 45%, var(--n-rail-lo));
+    box-shadow: 0 0 0 0.5px var(--n-rail-edge);
+  }
+  .win.roller .bracket.left { left: -3.5%; }
+  .win.roller .bracket.right { right: -3.5%; }
+  /* A fine weave in both directions over a soft fall of light, and the roll's shadow at the top. */
+  .fabric.roller {
+    background:
+      linear-gradient(to right, rgba(90, 70, 40, 0.1), transparent 8%, transparent 92%, rgba(90, 70, 40, 0.1)),
+      linear-gradient(to bottom, rgba(60, 45, 25, 0.18), transparent 6%),
+      repeating-linear-gradient(to bottom, rgba(140, 120, 90, 0.045) 0 0.5px, transparent 0.5px 1.5px),
+      repeating-linear-gradient(to right, rgba(140, 120, 90, 0.03) 0 0.5px, transparent 0.5px 2px),
+      linear-gradient(to bottom, var(--n-cloth-hi), var(--n-cloth) 55%, var(--n-cloth-lo));
+  }
+  .fabric.roller::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(90% 70% at 70% 30%, rgba(255, 250, 235, 0.55), transparent 70%);
+    mix-blend-mode: soft-light;
+  }
+  ha-card[data-sky="night"] .fabric.roller::after,
+  ha-card[data-sky="dusk"] .fabric.roller::after { display: none; }
+  .win.roller .rail { border-radius: 2px; }
+  .win.dragging .roll, .win.dragging .jamb { transition: none; }
+
+  /* ---- a SmartDrape -------------------------------------------------------------------
+     Fabric vanes on a sheer, hung from a track to the sill and drawn sideways. Each vane
+     turns about its long axis -- flat and overlapping when closed, nearly edge-on when
+     open, the view between them -- and the leading edge is what a hand, and the card, pulls. */
+  .win.drape .headrail { height: 4.5%; }
+  .win.drape .hanging {
+    position: absolute;
+    top: 4.5%;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1;
+    perspective: 320px;
+  }
+  .win.drape .sheer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(252, 249, 243, 0.2);
+    background-image: repeating-linear-gradient(to right, rgba(176, 164, 144, 0.2) 0 1px, transparent 1px 3px);
+    -webkit-backdrop-filter: blur(1px) brightness(1.05) saturate(0.85);
+    backdrop-filter: blur(1px) brightness(1.05) saturate(0.85);
+    transition: left 0.45s var(--n-ease), width 0.45s var(--n-ease);
+  }
+  .win.drape .vane {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(to right, var(--n-cloth-lo), var(--n-cloth-hi) 30%, var(--n-cloth) 62%, var(--n-cloth-lo));
+    box-shadow: 0 0 0 0.5px rgba(120, 100, 70, 0.28), 1px 0 2px rgba(60, 45, 25, 0.16);
+    transform: rotateY(0deg);
+    transition: left 0.45s var(--n-ease), width 0.45s var(--n-ease), transform 0.45s var(--n-ease);
+  }
+  /* The leading edge: a slim bar down the drape's edge with a pull at its middle, pointing
+     the way the drape draws. */
+  .win.drape .lead {
+    top: 4.5%;
+    bottom: 0;
+    right: auto;
+    height: auto;
+    width: 3%;
+    min-width: 3px;
+    min-height: 0;
+    background: linear-gradient(to right, var(--n-rail-lo), var(--n-rail-hi) 40%, var(--n-rail-face) 70%, var(--n-rail-lo));
+    transition: left 0.45s var(--n-ease);
+  }
+  .win.drape .lead.left { transform: translateX(-100%); }
+  .win.drape .lead .tab {
+    top: 44%;
+    left: 100%;
+    width: 7px;
+    height: 14%;
+    min-width: 0;
+    max-width: none;
+    transform: none;
+    border-radius: 0 5px 5px 0;
+    background: linear-gradient(to right, var(--n-rail-face), var(--n-rail-lo));
+  }
+  .win.drape .lead.right .tab {
+    left: auto;
+    right: 100%;
+    border-radius: 5px 0 0 5px;
+    background: linear-gradient(to left, var(--n-rail-face), var(--n-rail-lo));
+  }
+  .win.drape .rail.hot .tab, .win.drape .rail.held .tab { width: 9px; height: 14%; background: var(--n-accent); }
+  .win.drape .zone {
+    top: 4.5%;
+    bottom: 0;
+    left: 0;
+    right: auto;
+    width: 24%;
+    height: auto;
+    transform: translateX(-50%);
+    transition: left 0.45s var(--n-ease);
+  }
+  .win.drape .marker {
+    top: 4.5%;
+    bottom: 0;
+    right: auto;
+    width: 0;
+    height: auto;
+    border-top: 0;
+    border-left: 2px dashed var(--n-accent);
+    transform: translateX(-1px);
+    transition: opacity 0.25s, left 0.8s linear;
+  }
+  .win.dragging .vane, .win.dragging .sheer, .win.dragging .lead { transition: none; }
 
   /* ---- a Shutter ---------------------------------------------------------------------
      Painted louvers in a frame of stiles and rails, set into the window. Each louver turns
@@ -857,6 +1035,8 @@ class NormanShadesCard extends HTMLElement {
           deviceId,
           name: device.name_by_user || device.name || fallbackName,
           room: area.name || this._config.default_room || "Unassigned",
+          product: productOf(device),
+          stack: null,
           bottomCover: null,
           middleCover: null,
           louvers: false,
@@ -904,6 +1084,13 @@ class NormanShadesCard extends HTMLElement {
         // even when its translation key says otherwise.
         blind.battery = entityId;
       }
+    }
+
+    // A drape is drawn gathering to the side it stacks to, which its cover reports.
+    for (const blind of blinds.values()) {
+      if (blind.product !== "drape") continue;
+      const stack = hass.states?.[blind.bottomCover]?.attributes?.stack;
+      blind.stack = STACK_SIDES[stack] ? stack : "left";
     }
 
     // A device with no cover is the hub, not a blind.
@@ -1105,7 +1292,10 @@ class NormanShadesCard extends HTMLElement {
     // Rebuild only when the set of blinds (or a name) changes; otherwise patch values in
     // place so a rail being dragged is never replaced under the user's finger.
     const signature = rooms
-      .map(([room, list]) => `${room}:${list.map((b) => `${b.deviceId}=${b.name}`).join(",")}`)
+      .map(
+        ([room, list]) =>
+          `${room}:${list.map((b) => `${b.deviceId}=${b.name}/${b.product || ""}/${b.stack || ""}`).join(",")}`,
+      )
       .join("|");
     if (signature !== this._signature) {
       this._signature = signature;
@@ -1358,10 +1548,15 @@ class NormanShadesCard extends HTMLElement {
    *
    * The two rails' pull tabs sit apart -- the middle rail's left of centre, the bottom
    * rail's right -- so that both can still be taken hold of when the rails are together.
+   *
+   * A roller shade hangs plain fabric off a roll in place of the headrail, and the roll
+   * grows as the shade winds up onto it.
    */
   _buildShade(blind, rails) {
     if (blind.louvers) return this._buildShutter(blind, rails);
-    const element = el("div", "win");
+    if (blind.product === "drape") return this._buildDrape(blind, rails);
+    const roller = blind.product === "roller";
+    const element = el("div", roller ? "win roller" : "win");
     element.setAttribute("role", "group");
     element.setAttribute("aria-label", blind.name);
 
@@ -1371,8 +1566,9 @@ class NormanShadesCard extends HTMLElement {
     view.append(el("div", "sun"), el("div", "hills"), el("div", "mullion"), el("div", "transom"), el("div", "glint"));
 
     const twoRail = rails.length > 1;
+    const single = roller ? "roller" : "single";
     const bands = rails.map((_, index) =>
-      el("div", `fabric ${twoRail ? (index === 1 ? "sheer" : "blackout") : "single"}`),
+      el("div", `fabric ${twoRail ? (index === 1 ? "sheer" : "blackout") : single}`),
     );
     const markers = rails.map(() => el("div", "marker"));
     const railEls = rails.map((_, index) => {
@@ -1395,11 +1591,27 @@ class NormanShadesCard extends HTMLElement {
     });
     const bubble = el("div", "bubble");
 
-    opening.append(view, ...bands, ...markers, ...railEls, el("div", "headrail"), ...zones, bubble);
+    const head = el("div", roller ? "roll" : "headrail");
+    // Behind a roll, the top of the window's recess: no sky shows round the roll's ends.
+    const jamb = roller ? el("div", "jamb") : null;
+    const brackets = roller ? [el("div", "bracket left"), el("div", "bracket right")] : [];
+    opening.append(view, ...bands, ...markers, ...railEls, ...(jamb ? [jamb] : []), head, ...brackets, ...zones, bubble);
     frame.appendChild(opening);
     element.append(frame, el("div", "sill"));
 
-    const shade = { element, opening, bands, markers, railEls, zones, bubble, rails, dragValues: {} };
+    const shade = {
+      element,
+      opening,
+      bands,
+      markers,
+      railEls,
+      zones,
+      bubble,
+      rails,
+      roll: roller ? head : null,
+      jamb,
+      dragValues: {},
+    };
     this._bindShade(shade);
     return shade;
   }
@@ -1463,6 +1675,76 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /**
+   * A SmartDrape in its window: fabric vanes on a sheer, hung from a track to the sill and
+   * drawn sideways -- gathered to the side it stacks to when open, spread across the window
+   * when closed. A split drape parts in the middle and gathers to both sides.
+   *
+   * The leading edge is what the card drags, sideways. The vanes turn with the cover's tilt,
+   * flat and overlapping when closed and nearly edge-on when open; turning them is the tilt
+   * in the blind's more-info dialog, not a drag here.
+   */
+  _buildDrape(blind, rails) {
+    const element = el("div", "win drape");
+    element.setAttribute("role", "group");
+    element.setAttribute("aria-label", blind.name);
+
+    const frame = el("div", "frame");
+    const opening = el("div", "opening");
+    const view = el("div", "view");
+    view.append(el("div", "sun"), el("div", "hills"), el("div", "mullion"), el("div", "transom"), el("div", "glint"));
+
+    const sides = STACK_SIDES[blind.stack] || STACK_SIDES.left;
+    const hanging = el("div", "hanging");
+    const parts = sides.map((side) => {
+      const sheer = el("div", "sheer");
+      const vanes = Array.from({ length: DRAPE_VANES / sides.length }, () => el("div", "vane"));
+      hanging.append(sheer, ...vanes);
+      const lead = el("div", `rail lead ${side}`);
+      lead.dataset.index = "0";
+      lead.appendChild(el("div", "tab"));
+      const zone = el("div", "zone");
+      zone.tabIndex = 0;
+      zone.dataset.index = "0";
+      zone.dataset.side = side;
+      zone.setAttribute("role", "slider");
+      zone.setAttribute("aria-orientation", "horizontal");
+      zone.setAttribute("aria-valuemin", "0");
+      zone.setAttribute("aria-valuemax", "100");
+      zone.setAttribute("aria-label", sides.length > 1 ? `${blind.name} ${side} half` : blind.name);
+      return { side, sheer, vanes, lead, zone, marker: el("div", "marker") };
+    });
+    const bubble = el("div", "bubble");
+
+    opening.append(
+      view,
+      hanging,
+      ...parts.map((part) => part.marker),
+      ...parts.map((part) => part.lead),
+      el("div", "headrail"),
+      ...parts.map((part) => part.zone),
+      bubble,
+    );
+    frame.appendChild(opening);
+    element.append(frame, el("div", "sill"));
+
+    const shade = {
+      element,
+      opening,
+      bands: [],
+      markers: parts.map((part) => part.marker),
+      railEls: parts.map((part) => part.lead),
+      zones: parts.map((part) => part.zone),
+      bubble,
+      rails,
+      drape: true,
+      parts,
+      dragValues: {},
+    };
+    this._bindShade(shade);
+    return shade;
+  }
+
+  /**
    * Dragging and keys.
    *
    * A mouse can press anywhere on the window and the nearest rail follows; a finger has to
@@ -1474,12 +1756,16 @@ class NormanShadesCard extends HTMLElement {
     const { element, opening } = shade;
     let press = null;
 
+    // A rail's elements: one, except a split drape's rail, which has a leading edge per half.
+    const indexOf = (rail, i) => Number(rail.dataset?.index ?? i);
+    const railElsAt = (index) => shade.railEls.filter((rail, i) => indexOf(rail, i) === index);
     const setHot = (index) => {
-      shade.railEls.forEach((rail, i) => rail.classList.toggle("hot", i === index));
+      shade.railEls.forEach((rail, i) => rail.classList.toggle("hot", indexOf(rail, i) === index));
     };
     // Which rail a press means: the nearest one, or -- where the two rails are together and
     // so equally near -- the one whose tab is on that side.
     const pick = (event) => {
+      if (shade.drape) return 0;
       const rect = opening.getBoundingClientRect();
       const y = ((event.clientY - rect.top) / rect.height) * 100;
       const centers = shade.rails.map(
@@ -1503,7 +1789,17 @@ class NormanShadesCard extends HTMLElement {
       if (event.pointerType !== "mouse" && !onZone) return;
       const rect = opening.getBoundingClientRect();
       if (!rect.height) return;
-      press = { id: event.pointerId, index: pick(event), y0: event.clientY, rect, started: false, step: null };
+      press = {
+        id: event.pointerId,
+        index: pick(event),
+        x0: event.clientX,
+        y0: event.clientY,
+        rect,
+        side: shade.drape ? this._drapeSideAt(shade, event, rect) : null,
+        started: false,
+        step: null,
+      };
+      shade.activeSide = press.side;
       element.setPointerCapture?.(event.pointerId);
       event.preventDefault();
     });
@@ -1514,17 +1810,21 @@ class NormanShadesCard extends HTMLElement {
         return;
       }
       if (event.pointerId !== press.id) return;
-      const dy = event.clientY - press.y0;
+      const delta = shade.drape ? event.clientX - press.x0 : event.clientY - press.y0;
       if (!press.started) {
-        if (Math.abs(dy) < DRAG_SLOP) return;
+        if (Math.abs(delta) < DRAG_SLOP) return;
         press.started = true;
         press.start = this._shadeValue(shade, press.index) ?? 0;
-        press.travel = (press.rect.height * this._travelPct(shade)) / 100;
+        press.travel = shade.drape
+          ? (press.rect.width * this._drapeTravelPct(shade)) / 100
+          : (press.rect.height * this._travelPct(shade)) / 100;
         element.classList.add("dragging");
-        shade.railEls[press.index].classList.add("held");
+        for (const rail of railElsAt(press.index)) rail.classList.add("held");
         setHot(press.index);
       }
-      const value = clamp(press.start - (dy / press.travel) * 100);
+      // Up opens a shade; a drape opens towards the side it gathers to.
+      const sign = shade.drape && press.side === "right" ? 1 : -1;
+      const value = clamp(press.start + sign * (delta / press.travel) * 100);
       this._dragTo(shade, press.index, value);
       const step = clampToStep(value, stepOf(shade.rails[press.index]));
       this._showBubble(shade, press.index, step);
@@ -1538,7 +1838,7 @@ class NormanShadesCard extends HTMLElement {
       press = null;
       element.releasePointerCapture?.(event.pointerId);
       element.classList.remove("dragging");
-      shade.railEls[index].classList.remove("held");
+      for (const rail of railElsAt(index)) rail.classList.remove("held");
       if (event.pointerType !== "mouse") setHot(-1);
       this._hideBubble(shade);
       if (!started) return;
@@ -1554,23 +1854,33 @@ class NormanShadesCard extends HTMLElement {
       if (!press && event.pointerType === "mouse") setHot(-1);
     });
 
-    shade.zones.forEach((zone, index) => {
-      zone.addEventListener("focus", () => setHot(index));
+    shade.zones.forEach((zone, i) => {
+      const index = indexOf(zone, i);
+      const side = zone.dataset.side;
+      zone.addEventListener("focus", () => {
+        shade.activeSide = side;
+        setHot(index);
+      });
       zone.addEventListener("blur", () => setHot(-1));
-      zone.addEventListener("keydown", (event) => this._onKey(shade, index, event));
+      zone.addEventListener("keydown", (event) => this._onKey(shade, index, event, side));
     });
   }
 
-  /** Arrow keys move a rail a step; the write goes out once the keys stop. */
-  _onKey(shade, index, event) {
+  /**
+   * Arrow keys move a rail a step; the write goes out once the keys stop. On a drape the
+   * left and right arrows move its edge that way, so the one towards its stack opens it.
+   */
+  _onKey(shade, index, event, side) {
     if (shade.disabled) return;
     const now = this._shadeValue(shade, index) ?? 0;
     const step = stepOf(shade.rails[index]);
+    if (shade.drape) shade.activeSide = side || shade.parts[0].side;
+    const across = shade.drape && shade.activeSide !== "right" ? -1 : 1;
     const moves = {
       ArrowUp: now + step,
-      ArrowRight: now + step,
+      ArrowRight: now + across * step,
       ArrowDown: now - step,
-      ArrowLeft: now - step,
+      ArrowLeft: now - across * step,
       PageUp: now + 3 * step,
       PageDown: now - 3 * step,
       Home: 0,
@@ -1644,6 +1954,49 @@ class NormanShadesCard extends HTMLElement {
     return this._railValue(shade.rails[index]);
   }
 
+  /** How thick a roller shade's roll is at `value`, in percent of the opening's height. */
+  _rollSize(value) {
+    return ROLL_MIN_PCT + ((ROLL_MAX_PCT - ROLL_MIN_PCT) * clamp(value ?? 0)) / 100;
+  }
+
+  /** How much of the window one side of a drape spans: all of it, or half when split. */
+  _drapeSpan(shade) {
+    return shade.parts.length > 1 ? 50 : 100;
+  }
+
+  /** How far a drape's edge travels, in percent of the opening's width: its span, less its stack. */
+  _drapeTravelPct(shade) {
+    const span = this._drapeSpan(shade);
+    return span - (DRAPE_STACK_PCT * span) / 100;
+  }
+
+  /** How far a drape reaches from the side it gathers to at `value` (100 open, 0 drawn). */
+  _drapeReach(shade, value) {
+    const span = this._drapeSpan(shade);
+    const gathered = (DRAPE_STACK_PCT * span) / 100;
+    return gathered + ((100 - clamp(value ?? 0)) / 100) * this._drapeTravelPct(shade);
+  }
+
+  /** Where one side's leading edge is, in percent across the opening. */
+  _drapeEdge(part, reach) {
+    return part.side === "left" ? reach : 100 - reach;
+  }
+
+  /** Which side of a drape a press takes hold of: its own, or on a split drape the nearer. */
+  _drapeSideAt(shade, event, rect) {
+    const own = event.target?.dataset?.side;
+    if (own) return own;
+    if (shade.parts.length === 1) return shade.parts[0].side;
+    return event.clientX - rect.left < rect.width / 2 ? "left" : "right";
+  }
+
+  /** How open a drape's vanes are drawn, 0 to 1: where the cover's tilt is heading. */
+  _vanesOpen(shade) {
+    const attributes = this._hass?.states?.[shade.rails[0].coverId]?.attributes || {};
+    const tilt = attributes.target_tilt ?? attributes.current_tilt_position;
+    return tilt === undefined || tilt === null ? 0 : clamp(Number(tilt) || 0) / 100;
+  }
+
   /** The distance a rail travels, as a percentage of the opening: what the rails leave. */
   _travelPct(shade) {
     if (shade.louvers) return LOUVER_TRAVEL_PCT;
@@ -1670,11 +2023,22 @@ class NormanShadesCard extends HTMLElement {
       this._drawLouvers(shade);
       return;
     }
+    if (shade.drape) {
+      this._drawDrape(shade);
+      return;
+    }
     if (shade.rails.length > 1) {
       const together = this._shadeValue(shade, 1) - this._shadeValue(shade, 0) < 1;
       shade.element.classList.toggle("stacked", together);
     }
     let edge = SHADE_HEAD_PCT;
+    if (shade.roll) {
+      // The fabric comes off the underside of the roll, which winds up as the shade rises.
+      const size = this._rollSize(this._shadeValue(shade, 0));
+      shade.roll.style.height = `${round3(size)}%`;
+      edge = ROLL_TOP_PCT + size / 2;
+      shade.jamb.style.height = `${round3(edge)}%`;
+    }
     for (let index = shade.rails.length - 1; index >= 0; index -= 1) {
       const top = this._railTop(shade, index, this._shadeValue(shade, index));
       const band = shade.bands[index];
@@ -1705,8 +2069,43 @@ class NormanShadesCard extends HTMLElement {
     shade.element.classList.toggle("shut", open <= 0);
   }
 
+  /**
+   * Spread a drape's vanes from the side it gathers to out to its edge, evenly, and turn them
+   * to how open they are. Gathered, they overlap into a stack; drawn, they close up edge to
+   * edge with a little overlap, as the fabric does.
+   */
+  _drawDrape(shade) {
+    const reach = this._drapeReach(shade, this._shadeValue(shade, 0));
+    const angle = round3(this._vanesOpen(shade) * VANE_OPEN_DEG);
+    for (const part of shade.parts) {
+      const count = part.vanes.length;
+      const width = (this._drapeSpan(shade) / count) * DRAPE_VANE_OVERLAP;
+      part.vanes.forEach((vane, k) => {
+        const along = ((k + 0.5) / count) * reach;
+        const centre = part.side === "left" ? along : 100 - along;
+        vane.style.left = `${round3(centre - width / 2)}%`;
+        vane.style.width = `${round3(width)}%`;
+        vane.style.transform = `rotateY(${angle}deg)`;
+      });
+      const edge = this._drapeEdge(part, reach);
+      part.sheer.style.left = `${round3(part.side === "left" ? 0 : edge)}%`;
+      part.sheer.style.width = `${round3(reach)}%`;
+      part.lead.style.left = `${round3(edge)}%`;
+      part.zone.style.left = `${round3(edge)}%`;
+    }
+    shade.element.classList.toggle("drawn", (this._shadeValue(shade, 0) ?? 0) <= 0);
+  }
+
   _showBubble(shade, index, value) {
     const { bubble } = shade;
+    if (shade.drape) {
+      const part = shade.parts.find((each) => each.side === shade.activeSide) || shade.parts[0];
+      bubble.textContent = `${Math.round(value)}%`;
+      bubble.style.top = "42%";
+      bubble.style.left = `${round3(this._drapeEdge(part, this._drapeReach(shade, this._shadeValue(shade, index))))}%`;
+      bubble.classList.add("on");
+      return;
+    }
     bubble.textContent = `${Math.round(value)}%`;
     bubble.style.top = shade.louvers
       ? "50%"
@@ -1871,6 +2270,22 @@ class NormanShadesCard extends HTMLElement {
     shade.disabled = unavailable;
     shade.element.classList.toggle("disabled", unavailable);
     this._drawShade(shade);
+    if (shade.drape) {
+      // One rail, drawn at a leading edge per side: each side gets the marker and the state.
+      const [state] = states;
+      const showMarker = state.moving && shade.dragValues[0] === undefined;
+      const reach = showMarker ? this._drapeReach(shade, state.current) : 0;
+      const value = Math.round(this._shadeValue(shade, 0) ?? 0);
+      for (const part of shade.parts) {
+        part.marker.classList.toggle("on", showMarker);
+        if (showMarker) part.marker.style.left = `${round3(this._drapeEdge(part, reach))}%`;
+        part.lead.classList.toggle("moving", state.moving);
+        part.zone.setAttribute("aria-valuenow", String(value));
+        part.zone.setAttribute("aria-valuetext", `${value}% open`);
+        part.zone.setAttribute("aria-disabled", String(unavailable));
+      }
+      return;
+    }
     states.forEach((state, index) => {
       const held = shade.dragValues[index] !== undefined;
       const marker = shade.markers[index];

@@ -591,7 +591,7 @@ documented here must be catalogued and vice versa.
 | `FirmwareVersion` | status | `0.5.3.8`, `4.1.0.4` | **used**; on type 33 it is the version the app shows |
 | `RfFirmwareVersion` | status (type 32 only) | `0.3.20` | **used**: this is the version the Norman app shows for single-rail blinds (Den_1: app 0.3.20, `FirmwareVersion` 4.1.0.4), so it takes precedence for the device's version |
 | `Timestamp` | status | epoch seconds | **used** (last-seen sensor, connection sensor). When the hub last **heard from** the blind: it moves when a blind reports in with nothing changed, not only on a state change. |
-| `MSDStackType` | GetAllPeripheral (type 80 only) | `"left"` | not used. Presumably the side a SmartDrape stacks to when it is drawn open; only `"left"` has been seen. |
+| `MSDStackType` | GetAllPeripheral (type 80 only) | `"left"` | the SmartDrape cover's `stack` attribute: the side it gathers to when open. Only `"left"` has been seen from a hub; the app numbers the sides 1 left, 2 split, 3 right, so `"right"`, `"split"` and the numbers are read too. |
 | `MsdStatus` | status (type 80 only) | `0` | not used; only `0` has been seen |
 | `Position`, `TargetPosition` | status (type 1, from the app) | `0`–`7` | **used**: a Shutter's louvers (7 shut, 3 horizontal). Known from the app's parsers, not yet seen from a hub. |
 | `Position1`, `Position2`, `TargetPosition1`, `TargetPosition2` | status (from the app) | | not used. A split-panel pair the app's library can read and send; no product in ShadeAuto 0.8.33 shows controls for it. |

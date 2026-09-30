@@ -112,11 +112,31 @@ quarter per arrow. The status reads "Closed", "Open" or "50% open".
 The room's open and close turn a Shutter's louvers along with every other blind; Stop leaves it
 out, since louvers take no stop.
 
-### SmartDrape and PerfectSheer
+### Roller shades
 
-Both are drawn as a single shade for now: the band shows how far a SmartDrape is drawn across
-the window, or how far a PerfectSheer is lowered, and dragging it moves that. The card has no
-control for their vanes; turn them from the blind's more-info dialog (click its name).
+A Roller Shade is drawn as plain woven fabric hanging off a roll at the top of the window, with
+brackets at each end and a weighted bar at the hem. The roll grows as the shade winds up onto
+it: thickest fully open, thinnest fully down. **Drag the bottom bar**, as on any single-rail
+shade.
+
+### SmartDrapes
+
+A SmartDrape is drawn as it hangs: fabric vanes on a sheer, from a track to the sill, drawn
+sideways. Open, it is gathered to the side it stacks to — left, right, or half to each side
+for a split drape, from the hub's `MSDStackType` — and closed, it spreads across the window.
+**Drag its leading edge** sideways: towards its stack opens it, away draws it across. The left
+and right arrow keys move the edge the same way. A split drape has an edge on each half, and
+both move together.
+
+The vanes turn with the cover's tilt: flat and overlapping when closed, nearly edge-on when
+open, with the view showing through the sheer between them. The card does not turn them; use
+the blind's more-info dialog (click its name).
+
+### PerfectSheer and Roman shades
+
+Both are drawn as a cellular shade for now: the band shows how far the shade is lowered, and
+dragging it moves that. The card has no control for a PerfectSheer's vanes; turn them from the
+more-info dialog.
 
 ### The view
 

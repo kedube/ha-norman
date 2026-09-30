@@ -263,6 +263,14 @@ async def test_smartdrape_vanes_read_as_how_open_they_are(
     assert state.attributes["target_tilt"] == tilt
 
 
+async def test_smartdrape_reports_the_side_it_stacks_to(
+    hass: HomeAssistant, init_with_every_product: MockConfigEntry
+) -> None:
+    """The device list's MSDStackType, for the dashboard card to draw the drape gathering there."""
+    state = hass.states.get(cover_entity_id(hass, UID_SMARTDRAPE))
+    assert state.attributes["stack"] == "left"
+
+
 @pytest.mark.parametrize(
     ("service", "data", "vanes"),
     [

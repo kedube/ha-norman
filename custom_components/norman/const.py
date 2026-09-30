@@ -226,8 +226,8 @@ KNOWN_PERIPHERAL_FIELDS = frozenset(
         "FirmwareVersion",
         "RfFirmwareVersion",
         "Timestamp",
-        # SmartDrape only (ModuleType 80): the side the drape stacks to ("left"), and a
-        # status code seen as 0. Neither is read.
+        # SmartDrape only (ModuleType 80): the side the drape stacks to ("left"; read from
+        # the device list, see MSD_STACK_SIDES), and a status code seen as 0 (not read).
         "MSDStackType",
         "MsdStatus",
         # Known from the Norman app's parsers rather than seen from a hub: a Shutter's
@@ -390,6 +390,18 @@ DEFAULT_COVER_TYPE = COVER_TYPE_TWO_RAIL
 MSD_VANE_STOPS: tuple[int, ...] = (0, 17, 33, 50, 66, 83, 100)
 MSD_VANE_OPEN_STOP = 3  # index of 50 in MSD_VANE_STOPS
 
+# The side a SmartDrape gathers to when it is open, from the device list's MSDStackType. The
+# hub in issue #2 sent the name ("left"); the app's own table numbers them 1 left, 2 split
+# (half to each side) and 3 right, so both spellings are read.
+MSD_STACK_SIDES: dict[str, str] = {
+    "left": "left",
+    "1": "left",
+    "split": "split",
+    "2": "split",
+    "right": "right",
+    "3": "right",
+}
+
 # A Shutter's louvers: Position 0-7. From the app's calibration steps and louver drawings,
 # 7 is fully closed ("Fully Close"), the louvers move down through 3, horizontal and fully
 # open, to 0, the furthest they tilt the other way -- which still lets light through. As for
@@ -403,6 +415,7 @@ HUB_CMD_SHUTTER_POSITION = "Position"
 ATTR_TARGET_POSITION = "target_position"
 ATTR_TARGET_TILT = "target_tilt"
 ATTR_LOUVER_POSITION = "louver_position"  # a Shutter's raw Position, 0-7
+ATTR_STACK = "stack"  # the side a SmartDrape gathers to: left, right or split
 ATTR_STEP = "step"
 
 SERVICE_NUDGE_POSITION = "nudge_position"
