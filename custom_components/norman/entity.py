@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -18,13 +19,25 @@ from .models import NormanPeripheralData
 
 # Model names follow the Norman app's product catalogue (its General_Display_* strings).
 # ModuleType 33 matches the app's dual-rail Cellular Shade (Japanese: "honeycomb screen,
-# twin, up/down"), which is what every type-33 blind on the reference hub is. ModuleType 32
-# has not been matched to a catalogue entry yet (Roller Shade, single Cellular Shade,
-# PerfectSheer, and Shutter are the candidates), so it keeps a descriptive name.
+# twin, up/down"), which is what every type-33 blind on the reference hub is. 48 and 80 are
+# what their owner identified them as (issue #2). ModuleType 32 has not been matched to a
+# catalogue entry yet (Roller Shade, single Cellular Shade, PerfectSheer, and Shutter are the
+# candidates), so it keeps a descriptive name from COVER_TYPE_MODELS.
+MODULE_TYPE_MODELS: dict[int, str] = {
+    33: "Cellular Shade (dual rail)",
+    48: "Roller Shade",
+    80: "SmartDrape",
+}
 COVER_TYPE_MODELS = {
-    COVER_TYPE_TWO_RAIL: "Cellular Shade (dual rail)",
     COVER_TYPE_SINGLE_RAIL: "Single-rail window covering",
 }
+
+
+def _model(data: NormanPeripheralData) -> str:
+    """The product name for a blind, or a description of how it is driven."""
+    if data.module_type in MODULE_TYPE_MODELS:
+        return MODULE_TYPE_MODELS[data.module_type]
+    return COVER_TYPE_MODELS.get(data.type, "Window covering")
 
 
 def _via_hub(coordinator: NormanCoordinator, entry: NormanConfigEntry) -> dict:
@@ -60,7 +73,7 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
             identifiers={(DOMAIN, str(device_id))},
             name=self._device_name,
             manufacturer=MANUFACTURER,
-            model=COVER_TYPE_MODELS.get(device_data.type, "Window covering"),
+            model=_model(device_data),
             model_id=(
                 f"{device_data.module_type}/{device_data.module_detail}"
                 if device_data.module_type is not None
@@ -146,7 +159,9 @@ class NormanRailMixin(NormanEntity):
         the middle rail below the bottom rail takes the bottom rail down with it, and raising
         the bottom rail above the middle rail takes the middle rail up. Both go in the one
         command, so the hub is never asked for a shape the blind cannot make, and the
-        dashboard card can move either rail from anywhere -- fully open included.
+        dashboard card can move either rail from anywhere -- fully open included. A drape's
+        two values are how far it is drawn and how its vanes are tilted, which do not
+        constrain each other, so they are sent as asked.
         """
         bottom_val = self._target_or_current_bottom() if bottom is None else clamp_position(bottom)
         middle_val = self._target_or_current_middle() if middle is None else clamp_position(middle)
@@ -222,3 +237,24 @@ def async_add_entities_for_new_devices(
 
     _async_add_new()
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new))
+
+
+@callback
+def async_remove_entity(
+    hass: HomeAssistant, entry: NormanConfigEntry, domain: str, unique_id: str
+) -> None:
+    """Delete this entry's registry entity ``unique_id``, if it has one.
+
+    For an entity a blind's type no longer provides. The type can change under an existing
+    install: a ModuleType first seen unmapped is driven as two-rail, and mapping it later as
+    something else drops its middle-rail entities. Home Assistant would keep the old entries
+    as "no longer provided" -- and the dashboard card, which reads the registry, would go on
+    drawing a middle rail the blind does not have.
+    """
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(domain, DOMAIN, unique_id)
+    if entity_id is None:
+        return
+    registry_entry = registry.async_get(entity_id)
+    if registry_entry is not None and registry_entry.config_entry_id == entry.entry_id:
+        registry.async_remove(entity_id)

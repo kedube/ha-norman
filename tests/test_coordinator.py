@@ -20,6 +20,7 @@ from custom_components.norman.const import (
     CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
+    COVER_TYPE_DRAPE,
     COVER_TYPE_SINGLE_RAIL,
     COVER_TYPE_TWO_RAIL,
     DEFAULT_CONTROL_INTERVAL,
@@ -43,6 +44,8 @@ from .const import (
     MOCK_CONFIG,
     UID_BEDROOM,
     UID_LIVING,
+    UID_ROLLER,
+    UID_SMARTDRAPE,
     UID_STATUS_ONLY,
     devices_payload,
     status_payload,
@@ -227,6 +230,25 @@ async def test_unknown_module_type_is_warned_about_once(
     assert len(unknown_type_warnings()) == 1
 
 
+async def test_roller_shade_and_smartdrape_types_are_mapped(
+    hass: HomeAssistant,
+    init_with_roller_and_drape: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Issue #2's two ModuleTypes: 48 is a roller shade (one rail), 80 a SmartDrape.
+
+    Neither is warned about as unknown any more.
+    """
+    coordinator: NormanCoordinator = init_with_roller_and_drape.runtime_data
+    assert coordinator.data[UID_ROLLER].type == COVER_TYPE_SINGLE_RAIL
+    assert coordinator.data[UID_SMARTDRAPE].type == COVER_TYPE_DRAPE
+
+    records = [*caplog.get_records("setup"), *caplog.get_records("call")]
+    warned = [r.getMessage() for r in records if "unknown ModuleType" in r.getMessage()]
+    assert warned, "the status-only peripheral still is"
+    assert not [m for m in warned if f" {UID_ROLLER} " in m or f" {UID_SMARTDRAPE} " in m]
+
+
 async def test_hub_data_is_refreshed(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
@@ -288,7 +310,7 @@ async def test_undocumented_fields_are_logged_once_each(
 
 async def test_documented_fields_are_not_logged(
     hass: HomeAssistant,
-    init_integration: MockConfigEntry,
+    init_with_roller_and_drape: MockConfigEntry,
     fake_hub: FakeHub,
     notifications: asyncio.Queue,
     caplog: pytest.LogCaptureFixture,
@@ -296,7 +318,8 @@ async def test_documented_fields_are_not_logged(
     """The fields real hubs send are all catalogued, so a healthy payload logs nothing.
 
     If this fails, a field was added to the test payloads without adding it to
-    KNOWN_HUB_FIELDS / KNOWN_PERIPHERAL_FIELDS in const.py (and to docs/NORMAN_API.md).
+    KNOWN_HUB_FIELDS / KNOWN_PERIPHERAL_FIELDS in const.py (and to docs/NORMAN_API.md). The
+    SmartDrape's MSDStackType and MsdStatus are included.
     """
     with caplog.at_level(logging.DEBUG, logger="custom_components.norman.coordinator"):
         await notifications.put({"PeripheralList": [UID_LIVING]})

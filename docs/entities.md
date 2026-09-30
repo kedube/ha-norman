@@ -27,7 +27,7 @@ sensors plus the Request status button and the connection sensor (added after th
 | Device | Identifiers | Notes |
 |---|---|---|
 | Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address; the MAC address is attached as a network connection when it can be resolved (see below). |
-| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman product name where the type has been matched to the app's catalogue ("Cellular Shade (dual rail)" for `ModuleType` 33; single-rail types are still "Single-rail window covering" until matched) with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
+| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman product name where the type has been identified ("Cellular Shade (dual rail)" for `ModuleType` 33, "Roller Shade" for 48, "SmartDrape" for 80; type 32 is still "Single-rail window covering", and an unmapped type "Window covering") with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
 
 The device page therefore mirrors the app's blind details: room (area), battery (sensor),
 version, module type (model id), and serial number.
@@ -43,19 +43,34 @@ The hub's `ModuleType` decides what kind of cover a blind gets:
 
 | `ModuleType` | Cover entities | Device class | Features |
 |---|---|---|---|
-| 33 | two-rail (day/night cellular, top-down/bottom-up, SmartDrape): the **primary** cover, plus a **Middle rail** cover | `blind`, `shade` | primary: open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt. Middle rail: open, close, set position, stop |
-| 32 | single-rail (roller and honeycomb style) | `shade` | open, close, set position, stop |
+| 33 | two-rail (day/night cellular, top-down/bottom-up): the **primary** cover, plus a **Middle rail** cover | `blind`, `shade` | primary: open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt. Middle rail: open, close, set position, stop |
+| 32, 48 | single-rail (roller and honeycomb style; 48 is a Roller Shade) | `shade` | open, close, set position, stop |
+| 80 | SmartDrape: one cover | `curtain` | open, close, set position, stop, open tilt, close tilt, set tilt position, stop tilt |
 | other | treated as two-rail; a warning asks for a report | `blind` | as two-rail |
 
 **Two-rail blinds are two covers.** Each is named for the rail it drives: **Bottom rail** and
 **Middle rail**, so a blind called "Living Drape" has entities named "Living Drape Bottom rail"
 and "Living Drape Middle rail". The middle rail (`cover.<blind>_middle_rail`) is: on a
-day/night shade that is the second fabric, on a top-down/bottom-up shade the top rail, and on
-a SmartDrape the vane tilt. The integration does not need to know which of those it is: it
-drives the rail, and the product decides what the rail means. The primary cover also exposes the middle rail as *tilt*, which
-suits drapes; for shades, use the Middle rail cover, whose slider means the same thing it
-means in the Norman app. Both read the same hub values, so they never disagree. The
-`nudge_position` action works on either; on the Middle rail cover it nudges the middle rail.
+day/night shade the second fabric, and on a top-down/bottom-up shade the top rail. The
+integration does not need to know which of those it is: it drives the rail, and the product
+decides what the rail means. The primary cover also exposes the middle rail as *tilt*; for
+shades, use the Middle rail cover, whose slider means the same thing it means in the Norman
+app. Both read the same hub values, so they never disagree. The `nudge_position` action works
+on either; on the Middle rail cover it nudges the middle rail.
+
+The two rails of a shade hang one above the other, so a command that would take one past the
+other carries the other along.
+
+**A SmartDrape is one cover.** The hub reports it in the same two fields as a two-rail shade,
+but they mean how far the drape is drawn (`BottomRailPosition`, the cover's position) and how
+its vanes are tilted (`MiddleRailPosition`, the cover's tilt). Those are independent: opening
+the drape leaves the vanes as they are, and tilting the vanes does not move the drape. It gets
+no Middle rail cover or slider, since its tilt already is one.
+
+**Upgrading from the fallback.** A blind whose `ModuleType` was unmapped was given two-rail
+entities. Once its type is mapped as something else, the Middle rail cover and slider it no
+longer has are deleted from the entity registry at startup, so they do not linger as "no longer
+provided" or show up on the dashboard card as a second fabric.
 
 Entity ids are derived from the blind's name in the Norman app, prefixed with its area on Home
 Assistant 2026.9 and newer (`cover.living_room_living_drape` for a blind called "Living Drape" in
@@ -66,9 +81,9 @@ peripheral the hub reports status for but does not list by name gets `Norman <ui
 |---|---|---|
 | State | bottom rail | `closed` when the position is 0, otherwise `open`; `unknown` if the hub has not reported a position. |
 | `current_position` | `BottomRailPosition` | 0 = closed, 100 = open, matching Home Assistant's convention. |
-| `current_tilt_position` | `MiddleRailPosition` | Two-rail only. 0–100. On SmartDrape this is the vane tilt; on top-down/bottom-up blinds it is the middle rail. |
+| `current_tilt_position` | `MiddleRailPosition` | Two-rail and SmartDrape only. 0–100. On a SmartDrape this is the vane tilt; on two-rail blinds it is the middle rail. |
 | `target_position` (attribute) | `TargetBottomRailPosition` | Where the bottom rail is heading. Equal to `current_position` when idle. |
-| `target_tilt` (attribute) | `TargetMiddleRailPosition` | Two-rail only. Where the middle rail is heading. |
+| `target_tilt` (attribute) | `TargetMiddleRailPosition` | Two-rail and SmartDrape only. Where the middle rail (or the vanes) is heading. |
 
 ### Availability
 

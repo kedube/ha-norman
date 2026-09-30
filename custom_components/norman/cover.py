@@ -12,6 +12,7 @@ from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
 )
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import (
     AddConfigEntryEntitiesCallback,
@@ -24,15 +25,24 @@ from .const import (
     ATTR_STEP,
     ATTR_TARGET_POSITION,
     ATTR_TARGET_TILT,
+    COVER_TYPE_DRAPE,
     COVER_TYPE_SINGLE_RAIL,
     COVER_TYPE_TWO_RAIL,
     SERVICE_NUDGE_POSITION,
     SERVICE_NUDGE_TILT,
 )
 from .coordinator import NormanConfigEntry, NormanCoordinator
-from .entity import NormanRailMixin, async_add_entities_for_new_devices, clamp_position
+from .entity import (
+    NormanRailMixin,
+    async_add_entities_for_new_devices,
+    async_remove_entity,
+    clamp_position,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+# The Middle rail cover's unique id is the peripheral id plus this.
+MIDDLE_RAIL_SUFFIX = "_middle"
 
 # Entities are push-updated by the coordinator; commands are not throttled.
 PARALLEL_UPDATES = 0
@@ -55,10 +65,13 @@ async def async_setup_entry(
         covers: list[NormanCoverBase] = [
             COVER_CLASSES.get(cover_type, NormanBlind)(coordinator, device_id, entry)
         ]
-        if cover_type != COVER_TYPE_SINGLE_RAIL:
+        if cover_type == COVER_TYPE_TWO_RAIL:
             # Day/night and top-down/bottom-up shades have a second fabric on the middle
-            # rail; the app shows two sliders, so it gets its own cover here as well.
+            # rail; the app shows two sliders, so it gets its own cover here as well. A
+            # drape's middle rail is its vane tilt, which its one cover already has.
             covers.append(NormanMiddleRailCover(coordinator, device_id, entry))
+        else:
+            async_remove_entity(hass, entry, COVER_DOMAIN, f"{device_id}{MIDDLE_RAIL_SUFFIX}")
         return covers
 
     async_add_entities_for_new_devices(entry, async_add_entities, _covers_for)
@@ -159,7 +172,7 @@ class NormanShade(NormanCoverBase):
 
 
 class NormanBlind(NormanCoverBase):
-    """A two-rail covering (ModuleType 33, SmartDrape, top-down/bottom-up): position + tilt."""
+    """A two-rail covering (ModuleType 33, day/night, top-down/bottom-up): position + tilt."""
 
     _attr_translation_key = "bottom_rail"
     _attr_supported_features = (
@@ -216,12 +229,23 @@ class NormanBlind(NormanCoverBase):
         await self.async_set_cover_tilt_position(tilt_position=new_tilt)
 
 
+class NormanDrape(NormanBlind):
+    """A SmartDrape (ModuleType 80): how far it is drawn as position, its vanes as tilt.
+
+    The hub carries the two in the same fields as a shade's rails -- the bottom rail is the
+    draw, the middle rail the vane tilt -- but they are independent motions, so neither is
+    carried along by the other (see ``_async_set_position``). There is no Middle rail cover:
+    the tilt already is one.
+    """
+
+    _attr_device_class = CoverDeviceClass.CURTAIN
+
+
 class NormanMiddleRailCover(NormanCoverBase):
     """The middle rail of a two-rail covering as a cover of its own.
 
     On a day/night shade this is the second fabric; on a top-down/bottom-up shade it is the
-    top rail; on a SmartDrape it is the vane tilt, which the primary cover also exposes as
-    tilt. Position semantics match the primary: 0 closed, 100 open, as the hub reports.
+    top rail. Position semantics match the primary: 0 closed, 100 open, as the hub reports.
     """
 
     _attr_translation_key = "middle_rail"
@@ -235,7 +259,7 @@ class NormanMiddleRailCover(NormanCoverBase):
     ) -> None:
         """Initialize the middle-rail cover."""
         super().__init__(coordinator, device_id, entry)
-        self._attr_unique_id = f"{device_id}_middle"
+        self._attr_unique_id = f"{device_id}{MIDDLE_RAIL_SUFFIX}"
 
     @property
     def current_cover_position(self) -> int | None:
@@ -276,4 +300,5 @@ class NormanMiddleRailCover(NormanCoverBase):
 COVER_CLASSES: dict[str, type[NormanCoverBase]] = {
     COVER_TYPE_TWO_RAIL: NormanBlind,
     COVER_TYPE_SINGLE_RAIL: NormanShade,
+    COVER_TYPE_DRAPE: NormanDrape,
 }

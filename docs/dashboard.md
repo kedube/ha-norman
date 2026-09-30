@@ -99,6 +99,12 @@ for the rail you moved, and the integration moves the other rail in the same com
 
 On a top-down/bottom-up blind the same two bands read as the open top and the covered bottom.
 
+### SmartDrape
+
+A SmartDrape is drawn as a single shade for now: the band shows how far the drape is drawn
+across the window, and dragging it draws the drape open or closed. The card has no control for
+the vanes; tilt them from the blind's more-info dialog (click its name).
+
 ### The view
 
 The window's view follows the sun (`sun.sun`): blue sky by day, a warm low sun near sunrise and

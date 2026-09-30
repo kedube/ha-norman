@@ -311,8 +311,9 @@ shows. Error messages are translated as well.
 | Device | Hub `ModuleType` | Exposed as |
 |---|---|---|
 | Norman Hub (`NienMadeHub`, firmware 6.x) | — | Required. The integration only talks to the hub. |
-| Two-rail coverings (day/night cellular, top-down/bottom-up, SmartDrape) | 33 | Two covers: the primary (bottom rail, with the middle rail also as tilt) and a **Middle rail** shade for the second fabric. |
-| Single-rail coverings (roller and honeycomb style) | 32 | Cover with position only, `shade` device class. |
+| Two-rail coverings (day/night cellular, top-down/bottom-up) | 33 | Two covers: the primary (bottom rail, with the middle rail also as tilt) and a **Middle rail** shade for the second fabric. |
+| Single-rail coverings (roller and honeycomb style; 48 is a Roller Shade) | 32, 48 | Cover with position only, `shade` device class. |
+| SmartDrape | 80 | One cover, `curtain` device class: how far the drape is drawn as position, the vanes as tilt. The two move independently. |
 | Anything else | other | Treated as two-rail, and a warning asks you to report the type. |
 
 **Tested on:** motorized cellular shades, both single-rail and day/night, in day-to-day use;
@@ -330,10 +331,8 @@ new covering types are welcome and are the main thing that broadens this table.
 
 - **No authentication on the hub.** That is the vendor protocol, not a choice of this
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
-- **Only two `ModuleType` codes are mapped** (32 single-rail, 33 two-rail), and neither is tied
-  to a specific Norman product name. Between them they cover the bottom-rail and
-  bottom-plus-middle-rail coverings; an unmapped code falls back to two-rail with a warning.
-  See [Supported devices](#supported-devices).
+- **Only four `ModuleType` codes are mapped** (32 and 48 single-rail, 33 two-rail, 80
+  SmartDrape); anything else falls back to two-rail with a warning ([Supported devices](#supported-devices)).
 - **No speed, direction, or limit-setting entities.** The limit-setting and calibration verbs
   were captured from the Norman app and can be sent with `send_hub_command` (see
   [docs/services.md](docs/services.md#hub-verbs)); they have no entity because they change how
@@ -397,8 +396,9 @@ option is refused while the hub still reports the blind.
 
 **A blind logs "unknown ModuleType".**
 The hub reports a product type the integration has not seen. It is treated as a two-rail blind,
-which may give it a tilt control that does nothing. Run `norman.get_hub_data` and open an issue
-with the response and what the product is.
+which may give it a tilt control that does nothing, and a single-rail product then logs "did
+not move" for a preset it was already at. Run `norman.get_hub_data` and open an issue with the
+response and what the product is.
 
 **Open/close moves the tilt too (or vice versa).**
 The hub has no single-rail command, so the integration sends the untouched rail's current

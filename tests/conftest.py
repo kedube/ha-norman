@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
+import copy
 import json
 from typing import Any
 from unittest.mock import patch
@@ -35,6 +37,10 @@ from .const import (
     HUB_URL,
     MOCK_CONFIG,
     REGISTRATION_RESPONSE,
+    ROLLER_DEVICE,
+    ROLLER_STATUS,
+    SMARTDRAPE_DEVICE,
+    SMARTDRAPE_STATUS,
     devices_payload,
     status_payload,
 )
@@ -169,6 +175,18 @@ class FakeHub:
         if target_middle is not None:
             peripheral["TargetMiddleRailPosition"] = target_middle
 
+    def add_blind(self, device: dict[str, Any], status: dict[str, Any]) -> None:
+        """Pair another blind in the living room, on a group (remote channel) of its own."""
+        groups = self.devices["results"]["RoomList"][0]["GroupList"]
+        groups.append(
+            {
+                "GroupID": 10 + len(groups),
+                "GroupName": "",
+                "PeripheralList": [copy.deepcopy(device)],
+            }
+        )
+        self.status["Peripherals"].append(copy.deepcopy(status))
+
 
 @pytest.fixture
 def fake_hub(aioclient_mock: AiohttpClientMocker) -> FakeHub:
@@ -198,6 +216,18 @@ def notifications() -> AsyncGenerator[asyncio.Queue]:
         yield queue
 
 
+@asynccontextmanager
+async def loaded(hass: HomeAssistant, entry: MockConfigEntry) -> AsyncIterator[MockConfigEntry]:
+    """Set ``entry`` up against the fake hub, and tear it down afterwards."""
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    yield entry
+    if entry.state.recoverable:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
 @pytest.fixture
 async def init_integration(
     hass: HomeAssistant,
@@ -206,13 +236,22 @@ async def init_integration(
     notifications: asyncio.Queue,
 ) -> AsyncGenerator[MockConfigEntry]:
     """Set up the integration against the fake hub and tear it down afterwards."""
-    mock_config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-    yield mock_config_entry
-    if mock_config_entry.state.recoverable:
-        await hass.config_entries.async_unload(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+    async with loaded(hass, mock_config_entry) as entry:
+        yield entry
+
+
+@pytest.fixture
+async def init_with_roller_and_drape(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> AsyncGenerator[MockConfigEntry]:
+    """``init_integration``, with issue #2's roller shade and SmartDrape paired as well."""
+    fake_hub.add_blind(ROLLER_DEVICE, ROLLER_STATUS)
+    fake_hub.add_blind(SMARTDRAPE_DEVICE, SMARTDRAPE_STATUS)
+    async with loaded(hass, mock_config_entry) as entry:
+        yield entry
 
 
 def cover_entity_id(hass: HomeAssistant, uid: int) -> str:

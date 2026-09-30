@@ -131,6 +131,52 @@ _STATUS: dict[str, Any] = {
 }
 
 
+# The two products reported in issue #2, as its get_hub_data output showed them. Neither is
+# in the default payloads; tests that want them pair them with FakeHub.add_blind.
+UID_ROLLER = 53479
+UID_SMARTDRAPE = 13702
+
+ROLLER_DEVICE: dict[str, Any] = {
+    "PeripheralUID": str(UID_ROLLER),
+    "PeripheralName": "Playroom",
+    "ModuleType": "48",
+    "ModuleDetail": "1",
+}
+# Closed by the previous night's Best Privacy. Switch records a middle-rail target of 100 for
+# every blind, and this shade has no middle rail to reach it with: it reads 0 throughout.
+ROLLER_STATUS: dict[str, Any] = {
+    "PeripheralUID": UID_ROLLER,
+    "ModuleType": 48,
+    "ModuleDetail": 1,
+    "BottomRailPosition": 0,
+    "MiddleRailPosition": 0,
+    "TargetBottomRailPosition": 0,
+    "TargetMiddleRailPosition": 100,
+    "FirmwareVersion": "2.4.1",
+    "Timestamp": 1700000000,
+}
+
+SMARTDRAPE_DEVICE: dict[str, Any] = {
+    "PeripheralUID": str(UID_SMARTDRAPE),
+    "PeripheralName": "Living Room",
+    "ModuleType": "80",
+    "ModuleDetail": "1",
+    "MSDStackType": "left",
+}
+SMARTDRAPE_STATUS: dict[str, Any] = {
+    "ModuleType": 80,
+    "PeripheralUID": UID_SMARTDRAPE,
+    "ModuleDetail": 1,
+    "TargetBottomRailPosition": 0,
+    "TargetMiddleRailPosition": 100,
+    "BottomRailPosition": 0,
+    "MiddleRailPosition": 100,
+    "MsdStatus": 0,
+    "FirmwareVersion": "0.2.3",
+    "Timestamp": 1700000000,
+}
+
+
 def devices_payload() -> dict[str, Any]:
     """A fresh copy of the GetAllPeripheral response."""
     return copy.deepcopy(_DEVICES)

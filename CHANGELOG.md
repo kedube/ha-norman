@@ -5,6 +5,24 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Roller Shades (`ModuleType` 48) are single-rail.** They fell back to two rails, so Best
+  privacy and Best view sent to a shade already at that position were judged on a middle rail
+  it does not have: the preset always looked missed, was sent twice more, and ended in "did not
+  move after 3 attempts" ([#2](https://github.com/kedube/ha-norman/issues/2)). They now get one
+  cover and one slider, and a preset they are already at is confirmed quietly.
+- **SmartDrape (`ModuleType` 80) is supported.** One `curtain` cover: how far the drape is drawn
+  as position, the vanes as tilt. Driven as a two-rail shade, the two carried each other along
+  — opening the drape swung its vanes to 100, and tilting the vanes below how far it was drawn
+  pulled the drape across. They now move independently. The card draws it as a single shade;
+  the vanes are tilted from the more-info dialog.
+- **Middle rail entities these blinds no longer have are removed.** The Middle rail cover and
+  slider the fallback gave them are deleted at startup rather than left as "no longer
+  provided", and the card stops drawing a second fabric on them. Automations that used a
+  SmartDrape's Middle rail cover should use its cover's tilt instead.
+- Device models now name these products ("Roller Shade", "SmartDrape"), and an unmapped type
+  reads "Window covering" rather than "Cellular Shade (dual rail)".
+
 ## 0.57 — 2026-09-25
 - **A dropped preset is now resent.** Best privacy, Best view and Favorite sent to a single
   blind are checked the way moves are, but the check compared the blind with the hub's target

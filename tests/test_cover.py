@@ -13,6 +13,7 @@ from homeassistant.components.cover import (
     ATTR_CURRENT_TILT_POSITION,
     ATTR_POSITION,
     ATTR_TILT_POSITION,
+    CoverDeviceClass,
     CoverEntityFeature,
     CoverState,
 )
@@ -58,7 +59,17 @@ from custom_components.norman.const import (
 from custom_components.norman.coordinator import NormanCoordinator
 
 from .conftest import FakeHub, cover_entity_id, settle
-from .const import UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
+from .const import (
+    ROLLER_DEVICE,
+    ROLLER_STATUS,
+    SMARTDRAPE_DEVICE,
+    SMARTDRAPE_STATUS,
+    UID_BEDROOM,
+    UID_LIVING,
+    UID_ROLLER,
+    UID_SMARTDRAPE,
+    UID_STATUS_ONLY,
+)
 
 ALL_FEATURES = (
     CoverEntityFeature.OPEN
@@ -199,6 +210,10 @@ async def test_stop_failure_names_the_cover(
 
 def middle_rail_entity_id(hass: HomeAssistant, uid: int) -> str | None:
     return er.async_get(hass).async_get_entity_id("cover", DOMAIN, f"{uid}_middle")
+
+
+def _middle_rail_slider_id(hass: HomeAssistant, uid: int) -> str | None:
+    return er.async_get(hass).async_get_entity_id("number", DOMAIN, f"{uid}_middle_rail_position")
 
 
 async def test_two_rail_blinds_get_a_middle_rail_cover(
@@ -466,7 +481,7 @@ async def test_each_cover_reports_its_device_class(
 ) -> None:
     """Device classes are picked per product, and nothing falls back to the base class.
 
-    ``COVER_CLASSES`` maps both known cover types, and an unmapped ModuleType is defaulted
+    ``COVER_CLASSES`` maps every known cover type, and an unmapped ModuleType is defaulted
     to the two-rail type before it ever reaches the lookup -- so ``NormanCoverBase`` is
     never instantiated and its BLIND device class is unreachable. This pins the classes
     that users actually see, which no other test asserted.
@@ -482,6 +497,131 @@ async def test_each_cover_reports_its_device_class(
     assert device_class(middle_rail_entity_id(hass, UID_LIVING)) == CoverDeviceClass.SHADE
     # Single-rail product: a shade, not a blind.
     assert device_class(cover_entity_id(hass, UID_BEDROOM)) == CoverDeviceClass.SHADE
+
+
+def _model(hass: HomeAssistant, entry: MockConfigEntry, uid: int) -> str | None:
+    device = dr.async_get(hass).async_get(_registry_id(hass, entry, uid))
+    assert device is not None
+    return device.model
+
+
+async def test_a_roller_shade_is_one_rail(
+    hass: HomeAssistant, init_with_roller_and_drape: MockConfigEntry
+) -> None:
+    """ModuleType 48 (issue #2): position only, and no Middle rail cover or slider."""
+    state = hass.states.get(cover_entity_id(hass, UID_ROLLER))
+    assert state.attributes[ATTR_DEVICE_CLASS] == CoverDeviceClass.SHADE
+    assert state.attributes[ATTR_SUPPORTED_FEATURES] == (
+        CoverEntityFeature.OPEN
+        | CoverEntityFeature.CLOSE
+        | CoverEntityFeature.SET_POSITION
+        | CoverEntityFeature.STOP
+    )
+    assert ATTR_CURRENT_TILT_POSITION not in state.attributes
+    assert middle_rail_entity_id(hass, UID_ROLLER) is None
+    assert _middle_rail_slider_id(hass, UID_ROLLER) is None
+    assert _model(hass, init_with_roller_and_drape, UID_ROLLER) == "Roller Shade"
+
+
+async def test_a_smartdrape_is_one_curtain_that_draws_and_tilts(
+    hass: HomeAssistant, init_with_roller_and_drape: MockConfigEntry
+) -> None:
+    """ModuleType 80 (issue #2): how far it is drawn as position, its vanes as tilt.
+
+    The tilt is on the one cover, so there is no Middle rail cover or slider to duplicate it
+    -- and nothing for the dashboard card to draw as a second fabric.
+    """
+    state = hass.states.get(cover_entity_id(hass, UID_SMARTDRAPE))
+    assert state.attributes[ATTR_DEVICE_CLASS] == CoverDeviceClass.CURTAIN
+    assert state.attributes[ATTR_SUPPORTED_FEATURES] == ALL_FEATURES
+    assert state.attributes[ATTR_CURRENT_POSITION] == 0
+    assert state.attributes[ATTR_CURRENT_TILT_POSITION] == 100
+    assert middle_rail_entity_id(hass, UID_SMARTDRAPE) is None
+    assert _middle_rail_slider_id(hass, UID_SMARTDRAPE) is None
+    assert _model(hass, init_with_roller_and_drape, UID_SMARTDRAPE) == "SmartDrape"
+
+
+@pytest.mark.parametrize(
+    ("service", "data", "expected"),
+    [
+        # As two-rail these were (100, 100), (20, 20) and (0, 0).
+        (SERVICE_OPEN_COVER, {}, (100, 40)),
+        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 20}, (60, 20)),
+        (SERVICE_CLOSE_COVER_TILT, {}, (60, 0)),
+    ],
+)
+async def test_a_smartdrape_draw_and_tilt_do_not_carry_each_other(
+    hass: HomeAssistant,
+    init_with_roller_and_drape: MockConfigEntry,
+    fake_hub: FakeHub,
+    service: str,
+    data: dict[str, Any],
+    expected: tuple[int, int],
+) -> None:
+    """A shade's rails cannot cross, so one pushed past the other carries it; a drape's can.
+
+    Driven as a two-rail shade, opening the drape also swung its vanes to 100, and tilting the
+    vanes below how far it was drawn pulled the drape across.
+    """
+    coordinator: NormanCoordinator = init_with_roller_and_drape.runtime_data
+    fake_hub.set_position(UID_SMARTDRAPE, bottom=60, middle=40)
+    await coordinator.async_refresh()
+
+    await hass.services.async_call(
+        COVER_DOMAIN,
+        service,
+        {ATTR_ENTITY_ID: cover_entity_id(hass, UID_SMARTDRAPE), **data},
+        blocking=True,
+    )
+
+    assert _last_control(fake_hub) == (UID_SMARTDRAPE, *expected)
+
+
+async def test_upgrading_drops_the_middle_rail_entities_a_type_no_longer_has(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fake_hub: FakeHub, notifications
+) -> None:
+    """The two-rail fallback's Middle rail cover and slider go once 48 and 80 are mapped.
+
+    Left in the registry they would sit on the device page as "no longer provided", and the
+    dashboard card, which reads the registry, would go on drawing a second fabric.
+    """
+    registry = er.async_get(hass)
+    mock_config_entry.add_to_hass(hass)
+    stale = [
+        registry.async_get_or_create(
+            domain, DOMAIN, f"{uid}{suffix}", config_entry=mock_config_entry
+        ).entity_id
+        for uid in (UID_ROLLER, UID_SMARTDRAPE)
+        for domain, suffix in (("cover", "_middle"), ("number", "_middle_rail_position"))
+    ]
+    fake_hub.add_blind(ROLLER_DEVICE, ROLLER_STATUS)
+    fake_hub.add_blind(SMARTDRAPE_DEVICE, SMARTDRAPE_STATUS)
+
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert [entity_id for entity_id in stale if registry.async_get(entity_id)] == []
+    assert middle_rail_entity_id(hass, UID_LIVING), "a two-rail shade keeps its own"
+    assert _middle_rail_slider_id(hass, UID_LIVING)
+
+
+async def test_another_hubs_middle_rail_entity_is_left_alone(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fake_hub: FakeHub, notifications
+) -> None:
+    """The clean-up only touches this entry's own registry entries."""
+    registry = er.async_get(hass)
+    other = MockConfigEntry(domain=DOMAIN, entry_id="another-hub")
+    other.add_to_hass(hass)
+    theirs = registry.async_get_or_create(
+        "cover", DOMAIN, f"{UID_ROLLER}_middle", config_entry=other
+    ).entity_id
+    mock_config_entry.add_to_hass(hass)
+    fake_hub.add_blind(ROLLER_DEVICE, ROLLER_STATUS)
+
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert registry.async_get(theirs) is not None
 
 
 async def test_nudge_tilt_requires_tilt_support(

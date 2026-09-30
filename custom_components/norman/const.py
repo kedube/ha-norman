@@ -226,6 +226,10 @@ KNOWN_PERIPHERAL_FIELDS = frozenset(
         "FirmwareVersion",
         "RfFirmwareVersion",
         "Timestamp",
+        # SmartDrape only (ModuleType 80): the side the drape stacks to ("left"), and a
+        # status code seen as 0. Neither is read.
+        "MSDStackType",
+        "MsdStatus",
         # the command vocabulary advertised by registration
         "RequestModuleInfo",
         "Switch",
@@ -273,13 +277,6 @@ SENSITIVE_HUB_KEYS = frozenset(
     }
 )
 
-# Cover types, derived from the hub's ModuleType. Observed on real hubs:
-#   33 (ModuleDetail 3): two rails, the middle rail tracks 0-100 -> position + tilt
-#   32 (ModuleDetail 2): middle rail always 0 -> single rail, position only
-# Unknown types fall back to two-rail -- the safer default, since a two-rail blind driven as
-# single-rail would leave its middle rail unreachable -- and are logged once so the owner can
-# report the hub payload. Nothing here is product-specific: the codes describe how many rails
-# the motor has, not which Norman covering it is.
 # Motor verbs are fields on the control call; the Norman app sends 170 (0xAA) as the value
 # of every "do it now" verb (MotorStop, MotorFineTuneToUp/Down, SetMotorToTopLimit, ...) and 0
 # for configuration verbs (FindTop, SetTopLimit, Calibration, ...). Captured from the app.
@@ -331,11 +328,29 @@ HUB_BUSY_RETRY_DELAY = 5.0
 # binary sensor uses the same rule so Home Assistant and the app agree.
 UNRESPONSIVE_AFTER = timedelta(hours=24)
 
+# Cover types, derived from the hub's ModuleType. Observed on real hubs:
+#   33 (ModuleDetail 3): two rails, the middle rail tracks 0-100 -> position + tilt
+#   32 (ModuleDetail 2): middle rail always 0 -> single rail, position only
+#   48 (ModuleDetail 1): a roller shade (issue #2); only the bottom rail moves and the middle
+#                        rail always reads 0 -> single rail
+#   80 (ModuleDetail 1): a SmartDrape (issue #2) -> drape. The bottom rail is how far the
+#                        drape is drawn and the middle rail its vane tilt: two independent
+#                        motions, where a two-rail shade's rails hang one above the other and
+#                        carry each other when they would cross.
+# Unknown types fall back to two-rail -- the safer default, since a two-rail blind driven as
+# single-rail would leave its middle rail unreachable -- and are logged once so the owner can
+# report the hub payload. The fallback is not free on a single-rail product: Best Privacy and
+# Best View record a middle-rail target of 100 (see HUB_CMD_SWITCH) that such a blind never
+# reports, so one already at the preset never looks arrived, and the move watchdog resends it
+# and then gives up. That is how the roller shades in issue #2 were found.
 COVER_TYPE_TWO_RAIL = "two_rail"
 COVER_TYPE_SINGLE_RAIL = "single_rail"
+COVER_TYPE_DRAPE = "drape"
 MODULE_TYPE_COVER_TYPES: dict[int, str] = {
     32: COVER_TYPE_SINGLE_RAIL,
     33: COVER_TYPE_TWO_RAIL,
+    48: COVER_TYPE_SINGLE_RAIL,
+    80: COVER_TYPE_DRAPE,
 }
 DEFAULT_COVER_TYPE = COVER_TYPE_TWO_RAIL
 

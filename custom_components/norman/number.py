@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 
+from homeassistant.components.number import DOMAIN as NUMBER_DOMAIN
 from homeassistant.components.number import (
     NumberEntity,
     NumberEntityDescription,
@@ -24,9 +25,9 @@ from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import COVER_TYPE_SINGLE_RAIL
+from .const import COVER_TYPE_TWO_RAIL
 from .coordinator import NormanConfigEntry, NormanCoordinator
-from .entity import NormanRailMixin, async_add_entities_for_new_devices
+from .entity import NormanRailMixin, async_add_entities_for_new_devices, async_remove_entity
 from .models import NormanPeripheralData
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ PARALLEL_UPDATES = 0
 # mouse or a keyboard: 11 stops instead of 101. Anything finer is what the Jog buttons and
 # the nudge actions are for.
 POSITION_STEP = 10
+
+MIDDLE_RAIL_POSITION = "middle_rail_position"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -57,8 +60,8 @@ NUMBERS: tuple[NormanNumberDescription, ...] = (
         position_fn=lambda value: (value, None),
     ),
     NormanNumberDescription(
-        key="middle_rail_position",
-        translation_key="middle_rail_position",
+        key=MIDDLE_RAIL_POSITION,
+        translation_key=MIDDLE_RAIL_POSITION,
         value_fn=lambda data: data.middle_rail_position,
         position_fn=lambda value: (None, value),
     ),
@@ -74,13 +77,20 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
 
     def _numbers_for(device_id: int) -> list[NormanNumber]:
-        single_rail = coordinator.data[device_id].type == COVER_TYPE_SINGLE_RAIL
-        return [
-            NormanNumber(coordinator, device_id, entry, description)
-            for description in NUMBERS
-            # A single-rail blind has no middle rail: the hub reports it as a constant 0.
-            if not (single_rail and description.key == "middle_rail_position")
-        ]
+        # Only a two-rail shade gets a middle-rail slider. A single-rail blind reports that
+        # rail as a constant 0; on a drape it is the vane tilt, which the drape's cover
+        # already offers -- and a slider for it would have the dashboard card draw a second
+        # fabric.
+        two_rail = coordinator.data[device_id].type == COVER_TYPE_TWO_RAIL
+        numbers: list[NormanNumber] = []
+        for description in NUMBERS:
+            if two_rail or description.key != MIDDLE_RAIL_POSITION:
+                numbers.append(NormanNumber(coordinator, device_id, entry, description))
+            else:
+                async_remove_entity(
+                    hass, entry, NUMBER_DOMAIN, f"{device_id}_{MIDDLE_RAIL_POSITION}"
+                )
+        return numbers
 
     async_add_entities_for_new_devices(entry, async_add_entities, _numbers_for)
 

@@ -144,7 +144,7 @@ Notes:
   coerces it to `int` so the two payloads line up. Entries with a missing or non-numeric UID
   are skipped.
 - `ModuleType` / `ModuleDetail` identify the kind of covering; see
-  [Cover types](#cover-types) for the two values mapped so far. Contributions that record
+  [Cover types](#cover-types) for the values mapped so far. Contributions that record
   which values correspond to which products are welcome (open an issue with a diagnostics
   export).
 - Errors for this endpoint are reported under `status.code` / `status.error`, not `Error`
@@ -185,7 +185,7 @@ Response:
 | Field | Meaning | Exposed as |
 |---|---|---|
 | `BottomRailPosition` | 0 = closed, 100 = open | cover `current_position` |
-| `MiddleRailPosition` | 0–100; the second fabric on a day/night shade, the top rail on top-down/bottom-up, the vane tilt on SmartDrape | the **Middle rail** cover's position, and the primary cover's `current_tilt_position` |
+| `MiddleRailPosition` | 0–100; the second fabric on a day/night shade, the top rail on top-down/bottom-up, the vane tilt on SmartDrape; always 0 on a single-rail blind | the **Middle rail** cover's position, and the primary cover's `current_tilt_position` |
 | `TargetBottomRailPosition` | where the bottom rail is heading | `target_position` attribute |
 | `TargetMiddleRailPosition` | where the middle rail is heading | `target_tilt` attribute |
 | `BatteryVoltage` | a **percentage**, 0–100, despite the field name (see [Observed fields](#observed-fields)) | **Battery** sensor |
@@ -571,13 +571,15 @@ documented here must be catalogued and vice versa.
 | Field | Where | Example | Used |
 |---|---|---|---|
 | `PeripheralUID`, `PeripheralName`, `RoomID`, `GroupID` | GetAllPeripheral (strings), status (ints) | | **used**. `PeripheralUID` is also exposed as the device's serial number: no other per-blind identifier appears in any payload, so it is the best candidate for the app's "Serial Number" |
-| `ModuleType` / `ModuleDetail` | both | `33`/`3`, `32`/`2` | **used** (cover type; see below) |
+| `ModuleType` / `ModuleDetail` | both | `33`/`3`, `32`/`2`, `48`/`1`, `80`/`1` | **used** (cover type; see below) |
 | `BottomRailPosition`, `MiddleRailPosition`, `Target…` | status | 0–100 | **used** |
 | `BatteryVoltage` | status | `5` … `100` | **used** as a **percentage** (battery sensor) |
 | `RssiMean` | status | `0`, `34` | **used** (signal-strength sensor, unitless) |
 | `FirmwareVersion` | status | `0.5.3.8`, `4.1.0.4` | **used**; on type 33 it is the version the app shows |
 | `RfFirmwareVersion` | status (type 32 only) | `0.3.20` | **used**: this is the version the Norman app shows for single-rail blinds (Den_1: app 0.3.20, `FirmwareVersion` 4.1.0.4), so it takes precedence for the device's version |
 | `Timestamp` | status | epoch seconds | **used** (last-seen sensor, connection sensor). When the hub last **heard from** the blind: it moves when a blind reports in with nothing changed, not only on a state change. |
+| `MSDStackType` | GetAllPeripheral (type 80 only) | `"left"` | not used. Presumably the side a SmartDrape stacks to when it is drawn open; only `"left"` has been seen. |
+| `MsdStatus` | status (type 80 only) | `0` | not used; only `0` has been seen |
 | `PacketReceiveRate` | status | `0` | not used. Has been `0` on every blind in every capture, including blinds that are plainly reachable, so it is either unimplemented in this firmware or counts something the hub never populates. |
 | `StallCurrent` | status (type 33 only) | `4100`, `1240` | not used. Despite the name it reads as a **stall threshold, not a measurement**: the current draw at which the motor decides it has hit an obstruction (or a limit) and stops. It does not vary during travel -- it holds one value through a full open and close, in both directions, and at rest. It is not fixed per blind either: two blinds read `4100` in captures a day apart and `1240` afterwards, with no setting changed in the app, so the motor appears to adapt it. A **falling** value on one blind is therefore the interesting signal (a motor deciding it needs less force to call something a stall), not the absolute number. Both blinds that changed are in one room, and one of them (`58850`) is the blind a `Calibration` was run against the day before -- so calibration, or the limit-setting around it, is the likeliest cause. Unconfirmed: the other blind was not calibrated. Not exposed as an entity while its meaning rests on a single observation. |
 | `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. |
@@ -588,7 +590,15 @@ documented here must be catalogued and vice versa.
 |---|---|---|---|
 | 33 / 3 | 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); the reference hub's are day/night cellular shades | primary cover (bottom rail, middle as tilt) + Middle rail cover; two position sliders |
 | 32 / 2 | 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only; one position slider |
+| 48 / 1 | 2.4.1 | Roller Shade, per its owner ([#2](https://github.com/kedube/ha-norman/issues/2)). Only the bottom rail moves; the middle rail reads 0, but `Switch` still records a middle-rail target | single-rail cover, position only; one position slider |
+| 80 / 1 | 0.2.3, with `MSDStackType` / `MsdStatus` | SmartDrape, per its owner ([#2](https://github.com/kedube/ha-norman/issues/2)). Bottom rail = how far the drape is drawn, middle rail = vane tilt; independent of each other | one `curtain` cover, draw as position and vanes as tilt; one position slider |
 | other | | | two-rail by default, warning logged once |
+
+A single-rail product left on the two-rail default misreports presets as failed. `Switch`
+records a middle-rail target of 100 for Best privacy and Best view on every blind, and a blind
+with no middle rail keeps reporting 0 — so one that is already at the preset never matches its
+target, and the move watchdog asks it to report in, resends the preset twice, and gives up.
+That is how type 48 was found.
 
 ### Notification stream, as observed
 

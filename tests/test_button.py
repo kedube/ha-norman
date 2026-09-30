@@ -26,7 +26,7 @@ from custom_components.norman.const import (
 from custom_components.norman.coordinator import NormanCoordinator
 
 from .conftest import FakeHub
-from .const import UID_BEDROOM, UID_LIVING
+from .const import UID_BEDROOM, UID_LIVING, UID_ROLLER
 
 
 def _button(hass: HomeAssistant, uid: int, key: str) -> er.RegistryEntry:
@@ -440,6 +440,32 @@ async def test_preset_watchdog_is_quiet_when_the_blind_arrives(
 
     assert len(_switches(fake_hub, UID_LIVING)) == 1
     assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+
+
+async def test_a_preset_a_roller_shade_is_already_at_is_not_resent(
+    hass: HomeAssistant, init_with_roller_and_drape: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Issue #2: a nightly Best Privacy to closed roller shades warned on every one of them.
+
+    Driven as two-rail, the shade was judged on a middle rail it does not have: Best Privacy
+    records a middle-rail target of 100 and the shade reports 0, so it never looked arrived --
+    it was asked to report in, sent the preset twice more, and given up on. As a single-rail
+    shade only its bottom rail counts, and that is already where Best Privacy puts it.
+    """
+    coordinator: NormanCoordinator = init_with_roller_and_drape.runtime_data
+
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        await _press(hass, UID_ROLLER, "best_privacy")
+        await _preset_watchdog_done(coordinator, UID_ROLLER)
+
+    assert len(_switches(fake_hub, UID_ROLLER)) == 1
+    assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+    assert not ir.async_get(hass).async_get_issue(
+        DOMAIN, f"{ISSUE_BLIND_NOT_RESPONDING}_{UID_ROLLER}"
+    )
 
 
 async def test_preset_watchdog_forgets_itself_when_it_finishes(
