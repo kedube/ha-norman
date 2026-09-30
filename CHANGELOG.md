@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.58 — 2026-09-30
 - **Roller Shades (`ModuleType` 48) are single-rail.** They fell back to two rails, so Best
   privacy and Best view sent to a shade already at that position were judged on a middle rail
   it does not have: the preset always looked missed, was sent twice more, and ended in "did not
