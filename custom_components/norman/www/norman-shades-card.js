@@ -98,14 +98,29 @@ const VANE_OPEN_DEG = 75;
 // The sides a drape gathers to when open, by the cover's `stack` attribute.
 const STACK_SIDES = { left: ["left"], right: ["right"], split: ["left", "right"] };
 
+// A Roman shade (flat fold, batten back): one flat panel with a seam at each batten, which
+// folds up from the bottom as the shade rises. The folds hang loose, half a section deep,
+// until every section is folded, then pack tighter as the shade goes the rest of the way up.
+// The CSS draws the seams at the same count. In percent of the opening's height.
+const ROMAN_SECTIONS = 5;
+const ROMAN_STACK_PCT = 24; // the folds' depth with the shade fully up
+const ROMAN_LAP_PCT = 0.6; // how far the flat panel runs on under the top fold, so no sky shows at the join
+
+// A PerfectSheer: soft fabric vanes between two sheers, rolled up into a cassette. With the
+// shade fully down the vanes open, each to a band this much of its pitch; raised, they are
+// closed, as the shade closes them before it rolls up.
+const SHEER_VANES = 11;
+const SHEER_VANE_OPEN = 0.42;
+
 // Which picture a blind gets, from its device's model_id: the hub's ModuleType/ModuleDetail
-// ("48/1"), as the integration records it. Roller shades (48 and 49, but not detail 2, a
-// Roman shade, or 3, a PerfectSheer) and SmartDrapes (80) are drawn as themselves; anything
-// else is drawn as a cellular shade.
+// ("48/1"), as the integration records it. The roller family (48 and 49) is a roller shade,
+// a Roman shade (detail 2) or a PerfectSheer (detail 3), and a SmartDrape is 80; each is
+// drawn as itself. Anything else is drawn as a cellular shade.
+const ROLLER_FAMILY = { 2: "roman", 3: "perfectsheer" };
 const productOf = (device) => {
   const [type, detail] = String(device?.model_id ?? "").split("/").map(Number);
   if (type === 80) return "drape";
-  if ((type === 48 || type === 49) && detail !== 2 && detail !== 3) return "roller";
+  if (type === 48 || type === 49) return ROLLER_FAMILY[detail] || "roller";
   return null;
 };
 const round3 = (value) => Math.round(value * 1000) / 1000;
@@ -746,6 +761,113 @@ const STYLES = `
   ha-card[data-sky="dusk"] .fabric.roller::after { display: none; }
   .win.roller .rail { border-radius: 2px; }
   .win.dragging .roll, .win.dragging .jamb { transition: none; }
+
+  /* ---- a Roman shade ----------------------------------------------------------------
+     Norman's flat fold with a batten back: a woven panel under a fabric-covered head, with
+     a seam at each batten. It folds up from the bottom into soft horizontal folds, each
+     lapping over the one below, and the hem -- the bottom bar, sewn in -- is what the card
+     drags. The panel is drawn at its full length and clipped, so its seams stay put. */
+  .win.roman .headrail {
+    left: -1.5%;
+    right: -1.5%;
+    border-radius: 2px;
+    background:
+      repeating-linear-gradient(to bottom, rgba(140, 120, 90, 0.05) 0 0.5px, transparent 0.5px 1.5px),
+      linear-gradient(to bottom, var(--n-cloth-hi), var(--n-cloth) 40%, var(--n-cloth-lo) 86%, var(--n-cloth-crease));
+    box-shadow: 0 0 0 0.5px rgba(90, 70, 40, 0.3), 0 2px 3px -1px rgba(0, 0, 0, 0.3);
+  }
+  /* The seams repeat every fifth of the panel: ROMAN_SECTIONS in the script. The panel and
+     its folds overhang the opening a hair, so no sky shows down their sides. */
+  .fabric.roman, .fabric.fold { left: -0.6%; right: -0.6%; }
+  .fabric.roman {
+    height: calc(100% - var(--n-head) - var(--n-rail));
+    background:
+      linear-gradient(to right, rgba(90, 70, 40, 0.1), transparent 8%, transparent 92%, rgba(90, 70, 40, 0.1)),
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0 calc(100% / 5 - 1.5px),
+        rgba(120, 100, 70, 0.3) calc(100% / 5 - 1.5px) calc(100% / 5 - 0.5px),
+        rgba(255, 255, 255, 0.4) calc(100% / 5 - 0.5px) calc(100% / 5)
+      ),
+      repeating-linear-gradient(to bottom, rgba(140, 120, 90, 0.05) 0 0.5px, transparent 0.5px 1.5px),
+      linear-gradient(to bottom, var(--n-cloth-hi), var(--n-cloth) 55%, var(--n-cloth-lo));
+    clip-path: inset(0 0 100% 0);
+    transition: clip-path 0.45s var(--n-ease);
+  }
+  /* A fold: a flat face of cloth whose lower edge rounds under -- lit where it turns, dark
+     at the crease beneath -- lapping over the fold below and shadowing it. */
+  .fabric.fold {
+    z-index: 2;
+    background:
+      linear-gradient(to right, rgba(90, 70, 40, 0.12), transparent 8%, transparent 92%, rgba(90, 70, 40, 0.12)),
+      repeating-linear-gradient(to bottom, rgba(140, 120, 90, 0.05) 0 0.5px, transparent 0.5px 1.5px),
+      linear-gradient(to bottom, var(--n-cloth) 0, var(--n-cloth-hi) 14%, var(--n-cloth) 66%, var(--n-cloth-hi) 80%, var(--n-cloth-lo) 93%, var(--n-cloth-crease));
+    box-shadow: 0 1px 2px rgba(60, 45, 25, 0.32);
+  }
+  .fabric.roman::after, .fabric.fold::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(90% 70% at 70% 30%, rgba(255, 250, 235, 0.5), transparent 70%);
+    mix-blend-mode: soft-light;
+  }
+  ha-card[data-sky="night"] .fabric.roman::after, ha-card[data-sky="night"] .fabric.fold::after,
+  ha-card[data-sky="dusk"] .fabric.roman::after, ha-card[data-sky="dusk"] .fabric.fold::after { display: none; }
+  .win.roman .rail {
+    border-radius: 0 0 3px 3px;
+    background: linear-gradient(to bottom, var(--n-cloth-lo), var(--n-cloth) 28%, var(--n-cloth-hi) 52%, var(--n-cloth-lo) 88%, var(--n-cloth-crease));
+    box-shadow: 0 0 0 0.5px rgba(90, 70, 40, 0.28), 0 2px 3px -1px rgba(0, 0, 0, 0.35);
+  }
+
+  /* ---- a PerfectSheer ---------------------------------------------------------------
+     Soft fabric vanes held between two sheers, under a curved cassette the fabric rolls up
+     into. Open, the vanes narrow to bands with the view through the sheer between them;
+     closed, they meet in a soft wall of cloth. */
+  .win.perfectsheer .headrail {
+    border-radius: 3px 3px 4px 4px;
+    background: linear-gradient(to bottom, var(--n-rail-lo), var(--n-rail-hi) 12%, var(--n-rail-face) 46%, var(--n-rail-lo) 90%);
+  }
+  .win.perfectsheer .clip {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: var(--n-head);
+    bottom: 0;
+    z-index: 1;
+    overflow: hidden;
+  }
+  .win.perfectsheer .cloth {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    background-color: rgba(252, 249, 243, 0.2);
+    background-image:
+      linear-gradient(to right, rgba(90, 70, 40, 0.08), transparent 8%, transparent 92%, rgba(90, 70, 40, 0.08)),
+      repeating-linear-gradient(to bottom, rgba(176, 164, 144, 0.2) 0 0.5px, transparent 0.5px 2px);
+    -webkit-backdrop-filter: blur(0.8px) brightness(1.06) saturate(0.8);
+    backdrop-filter: blur(0.8px) brightness(1.06) saturate(0.8);
+    transition: top 0.45s var(--n-ease);
+  }
+  /* The front sheer, over the vanes as well as between them. */
+  .win.perfectsheer .cloth::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.14) 0 0.5px, transparent 0.5px 2px);
+  }
+  .win.perfectsheer .vane {
+    position: absolute;
+    left: 0;
+    right: 0;
+    transform-origin: top;
+    background: linear-gradient(to bottom, var(--n-cloth-lo), var(--n-cloth-hi) 10%, var(--n-cloth) 58%, var(--n-cloth-lo));
+    box-shadow: 0 0.5px 0 rgba(150, 135, 110, 0.35);
+    opacity: 0.94;
+    transition: transform 0.45s var(--n-ease);
+  }
+  .win.dragging .cloth { transition: none; }
+  ha-card[data-theme="dark"] .win.perfectsheer .vane { filter: brightness(0.88); }
 
   /* ---- a SmartDrape -------------------------------------------------------------------
      Fabric vanes on a sheer, hung from a track to the sill and drawn sideways. Each vane
@@ -1550,13 +1672,15 @@ class NormanShadesCard extends HTMLElement {
    * rail's right -- so that both can still be taken hold of when the rails are together.
    *
    * A roller shade hangs plain fabric off a roll in place of the headrail, and the roll
-   * grows as the shade winds up onto it.
+   * grows as the shade winds up onto it. A Roman shade's panel folds up into a stack above
+   * its hem. A PerfectSheer's vanes, between two sheers, slide up into a cassette.
    */
   _buildShade(blind, rails) {
     if (blind.louvers) return this._buildShutter(blind, rails);
     if (blind.product === "drape") return this._buildDrape(blind, rails);
-    const roller = blind.product === "roller";
-    const element = el("div", roller ? "win roller" : "win");
+    const { product } = blind;
+    const roller = product === "roller";
+    const element = el("div", product ? `win ${product}` : "win");
     element.setAttribute("role", "group");
     element.setAttribute("aria-label", blind.name);
 
@@ -1566,10 +1690,29 @@ class NormanShadesCard extends HTMLElement {
     view.append(el("div", "sun"), el("div", "hills"), el("div", "mullion"), el("div", "transom"), el("div", "glint"));
 
     const twoRail = rails.length > 1;
-    const single = roller ? "roller" : "single";
-    const bands = rails.map((_, index) =>
+    const single = roller || product === "roman" ? product : "single";
+    let bands = rails.map((_, index) =>
       el("div", `fabric ${twoRail ? (index === 1 ? "sheer" : "blackout") : single}`),
     );
+    // A Roman shade's folds, bottom one first, drawn over the flat panel above them.
+    const folds = product === "roman" ? Array.from({ length: ROMAN_SECTIONS }, () => el("div", "fabric fold")) : [];
+    // A PerfectSheer's fabric is drawn at its full length and slides up out of sight into
+    // the cassette, so it hangs in a clip below the cassette rather than as a band.
+    let cloth = null;
+    let vanes = [];
+    if (product === "perfectsheer") {
+      cloth = el("div", "cloth");
+      vanes = Array.from({ length: SHEER_VANES }, (_, k) => {
+        const vane = el("div", "vane");
+        vane.style.top = `${round3((k / SHEER_VANES) * 100)}%`;
+        vane.style.height = `${round3(100 / SHEER_VANES)}%`;
+        return vane;
+      });
+      cloth.append(...vanes);
+      const clip = el("div", "clip");
+      clip.appendChild(cloth);
+      bands = [clip];
+    }
     const markers = rails.map(() => el("div", "marker"));
     const railEls = rails.map((_, index) => {
       const rail = el("div", `rail ${index === 0 ? "bottom" : "middle"}`);
@@ -1595,7 +1738,7 @@ class NormanShadesCard extends HTMLElement {
     // Behind a roll, the top of the window's recess: no sky shows round the roll's ends.
     const jamb = roller ? el("div", "jamb") : null;
     const brackets = roller ? [el("div", "bracket left"), el("div", "bracket right")] : [];
-    opening.append(view, ...bands, ...markers, ...railEls, ...(jamb ? [jamb] : []), head, ...brackets, ...zones, bubble);
+    opening.append(view, ...bands, ...folds, ...markers, ...railEls, ...(jamb ? [jamb] : []), head, ...brackets, ...zones, bubble);
     frame.appendChild(opening);
     element.append(frame, el("div", "sill"));
 
@@ -1608,8 +1751,12 @@ class NormanShadesCard extends HTMLElement {
       zones,
       bubble,
       rails,
+      product,
       roll: roller ? head : null,
       jamb,
+      folds,
+      cloth,
+      vanes,
       dragValues: {},
     };
     this._bindShade(shade);
@@ -1990,7 +2137,7 @@ class NormanShadesCard extends HTMLElement {
     return event.clientX - rect.left < rect.width / 2 ? "left" : "right";
   }
 
-  /** How open a drape's vanes are drawn, 0 to 1: where the cover's tilt is heading. */
+  /** How open a drape's or a PerfectSheer's vanes are drawn, 0 to 1: where the cover's tilt is heading. */
   _vanesOpen(shade) {
     const attributes = this._hass?.states?.[shade.rails[0].coverId]?.attributes || {};
     const tilt = attributes.target_tilt ?? attributes.current_tilt_position;
@@ -2000,18 +2147,77 @@ class NormanShadesCard extends HTMLElement {
   /** The distance a rail travels, as a percentage of the opening: what the rails leave. */
   _travelPct(shade) {
     if (shade.louvers) return LOUVER_TRAVEL_PCT;
-    return 100 - SHADE_HEAD_PCT - shade.rails.length * SHADE_RAIL_PCT;
+    return 100 - SHADE_HEAD_PCT - this._stackPct(shade) - shade.rails.length * SHADE_RAIL_PCT;
+  }
+
+  /** What stays below the headrail with the shade fully up: a Roman shade's folds, else nothing. */
+  _stackPct(shade) {
+    return shade.product === "roman" ? ROMAN_STACK_PCT : 0;
   }
 
   /**
    * Where a rail's top edge sits, in percent down the opening. Open (100) is tucked under
-   * the headrail -- or under the middle rail, for the bottom rail of a two-rail blind --
-   * and closed (0) rests on the sill.
+   * the headrail -- or under the middle rail, for the bottom rail of a two-rail blind, and
+   * under its folds for a Roman shade -- and closed (0) rests on the sill.
    */
   _railTop(shade, index, value) {
     const above = shade.rails.length - 1 - index;
     const position = value === null || value === undefined ? 0 : value;
-    return SHADE_HEAD_PCT + above * SHADE_RAIL_PCT + ((100 - position) / 100) * this._travelPct(shade);
+    return (
+      SHADE_HEAD_PCT +
+      this._stackPct(shade) +
+      above * SHADE_RAIL_PCT +
+      ((100 - position) / 100) * this._travelPct(shade)
+    );
+  }
+
+  /**
+   * How a Roman shade's folds hang at `value`: how many sections are folded (a fraction
+   * while one is still folding) and how deep each fold is. A fold takes up a section of the
+   * panel and, hanging loose, is half a section deep; once every section is folded they
+   * pack tighter, to ROMAN_STACK_PCT all told with the shade fully up. The hem rises evenly
+   * all the while, so it stays under the pointer.
+   */
+  _romanFolds(value) {
+    const length = 100 - SHADE_HEAD_PCT - SHADE_RAIL_PCT;
+    const section = length / ROMAN_SECTIONS;
+    const raised = (clamp(value ?? 0) / 100) * (length - ROMAN_STACK_PCT);
+    const loose = raised / (section / 2);
+    if (loose <= ROMAN_SECTIONS) return { count: loose, depth: section / 2 };
+    return { count: ROMAN_SECTIONS, depth: section - raised / ROMAN_SECTIONS };
+  }
+
+  /**
+   * Hang a Roman shade's folds above its hem at `hem`, bottom fold first, and cut the flat
+   * panel off where they begin. The fold still forming is the top one, where the stack
+   * takes up the panel above it. The panel keeps its full length, so its seams stay at the
+   * battens; it is clipped rather than shortened.
+   */
+  _drawFolds(shade, hem) {
+    const { count, depth } = this._romanFolds(this._shadeValue(shade, 0));
+    const length = 100 - SHADE_HEAD_PCT - SHADE_RAIL_PCT;
+    const flat = Math.max(0, hem - count * depth - SHADE_HEAD_PCT);
+    const shown = Math.min(length, flat + ROMAN_LAP_PCT);
+    shade.bands[0].style.clipPath = `inset(0 0 ${round3(100 - (shown / length) * 100)}% 0)`;
+    shade.folds.forEach((fold, k) => {
+      fold.style.top = `${round3(hem - Math.min(count, k + 1) * depth)}%`;
+      fold.style.height = `${round3(clamp(count - k, 0, 1) * depth)}%`;
+    });
+  }
+
+  /**
+   * Hang a PerfectSheer's fabric from the cassette to its bottom rail at `top`. It rolls up
+   * into the cassette, so it slides up at its full length rather than shortening. Its vanes
+   * open only with the shade fully down; anywhere else they are drawn closed.
+   */
+  _drawCloth(shade, top) {
+    const length = 100 - SHADE_HEAD_PCT - SHADE_RAIL_PCT;
+    const clip = 100 - SHADE_HEAD_PCT;
+    shade.cloth.style.top = `${round3(((top - SHADE_HEAD_PCT - length) / clip) * 100)}%`;
+    shade.cloth.style.height = `${round3((length / clip) * 100)}%`;
+    const open = (this._shadeValue(shade, 0) ?? 0) <= 0 ? this._vanesOpen(shade) : 0;
+    const band = round3(1 - (1 - SHEER_VANE_OPEN) * open);
+    for (const vane of shade.vanes) vane.style.transform = `scaleY(${band})`;
   }
 
   /**
@@ -2042,8 +2248,14 @@ class NormanShadesCard extends HTMLElement {
     for (let index = shade.rails.length - 1; index >= 0; index -= 1) {
       const top = this._railTop(shade, index, this._shadeValue(shade, index));
       const band = shade.bands[index];
-      band.style.top = `${round3(edge)}%`;
-      band.style.height = `${round3(Math.max(0, top - edge))}%`;
+      if (shade.product === "roman") {
+        this._drawFolds(shade, top);
+      } else if (shade.product === "perfectsheer") {
+        this._drawCloth(shade, top);
+      } else {
+        band.style.top = `${round3(edge)}%`;
+        band.style.height = `${round3(Math.max(0, top - edge))}%`;
+      }
       shade.railEls[index].style.top = `${round3(top)}%`;
       shade.zones[index].style.top = `${round3(top + SHADE_RAIL_PCT / 2)}%`;
       edge = top + SHADE_RAIL_PCT;

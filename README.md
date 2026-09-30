@@ -13,7 +13,7 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 [![Release](https://img.shields.io/github/v/release/kedube/ha-norman?sort=semver)](https://github.com/kedube/ha-norman/releases)
 
-<img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each drawn as a window with its shade or shutter in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
+<img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each drawn as a window with its own kind of shade, drape or shutter in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
 
 *The bundled **Norman Shades** card: drag a shade's pull tab, or a shutter's tilt rod, to move it.
 It registers itself, finds your blinds, and needs no configuration.*

@@ -5,6 +5,14 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **The dashboard card draws Roman shades and PerfectSheers as themselves.** Both used to be
+  drawn as a pleated cellular shade. A Roman Shade is now a flat panel with a seam at each
+  batten that folds up into a stack of soft folds above its hem as it rises. A PerfectSheer is
+  fabric vanes between two sheers that roll up into a cassette; with the shade fully down its
+  vanes open with its tilt, showing the view through the sheer between them. Every product the
+  hub reports now has its own picture.
+
 ## 0.62 — 2026-09-30
 - **The dashboard card draws roller shades and SmartDrapes as themselves.** Both used to be
   drawn as a pleated cellular shade. A Roller Shade now hangs plain woven fabric off a roll

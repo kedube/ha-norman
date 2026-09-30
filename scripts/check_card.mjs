@@ -66,6 +66,10 @@ const cardSource = await import("node:fs").then((fs) => fs.readFileSync(url, "ut
 // read them rather than restating them.
 const HEAD = Number(/--n-head:\s*([\d.]+)%/.exec(cardSource)[1]);
 const RAIL = Number(/--n-rail:\s*([\d.]+)%/.exec(cardSource)[1]);
+// A Roman shade's sections and the depth of its folds fully up.
+const SECTIONS = Number(/const ROMAN_SECTIONS = (\d+);/.exec(cardSource)[1]);
+const STACK = Number(/const ROMAN_STACK_PCT = ([\d.]+);/.exec(cardSource)[1]);
+const LAP = Number(/const ROMAN_LAP_PCT = ([\d.]+);/.exec(cardSource)[1]);
 const top = (el) => parseFloat(el.style.top);
 const height = (el) => parseFloat(el.style.height);
 const near = (a, b) => Math.abs(a - b) < 0.01;
@@ -682,8 +686,9 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   check("the list layout's louver slider moves in quarters", slider.input.step === "25", String(slider.input.step));
 }
 
-// Roller shades and SmartDrapes: told apart by their device's model_id (the hub's
-// ModuleType/ModuleDetail), and drawn as themselves rather than as a cellular shade.
+// Roller shades, Roman shades, PerfectSheers and SmartDrapes: told apart by their device's
+// model_id (the hub's ModuleType/ModuleDetail), and drawn as themselves rather than as a
+// cellular shade.
 {
   const pCalls = [];
   const drape = (position, tilt, stack) => ({ state: position ? "open" : "closed",
@@ -712,7 +717,7 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
       "cover.kitchen_1_bottom_rail": { state:"open", attributes:{ current_position:60, target_position:60 } },
       "number.kitchen_1_bottom_rail_position": { state:"60" },
       "cover.roman_1_bottom_rail": { state:"open", attributes:{ current_position:60 } },
-      "cover.sheer_1_bottom_rail": { state:"open", attributes:{ current_position:60 } },
+      "cover.sheer_1_bottom_rail": drape(0, 100),
       "cover.living_1_bottom_rail": drape(100, 100, "left"),
       "number.living_1_bottom_rail_position": { state:"100" },
       "cover.patio_1_bottom_rail": drape(50, 0, "split"),
@@ -728,8 +733,10 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   check("a roller shade (48/1) is recognised from its model_id", found.Kitchen_1?.product === "roller", String(found.Kitchen_1?.product));
   check("a SmartDrape (80/1) is recognised, with the side it stacks to",
         found.Living_1?.product === "drape" && found.Living_1.stack === "left", JSON.stringify(found.Living_1));
-  check("Roman shades, PerfectSheers and cellular shades keep the cellular picture",
-        [found.Roman_1, found.Sheer_1, found.Den_1].every((b) => b.product === null));
+  check("a Roman shade (48/2) and a PerfectSheer (49/3) are recognised",
+        found.Roman_1?.product === "roman" && found.Sheer_1?.product === "perfectsheer",
+        `${found.Roman_1?.product} ${found.Sheer_1?.product}`);
+  check("a cellular shade keeps the cellular picture", found.Den_1?.product === null);
   pHass.states["cover.living_1_bottom_rail"] = drape(100, 100, "sideways");
   check("an unknown stack side is drawn gathering left",
         c._collectBlinds().find((b) => b.name === "Living_1").stack === "left");
@@ -809,6 +816,70 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   c._onKey(split, 0, { key: "ArrowRight", preventDefault: () => {} }, "right");
   check("ArrowRight on the right half gathers it (opens)", split.dragValues[0] === 60, JSON.stringify(split.dragValues));
   clearTimeout(split.keyTimer);
+
+  // The Roman shade: a flat panel that folds up into a stack above its hem.
+  const roman = c._buildShade(found.Roman_1, c._railsOf(found.Roman_1));
+  check("a Roman shade is drawn as a panel with a fold per section under a headrail",
+        String(roman.element.className) === "win roman" && String(roman.bands[0].className) === "fabric roman" &&
+        roman.folds.length === SECTIONS && roman.folds.every((f) => String(f.className) === "fabric fold"));
+  const SECTION = (100 - HEAD - RAIL) / SECTIONS;
+  const romanAt = (value) => {
+    roman.dragValues = { 0: value };
+    c._drawShade(roman);
+    const hem = top(roman.railEls[0]);
+    const folds = roman.folds.map((f) => ({ top: top(f), height: height(f) }));
+    const stack = folds.reduce((sum, f) => sum + f.height, 0);
+    const cut = Number(/inset\(0 0 ([\d.]+)% 0\)/.exec(roman.bands[0].style.clipPath)?.[1]);
+    // The panel runs a hair on under the top fold; that hair is not flat panel.
+    const flat = Math.max(0, (100 - HEAD - RAIL) * (1 - cut / 100) - (value > 0 ? LAP : 0));
+    return { hem, folds, stack, flat };
+  };
+  const down = romanAt(0);
+  check("lowered, it is all flat panel down to the sill, with no folds",
+        near(down.hem + RAIL, 100) && near(down.stack, 0) && near(down.flat, 100 - HEAD - RAIL), JSON.stringify(down));
+  const up = romanAt(100);
+  check("fully up, its folds pack tight under the headrail, the panel all folded away",
+        near(up.hem, HEAD + STACK) && up.folds.every((f) => near(f.height, STACK / SECTIONS)) && near(up.flat, 0) &&
+        near(Math.min(...up.folds.map((f) => f.top)), HEAD), JSON.stringify(up));
+  const part = romanAt(30);
+  check("part way, the folds hang loose, half a section deep, the one still forming on top",
+        near(part.folds[0].height, SECTION / 2) && near(part.folds[1].height, SECTION / 2) &&
+        part.folds[2].height > 0 && part.folds[2].height < SECTION / 2 && near(part.folds[3].height, 0),
+        JSON.stringify(part.folds));
+  check("...stacked from the hem up, meeting the flat panel",
+        near(part.folds[0].top + part.folds[0].height, part.hem) && near(HEAD + part.flat + part.stack, part.hem),
+        JSON.stringify(part));
+  check("...and no cloth is lost: each fold takes a section of the panel",
+        [10, 30, 60, 67, 80, 100].every((v) => { const r = romanAt(v); return near(r.flat + (r.stack / c._romanFolds(v).depth) * SECTION, 100 - HEAD - RAIL); }));
+  check("the hem rises evenly, so a drag keeps it under the pointer",
+        near(romanAt(50).hem, (romanAt(0).hem + romanAt(100).hem) / 2) && near(c._travelPct(roman), 100 - HEAD - STACK - RAIL));
+  check("the CSS draws a seam at each batten, a section apart",
+        new RegExp(`\\.fabric\\.roman \\{[^}]*calc\\(100% / ${SECTIONS} - 1\\.5px\\)`).test(cardSource));
+  roman.dragValues = {};
+
+  // The PerfectSheer: vanes between sheers, sliding up into a cassette.
+  const sheerRails = c._railsOf(found.Sheer_1);
+  const sheer = c._buildShade(found.Sheer_1, sheerRails);
+  check("a PerfectSheer is drawn as eleven vanes in a cloth, clipped under its cassette",
+        String(sheer.element.className) === "win perfectsheer" && String(sheer.bands[0].className) === "clip" &&
+        sheer.bands[0].children[0] === sheer.cloth && sheer.vanes.length === 11);
+  const vaneBand = () => sheer.vanes[0].style.transform;
+  c._drawShade(sheer);
+  check("fully down with its vanes open, they narrow to bands", vaneBand() === "scaleY(0.42)", vaneBand());
+  pHass.states["cover.sheer_1_bottom_rail"] = drape(0, 0);
+  c._drawShade(sheer);
+  check("...and closed, they meet", vaneBand() === "scaleY(1)", vaneBand());
+  pHass.states["cover.sheer_1_bottom_rail"] = drape(0, 100);
+  sheer.dragValues = { 0: 60 };
+  c._drawShade(sheer);
+  check("raised, its vanes are drawn closed, whatever the tilt says", vaneBand() === "scaleY(1)", vaneBand());
+  const clothBottom = () => HEAD + ((top(sheer.cloth) + height(sheer.cloth)) / 100) * (100 - HEAD);
+  check("its cloth ends at the bottom rail", near(clothBottom(), top(sheer.railEls[0])), `${clothBottom()} ${top(sheer.railEls[0])}`);
+  sheer.dragValues = { 0: 100 };
+  c._drawShade(sheer);
+  check("fully up, all of it is rolled into the cassette", near(clothBottom(), HEAD) && near(height(sheer.cloth), ((100 - HEAD - RAIL) / (100 - HEAD)) * 100),
+        `${clothBottom()} ${height(sheer.cloth)}`);
+  sheer.dragValues = {};
 }
 
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);

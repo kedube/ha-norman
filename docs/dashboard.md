@@ -4,7 +4,7 @@ The integration ships a Lovelace card, **Norman Shades**, that draws every blind
 with its shade hanging in it, grouped by room. The window is the control: **drag a rail's pull
 tab** to move it.
 
-<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — single-rail shades in ivory, two-rail shades with the see-through light-filtering fabric above the blackout, and two shutters with their louvers half open and open." width="560">
+<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — cellular shades in ivory, one of them closing, a roller shade on its roll, two-rail shades with the see-through light-filtering fabric above the blackout, a SmartDrape part drawn with its vanes open, a PerfectSheer lowered with its vanes open, a Roman shade part raised with its folds above the hem, and two shutters with their louvers half open and open." width="560">
 
 *The card with eight blinds across three rooms. Den_2 is on its way down: the shade is drawn
 where it is going, the dashed line is where it is now, and its Stop button sits on the corner.
@@ -132,11 +132,22 @@ The vanes turn with the cover's tilt: flat and overlapping when closed, nearly e
 open, with the view showing through the sheer between them. The card does not turn them; use
 the blind's more-info dialog (click its name).
 
-### PerfectSheer and Roman shades
+### Roman shades
 
-Both are drawn as a cellular shade for now: the band shows how far the shade is lowered, and
-dragging it moves that. The card has no control for a PerfectSheer's vanes; turn them from the
-more-info dialog.
+A Roman Shade is drawn as Norman's flat fold with a batten back: a woven panel under a
+fabric-covered head, with a seam at each batten. As the shade rises its bottom folds up into
+soft horizontal folds above the hem, each lapping over the one below. They hang loose part way
+up and pack tighter under the head fully open, where the stack still covers the top of the
+window, as a real Roman shade's does. **Drag the hem**, as on any single-rail shade.
+
+### PerfectSheer
+
+A PerfectSheer is drawn as soft fabric vanes between two sheers, under a curved cassette. The
+fabric rolls up into the cassette as the shade rises. With the shade fully down its vanes turn
+with the cover's tilt: closed they meet in a soft wall of cloth, and open they narrow to bands
+with the view through the sheer between them. Raised, they are drawn closed, as the shade
+closes them before it rolls up. **Drag the bottom rail** to raise or lower it. The card does
+not turn the vanes; use the blind's more-info dialog (click its name).
 
 ### The view
 
