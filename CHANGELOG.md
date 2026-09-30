@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.61 — 2026-09-30
 - **Setting both rails at once no longer loses one.** A command that moves one rail sends the
   other where it is heading, and that came from the hub's target alone — which still showed the
   blind as it was until the next status read. A scene setting both rails of a two-rail blind
