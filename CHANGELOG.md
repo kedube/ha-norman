@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.63 — 2026-09-30
 - **The dashboard card draws Roman shades and PerfectSheers as themselves.** Both used to be
   drawn as a pleated cellular shade. A Roman Shade is now a flat panel with a seam at each
   batten that folds up into a stack of soft folds above its hem as it rises. A PerfectSheer is
