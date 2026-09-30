@@ -129,13 +129,15 @@ class NormanRailMixin(NormanEntity):
     """Shared rail arithmetic for entities that move a blind.
 
     The hub's control call always takes **both** rails, so any entity that moves one rail
-    has to send the other back unchanged. That rule, and the "target, then current, then
-    fully open" fallback it needs, lives here so the cover and number platforms cannot
-    drift apart.
+    has to send the other back unchanged. That rule, and the "move in flight, then target,
+    then current, then fully open" fallback it needs, lives here so the cover and number
+    platforms cannot drift apart.
     """
 
     def _target_or_current_bottom(self) -> int:
         """Bottom rail value to send when a command leaves the bottom rail alone."""
+        if (commanded := self.coordinator.commanded_rails(self._device_id)) is not None:
+            return commanded[0]
         data = self._data
         if data is None:
             return 100
@@ -146,6 +148,8 @@ class NormanRailMixin(NormanEntity):
 
     def _target_or_current_middle(self) -> int:
         """Middle rail value to send when a command leaves the middle rail alone."""
+        if (commanded := self.coordinator.commanded_rails(self._device_id)) is not None:
+            return commanded[1]
         data = self._data
         if data is None:
             return 100
@@ -171,6 +175,11 @@ class NormanRailMixin(NormanEntity):
         dashboard card can move either rail from anywhere -- fully open included. A drape's
         two values are how far it is drawn and how its vanes are tilted, which do not
         constrain each other, so they are sent as asked.
+
+        "Where it is heading" is the last move sent from here while that move is in flight,
+        and the hub's target otherwise (``NormanCoordinator.async_note_move``). The move is
+        recorded before it waits its turn to be sent, so a second command right behind it --
+        or issued at the same moment, as a scene does -- keeps it rather than undoing it.
         """
         bottom_val = self._target_or_current_bottom() if bottom is None else clamp_position(bottom)
         middle_val = self._target_or_current_middle() if middle is None else clamp_position(middle)
@@ -181,8 +190,11 @@ class NormanRailMixin(NormanEntity):
             elif bottom is None:
                 bottom_val = min(bottom_val, middle_val)
 
+        serial = self.coordinator.async_note_move(self._device_id, bottom_val, middle_val)
+        sent = False
         try:
             await self.coordinator.api.async_set_position(self._device_id, bottom_val, middle_val)
+            sent = True
         except (NormanApiError, NormanConnectionError) as err:
             detail = f" (value: {value})" if value is not None else ""
             raise HomeAssistantError(
@@ -194,12 +206,15 @@ class NormanRailMixin(NormanEntity):
                     "error": str(err),
                 },
             ) from err
-        self.coordinator.async_watch_move(self._device_id, bottom_val, middle_val)
+        finally:
+            if not sent:
+                self.coordinator.async_forget_move(self._device_id, serial)
+        self.coordinator.async_watch_move(self._device_id, bottom_val, middle_val, serial)
         await self.coordinator.async_request_refresh()
 
     async def _async_stop_motor(self) -> None:
         """Stop the motor where it is (the hub has one stop per blind, not per rail)."""
-        self.coordinator.async_cancel_move_watch(self._device_id)
+        self.coordinator.async_supersede([self._device_id])
         try:
             await self.coordinator.api.async_stop(self._device_id)
         except (NormanApiError, NormanConnectionError) as err:

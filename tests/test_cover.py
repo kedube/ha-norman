@@ -43,6 +43,7 @@ from homeassistant.helpers import (
 from homeassistant.helpers import (
     issue_registry as ir,
 )
+from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
@@ -341,7 +342,12 @@ async def test_commands_follow_the_target_while_moving(
     fake_hub: FakeHub,
     notifications: asyncio.Queue,
 ) -> None:
-    """Mid-move, the untouched rail is sent where it is heading, not where it is now."""
+    """Mid-move, the untouched rail is sent where it is heading, not where it is now.
+
+    That is the hub's target for a move made elsewhere, and the move itself for one sent
+    from here: this fake hub never records the tilt as its target, and the close still
+    keeps it.
+    """
     fake_hub.set_position(UID_LIVING, target_bottom=80, target_middle=10)
     await notifications.put({"PeripheralList": []})
     await settle(hass)
@@ -350,7 +356,7 @@ async def test_commands_follow_the_target_while_moving(
     assert _last_control(fake_hub) == (UID_LIVING, 80, 100)
 
     await _call(hass, COVER_DOMAIN, SERVICE_CLOSE_COVER)
-    assert _last_control(fake_hub) == (UID_LIVING, 0, 10)
+    assert _last_control(fake_hub) == (UID_LIVING, 0, 100)
 
 
 async def test_commands_fall_back_to_current_then_open(
@@ -369,6 +375,8 @@ async def test_commands_fall_back_to_current_then_open(
     await _call(hass, COVER_DOMAIN, SERVICE_CLOSE_COVER)
     assert _last_control(fake_hub) == (UID_LIVING, 0, 60)
 
+    # While that close is in flight it stands in for the hub; this is about the hub's fields.
+    init_integration.runtime_data.async_supersede()
     del peripheral["MiddleRailPosition"]
     await notifications.put({"PeripheralList": []})
     await settle(hass)
@@ -446,10 +454,11 @@ async def test_single_rail_cover_echoes_middle_rail_and_ignores_tilt(
         )
     assert len(fake_hub.control_calls) == 1
 
+    # From where the open is heading, fully up.
     await hass.services.async_call(
-        DOMAIN, "nudge_position", {ATTR_ENTITY_ID: bedroom, "step": 25}, blocking=True
+        DOMAIN, "nudge_position", {ATTR_ENTITY_ID: bedroom, "step": -25}, blocking=True
     )
-    assert _last_control(fake_hub) == (UID_BEDROOM, 25, 0)
+    assert _last_control(fake_hub) == (UID_BEDROOM, 75, 0)
 
     # Stop is a motor command, so the shade has it; stop_tilt is not offered
     await hass.services.async_call(
@@ -780,6 +789,205 @@ async def test_stop_cancels_the_move_watchdog(
     await settle(hass)
     assert UID_LIVING not in coordinator._move_watchers
     assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+
+
+def _slider(hass: HomeAssistant, uid: int, rail: str) -> str:
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "number", DOMAIN, f"{uid}_{rail}_rail_position"
+    )
+    assert entity_id
+    return entity_id
+
+
+async def _slide(hass: HomeAssistant, rail: str, value: int) -> None:
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: _slider(hass, UID_LIVING, rail), "value": value},
+        blocking=True,
+    )
+
+
+def _rails_sent(fake_hub: FakeHub) -> list[tuple[int, int]]:
+    return [
+        (c["BottomRailPosition"], c["MiddleRailPosition"]) for c in _moves(fake_hub, UID_LIVING)
+    ]
+
+
+async def test_moves_sent_together_keep_each_other(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Both rails set at once, as a scene does: the second keeps the first's rail.
+
+    Each fills the other rail in with where it is heading. Worked out from the hub's target
+    alone, both read the blind as it was (40/60) before either was sent, and the second
+    undid the first: the blind ended at 40/70.
+    """
+    await asyncio.gather(_slide(hass, "bottom", 30), _slide(hass, "middle", 70))
+    await hass.async_block_till_done()
+
+    assert _rails_sent(fake_hub) == [(30, 60), (30, 70)]
+
+
+async def test_a_scene_sets_both_rails(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Home Assistant applies a scene's entities concurrently; both rails still arrive."""
+    assert await async_setup_component(hass, "scene", {})
+    await hass.async_block_till_done()  # scene.apply comes with a platform loaded after setup
+    await hass.services.async_call(
+        "scene",
+        "apply",
+        {
+            "entities": {
+                _slider(hass, UID_LIVING, "bottom"): "30",
+                _slider(hass, UID_LIVING, "middle"): "70",
+            }
+        },
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert _rails_sent(fake_hub)[-1] == (30, 70)
+
+
+async def test_a_move_right_behind_another_keeps_it(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """One rail and then the other, before the hub has been re-read (this fake never is)."""
+    await _slide(hass, "bottom", 30)
+    await _slide(hass, "middle", 70)
+
+    assert _rails_sent(fake_hub) == [(30, 60), (30, 70)]
+
+
+async def test_a_move_that_fails_to_send_is_not_kept(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A move the hub never took is not where the blind is heading."""
+    fake_hub.control_exc = aiohttp.ClientError("unreachable")
+    with pytest.raises(HomeAssistantError):
+        await _slide(hass, "bottom", 30)
+    fake_hub.control_exc = None
+
+    await _slide(hass, "middle", 70)
+    assert _rails_sent(fake_hub)[-1] == (40, 70)
+
+
+async def test_a_stop_ends_the_move_in_flight(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """After a stop the blind is wherever it stopped, which only the hub knows."""
+    await _slide(hass, "bottom", 30)
+    await _call(hass, COVER_DOMAIN, SERVICE_STOP_COVER)
+
+    await _slide(hass, "middle", 70)
+    assert _rails_sent(fake_hub)[-1] == (40, 70)
+
+
+async def test_a_move_the_blind_reports_hands_back_to_the_hub(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Once the blind reports the move, the hub's target counts again -- remote moves included."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await _slide(hass, "bottom", 30)
+    _reports_in(fake_hub, UID_LIVING, 30)
+    await coordinator.async_refresh()
+    await _watchdog_done(coordinator, UID_LIVING)
+    assert coordinator.commanded_rails(UID_LIVING) is None
+
+    # Moved from the Norman remote since.
+    _reports_in(fake_hub, UID_LIVING, 50)
+    await coordinator.async_refresh()
+    await _slide(hass, "middle", 70)
+    assert _rails_sent(fake_hub)[-1] == (50, 70)
+
+
+@pytest.mark.parametrize(
+    "press",
+    [
+        pytest.param(
+            lambda hass, entry: hass.services.async_call(
+                DOMAIN,
+                "room_command",
+                {"room": "Living Room", "command": "best_view"},
+                blocking=True,
+            ),
+            id="room preset",
+        ),
+        pytest.param(
+            lambda hass, entry: hass.services.async_call(
+                DOMAIN, "room_command", {"command": "best_privacy"}, blocking=True
+            ),
+            id="hub-wide preset",
+        ),
+        pytest.param(
+            lambda hass, entry: hass.services.async_call(
+                "button",
+                "press",
+                {
+                    ATTR_ENTITY_ID: er.async_get(hass).async_get_entity_id(
+                        "button", DOMAIN, f"{entry.entry_id}_all_favorite"
+                    )
+                },
+                blocking=True,
+            ),
+            id="all-blinds button",
+        ),
+        pytest.param(
+            lambda hass, entry: hass.services.async_call(
+                "button",
+                "press",
+                {
+                    ATTR_ENTITY_ID: er.async_get(hass).async_get_entity_id(
+                        "button", DOMAIN, f"{UID_LIVING}_jog_up"
+                    )
+                },
+                blocking=True,
+            ),
+            id="jog",
+        ),
+    ],
+)
+async def test_a_later_command_ends_the_move_watch(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub, press: Any
+) -> None:
+    """A preset or jog replaces the move in flight, so the watch must not send it again.
+
+    Left running, the watch saw the blind heading for the preset instead, took it for a move
+    that never arrived, and resent the move -- undoing the preset.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await _slide(hass, "bottom", 10)
+    assert UID_LIVING in coordinator._move_watchers
+
+    await press(hass, init_integration)
+    await hass.async_block_till_done()
+
+    assert UID_LIVING not in coordinator._move_watchers
+    assert coordinator.commanded_rails(UID_LIVING) is None
+
+
+async def test_a_status_request_leaves_the_move_watch_alone(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Asking a blind to report in does not move it, so its move is still in flight."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await _slide(hass, "bottom", 10)
+    await hass.services.async_call(
+        "button",
+        "press",
+        {
+            ATTR_ENTITY_ID: er.async_get(hass).async_get_entity_id(
+                "button", DOMAIN, f"{UID_LIVING}_request_status"
+            )
+        },
+        blocking=True,
+    )
+
+    assert UID_LIVING in coordinator._move_watchers
+    assert coordinator.commanded_rails(UID_LIVING) == (10, 60)
+    coordinator.async_supersede()
 
 
 async def test_new_blind_is_added_after_reconnect(

@@ -44,6 +44,8 @@ class NormanButtonDescription(ButtonEntityDescription):
     # Switch and Favorite are addressed by RoomID + GroupID, not PeripheralUID; the motor
     # verbs (jog, run-to-limit) take PeripheralUID as usual.
     addressed: bool = False
+    # Whether the verb moves the blind, and so replaces any move still in flight.
+    moves: bool = True
 
 
 # Every button is EntityCategory.CONFIG. That is not a claim that they are rarely used --
@@ -102,6 +104,7 @@ BUTTONS: tuple[NormanButtonDescription, ...] = (
         translation_key="request_status",
         entity_category=EntityCategory.DIAGNOSTIC,
         fields={HUB_CMD_REQUEST_STATUS: HUB_COMMAND_SETTING},
+        moves=False,
     ),
 )
 
@@ -115,6 +118,8 @@ class NormanHubButtonDescription(ButtonEntityDescription):
     """
 
     press_fn: Callable[[NormanCoordinator], Awaitable[Any]]
+    # Whether the action moves every blind, and so replaces any move still in flight.
+    moves_blinds: bool = False
 
 
 # The hub's own buttons. Refresh blinds is the app's refresh on its device & battery status
@@ -135,6 +140,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="all_best_privacy",
         translation_key="all_best_privacy",
         entity_category=EntityCategory.CONFIG,
+        moves_blinds=True,
         press_fn=lambda coordinator: coordinator.api.async_send_room_control(
             None, {HUB_CMD_SWITCH: HUB_SWITCH_CLOSE}
         ),
@@ -143,6 +149,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="all_best_view",
         translation_key="all_best_view",
         entity_category=EntityCategory.CONFIG,
+        moves_blinds=True,
         press_fn=lambda coordinator: coordinator.api.async_send_room_control(
             None, {HUB_CMD_SWITCH: HUB_SWITCH_OPEN}
         ),
@@ -151,6 +158,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="all_favorite",
         translation_key="all_favorite",
         entity_category=EntityCategory.CONFIG,
+        moves_blinds=True,
         press_fn=lambda coordinator: coordinator.api.async_send_room_control(
             None, {HUB_CMD_FAVORITE: HUB_COMMAND_SETTING}
         ),
@@ -218,6 +226,8 @@ class NormanHubButton(NormanHubEntity, ButtonEntity):
         A status re-read follows so the Pairing mode sensor flips at once; a refresh's
         answers arrive later, one notification per blind, each with its own refresh.
         """
+        if self.entity_description.moves_blinds:
+            self.coordinator.async_supersede()
         try:
             await self.entity_description.press_fn(self.coordinator)
         except (NormanApiError, NormanConnectionError) as err:
@@ -275,6 +285,8 @@ class NormanButton(NormanEntity, ButtonEntity):
                 send = functools.partial(
                     self.coordinator.api.async_send_control, self._device_id, fields
                 )
+            if self.entity_description.moves:
+                self.coordinator.async_supersede([self._device_id])
             await send()
             # The addressed verbs (Best Privacy, Best View, Favorite) send the blind to a
             # stored position, and the hub acks a command it never delivers, so the move is

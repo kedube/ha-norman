@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime, timedelta
 import logging
 from typing import Any, NamedTuple
@@ -189,6 +189,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self._listener_offline = False
         # One move watchdog per blind (see async_watch_move); a new move replaces it.
         self._move_watchers: dict[int, asyncio.Task[None]] = {}
+        # The rails each blind's move in flight was sent to, keyed by blind, with the serial
+        # of the move that recorded them (see async_note_move).
+        self._moves: dict[int, tuple[int, tuple[int, int]]] = {}
+        self._move_serial = 0
 
     @callback
     def async_start_wake_sweep(self) -> None:
@@ -232,8 +236,66 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 continue
             await self.api.async_request_status(device_id)
 
+    def commanded_rails(self, device_id: int) -> tuple[int, int] | None:
+        """The rails this blind's move in flight was sent to, or None when there is none."""
+        move = self._moves.get(device_id)
+        return None if move is None else move[1]
+
     @callback
-    def async_watch_move(self, device_id: int, bottom: int, middle: int) -> None:
+    def async_note_move(self, device_id: int, bottom: int, middle: int) -> int:
+        """Record a move the moment it is worked out, before it waits its turn to be sent.
+
+        A command that moves one rail sends the other where it is heading, and until the hub
+        has been re-read its target still shows where the blind was heading before. Moves
+        issued together -- a scene applies its entities at once -- or inside the refresh
+        debouncer's ten-second cooldown would each fill the other rail in from that stale
+        target, and the second would undo the first. Reading this record first lets each
+        see the one before it. It lasts until the move's watch ends, the move fails to send,
+        or another command supersedes it (``async_supersede``). Returns the move's serial,
+        which ends the record only while it is still this move's.
+        """
+        self._move_serial += 1
+        self._moves[device_id] = (self._move_serial, (bottom, middle))
+        return self._move_serial
+
+    @callback
+    def async_forget_move(self, device_id: int, serial: int | None = None) -> None:
+        """Drop a blind's move record: only while it is still move ``serial``, if given."""
+        move = self._moves.get(device_id)
+        if move is not None and (serial is None or move[0] == serial):
+            del self._moves[device_id]
+
+    @callback
+    def async_supersede(self, device_ids: Iterable[int] | None = None) -> None:
+        """Another command has taken these blinds over (every blind, for None).
+
+        A stop, a jog or a preset replaces whatever move was in flight, so its watch has to
+        go too: left running, it would read the blind heading somewhere else as a move that
+        never arrived and send the old one again, undoing the new command. The move record
+        goes with it, and the next move fills its other rail in from the hub.
+        """
+        if device_ids is None:
+            device_ids = set(self._moves) | set(self._move_watchers)
+        for device_id in list(device_ids):
+            self.async_cancel_move_watch(device_id)
+            self.async_forget_move(device_id)
+
+    @callback
+    def async_supersede_room(self, room_id: int | None) -> None:
+        """``async_supersede`` for every blind in a room, or on the hub for None."""
+        if room_id is None:
+            self.async_supersede()
+            return
+        self.async_supersede(
+            device_id
+            for device_id, device in (self.data or {}).items()
+            if device.room_id == room_id
+        )
+
+    @callback
+    def async_watch_move(
+        self, device_id: int, bottom: int, middle: int, serial: int | None = None
+    ) -> None:
         """After a move, make sure the blind actually went -- without holding anything up.
 
         The hub acks a move it never transmits, so the only proof a blind acted is it
@@ -242,13 +304,14 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         anyway and ends as soon as the blind reports it moved. Only a blind that stays silent
         is asked to report in, and only one that then shows it never moved is sent the move
         again (``_async_supervise``). A new move for the same blind replaces the watch; a
-        stop cancels it.
+        stop cancels it. ``serial`` is the move's record (``async_note_move``), which ends
+        with the watch.
         """
 
         async def resend() -> None:
             await self.api.async_set_position(device_id, bottom, middle)
 
-        self._async_start_watch(device_id, (bottom, middle), resend, "move")
+        self._async_start_watch(device_id, (bottom, middle), resend, "move", serial)
 
     @callback
     def async_watch_louvers(self, device_id: int, position: int) -> None:
@@ -277,12 +340,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         goal: _Rails | None,
         resend: Callable[[], Awaitable[Any]],
         kind: str,
+        serial: int | None = None,
     ) -> None:
         self.async_cancel_move_watch(device_id)
         start = self._sighting(device_id)
         self._move_watchers[device_id] = self.config_entry.async_create_background_task(
             self.hass,
-            self._async_supervise(device_id, start, goal, resend),
+            self._async_supervise(device_id, start, goal, resend, serial),
             name=f"norman-{kind}-watch-{device_id}",
         )
 
@@ -314,6 +378,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         start: _Sighting,
         goal: _Rails | None,
         resend: Callable[[], Awaitable[Any]],
+        serial: int | None = None,
     ) -> None:
         """Confirm a command reached the blind, resending it only while the blind is silent.
 
@@ -364,6 +429,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             _LOGGER.warning("Could not confirm the command to %s: %s", name, err)
         finally:
             self._forget_move_watch(device_id)
+            if serial is not None:
+                self.async_forget_move(device_id, serial)
 
     async def _async_wait_for_progress(
         self, device_id: int, start: _Sighting, goal: _Rails

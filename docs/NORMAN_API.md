@@ -203,7 +203,11 @@ which the entity reports as an unknown position. A peripheral that appears here 
 Moves a covering. The hub accepts either rail on its own — the Norman app's group screen sends
 `MiddleRailPosition` alone, and its per-blind screen a single-rail blind's
 `BottomRailPosition` alone — but the integration **always sends both**, filling the untouched
-rail with its current target (falling back to its current position, then to 100). That is what
+rail with where it is heading: the last move sent from here while that move is in flight,
+otherwise the hub's target (falling back to its current position, then to 100). The move is
+recorded before it waits its turn to be sent, so two commands in a row — or at once, as a scene
+sends them — keep each other's rail instead of each sending the other back to where it was;
+the hub's target would still show the blind before both. That is what
 lets it carry a two-rail shade's other rail along in the same request (below). It works in both
 directions: moving the bottom rail sends the middle rail's current target back with it, and
 moving the middle rail — whether through the **Middle rail** cover, the middle-rail slider, or

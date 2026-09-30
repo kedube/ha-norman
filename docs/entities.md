@@ -144,9 +144,11 @@ it never holds up the next command.
 
 For a preset, the check aims at the position the hub records when it accepts the command. It
 has to read that straight away: once the blind reports in, the hub replaces its target with
-wherever the blind actually is. A new move for the same blind replaces the check and a stop
-cancels it. Room-wide and hub-wide commands (the room and hub buttons, `norman.room_command`)
-are sent to every blind by the hub itself and are not checked.
+wherever the blind actually is. A new move, preset or jog for the same blind replaces the check
+and a stop cancels it. Room-wide and hub-wide commands (the room and hub buttons,
+`norman.room_command`) are sent to every blind by the hub itself and are not checked, but they
+cancel the check of every blind they reach: left running, it would take the blind heading for
+the preset as a move that never arrived, and send the move again.
 
 The event's data, for automations that want to notify someone or try something else:
 
@@ -342,7 +344,7 @@ automation:
 
 ### Hub sensors
 
-<img src="../images/hub-device.png" alt="The hub's device page, showing MAC address, time zone, Wi-Fi network and Wi-Fi signal under Diagnostic, and every blind under Connected devices." width="820">
+<img src="../images/hub-device.png" alt="The hub's device page: the all-blinds preset buttons and Start pairing under Configuration; MAC address, pairing mode, Refresh blinds, time zone and Wi-Fi network under Diagnostic; a pairing window opening and closing under Activity; and every blind under Connected devices." width="820">
 
 *The hub's own device. Every blind is listed under **Connected devices** because each one is
 linked to the hub with `via_device`, so removing the hub removes them together.*

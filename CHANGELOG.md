@@ -5,6 +5,21 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **Setting both rails at once no longer loses one.** A command that moves one rail sends the
+  other where it is heading, and that came from the hub's target alone — which still showed the
+  blind as it was until the next status read. A scene setting both rails of a two-rail blind
+  (Home Assistant applies its entities at the same moment) always lost the first rail's move,
+  and a script setting one rail and then the other lost it whenever the status read after the
+  first was held back by the ten-second refresh cooldown. The integration now remembers each
+  move it sends until the blind reports it, is stopped, or is sent something else, and fills
+  the other rail in from that. SmartDrape and PerfectSheer, whose two values also travel
+  together, are fixed the same way.
+- **A preset or jog now ends the check on a move still in flight.** Sent while a move's
+  watchdog was waiting, a room or hub-wide preset (or a jog) left the check running: it saw
+  the blind heading for the preset, took the move for one that never arrived, and sent it
+  again — undoing the preset. The check now ends when anything else moves the blind.
+
 ## 0.59 — 2026-09-30
 - **Every product the Norman app knows is supported.** The app (ShadeAuto 0.8.33) decides from
   a blind's `ModuleType` and `ModuleDetail` what it is and which controls it gets, and the

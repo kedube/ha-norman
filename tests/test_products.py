@@ -49,7 +49,7 @@ from custom_components.norman.const import (
 )
 from custom_components.norman.coordinator import NormanCoordinator
 
-from .conftest import FakeHub, cover_entity_id
+from .conftest import FakeHub, cover_entity_id, settle
 from .const import (
     EVERY_NEW_PRODUCT,
     UID_BEDROOM,
@@ -353,9 +353,12 @@ async def test_perfectsheer_vanes_are_the_tilt_and_move_on_their_own(
     await _call(hass, UID_SHEER, SERVICE_OPEN_COVER)
     assert _rails_sent(fake_hub, UID_SHEER) == (100, 40), "the vanes are not carried up"
 
-    # Driven as a two-rail shade, a tilt below the shade would have pulled it down to 20.
+    # Driven as a two-rail shade, a tilt below the shade would have pulled it down to 20. The
+    # shade reports in at 60, which ends the open's watch: the hub is where it is heading now.
     fake_hub.set_position(UID_SHEER, bottom=60)
+    fake_hub.peripheral_status(UID_SHEER)["Timestamp"] += 30
     await init_with_every_product.runtime_data.async_refresh()
+    await settle(hass)
     await _call(hass, UID_SHEER, SERVICE_SET_COVER_TILT_POSITION, **{ATTR_TILT_POSITION: 20})
     assert _rails_sent(fake_hub, UID_SHEER) == (60, 20), "the shade is not carried down"
 

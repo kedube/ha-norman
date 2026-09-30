@@ -136,6 +136,7 @@ async def _async_send_room_fields(
             # The sweep plus a per-blind status request to each wired blind in scope.
             await coordinator.async_refresh_blinds(room_id)
         else:
+            coordinator.async_supersede_room(room_id)
             await coordinator.api.async_send_room_control(room_id, ROOM_COMMANDS[command])
     except (NormanConnectionError, NormanApiError) as err:
         raise HomeAssistantError(
