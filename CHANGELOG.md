@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.64 — 2026-10-03
 - **A blind that ignores every attempt is no longer raised in Repairs.** Giving up on a blind
   after three sends opened a repair issue under Settings, as if something needed fixing; one
   command going unanswered usually does not. It is now only a warning in the log (Settings →
