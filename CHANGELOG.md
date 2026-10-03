@@ -11,6 +11,10 @@ version heading and publishes it as the release's Highlights.
   command going unanswered usually does not. It is now only a warning in the log (Settings →
   System → Logs) and the `norman_command_failed` event, which automations can still use to
   notify you. Issues already raised disappear when Home Assistant restarts.
+- **Ready for Home Assistant 2026.10.** Schemas are built with probatio, which replaced
+  voluptuous in Home Assistant 2026.9 (2026.10 no longer installs voluptuous); earlier releases
+  still use voluptuous. The `getmac` requirement is now a minimum version (`>=0.9.5`) rather
+  than a pin, since Home Assistant depends on it too.
 
 ## 0.63 — 2026-09-30
 - **The dashboard card draws Roman shades and PerfectSheers as themselves.** Both used to be

@@ -10,7 +10,11 @@ from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
-import voluptuous as vol
+
+try:
+    import probatio as vol
+except ImportError:  # pragma: no cover - Home Assistant < 2026.9
+    import voluptuous as vol  # type: ignore[no-redef]
 
 from custom_components.norman.const import DOMAIN
 

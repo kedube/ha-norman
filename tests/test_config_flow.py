@@ -432,10 +432,11 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     result = await _open_options(hass, entry)
 
-    # Home Assistant 2026.9 replaced voluptuous_serialize.convert with to_field_list for
-    # this; use whichever the installed release has, so the check runs either way.
+    # Home Assistant 2026.9 replaced voluptuous_serialize.convert with probatio's
+    # to_field_list for this (2026.10 calls it from probatio directly, no longer re-exported
+    # from helpers.data_entry_flow); use whichever the installed release has.
     try:
-        from homeassistant.helpers.data_entry_flow import to_field_list as _serialize
+        from probatio import to_field_list as _serialize
     except ImportError:  # pragma: no cover - Home Assistant < 2026.9
         from voluptuous_serialize import convert as _serialize
 

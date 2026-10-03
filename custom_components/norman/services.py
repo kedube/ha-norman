@@ -9,7 +9,11 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
-import voluptuous as vol
+
+try:
+    import probatio as vol
+except ImportError:  # pragma: no cover - Home Assistant < 2026.9 (see config_flow.py)
+    import voluptuous as vol  # type: ignore[no-redef]
 
 from .api import NormanApiError, NormanConnectionError
 from .const import (

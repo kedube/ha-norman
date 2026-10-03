@@ -10,4 +10,4 @@ ruff>=0.8.0
 # Type checking. The integration is annotated throughout and currently checks clean, which is
 # the quality scale's Platinum "strict-typing" rule; CI runs this so it stays that way.
 mypy>=1.13
-getmac==0.9.5
+getmac>=0.9.5

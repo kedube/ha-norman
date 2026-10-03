@@ -22,7 +22,13 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.util.network import is_host_valid
-import voluptuous as vol
+
+# Home Assistant 2026.9 replaced voluptuous with probatio, a drop-in for it, and 2026.10 no
+# longer installs voluptuous at all; earlier releases have only voluptuous.
+try:
+    import probatio as vol
+except ImportError:  # pragma: no cover - Home Assistant < 2026.9
+    import voluptuous as vol  # type: ignore[no-redef]
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (

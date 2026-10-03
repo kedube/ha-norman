@@ -20,7 +20,11 @@ from homeassistant.helpers.entity_platform import (
     async_get_current_platform,
 )
 from homeassistant.helpers.typing import VolDictType
-import voluptuous as vol
+
+try:
+    import probatio as vol
+except ImportError:  # pragma: no cover - Home Assistant < 2026.9 (see config_flow.py)
+    import voluptuous as vol  # type: ignore[no-redef]
 
 from .api import NormanApiError, NormanConnectionError
 from .const import (
