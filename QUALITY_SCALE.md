@@ -20,7 +20,9 @@ basis. This page explains the status of the ones that are not simply "done".
   capture of the Norman app); the announcement has no TXT record, so the flow reads the hub's
   identity over HTTP before offering or updating it. Every error the integration raises
   carries a translation key (`exceptions` in `strings.json`), so `exception-translations` is
-  done, and so is the rest of Gold.
+  done, and so is the rest of Gold. `repair-issues` is exempt: nothing the integration detects
+  needs the user to fix it, so a blind that ignores a command is logged and fires an event
+  instead.
 - **Platinum:** complete. The integration is annotated throughout and `mypy` reports no issues;
   a CI job runs it on every push so it stays that way. Note that Platinum formally requires the
   *dependencies* to be typed too, which does not apply here: the only runtime requirement is

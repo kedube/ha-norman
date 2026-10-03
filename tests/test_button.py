@@ -11,7 +11,6 @@ from homeassistant.const import ATTR_ENTITY_ID, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -20,7 +19,6 @@ from custom_components.norman.const import (
     DOMAIN,
     HUB_COMMAND_SETTING,
     HUB_COMMAND_TRIGGER,
-    ISSUE_BLIND_NOT_RESPONDING,
     MOVE_ATTEMPTS,
 )
 from custom_components.norman.coordinator import NormanCoordinator
@@ -383,7 +381,10 @@ async def test_preset_watchdog_resends_a_preset_the_blind_ignored(
 
 
 async def test_preset_watchdog_is_not_fooled_when_the_hub_overwrites_its_target(
-    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A blind reporting in resets the hub's target to wherever the blind is.
 
@@ -420,7 +421,7 @@ async def test_preset_watchdog_is_not_fooled_when_the_hub_overwrites_its_target(
         await _preset_watchdog_done(coordinator, UID_LIVING)
 
     assert len(_switches(fake_hub, UID_LIVING)) == MOVE_ATTEMPTS
-    assert ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_BLIND_NOT_RESPONDING}_{UID_LIVING}")
+    assert f"did not move after {MOVE_ATTEMPTS} attempts; giving up" in caplog.text
 
 
 async def test_preset_watchdog_is_quiet_when_the_blind_arrives(
@@ -463,9 +464,6 @@ async def test_a_preset_a_roller_shade_is_already_at_is_not_resent(
 
     assert len(_switches(fake_hub, UID_ROLLER)) == 1
     assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
-    assert not ir.async_get(hass).async_get_issue(
-        DOMAIN, f"{ISSUE_BLIND_NOT_RESPONDING}_{UID_ROLLER}"
-    )
 
 
 async def test_preset_watchdog_forgets_itself_when_it_finishes(

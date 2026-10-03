@@ -141,9 +141,10 @@ it never holds up the next command.
 - A blind still silent after 60 seconds is asked to report in (a `StatusRequest`). If its
   answer shows it never moved, the command is sent again, with a warning in the log — up to
   three sends in all.
-- A blind that ignores all three raises a **repair issue** naming it (Settings → System →
-  Repairs), and fires a `norman_command_failed` event. The issue clears itself the next time a
-  command to that blind is confirmed.
+- A blind that ignores all three is logged as a warning naming it (Settings → System → Logs)
+  and fires a `norman_command_failed` event, which an automation can turn into a notification.
+  It is not raised in Repairs: one command going unanswered is not something you have to fix,
+  and a flat battery already shows on the blind's battery sensor.
 
 For a preset, the check aims at the position the hub records when it accepts the command. It
 has to read that straight away: once the blind reports in, the hub replaces its target with

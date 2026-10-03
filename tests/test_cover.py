@@ -53,7 +53,6 @@ from custom_components.norman.const import (
     HUB_BUSY_RETRIES,
     HUB_CMD_STOP,
     HUB_COMMAND_TRIGGER,
-    ISSUE_BLIND_NOT_RESPONDING,
     MOVE_ATTEMPTS,
 )
 from custom_components.norman.coordinator import NormanCoordinator
@@ -591,10 +590,6 @@ def _status_requests(fake_hub: FakeHub, uid: int) -> list[dict[str, Any]]:
     ]
 
 
-def _not_responding_issue(hass: HomeAssistant, uid: int) -> ir.IssueEntry | None:
-    return ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_BLIND_NOT_RESPONDING}_{uid}")
-
-
 def _registry_id(hass: HomeAssistant, entry: MockConfigEntry, uid: int) -> str:
     registry = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
@@ -638,12 +633,16 @@ async def test_move_watchdog_chases_a_blind_that_never_moved(
         assert calls.index(request) < calls.index(resend)
 
 
-async def test_a_blind_that_ignores_every_attempt_raises_an_issue_and_an_event(
-    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+async def test_a_blind_that_ignores_every_attempt_is_logged_and_fires_an_event(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Giving up is not silent: a repair issue names the blind, and an event fires.
+    """Giving up is not silent: a warning names the blind, and an event fires.
 
-    The next command the blind does act on withdraws the issue.
+    It is not a repair issue: one command going unanswered is not something the user has
+    to fix. The next command the blind does act on fires nothing.
     """
     coordinator: NormanCoordinator = init_integration.runtime_data
     events = async_capture_events(hass, EVENT_COMMAND_FAILED)
@@ -654,13 +653,8 @@ async def test_a_blind_that_ignores_every_attempt_raises_an_issue_and_an_event(
         await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
         await _watchdog_done(coordinator, UID_LIVING)
 
-    issue = _not_responding_issue(hass, UID_LIVING)
-    assert issue is not None
-    assert issue.translation_key == ISSUE_BLIND_NOT_RESPONDING
-    assert issue.translation_placeholders == {
-        "name": "Living Drape",
-        "attempts": str(MOVE_ATTEMPTS),
-    }
+    assert f"Living Drape did not move after {MOVE_ATTEMPTS} attempts; giving up" in caplog.text
+    assert not [key for key in ir.async_get(hass).issues if key[0] == DOMAIN]
     assert [event.data for event in events] == [
         {
             "device_id": _registry_id(hass, init_integration, UID_LIVING),
@@ -673,12 +667,11 @@ async def test_a_blind_that_ignores_every_attempt_raises_an_issue_and_an_event(
         }
     ]
 
-    # The blind comes back: a move it acts on clears the issue.
+    # The blind comes back: a move it acts on is not reported.
     await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 20})
     _reports_in(fake_hub, UID_LIVING, 20)
     await coordinator.async_refresh()
     await _watchdog_done(coordinator, UID_LIVING)
-    assert _not_responding_issue(hass, UID_LIVING) is None
     assert len(events) == 1
 
 
@@ -748,7 +741,7 @@ async def test_move_watchdog_is_quiet_when_the_blind_arrives(
 async def test_a_resend_the_blind_acts_on_ends_the_chase(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """The first send is dropped, the resend lands: no further resends and no issue."""
+    """The first send is dropped, the resend lands: no further resends, nothing reported."""
     orig = fake_hub._control
     sends = 0
 
@@ -773,7 +766,6 @@ async def test_a_resend_the_blind_acts_on_ends_the_chase(
         await _watchdog_done(init_integration.runtime_data, UID_LIVING)
 
     assert len(_moves(fake_hub, UID_LIVING)) == 2
-    assert _not_responding_issue(hass, UID_LIVING) is None
     assert not events
 
 

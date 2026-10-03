@@ -77,9 +77,8 @@ CONF_WAKE_INTERVAL = "wake_interval"
 MOVE_TIMEOUT = 60.0
 MOVE_REPORT_WAIT = 10.0
 MOVE_ATTEMPTS = 3
-# What a blind that ignored every attempt raises: a repair issue (one per blind, withdrawn the
-# next time a command to it is confirmed) and an event automations can trigger on.
-ISSUE_BLIND_NOT_RESPONDING = "blind_not_responding"
+# What a blind that ignored every attempt fires, besides a warning in the log: an event
+# automations can trigger on.
 EVENT_COMMAND_FAILED = f"{DOMAIN}_command_failed"
 
 # Minimum gap between two `control` sends. The hub has one radio and transmits to blinds

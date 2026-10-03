@@ -62,7 +62,11 @@ rules:
     status: exempt
     comment: The cover device class provides the icons.
   reconfiguration-flow: done
-  repair-issues: done
+  repair-issues:
+    status: exempt
+    comment: >-
+      Nothing the integration detects needs the user to fix it. A blind that ignores a command
+      is logged and fires an event; a flat battery shows on its battery sensor.
   stale-devices: done
 
   # Platinum

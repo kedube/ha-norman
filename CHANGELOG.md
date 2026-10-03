@@ -5,6 +5,13 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **A blind that ignores every attempt is no longer raised in Repairs.** Giving up on a blind
+  after three sends opened a repair issue under Settings, as if something needed fixing; one
+  command going unanswered usually does not. It is now only a warning in the log (Settings →
+  System → Logs) and the `norman_command_failed` event, which automations can still use to
+  notify you. Issues already raised disappear when Home Assistant restarts.
+
 ## 0.63 — 2026-09-30
 - **The dashboard card draws Roman shades and PerfectSheers as themselves.** Both used to be
   drawn as a pleated cellular shade. A Roman Shade is now a flat panel with a seam at each

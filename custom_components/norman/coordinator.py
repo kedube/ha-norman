@@ -11,7 +11,6 @@ from typing import Any, NamedTuple
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -28,7 +27,6 @@ from .const import (
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     EVENT_COMMAND_FAILED,
-    ISSUE_BLIND_NOT_RESPONDING,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
     MAX_CONTROL_INTERVAL,
@@ -88,10 +86,6 @@ def _distance(rails: _Rails, goal: _Rails) -> int:
         for rail, target in zip(rails, goal, strict=True)
         if rail is not None and target is not None
     )
-
-
-def _not_responding_issue_id(device_id: int) -> str:
-    return f"{ISSUE_BLIND_NOT_RESPONDING}_{device_id}"
 
 
 def hub_identifier(entry: ConfigEntry) -> str:
@@ -386,7 +380,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         Each attempt waits up to ``MOVE_TIMEOUT`` for the blind to report that it moved. A
         blind that stays quiet is asked to report in (one ``StatusRequest``); if its answer
         shows it never moved, the command goes again. After ``MOVE_ATTEMPTS`` sends the blind
-        is reported as not responding, with a repair issue and a ``norman_command_failed``
+        is reported as not responding, with a warning in the log and a ``norman_command_failed``
         event. Nothing here holds up other commands: the requests it does send queue with
         everything else, paced like any other.
         """
@@ -403,14 +397,12 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     return
             for attempt in range(1, MOVE_ATTEMPTS + 1):
                 if await self._async_wait_for_progress(device_id, start, goal):
-                    self._async_command_confirmed(device_id)
                     return
                 # Silent for the whole travel time: ask the blind where it is.
                 asked = self._sighting(device_id)
                 await self.api.async_request_status(device_id)
                 await self._async_wait_for_report(device_id, asked)
                 if self._made_progress(device_id, start, goal):
-                    self._async_command_confirmed(device_id)
                     return
                 if attempt == MOVE_ATTEMPTS:
                     break
@@ -529,27 +521,18 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         return data.name if data is not None else str(device_id)
 
     @callback
-    def _async_command_confirmed(self, device_id: int) -> None:
-        """The blind acted on a command: withdraw any "not responding" issue it had."""
-        ir.async_delete_issue(self.hass, DOMAIN, _not_responding_issue_id(device_id))
-
-    @callback
     def _async_command_failed(self, device_id: int, name: str, goal: _Rails) -> None:
-        """Tell the user, and any automation listening, that a blind ignored every send."""
+        """Log, and tell any automation listening, that a blind ignored every send.
+
+        A log line rather than a repair issue: one command going unanswered is not a
+        condition the user has to fix, and a flat battery already shows on the blind's
+        battery sensor.
+        """
         _LOGGER.warning(
             "%s did not move after %s attempts; giving up. Check its battery and that it is "
             "in range of the hub",
             name,
             MOVE_ATTEMPTS,
-        )
-        ir.async_create_issue(
-            self.hass,
-            DOMAIN,
-            _not_responding_issue_id(device_id),
-            is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=ISSUE_BLIND_NOT_RESPONDING,
-            translation_placeholders={"name": name, "attempts": str(MOVE_ATTEMPTS)},
         )
         data = (self.data or {}).get(device_id)
         # A Shutter's goal is its louvers, not a rail (see _rails).

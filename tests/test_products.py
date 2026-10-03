@@ -37,14 +37,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceNotSupported
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
 from custom_components.norman.const import (
     DOMAIN,
     EVENT_COMMAND_FAILED,
-    ISSUE_BLIND_NOT_RESPONDING,
     MOVE_ATTEMPTS,
 )
 from custom_components.norman.coordinator import NormanCoordinator
@@ -508,7 +506,6 @@ async def test_shutter_watchdog_resends_louvers_that_never_turned(
         await _watch_done(coordinator, UID_SHUTTER)
 
     assert [c["Position"] for c in _louvers_sent(fake_hub, UID_SHUTTER)] == [3] * MOVE_ATTEMPTS
-    assert ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_BLIND_NOT_RESPONDING}_{UID_SHUTTER}")
     # The event says where the louvers were sent, not a rail a Shutter does not have.
     (event,) = events
     assert event.data["louver_position"] == 3
