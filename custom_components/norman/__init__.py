@@ -103,9 +103,13 @@ async def _async_resolve_mac(hass: HomeAssistant, host: str) -> str | None:
     only when Home Assistant is on the same network segment as the hub. Elsewhere it is
     simply unknown; a failed lookup is never an error.
     """
-    lookup = {"ip": host} if is_ip_address(host) else {"hostname": host}
+    lookup = (
+        partial(get_mac_address, ip=host)
+        if is_ip_address(host)
+        else partial(get_mac_address, hostname=host)
+    )
     try:
-        mac = await hass.async_add_executor_job(partial(get_mac_address, **lookup))
+        mac = await hass.async_add_executor_job(lookup)
     except Exception:  # noqa: BLE001 - getmac shells out; any failure means "unknown"
         _LOGGER.debug("Could not resolve the MAC address of %s", host, exc_info=True)
         return None
