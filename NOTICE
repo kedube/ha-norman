@@ -5,11 +5,13 @@ This product includes software originally developed by Keito Uchiyama
 (https://github.com/keito/home-assistant-norman), Copyright 2025 Keito Uchiyama,
 licensed under the Apache License, Version 2.0.
 
-About 96% of the code in this product is new since that original. The API client,
-the update coordinator, and every entity platform other than `cover` are new work,
-as are the dashboard card, the actions, the diagnostics, the translations, and the
-test suite. The data model, the config flow, and the cover entity's method
-structure remain closest to the original.
+This product has since been almost entirely rewritten: about 93% of the
+integration's code and over 97% of the repository is new. What survives from the
+original is mostly structure: the module layout, the hub's endpoint paths and
+registration handshake, the data model, and the outline of the config flow and
+cover entity. Everything else is new work, including the radio pacing and command
+watchdog, the wake sweep, every entity platform other than `cover`, the dashboard
+card, the actions, the diagnostics, the translations, and the test suite.
 
 Licensed under the Apache License, Version 2.0; you may not use this file except
 in compliance with the License. You may obtain a copy of the License at
