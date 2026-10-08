@@ -208,7 +208,7 @@ The integration ships a **Norman Shades** Lovelace card: every blind, by room, d
 you drag by each rail's pull tab. It registers itself, so it is in the **Add card** picker with
 nothing to install and nothing to configure.
 
-It is [pictured at the top of this page](#norman-smart-blinds-for-home-assistant). Full detail,
+It is [pictured at the top of this page](#unofficial-norman-smart-blinds-for-home-assistant). Full detail,
 options, and how to build the same thing from Home Assistant's own cards are in
 [docs/dashboard.md](docs/dashboard.md). [examples/dashboard.yaml](examples/dashboard.yaml) is a
 complete dashboard you can paste into the raw configuration editor.
