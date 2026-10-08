@@ -1,4 +1,4 @@
-# Norman smart blinds for Home Assistant
+# (Unofficial) Norman smart blinds for Home Assistant
 
 A custom Home Assistant integration for [Norman](https://www.normanusa.com/) motorized
 window coverings. It talks to the **Norman Hub directly on your local network** — nothing goes
