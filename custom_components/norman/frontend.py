@@ -46,7 +46,7 @@ PANEL_FILENAME = "norman-panel.js"
 PANEL_ELEMENT = "norman-panel"
 PANEL_URL_PATH = "norman-shades"
 PANEL_TITLE = "Norman Shades"
-PANEL_ICON = "mdi:blinds"
+PANEL_ICON = "mdi:blinds-horizontal"
 # Entries that are set up (entry id -> entry), and the panels registered (url -> spec).
 _PANEL_ENTRIES_KEY = f"{DOMAIN}_panel_entries"
 _PANELS_KEY = f"{DOMAIN}_panels"
