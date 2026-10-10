@@ -5,6 +5,11 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+- **The example dashboard is gone.** `examples/dashboard.yaml` was a dashboard to paste in by
+  hand; Norman Shades is now in the sidebar with nothing to build, and adding it to a dashboard
+  is one card from the picker ([docs/dashboard.md](docs/dashboard.md#on-a-dashboard)).
+
 ## 0.68 — 2026-10-10
 - **Norman Shades is in the sidebar.** Once the integration is set up, **Norman Shades**, every
   blind by room drawn as a window you drag, appears in Home Assistant's sidebar, so there is no
@@ -321,9 +326,6 @@ version heading and publishes it as the release's Highlights.
   not the one in force.
 
 ## 0.28 — 2026-09-09
-- **Fixed a dangling instruction in the example dashboard.** Its header ended "In
-  configuration.yaml:" with nothing after it — the YAML-mode snippet had been removed and the
-  sentence introducing it left behind. It now points at `docs/dashboard.md`, which covers it.
 - **Clearer attribution.** The README now states that roughly 80% of the original code has been
   rewritten and which parts are new, and a `NOTICE` file records the Apache-2.0 attribution to
   Keito Uchiyama's `keito/home-assistant-norman` properly. A test keeps the credit from being
@@ -530,10 +532,7 @@ version heading and publishes it as the release's Highlights.
   registered automatically: blinds grouped by room, each with its battery level and a
   percentage slider per rail in steps of 10. It reads the entity registry rather than a
   configured list, so newly paired blinds appear on their own. See
-  [docs/dashboard.md](docs/dashboard.md), and
-  [examples/dashboard.yaml](examples/dashboard.yaml) for a complete three-view dashboard to
-  copy from — the card on its own, a per-room layout, and the same blinds built from Home
-  Assistant's own cards.
+  [docs/dashboard.md](docs/dashboard.md).
 
 ## 0.18 — 2026-09-08
 - **Documentation:** the README gained an **Upgrading** section (HACS and manual steps, what is

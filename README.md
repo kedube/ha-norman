@@ -44,7 +44,6 @@ to move it. It finds your blinds by itself and needs no configuration.*
 | Document | Contents |
 |---|---|
 | [docs/dashboard.md](docs/dashboard.md) | **Norman Shades**: what it shows, putting it on a dashboard, and building your own |
-| [examples/dashboard.yaml](examples/dashboard.yaml) | A ready-made dashboard view to copy from |
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
 | [docs/options.md](docs/options.md) | Polling, wake sweeps, command spacing, and the sidebar entry |
 | [docs/services.md](docs/services.md) | All four actions, and the hub verbs `send_hub_command` can send |
@@ -210,8 +209,7 @@ install or configure. It can also go on any dashboard as a card.
 
 It is [pictured at the top of this page](#unofficial-norman-smart-blinds-for-home-assistant). Full detail,
 options, and how to build the same thing from Home Assistant's own cards are in
-[docs/dashboard.md](docs/dashboard.md). [examples/dashboard.yaml](examples/dashboard.yaml) is a
-complete dashboard you can paste into the raw configuration editor.
+[docs/dashboard.md](docs/dashboard.md).
 
 ### Actions
 

@@ -228,9 +228,6 @@ once under your `resources:` as a JavaScript module — the log line at startup 
 URL, which is `/norman/norman-shades-card.js?v=<integration version>`. The sidebar needs none
 of this.
 
-[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a minimal dashboard built on this
-card. Paste its view into your dashboard's raw configuration editor.
-
 ### Options
 
 These change the card on a dashboard; the sidebar always shows everything. Every option is

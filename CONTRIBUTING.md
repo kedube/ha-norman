@@ -73,7 +73,7 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   as the narrative landing page (install → configure → what you get → troubleshoot) and put
   detail here:
   - [`docs/dashboard.md`](docs/dashboard.md) — Norman Shades, and the card's options on a
-    dashboard, with a worked dashboard in [`examples/dashboard.yaml`](examples/dashboard.yaml).
+    dashboard.
 - `scripts/check_card.mjs` runs the card and its sidebar panel under Node against a realistic `hass`
   object (`node scripts/check_card.mjs`). The card reads the **frontend** entity registry,
   which does not carry `unique_id` — only `translation_key` and a handful of display fields —

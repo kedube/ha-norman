@@ -233,11 +233,6 @@ def test_docs_do_not_pin_a_card_version() -> None:
     block serves the browser a URL that does not match the installed integration.
     """
     pinned: list[str] = []
-    for path in (REPO / "examples").rglob("*.yaml"):
-        pinned += [
-            f"{path.name}: {m}"
-            for m in re.findall(r"\?v=\d[\w.]*", path.read_text(encoding="utf-8"))
-        ]
     for name in ("README.md", "docs/dashboard.md"):
         text = (REPO / name).read_text(encoding="utf-8")
         pinned += [f"{name}: {m}" for m in re.findall(r"\?v=\d[\w.]*", text)]
@@ -746,72 +741,6 @@ def test_documentation_images_are_not_oversized() -> None:
     assert not oversized, (
         "documentation images are too large; downscale them to about 1600 px wide:\n  "
         + "\n  ".join(oversized)
-    )
-
-
-def test_example_dashboard_is_valid_yaml() -> None:
-    """The example dashboard must parse and use the card's real options.
-
-    It is copied verbatim into people's dashboards, so a typo in an option name is a
-    silently ignored setting rather than an error they can see.
-    """
-    text = (REPO / "examples" / "dashboard.yaml").read_text(encoding="utf-8")
-    config = yaml.safe_load(text)
-    assert config["views"], "the example dashboard has no views"
-
-    card_js = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
-    # Options the card reads, as `this._config.<name>`, plus `rooms` which it reads once
-    # into a local. Anything the example sets must be in that set.
-    supported = set(re.findall(r"_config\.(\w+)", card_js)) | {"type"}
-
-    used: set[str] = set()
-    for view in config["views"]:
-        cards = list(view.get("cards", []))
-        for section in view.get("sections", []):
-            cards.extend(section.get("cards", []))
-        for card in cards:
-            if card.get("type") == "custom:norman-shades-card":
-                used |= set(card)
-
-    assert used, "the example dashboard never uses the Norman card"
-    unknown = used - supported
-    assert not unknown, f"example dashboard sets options the card ignores: {sorted(unknown)}"
-
-
-def test_example_dashboard_lets_the_card_name_itself() -> None:
-    """The example must not set the card's own ``title``.
-
-    The card names the header after the hub, but only when no title is configured -- and a
-    title copied out of this file is saved into the user's dashboard, where it silently
-    wins forever. That is exactly how the feature failed to reach anyone before: the card
-    picker used to supply ``title: "Shades"`` automatically.
-
-    The dashboard's own ``title`` and its views' titles are unrelated and stay as they are;
-    this is only about the card.
-    """
-    config = yaml.safe_load((REPO / "examples" / "dashboard.yaml").read_text(encoding="utf-8"))
-    for view in config["views"]:
-        cards = list(view.get("cards", []))
-        for section in view.get("sections", []):
-            cards.extend(section.get("cards", []))
-        for card in cards:
-            if card.get("type") == "custom:norman-shades-card":
-                assert "title" not in card, (
-                    "the example sets the card's title, which suppresses the hub name; "
-                    "leave it out so the card names the hub"
-                )
-
-
-def test_example_dashboard_entities_use_this_integration() -> None:
-    """Example entity ids must be in domains the integration actually provides.
-
-    A `light.` or `switch.` example would send someone hunting for an entity that this
-    integration never creates.
-    """
-    text = (REPO / "examples" / "dashboard.yaml").read_text(encoding="utf-8")
-    domains = {line.split(".")[0] for line in re.findall(r"entity:\s*([\w.]+)", text)}
-    assert domains <= {"cover", "number", "sensor", "button"}, (
-        f"example dashboard references unexpected domains: {sorted(domains)}"
     )
 
 

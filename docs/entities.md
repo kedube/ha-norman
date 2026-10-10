@@ -188,8 +188,7 @@ view opens both. They send the hub's `Switch` verb addressed at the single blind
 and group, exactly as the app does, so the positions are the hub's rather than this
 integration's idea of them.
 
-[Norman Shades](dashboard.md), in the sidebar, puts all of this on one screen, grouped by room;
-[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a complete dashboard using it as a card.
+[Norman Shades](dashboard.md), in the sidebar, puts all of this on one screen, grouped by room.
 
 ## Position sliders
 
