@@ -1,66 +1,40 @@
-# Dashboard card
+# Norman Shades
 
-The integration ships a Lovelace card, **Norman Shades**, that draws every blind as a window
-with its shade hanging in it, grouped by room. The window is the control: **drag a rail's pull
-tab** to move it.
+**Norman Shades** is every blind in your home, grouped by room, each drawn as a window with its
+shade hanging in it. The window is the control: **drag a rail's pull tab** to move it. It is in
+Home Assistant's sidebar as soon as the integration is set up, with nothing to add or configure.
 
-<img src="../images/dashboard-card.png" alt="The Norman Shades card: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — cellular shades in ivory, one of them closing, a roller shade on its roll, two-rail shades with the see-through light-filtering fabric above the blackout, a SmartDrape part drawn with its vanes open, a PerfectSheer lowered with its vanes open, a Roman shade part raised with its folds above the hem, and two shutters with their louvers half open and open." width="560">
+<img src="../images/dashboard-card.png" alt="Norman Shades: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — cellular shades in ivory, one of them closing, a roller shade on its roll, two-rail shades with the see-through light-filtering fabric above the blackout, a SmartDrape part drawn with its vanes open, a PerfectSheer lowered with its vanes open, a Roman shade part raised with its folds above the hem, and two shutters with their louvers half open and open." width="560">
 
-*The card with eight blinds across three rooms. Den_2 is on its way down: the shade is drawn
-where it is going, the dashed line is where it is now, and its Stop button sits on the corner.
-The two-rail blinds in the middle row show Best privacy (the blackout across the window), both
-rails part-way, and both rails down (the light-filtering fabric across the window, with the view
+*Eight blinds across three rooms. Den_2 is on its way down: the shade is drawn where it is
+going, the dashed line is where it is now, and its Stop button sits on the corner. The two-rail
+blinds in the middle row show Best privacy (the blackout across the window), both rails
+part-way, and both rails down (the light-filtering fabric across the window, with the view
 showing through it). The Study's two Shutters have their louvers half open and open; Study_2's
 battery is the low one the summary counts.*
 
-The card header is named after your **hub** — the name it has in Home Assistant, which the
-integration takes from the Norman app — so two hubs give two distinguishable cards. Set `title`
-to override it, or `title: ""` for no heading text at all. Under the name, a summary line counts
-the shades, how many are open, any that are moving, and any low batteries.
+## Opening it
 
-If your card was added before v0.30 it may already have `title: Shades` saved in its config —
-the card picker used to supply that automatically. Remove the `title` line to get the hub name.
-
-[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a minimal dashboard built on this
-card. Paste its view into your dashboard's raw configuration editor.
-
-## In the sidebar
-
-You don't have to build anything to use the card. Once the integration is set up, **Norman
-Shades** appears in Home Assistant's sidebar (<code>/norman-shades</code>) and opens the card
-full screen — no dashboard, no YAML. On a phone it runs edge to edge, and its header carries the
-usual button for opening the sidebar. It is there for every user of your Home Assistant, like any
-dashboard.
+Click **Norman Shades** in Home Assistant's sidebar (the address is <code>/norman-shades</code>).
+It fills the page; on a phone it runs edge to edge, and its header carries the usual button for
+opening the sidebar. It is there for every user of your Home Assistant, like any dashboard.
 
 - **More than one hub?** Each gets its own sidebar entry, named after its integration entry
   (rename the entry to rename it) and showing only that hub's blinds.
-- **Don't want it?** Turn off **Show Norman Shades in the sidebar** in the integration's
-  [options](options.md#show-norman-shades-in-the-sidebar); the entry disappears straight away.
-  You can still put the card on any dashboard.
-- It is the same card and the same code as on a dashboard, with no options set. For the list
-  layout or any of the `hide_*` options, put the card on a dashboard instead.
-
-## Adding it to a dashboard
-
-The integration serves the card and registers it as a dashboard resource on its own, so there
-is nothing to install. After setting up the integration (and one Home Assistant restart, if you
-had just installed the integration itself):
-
-1. Open the dashboard you want it on and enter edit mode.
-2. **Add card**, then search for **Norman Shades**.
-3. Save. There is nothing to configure; the card finds your blinds by itself.
-
-In **YAML mode** dashboards the resource list is not writable by an integration, so add it
-once under your `resources:` as a JavaScript module — the log line at startup names the exact
-URL, which is `/norman/norman-shades-card.js?v=<integration version>`. The sidebar entry needs
-none of this.
+- **Don't want it in the sidebar?** Turn off **Show Norman Shades in the sidebar** in the
+  integration's [options](options.md#show-norman-shades-in-the-sidebar); the entry disappears
+  straight away. You can still [put it on a dashboard](#on-a-dashboard).
 
 ## What it shows
 
+The header is named after your **hub** — the name it has in Home Assistant, which the
+integration takes from the Norman app — so two hubs are easy to tell apart. Under the name, a
+summary line counts the shades, how many are open, any that are moving, and any low batteries.
+
 Blinds are grouped by their Home Assistant **area**, which the integration seeds from the
 hub's own room names, so the grouping matches the Norman app out of the box. Moving a blind to
-a different area in Home Assistant moves it on the card. Each room's blinds sit in a grid that
-fits as many windows across as the card has room for.
+a different area in Home Assistant moves it here too. Each room's blinds sit in a grid that
+fits as many windows across as there is room for.
 
 | Element | Notes |
 |---|---|
@@ -112,8 +86,8 @@ middle rail, the **right** tab the bottom rail. They sit apart so that both can 
 when the rails are together — fully open, both down, or anywhere between. The middle rail always
 hangs above the bottom rail, so a rail taken past the other carries it along, as it does on the
 blind: pull the middle rail down from fully open and the bottom rail comes down with it; push
-the bottom rail up past the middle rail and the middle rail goes up. The card sends one command
-for the rail you moved, and the integration moves the other rail in the same command.
+the bottom rail up past the middle rail and the middle rail goes up. Norman Shades sends one
+command for the rail you moved, and the integration moves the other rail in the same command.
 
 On a top-down/bottom-up blind the same two bands read as the open top and the covered bottom.
 
@@ -146,7 +120,7 @@ and right arrow keys move the edge the same way. A split drape has an edge on ea
 both move together.
 
 The vanes turn with the cover's tilt: flat and overlapping when closed, nearly edge-on when
-open, with the view showing through the sheer between them. The card does not turn them; use
+open, with the view showing through the sheer between them. Dragging does not turn them; use
 the blind's more-info dialog (click its name).
 
 ### Roman shades
@@ -163,27 +137,15 @@ A PerfectSheer is drawn as soft fabric vanes between two sheers, under a curved 
 fabric rolls up into the cassette as the shade rises. With the shade fully down its vanes turn
 with the cover's tilt: closed they meet in a soft wall of cloth, and open they narrow to bands
 with the view through the sheer between them. Raised, they are drawn closed, as the shade
-closes them before it rolls up. **Drag the bottom rail** to raise or lower it. The card does
+closes them before it rolls up. **Drag the bottom rail** to raise or lower it. Dragging does
 not turn the vanes; use the blind's more-info dialog (click its name).
 
 ### The view
 
 The window's view follows the sun (`sun.sun`): blue sky by day, a warm low sun near sunrise and
-sunset, dusk, and a night sky with a moon. On a dark theme the window's trim darkens with the
-card. The picture is drawn entirely in CSS — no images — so it follows your theme, stays sharp
-on any screen, and scales with the card.
-
-### List layout
-
-For a compact card with a slider per rail instead of the windows:
-
-```yaml
-type: custom:norman-shades-card
-hide_picture: true
-```
-
-The sliders drive the integration's `number` entities, so they move in the same 10% steps as
-those entities and never disagree with the covers.
+sunset, dusk, and a night sky with a moon. On a dark theme the window's trim darkens too. The
+picture is drawn entirely in CSS — no images — so it follows your theme, stays sharp on any
+screen, and scales with the window.
 
 ### Whole-room control
 
@@ -191,15 +153,9 @@ Each room heading carries **▲ ■ ▼** of its own, acting on every blind in t
 including the middle rails of two-rail blinds, so "close the bedroom" puts both rails down. It
 is one service call per press, not one per blind.
 
-This is on by default. For plain headings:
-
-```yaml
-type: custom:norman-shades-card
-hide_room_controls: true
-```
-
-The buttons live in the heading, so `hide_room_names: true` removes them too — there is
-nowhere left to put them, and the rooms run together as one grid.
+On a dashboard, `hide_room_controls: true` gives plain headings instead. The buttons live in
+the heading, so `hide_room_names: true` removes them too — there is nowhere left to put them,
+and the rooms run together as one grid.
 
 These buttons fan out over Home Assistant's cover entities, so **close** puts *both* rails of a
 two-rail blind down, which leaves the light-filtering fabric across the window. That is not the
@@ -208,13 +164,8 @@ bottom rail — the blackout across the window.
 
 ### The app's room buttons
 
-The **⋯** at the end of each room heading folds out the app's own three for that room. To
-remove it:
-
-```yaml
-type: custom:norman-shades-card
-hide_room_presets: true
-```
+The **⋯** at the end of each room heading folds out the app's own three for that room. On a
+dashboard, `hide_room_presets: true` removes it.
 
 | Button | Does |
 |---|---|
@@ -230,13 +181,9 @@ take a while to answer.
 
 ### The whole house
 
-The same three buttons sit in the card's own header, where they move **every** blind on the
-hub. On a narrow card they shrink to their icons. To leave the header plain:
-
-```yaml
-type: custom:norman-shades-card
-hide_home_controls: true
-```
+The same three buttons sit in the header, where they move **every** blind on the hub. On a
+narrow screen they shrink to their icons. On a dashboard, `hide_home_controls: true` leaves the
+header plain.
 
 | Button | Does |
 |---|---|
@@ -260,14 +207,34 @@ There is no house-wide **stop**: the hub's stop is per blind, so it would have t
 every cover, and a stop that lags the blinds it is stopping is worse than none. Use a room's
 stop, or the **■ Stop** on a moving blind, instead.
 
-The room presets match on the **hub's** room name while the card groups by Home Assistant
+The room presets match on the **hub's** room name while Norman Shades groups by Home Assistant
 **area**. The integration seeds areas from the hub's room names, so they agree out of the box; if
 you rename an area, the preset buttons for it will report that the room is unknown, and name the
 ones the hub does know. The house buttons carry no room at all, so nothing there can mismatch.
 
-## Options
+## On a dashboard
 
-Every option is optional; the card works with none of them.
+Norman Shades is also a card you can put on a dashboard, beside your other cards or with some of
+it turned off. The integration registers the card itself, so there is nothing to install. After
+setting up the integration (and one Home Assistant restart, if you had just installed the
+integration itself):
+
+1. Open the dashboard you want it on and enter edit mode.
+2. **Add card**, then search for **Norman Shades**.
+3. Save. There is nothing to configure; the card finds your blinds by itself.
+
+In **YAML mode** dashboards the resource list is not writable by an integration, so add it
+once under your `resources:` as a JavaScript module — the log line at startup names the exact
+URL, which is `/norman/norman-shades-card.js?v=<integration version>`. The sidebar needs none
+of this.
+
+[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a minimal dashboard built on this
+card. Paste its view into your dashboard's raw configuration editor.
+
+### Options
+
+These change the card on a dashboard; the sidebar always shows everything. Every option is
+optional, and the card works with none of them.
 
 ```yaml
 type: custom:norman-shades-card
@@ -288,15 +255,30 @@ middle_label: Middle rail
 ```
 
 `title`, the hub and the `hide_*` options are also available in the card's visual editor.
+`title` replaces the hub's name in the header, and `title: ""` leaves no heading text at all. A
+card added before v0.30 may already have `title: Shades` saved in its config — the card picker
+used to supply that automatically. Remove the `title` line to get the hub name.
 
 With more than one hub, a card with no `config_entry_id` shows every hub's blinds together, and
 its whole-house and room presets have no single hub to send to. Pick the hub in the visual
 editor, which fills in `config_entry_id` for you, to give each hub a card of its own. The
-sidebar entries already do this.
+sidebar already has one entry per hub.
 
-## Using the built-in cards instead
+### List layout
 
-The card is a convenience, not a requirement — everything it does is available from Home
+For a compact card with a slider per rail instead of the windows:
+
+```yaml
+type: custom:norman-shades-card
+hide_picture: true
+```
+
+The sliders drive the integration's `number` entities, so they move in the same 10% steps as
+those entities and never disagree with the covers.
+
+## Building your own instead
+
+Norman Shades is a convenience, not a requirement — everything it does is available from Home
 Assistant's own cards, since the integration exposes plain covers, numbers, buttons, and
 sensors. A tile card with a position feature gives one blind a slider:
 
@@ -320,7 +302,7 @@ entities:
 
 ## Checking which version you are running
 
-The card takes its version from the URL the integration registers it at, so it always reports
+Norman Shades takes its version from the URL the integration serves it at, so it always reports
 the build the browser actually loaded rather than a number compiled into the file. On load it
 prints one line to the browser console (⌥⌘I, or F12, then Console):
 
@@ -330,8 +312,8 @@ prints one line to the browser console (⌥⌘I, or F12, then Console):
 
 That should match the **Version** shown on the Norman entry under **Settings → Devices &
 services**. If it is lower, the browser is running a cached copy — hard-refresh the page. If
-it says `unknown`, the resource was added by hand without the `?v=` stamp; the card still
-works, but it can no longer be cache-busted on upgrade, so re-register it with the stamp.
+it says `unknown`, a dashboard resource was added by hand without the `?v=` stamp; the card
+still works, but it can no longer be cache-busted on upgrade, so re-register it with the stamp.
 
 A [diagnostics download](../README.md#diagnostics) reports the same comparison under
 `frontend`, as `integration_version`, `registered_versions`, and a `version_matches` flag —
@@ -345,7 +327,7 @@ added when the hub is set up, so a hub that was unreachable at startup adds it o
 connects. Then refresh the browser. A [diagnostics download](../README.md#diagnostics) lists the
 sidebar entries the integration added, under `frontend` as `sidebar_panels`.
 
-**The card is not in the "Add card" list.** Hard-refresh the browser (⇧ and reload) — the
+**Norman Shades is not in the "Add card" list.** Hard-refresh the browser (⇧ and reload) — the
 resource is registered at startup, and a tab open from before will not have it. If it is still
 missing, check the log for `Registered the Norman shades card` and look under
 **Settings → Dashboards → ⋮ → Resources** for `/norman/norman-shades-card.js`.
@@ -356,5 +338,5 @@ plus a hard refresh usually clears it. A [diagnostics download](../README.md#dia
 reports the version the card should be and what Lovelace actually has registered, under
 `frontend`.
 
-**A blind is missing from the card.** The card lists blinds that have a Norman cover entity
+**A blind is missing.** Norman Shades lists blinds that have a Norman cover entity
 which is not hidden or disabled. Check the blind's entities on its device page.

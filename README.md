@@ -13,10 +13,10 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 [![Release](https://img.shields.io/github/v/release/kedube/ha-norman?sort=semver)](https://github.com/kedube/ha-norman/releases)
 
-<img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each drawn as a window with its own kind of shade, drape or shutter in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
+<img src="images/dashboard-card.png" alt="Norman Shades: blinds grouped by room, each drawn as a window with its own kind of shade, drape or shutter in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
 
-*The bundled **Norman Shades** card: drag a shade's pull tab, or a shutter's tilt rod, to move it.
-It opens from **Norman Shades** in the sidebar, finds your blinds, and needs no configuration.*
+***Norman Shades**, in Home Assistant's sidebar: drag a shade's pull tab, or a shutter's tilt rod,
+to move it. It finds your blinds by itself and needs no configuration.*
 
 ## Contents
 
@@ -27,7 +27,7 @@ It opens from **Norman Shades** in the sidebar, finds your blinds, and needs no 
   - [Removing the integration](#removing-the-integration)
 - [What it provides](#what-it-provides)
   - [Entities](#entities)
-  - [Dashboard card](#dashboard-card)
+  - [Norman Shades](#norman-shades)
   - [Actions](#actions)
   - [Automation ideas](#automation-ideas)
 - [How it works](#how-it-works)
@@ -43,7 +43,7 @@ It opens from **Norman Shades** in the sidebar, finds your blinds, and needs no 
 
 | Document | Contents |
 |---|---|
-| [docs/dashboard.md](docs/dashboard.md) | The bundled **Norman Shades** card, and building your own views |
+| [docs/dashboard.md](docs/dashboard.md) | **Norman Shades**: what it shows, putting it on a dashboard, and building your own |
 | [examples/dashboard.yaml](examples/dashboard.yaml) | A ready-made dashboard view to copy from |
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
 | [docs/options.md](docs/options.md) | Polling, wake sweeps, command spacing, and the sidebar entry |
@@ -202,11 +202,11 @@ availability rules, is in [docs/entities.md](docs/entities.md).
 *A two-rail blind. Both rails get their own controls and slider; the five buttons sit under
 Configuration, and the model, firmware and serial number come from the hub.*
 
-### Dashboard card
+### Norman Shades
 
-The integration ships a **Norman Shades** Lovelace card: every blind, by room, drawn as a window
-you drag by each rail's pull tab. It is in Home Assistant's sidebar from the start, one entry per
-hub, and in the **Add card** picker for any dashboard, with nothing to install or configure.
+Every blind, by room, drawn as a window you drag by each rail's pull tab. **Norman Shades** is in
+Home Assistant's sidebar as soon as the integration is set up, one entry per hub, with nothing to
+install or configure. It can also go on any dashboard as a card.
 
 It is [pictured at the top of this page](#unofficial-norman-smart-blinds-for-home-assistant). Full detail,
 options, and how to build the same thing from Home Assistant's own cards are in
@@ -221,7 +221,8 @@ Alongside the standard cover actions, the integration provides five of its own:
 - `norman.nudge_tilt` — tilt by `step` (positive opens: a two-rail blind's middle rail, or
   a SmartDrape's, PerfectSheer's or Shutter's vanes and louvers).
 - `norman.room_command` — run a Norman app room button (`best_privacy`, `best_view`,
-  `favorite`) against every blind in a room, in one request to the hub.
+  `favorite`) against every blind in a room, in one request to the hub. For any other position,
+  see [a whole room to any position](docs/services.md#a-whole-room-to-any-position).
 - `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports.
 - `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for
   one blind, for the verbs that have no entity of their own (limits, calibration, run-to-limit).
@@ -464,8 +465,8 @@ capturing what you need; it is verbose while blinds are moving.
 This repository is structured as a HACS-compatible custom integration repository:
 
 - integration code under `custom_components/norman`
-- the Lovelace card in `custom_components/norman/www/`, served and auto-registered by
-  `frontend.py`
+- Norman Shades in `custom_components/norman/www/` (the card and its sidebar panel), served
+  and registered by `frontend.py`
 - metadata in `custom_components/norman/manifest.json` and `hacs.json`
 - translations in `custom_components/norman/translations/`
 - brand images (icon and logo) in `custom_components/norman/brand/`, which Home Assistant

@@ -8,7 +8,7 @@ changing any of them reloads the entry.
 | Poll interval | 0 (off) | 10–3600 s | Re-reads every blind's position from the hub on a timer. |
 | Wake sweep interval | 0 (off) | 600–86400 s | Has every blind report in, refreshing the hub's own cache. |
 | Command spacing | 1.6 s | 0.3–5 s | Seconds to leave between commands sent to the hub. |
-| Show Norman Shades in the sidebar | on | on / off | Adds a sidebar entry that opens the card full screen. |
+| Show Norman Shades in the sidebar | on | on / off | Puts Norman Shades in Home Assistant's sidebar. |
 
 ## Poll interval
 
@@ -61,8 +61,7 @@ For the capture and diagnostics behind all of this, see
 
 ## Show Norman Shades in the sidebar
 
-Puts **Norman Shades** in Home Assistant's sidebar, opening the [dashboard card](dashboard.md)
-full screen, so the card is there without building a dashboard. It is on by default, including
-for hubs set up before the option existed. Turn it off to remove the entry; the card can still
-go on any dashboard. With more than one hub, each hub's switch controls its own entry. See
-[In the sidebar](dashboard.md#in-the-sidebar).
+Puts [Norman Shades](dashboard.md) in Home Assistant's sidebar. It is on by default, including
+for hubs set up before the option existed. Turn it off to remove the entry; Norman Shades can
+still [go on a dashboard](dashboard.md#on-a-dashboard) as a card. With more than one hub, each
+hub's switch controls its own entry.

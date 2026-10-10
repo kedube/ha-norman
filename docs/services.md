@@ -88,9 +88,48 @@ data:
 
 All four commands work without a room — the first three are what the app's **All Rooms** screen sends, and `refresh` without a room is its refresh button.
 
-`Switch` sets both rails to fixed positions; it is not a relative move and there is no
-room-wide way to reach an arbitrary percentage. For that, use the cover entities (or the card's
-room controls, which fan out across every rail).
+`Switch` sets both rails to fixed positions; it is not a relative move.
+
+### A whole room to any position
+
+The hub has no room-wide position command. The app's room screen offers only the buttons
+above, and no other room verb has been captured from it, so `room_command` cannot send a room to,
+say, 40%. Home Assistant can, by targeting the room's **area** with the standard cover action,
+which sends each blind its own command:
+
+```yaml
+action: cover.set_cover_position
+target:
+  area_id: den
+data:
+  position: 40
+```
+
+The commands go out one at a time, [Command spacing](options.md#command-spacing) apart (1.6 s by
+default), so a room takes a few seconds to go out; that pacing is what keeps the hub from
+dropping them.
+
+- **Two-rail blinds move both rails.** The area holds each blind's Bottom rail cover *and* its
+  Middle rail cover, so both rails go to 40, leaving the light-filtering fabric across the top
+  of the window. To move only the bottom rails, list those covers instead:
+
+  ```yaml
+  action: cover.set_cover_position
+  target:
+    entity_id:
+      - cover.den_den_1_bottom_rail
+      - cover.den_den_2_bottom_rail
+  data:
+    position: 40
+  ```
+
+- **Shutters are skipped.** Their louvers take only tilt, so add a
+  `cover.set_cover_tilt_position` for them.
+- **Every cover in the area moves,** including ones from other integrations.
+
+For a position a room goes to often, save it as each blind's favorite in the Norman app instead:
+`command: favorite` then sends the whole room there in **one** request to the hub, with no
+spacing.
 
 ## `norman.get_hub_data`
 

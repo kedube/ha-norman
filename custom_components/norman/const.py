@@ -107,9 +107,9 @@ MIN_CONTROL_INTERVAL = 0.3
 MAX_CONTROL_INTERVAL = 5.0
 CONF_CONTROL_INTERVAL = "control_interval"
 
-# A "Norman Shades" entry in Home Assistant's sidebar that opens the dashboard card full
-# screen (frontend.py registers it), so the card needs no dashboard to be built. On by
-# default; with several hubs each gets its own entry. Changing it reloads the entry, which
+# A "Norman Shades" entry in Home Assistant's sidebar (frontend.py registers it), so every
+# blind is there without building a dashboard. On by default; with several hubs each gets its
+# own entry. Changing it reloads the entry, which
 # re-syncs the sidebar.
 CONF_SHOW_SIDEBAR_PANEL = "show_sidebar_panel"
 DEFAULT_SHOW_SIDEBAR_PANEL = True

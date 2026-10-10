@@ -50,15 +50,17 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   - `config_flow.py` — user, zeroconf discovery, and reconfigure steps.
   - `services.py` — the integration-level `get_hub_data` and `send_hub_command` actions; the
     nudge actions live with the covers.
-  - `frontend.py` — serves `www/` and registers the Lovelace card as a dashboard resource,
-    repointing stale entries after an upgrade. Every failure here is logged and swallowed:
-    the card is a convenience and must never block setup.
+  - `frontend.py` — serves `www/`, adds the Norman Shades sidebar panel for each hub whose
+    option is on, and registers the card as a dashboard resource, repointing stale entries after
+    an upgrade. Every failure here is logged and swallowed: none of it may block setup.
   - `www/norman-shades-card.js` — the card itself. Plain custom elements, no build step, so
     the file that ships is the file that runs. It reads entities through the registry rather
     than taking a configured list, so a new blind appears without editing the dashboard. The
     card's JS is not executed by the test suite; `tests/test_repo_consistency.py` pins its
     structure (picker registration, element names) and `tests/test_frontend.py` covers
     serving and resource registration.
+  - `www/norman-panel.js` — the sidebar panel. It hosts the card full screen and passes it
+    Home Assistant's `narrow` and the panel's config (`config_entry_id`, with several hubs).
   - `diagnostics.py` — the export, including the raw `hub_traffic` capture.
 - `tests/` contains the pytest suite. Integration tests drive the real code against a fake hub
   registered on `aioclient_mock` (`tests/conftest.py`), so request payloads and error handling
@@ -70,9 +72,9 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
 - `docs/` contains the user and contributor reference split out of the README. Keep the README
   as the narrative landing page (install → configure → what you get → troubleshoot) and put
   detail here:
-  - [`docs/dashboard.md`](docs/dashboard.md) — the bundled card and its options, with a
-    worked dashboard in [`examples/dashboard.yaml`](examples/dashboard.yaml).
-- `scripts/check_card.mjs` runs the Lovelace card under Node against a realistic `hass`
+  - [`docs/dashboard.md`](docs/dashboard.md) — Norman Shades, and the card's options on a
+    dashboard, with a worked dashboard in [`examples/dashboard.yaml`](examples/dashboard.yaml).
+- `scripts/check_card.mjs` runs the card and its sidebar panel under Node against a realistic `hass`
   object (`node scripts/check_card.mjs`). The card reads the **frontend** entity registry,
   which does not carry `unique_id` — only `translation_key` and a handful of display fields —
   so a wrong field name there fails silently rather than erroring. Run it after touching

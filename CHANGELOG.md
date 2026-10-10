@@ -6,13 +6,13 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 version heading and publishes it as the release's Highlights.
 
 ## 0.68 — 2026-10-10
-- **The dashboard card is in the sidebar.** Once the integration is set up, **Norman Shades**
-  appears in Home Assistant's sidebar and opens the card full screen, so there is no dashboard
-  to build and no card to add. On a phone it runs edge to edge, with the usual button for
-  opening the sidebar. With more than one hub, each gets its own entry showing only its blinds.
-  To remove it, turn off **Show Norman Shades in the sidebar** in the integration's options. The
-  card can still go on any dashboard.
-- **The card can be kept to one hub.** A new `config_entry_id` option, also offered as **Hub**
+- **Norman Shades is in the sidebar.** Once the integration is set up, **Norman Shades**, every
+  blind by room drawn as a window you drag, appears in Home Assistant's sidebar, so there is no
+  dashboard to build and no card to add. On a phone it runs edge to edge, with the usual button
+  for opening the sidebar. With more than one hub, each gets its own entry showing only its
+  blinds. To remove it, turn off **Show Norman Shades in the sidebar** in the integration's
+  options. It can still go on a dashboard as a card.
+- **On a dashboard, the card can be kept to one hub.** A new `config_entry_id` option, also offered as **Hub**
   in the card's visual editor, shows only that hub's blinds and sends its presets to that hub.
   It is only needed with more than one hub.
 

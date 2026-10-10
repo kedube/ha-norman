@@ -83,7 +83,7 @@ open they are: **0, 33, 67 or 100**, with either closed end reading 0. A tilt se
 the nearest of those, closing towards 100 (where Best privacy puts them): tilt 100 sends 50,
 67 sends 66, 33 sends 83 and 0 sends 100. A nudge moves at least one stop. The `stack`
 attribute says which side the drape gathers to when open (`left`, `right` or `split`), from the
-hub's device list; the dashboard card draws it there.
+hub's device list; Norman Shades draws it there.
 
 **A PerfectSheer is one cover.** The bottom rail is the shade and the middle rail the vanes
 between its two sheers, 0 closed to 100 open, as the tilt. They move independently, like a
@@ -101,7 +101,7 @@ own 0–7 value. A Shutter has no stop and no position sliders.
 **Upgrading from the fallback.** A blind whose `ModuleType` was unmapped was given two-rail
 entities. Once its type is mapped as something else, the Middle rail cover and the sliders it
 no longer has are deleted from the entity registry at startup, so they do not linger as "no
-longer provided" or show up on the dashboard card as a second fabric.
+longer provided" or show up in Norman Shades as a second fabric.
 
 Entity ids are derived from the blind's name in the Norman app, prefixed with its area on Home
 Assistant 2026.9 and newer (`cover.living_room_living_drape` for a blind called "Living Drape" in
@@ -188,8 +188,8 @@ view opens both. They send the hub's `Switch` verb addressed at the single blind
 and group, exactly as the app does, so the positions are the hub's rather than this
 integration's idea of them.
 
-The bundled [dashboard card](dashboard.md) puts all of this on one card, grouped by room;
-[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a complete dashboard using it.
+[Norman Shades](dashboard.md), in the sidebar, puts all of this on one screen, grouped by room;
+[`examples/dashboard.yaml`](../examples/dashboard.yaml) is a complete dashboard using it as a card.
 
 ## Position sliders
 

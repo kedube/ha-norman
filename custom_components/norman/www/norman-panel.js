@@ -113,7 +113,7 @@ class NormanPanel extends HTMLElement {
     const message = document.createElement("div");
     message.className = "error";
     message.textContent =
-      "The Norman Shades card couldn't load. Reload the page; if it keeps happening, check the browser console.";
+      "Norman Shades couldn't load. Reload the page; if it keeps happening, check the browser console.";
     this._page.append(message);
     // eslint-disable-next-line no-console
     console.error("norman: the sidebar panel could not load the card", err);
