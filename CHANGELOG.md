@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.68 — 2026-10-10
 - **The dashboard card is in the sidebar.** Once the integration is set up, **Norman Shades**
   appears in Home Assistant's sidebar and opens the card full screen, so there is no dashboard
   to build and no card to add. On a phone it runs edge to edge, with the usual button for
