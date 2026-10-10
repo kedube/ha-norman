@@ -16,11 +16,16 @@
 const els = new Map();
 globalThis.window = globalThis;
 globalThis.HTMLElement = class {
-  constructor(){ this.children=[]; }
+  constructor(){ this.children=[]; this.attrs={}; }
   attachShadow(){ this.shadowRoot = mk('root'); return this.shadowRoot; }
   appendChild(c){ this.children.push(c); return c; }
   addEventListener(){}
   dispatchEvent(e){ (this._events ||= []).push(e); }
+  setAttribute(k,v){ this.attrs[k]=String(v); }
+  getAttribute(k){ return this.attrs[k]; }
+  hasAttribute(k){ return k in this.attrs; }
+  removeAttribute(k){ delete this.attrs[k]; }
+  toggleAttribute(k, force){ const on = force ?? !this.hasAttribute(k); on ? this.setAttribute(k, "") : this.removeAttribute(k); return on; }
 };
 globalThis.customElements = { get: () => undefined, define: (n,c) => els.set(n,c) };
 // A class list that really edits className, so the checks can read state the card toggles.
@@ -51,7 +56,8 @@ const mk = (tag) => {
   el.classList = classListOf(el);
   return el;
 };
-globalThis.document = { createElement: mk };
+// A defined custom element is constructed, as a browser would; anything else is a plain mock.
+globalThis.document = { createElement: (tag) => (els.has(tag) ? new (els.get(tag))() : mk(tag)) };
 globalThis.console.info = () => {};
 
 const url = new URL("file://" + process.cwd() + "/custom_components/norman/www/norman-shades-card.js");
@@ -339,9 +345,103 @@ check("house buttons are not labelled as open/close arrows",
       !homeIcons.includes("mdi:arrow-up") && !homeIcons.includes("mdi:arrow-down"), JSON.stringify(homeIcons));
 // The absence of `room` is what makes it house-wide; sending one would scope it to a room.
 check("home controls omit the room entirely", homeCalls.every(c => !("room" in c[2])));
+// With no hub configured the action picks the only one, as it always has.
+check("an unpinned card sends no hub", homeCalls.every(c => !("config_entry_id" in c[2])));
 check("home controls render by default", countIn({}, "home-buttons") === 3);
 check("home controls render alongside a title", countIn({ title:"Shades" }, "home-buttons") === 3);
 check("home controls drop out when hidden", countIn({ hide_home_controls:true }, "home-buttons") === 0);
+
+// --- one hub of several -------------------------------------------------------------------
+// The frontend's device registry lists each device's config entries; config_entry_id keeps the
+// card to that hub's devices and sends its presets to that hub.
+{
+  const twoHubs = {
+    ...hass,
+    entities: {
+      ...hass.entities,
+      "cover.cabin_1_bottom_rail": { platform:"norman", device_id:"c1", translation_key:"bottom_rail" },
+      "sensor.cabin_hub_wi_fi_network": { platform:"norman", device_id:"hub2", translation_key:"wifi_ssid" },
+    },
+    devices: {
+      d1: { ...hass.devices.d1, config_entries:["home"] },
+      d2: { ...hass.devices.d2, config_entries:["home"] },
+      hub: { ...hass.devices.hub, config_entries:["home"] },
+      c1: { name:"Cabin_1", area_id:null, config_entries:["cabin"] },
+      hub2: { name:"Cabin Hub", area_id:null, config_entries:["cabin"] },
+    },
+    states: { ...hass.states, "cover.cabin_1_bottom_rail": { state:"open", attributes:{ current_position:0 } } },
+  };
+  const svc = [];
+  const scoped = (cfg) => {
+    const h = { ...twoHubs, callService: (d,s2,data) => svc.push([d,s2,data]) };
+    const c = new Card(); c._hass = h; c.setConfig({ type:"custom:norman-shades-card", ...cfg }); c._hass = h;
+    return c;
+  };
+  check("with no hub configured, every hub's blinds show", scoped({})._collectBlinds().length === 3);
+  const cabin = scoped({ config_entry_id:"cabin" });
+  const cabinIds = cabin._collectBlinds().map(b => b.deviceId);
+  check("config_entry_id shows only that hub's blinds", JSON.stringify(cabinIds) === '["c1"]', JSON.stringify(cabinIds));
+  check("...and names that hub", cabin._hubName() === "Cabin Hub", String(cabin._hubName()));
+  const home = scoped({ config_entry_id:"home" });
+  check("the other hub's card shows the other hub",
+        home._collectBlinds().length === 2 && home._hubName() === "Norman Hub", String(home._hubName()));
+  [...cabin._buildHomeControls().children, ...cabin._buildRoomPresets("Den").children].forEach(b => b._on?.click?.());
+  check("a pinned card's presets go to its hub",
+        svc.length === 6 && svc.every(x => x[1] === "room_command" && x[2].config_entry_id === "cabin"),
+        JSON.stringify(svc.map(x => x[2])));
+  check("...the house ones still with no room", !("room" in svc[0][2]) && svc[3][2].room === "Den");
+}
+
+// --- the sidebar panel's menu button -------------------------------------------------------
+{
+  const [menu] = byClass(rendered().shadowRoot, "menu");
+  check("on a dashboard the menu button stays hidden", menu?.hidden === true, String(menu?.hidden));
+  const c = new Card();
+  c.setAttribute("panel", "");
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c.hass = hass;
+  const [panelMenu] = byClass(c.shadowRoot, "menu");
+  check("in the panel beside a visible sidebar it stays hidden", panelMenu?.hidden === true);
+  c.narrow = true;
+  check("on a phone the panel's header offers the sidebar", panelMenu.hidden === false);
+  check("...and the card is marked narrow for its styles", c.hasAttribute("narrow"));
+  panelMenu._on.click();
+  const event = c._events?.at(-1);
+  check("the button fires Home Assistant's own sidebar toggle",
+        event?.type === "hass-toggle-menu" && event.bubbles && event.composed, String(event?.type));
+  c.narrow = false;
+  c.hass = { ...hass, dockedSidebar:"always_hidden" };
+  check("it also shows wherever the user has hidden the sidebar", panelMenu.hidden === false);
+  c.hass = hass;
+  check("and goes again when the sidebar is back", panelMenu.hidden === true);
+}
+
+// --- the sidebar panel ----------------------------------------------------------------------
+{
+  const panelUrl = new URL("file://" + process.cwd() + "/custom_components/norman/www/norman-panel.js");
+  panelUrl.searchParams.set("v", "test");
+  await import(panelUrl.href);
+  const Panel = els.get("norman-panel");
+  check("the panel defines its element", typeof Panel === "function");
+  const p = new Panel();
+  p.hass = hass;
+  p.narrow = true;
+  p.panel = { url_path:"norman-shades", config:{ _panel_custom:{ name:"norman-panel" } } };
+  // The panel imports the card (at the same ?v=) before it mounts it.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const hosted = p._card;
+  check("the panel hosts the card", hosted instanceof Card, String(hosted?.constructor?.name));
+  check("...marked as the panel's", hosted?.hasAttribute("panel") === true);
+  check("...with Home Assistant's narrow passed on", hosted?.narrow === true && p.hasAttribute("narrow"));
+  check("...and none of Home Assistant's bookkeeping in its config",
+        hosted && !("_panel_custom" in hosted._config) && hosted._config.type === "custom:norman-shades-card",
+        JSON.stringify(hosted?._config));
+  check("...drawn straight away", byClass(hosted.shadowRoot, "header-text")[0]?.textContent === "Norman Hub");
+  p.panel = { url_path:"norman-shades", config:{ config_entry_id:"home", _panel_custom:{} } };
+  check("a hub pinned by the integration reaches the card", hosted._config.config_entry_id === "home");
+  check("...and the card redraws for it", byClass(hosted.shadowRoot, "header-text").length === 1);
+  p.narrow = false;
+  check("narrow follows Home Assistant", hosted.narrow === false && !p.hasAttribute("narrow"));
+}
 
 // ---- the rendered card -----------------------------------------------------------------
 const renderedText = (cfg = {}) => {

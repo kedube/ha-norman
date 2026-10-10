@@ -16,6 +16,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -34,9 +35,11 @@ from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
     CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
+    CONF_SHOW_SIDEBAR_PANEL,
     CONF_WAKE_INTERVAL,
     DEFAULT_CONTROL_INTERVAL,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_SHOW_SIDEBAR_PANEL,
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     MAX_CONTROL_INTERVAL,
@@ -98,6 +101,9 @@ OPTIONS_SCHEMA = vol.Schema(
                 mode=NumberSelectorMode.BOX,
             )
         ),
+        vol.Required(
+            CONF_SHOW_SIDEBAR_PANEL, default=DEFAULT_SHOW_SIDEBAR_PANEL
+        ): BooleanSelector(),
     }
 )
 
@@ -231,12 +237,13 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class NormanOptionsFlow(OptionsFlow):
-    """Let the user tune the two safety nets: the status poll and the wake sweep.
+    """Let the user tune the two safety nets, the command spacing, and the sidebar entry.
 
     Updates are pushed, so the poll only sets how quickly a change the hub never announced
     is noticed. The wake sweep goes further: it has every blind report in, which refreshes
     the hub's own cache (positions, battery, last seen) rather than re-reading it. Each
-    costs one request per interval; the sweep also wakes every battery blind's radio.
+    costs one request per interval; the sweep also wakes every battery blind's radio. The
+    sidebar toggle adds or removes the "Norman Shades" panel (frontend.py).
     """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -262,12 +269,16 @@ class NormanOptionsFlow(OptionsFlow):
                         CONF_POLL_INTERVAL: seconds,
                         CONF_WAKE_INTERVAL: wake,
                         CONF_CONTROL_INTERVAL: control,
+                        CONF_SHOW_SIDEBAR_PANEL: bool(
+                            user_input.get(CONF_SHOW_SIDEBAR_PANEL, DEFAULT_SHOW_SIDEBAR_PANEL)
+                        ),
                     }
                 )
 
         # An entry that has never been configured shows the suggested values rather than the
         # 0 defaults, so turning either on is one click instead of a guess at a sensible
-        # number. Leaving a field at 0 still stores 0.
+        # number. Leaving a field at 0 still stores 0. Options saved before the sidebar
+        # toggle existed lack its key, so the form falls back to its default: on.
         suggested = (
             user_input
             or self.config_entry.options
@@ -275,6 +286,7 @@ class NormanOptionsFlow(OptionsFlow):
                 CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL,
                 CONF_WAKE_INTERVAL: SUGGESTED_WAKE_INTERVAL,
                 CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
+                CONF_SHOW_SIDEBAR_PANEL: DEFAULT_SHOW_SIDEBAR_PANEL,
             }
         )
 

@@ -13,7 +13,12 @@
  * Discovery is automatic: the card finds Norman cover entities through the entity registry
  * (via the hass object's `entities` map) and groups them by the area Home Assistant has each
  * device in, which the integration seeds from the hub's own room names. Nothing has to be
- * listed in the card configuration.
+ * listed in the card configuration. With more than one hub, `config_entry_id` limits the card
+ * to one of them and sends its presets to that hub.
+ *
+ * The integration also shows this card full screen as a sidebar panel (norman-panel.js).
+ * There it carries a `panel` attribute and a `narrow` property from Home Assistant: on phones
+ * it runs edge to edge and its header gains the button that opens Home Assistant's sidebar.
  */
 
 // The integration stamps its release version onto the resource URL as ?v= (the cache-bust),
@@ -208,6 +213,8 @@ const STYLES = `
     padding: 16px 16px 18px;
     overflow: visible;
   }
+  /* In the sidebar panel on a phone the card is the page: edge to edge, with no frame. */
+  :host([panel][narrow]) ha-card { border: none; border-radius: 0; box-shadow: none; }
   ha-card[data-theme="dark"] {
     --n-trim: #45484d;
     --n-trim-hi: #53575c;
@@ -335,6 +342,8 @@ const STYLES = `
   .icon-btn:active { transform: scale(0.94); }
   .icon-btn.more { flex: none; }
   .icon-btn.more.open { background: rgba(var(--n-accent-rgb), 0.14); color: var(--n-accent); }
+  .icon-btn.menu { flex: none; margin: 0 -6px 0 -8px; }
+  .icon-btn.menu ha-icon { --mdc-icon-size: 24px; }
   .tray { margin: -4px 0 14px; }
   .tray .segmented { display: flex; width: fit-content; max-width: 100%; }
 
@@ -1104,6 +1113,9 @@ class NormanShadesCard extends HTMLElement {
     // The header's text node and summary line (see _render).
     this._headerText = null;
     this._summary = null;
+    // Set by the sidebar panel: Home Assistant hides its sidebar on phones (see narrow).
+    this._narrow = false;
+    this._menuButton = null;
   }
 
   setConfig(config) {
@@ -1132,7 +1144,42 @@ class NormanShadesCard extends HTMLElement {
     }
   }
 
+  // The sidebar panel passes Home Assistant's `narrow` on (phones: the sidebar is hidden).
+  set narrow(narrow) {
+    this._narrow = Boolean(narrow);
+    this.toggleAttribute("narrow", this._narrow);
+    this._syncMenuButton();
+  }
+
+  get narrow() {
+    return this._narrow;
+  }
+
+  // In the sidebar panel, wherever Home Assistant isn't showing its sidebar (the same test its
+  // own menu button uses), the header offers the way back to it. On a dashboard Home
+  // Assistant's own toolbar already has that button.
+  _wantsMenuButton() {
+    if (!this.hasAttribute("panel")) return false;
+    return this._narrow || this._hass?.dockedSidebar === "always_hidden";
+  }
+
+  _syncMenuButton() {
+    if (this._menuButton) this._menuButton.hidden = !this._wantsMenuButton();
+  }
+
   // ---- data ------------------------------------------------------------------------
+
+  /**
+   * Whether a device belongs on this card: any Norman device, or with `config_entry_id` only
+   * that hub's. The frontend's device registry lists each device's config entries; the
+   * entity registry it sends does not carry one.
+   */
+  _inScope(deviceId) {
+    const entryId = this._config.config_entry_id;
+    if (!entryId) return true;
+    const device = (this._hass?.devices || {})[deviceId];
+    return Boolean(device?.config_entries?.includes(entryId));
+  }
 
   /**
    * Every Norman blind visible to this dashboard, assembled from its entities.
@@ -1173,6 +1220,7 @@ class NormanShadesCard extends HTMLElement {
     for (const [entityId, entry] of Object.entries(registry)) {
       if (entry.platform !== DOMAIN || !entry.device_id) continue;
       if (entry.hidden_by || entry.disabled_by) continue;
+      if (!this._inScope(entry.device_id)) continue;
 
       const [domain] = entityId.split(".");
       // `translation_key` is the reliable discriminator; fall back to the entity id's
@@ -1254,6 +1302,7 @@ class NormanShadesCard extends HTMLElement {
 
     for (const [entityId, entry] of Object.entries(registry)) {
       if (entry.platform !== DOMAIN || !entry.device_id) continue;
+      if (!this._inScope(entry.device_id)) continue;
       norman.add(entry.device_id);
       if (entityId.startsWith("cover.")) withCovers.add(entry.device_id);
     }
@@ -1376,6 +1425,14 @@ class NormanShadesCard extends HTMLElement {
     // With no configured title the header names the HUB rather than saying "Shades": a
     // house with two hubs gets two cards, and "Shades" twice says nothing about which.
     const header = el("div", "header");
+    // Shown only in the sidebar panel where Home Assistant hides its sidebar (_wantsMenuButton).
+    // It fires the same event as Home Assistant's own menu button, which opens the sidebar.
+    this._menuButton = this._iconButton("mdi:menu", "Open the sidebar", () =>
+      this.dispatchEvent(new CustomEvent("hass-toggle-menu", { bubbles: true, composed: true })),
+    );
+    this._menuButton.classList.add("menu");
+    this._syncMenuButton();
+    header.appendChild(this._menuButton);
     const titles = el("div", "titles");
     const text = el("div", "header-text", this._headingText());
     // Kept so the heading can follow a hub rename, or fill in once the device registry has
@@ -1408,6 +1465,8 @@ class NormanShadesCard extends HTMLElement {
       if (this._headerText.textContent !== title) this._headerText.textContent = title;
       this._headerText.hidden = !title;
     }
+    // The user can hide the sidebar from their profile, which arrives as a new hass.
+    this._syncMenuButton();
 
     const rooms = this._roomsOf(this._collectBlinds());
 
@@ -1553,7 +1612,7 @@ class NormanShadesCard extends HTMLElement {
       controls.appendChild(
         this._buildChip(preset, `${preset.title} — every room`, () => {
           // No `room`: the action omits RoomID, which the hub reads as every blind.
-          this._hass.callService("norman", "room_command", { command: preset.command });
+          this._roomCommand({ command: preset.command });
         }),
       );
     }
@@ -1572,14 +1631,20 @@ class NormanShadesCard extends HTMLElement {
     for (const preset of PRESETS) {
       presets.appendChild(
         this._buildChip(preset, `${preset.title} — ${roomName}`, () => {
-          this._hass.callService("norman", "room_command", {
-            room: roomName,
-            command: preset.command,
-          });
+          this._roomCommand({ room: roomName, command: preset.command });
         }),
       );
     }
     return presets;
+  }
+
+  /**
+   * norman.room_command, sent to this card's hub when it has one (`config_entry_id`). With
+   * no hub configured the action picks the only one, as it always has.
+   */
+  _roomCommand(data) {
+    const entryId = this._config.config_entry_id;
+    this._hass.callService(DOMAIN, "room_command", entryId ? { ...data, config_entry_id: entryId } : data);
   }
 
   /** A preset: an icon and a word, since "blinds-horizontal" alone does not say "privacy". */
@@ -2588,6 +2653,7 @@ class NormanShadesCard extends HTMLElement {
  */
 const EDITOR_FIELDS = [
   { key: "title", label: "Title (leave empty to use the hub's name)", type: "text" },
+  { key: "config_entry_id", label: "Hub (only needed with more than one)", type: "entry" },
   { key: "hide_picture", label: "List layout (sliders instead of windows)", type: "boolean" },
   { key: "hide_battery", label: "Hide battery levels", type: "boolean" },
   { key: "hide_room_names", label: "Hide room headings", type: "boolean" },
@@ -2626,10 +2692,12 @@ class NormanShadesCardEditor extends HTMLElement {
       const form = document.createElement("ha-form");
       form.hass = this._hass;
       form.data = this._config;
-      form.schema = EDITOR_FIELDS.map(({ key, type }) => ({
-        name: key,
-        selector: type === "boolean" ? { boolean: {} } : { text: {} },
-      }));
+      const selectors = {
+        boolean: { boolean: {} },
+        entry: { config_entry: { integration: DOMAIN } },
+        text: { text: {} },
+      };
+      form.schema = EDITOR_FIELDS.map(({ key, type }) => ({ name: key, selector: selectors[type] }));
       const labels = Object.fromEntries(EDITOR_FIELDS.map(({ key, label }) => [key, label]));
       form.computeLabel = (field) => labels[field.name] || field.name;
       form.addEventListener("value-changed", (event) => this._changed(event.detail.value));

@@ -10,6 +10,10 @@ without the user adding a dashboard resource by hand, the integration:
 
 Registration is best-effort: a failure here never blocks setup, since every entity works
 without the card.
+
+It also puts a **Norman Shades** entry in the sidebar: a custom panel (``www/norman-panel.js``)
+that shows the card full screen, one per hub whose "Show Norman Shades in the sidebar" option
+is on, so the card is there without building a dashboard at all.
 """
 
 from __future__ import annotations
@@ -17,11 +21,13 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import IntegrationNotLoaded, async_get_loaded_integration
 
-from .const import DOMAIN
+from .const import CONF_SHOW_SIDEBAR_PANEL, DEFAULT_SHOW_SIDEBAR_PANEL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +38,21 @@ WWW_URL_BASE = f"/{DOMAIN}"
 CARD_URL_PATH = f"{WWW_URL_BASE}/{CARD_FILENAME}"
 
 _REGISTERED_KEY = f"{DOMAIN}_frontend_registered"
+
+# The sidebar panel: a web component hosting the card full screen. It lives BESIDE, not
+# under, the static /norman/ path: a panel at /norman would send a page reload there to the
+# static file handler (a directory) instead of Home Assistant's app.
+PANEL_FILENAME = "norman-panel.js"
+PANEL_ELEMENT = "norman-panel"
+PANEL_URL_PATH = "norman-shades"
+PANEL_TITLE = "Norman Shades"
+PANEL_ICON = "mdi:blinds"
+# Entries that are set up (entry id -> entry), and the panels registered (url -> spec).
+_PANEL_ENTRIES_KEY = f"{DOMAIN}_panel_entries"
+_PANELS_KEY = f"{DOMAIN}_panels"
+
+# A sidebar panel as registered: its title and the card config it carries.
+type _PanelSpec = tuple[str, tuple[tuple[str, str], ...]]
 
 
 def integration_version(hass: HomeAssistant) -> str:
@@ -66,6 +87,11 @@ def card_resource_url(hass: HomeAssistant) -> str:
     carrying a constant that could fall behind.
     """
     return f"{CARD_URL_PATH}?v={integration_version(hass)}"
+
+
+def panel_module_url(hass: HomeAssistant) -> str:
+    """The sidebar panel's module URL, stamped like the card so an upgrade is never cached."""
+    return f"{WWW_URL_BASE}/{PANEL_FILENAME}?v={integration_version(hass)}"
 
 
 async def async_register_card(hass: HomeAssistant) -> None:
@@ -166,6 +192,93 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         _LOGGER.exception("Norman could not auto-register the card resource")
 
 
+async def async_add_entry_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Note a set-up hub and bring the sidebar in line (called at entry setup)."""
+    hass.data.setdefault(_PANEL_ENTRIES_KEY, {})[entry.entry_id] = entry
+    await _async_sync_panels_safely(hass)
+
+
+async def async_remove_entry_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Forget an unloaded hub and bring the sidebar in line (called at entry unload)."""
+    hass.data.setdefault(_PANEL_ENTRIES_KEY, {}).pop(entry.entry_id, None)
+    await _async_sync_panels_safely(hass)
+
+
+async def _async_sync_panels_safely(hass: HomeAssistant) -> None:
+    try:
+        await _async_sync_panels(hass)
+    except Exception:  # noqa: BLE001 - the sidebar must never fail an entry's setup or unload
+        _LOGGER.exception("Norman could not update its sidebar panel")
+
+
+def _wanted_panels(entries: list[ConfigEntry]) -> dict[str, _PanelSpec]:
+    """The sidebar panels these set-up entries call for: url path -> (title, config items).
+
+    One hub gets plain "Norman Shades" at /norman-shades and a card with no hub pinned, which
+    shows the same blinds as a card added to a dashboard. With several hubs each panel is
+    titled after its entry and pins its hub, since the card otherwise shows every hub's blinds
+    together and its whole-house buttons would not know which hub to send to.
+    """
+    several = len(entries) > 1
+    wanted: dict[str, _PanelSpec] = {}
+    titles: set[str] = set()
+    showing = [
+        entry
+        for entry in entries
+        if entry.options.get(CONF_SHOW_SIDEBAR_PANEL, DEFAULT_SHOW_SIDEBAR_PANEL)
+    ]
+    for number, entry in enumerate(showing, start=1):
+        url_path = PANEL_URL_PATH if number == 1 else f"{PANEL_URL_PATH}-{number}"
+        title = (entry.title or PANEL_TITLE) if several else PANEL_TITLE
+        if title in titles:
+            title = f"{title} {number}"
+        titles.add(title)
+        config = (("config_entry_id", entry.entry_id),) if several else ()
+        wanted[url_path] = (title, config)
+    return wanted
+
+
+async def _async_sync_panels(hass: HomeAssistant) -> None:
+    """Register the panels the set-up entries want and remove the ones they no longer do."""
+    active: dict[str, ConfigEntry] = hass.data.setdefault(_PANEL_ENTRIES_KEY, {})
+    # Config-entry order, not setup order (entries set up concurrently), keeps each hub's
+    # sidebar address stable across restarts.
+    order = [entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN)]
+    entries = sorted(
+        active.values(),
+        key=lambda entry: order.index(entry.entry_id) if entry.entry_id in order else len(order),
+    )
+    wanted = _wanted_panels(entries)
+    registered: dict[str, _PanelSpec] = hass.data.setdefault(_PANELS_KEY, {})
+    for url_path, spec in list(registered.items()):
+        if wanted.get(url_path) == spec:
+            continue
+        try:
+            frontend.async_remove_panel(hass, url_path, warn_if_unknown=False)
+        except Exception:  # noqa: BLE001 - the sidebar is best-effort
+            _LOGGER.debug("Could not remove the Norman sidebar panel %s", url_path)
+        del registered[url_path]
+    for url_path, (title, config) in wanted.items():
+        if url_path in registered:
+            continue
+        try:
+            await panel_custom.async_register_panel(
+                hass,
+                frontend_url_path=url_path,
+                webcomponent_name=PANEL_ELEMENT,
+                sidebar_title=title,
+                sidebar_icon=PANEL_ICON,
+                module_url=panel_module_url(hass),
+                config=dict(config),
+                require_admin=False,
+            )
+        except Exception:  # noqa: BLE001 - the sidebar is best-effort
+            _LOGGER.exception("Norman could not add its sidebar panel at /%s", url_path)
+            continue
+        registered[url_path] = (title, config)
+        _LOGGER.debug("Added the Norman sidebar panel at /%s", url_path)
+
+
 def _resource_version(url: str) -> str:
     """The ``?v=`` stamp on a registered resource URL, or "unknown" without one.
 
@@ -211,4 +324,5 @@ def async_get_frontend_diagnostics(hass: HomeAssistant) -> dict[str, object]:
         "registered_versions": versions,
         # None (rather than True) when nothing is registered: there is no card to be stale.
         "version_matches": all(v == version for v in versions) if versions else None,
+        "sidebar_panels": sorted(hass.data.get(_PANELS_KEY, {})),
     }

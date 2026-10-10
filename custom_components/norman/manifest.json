@@ -2,8 +2,10 @@
   "domain": "norman",
   "name": "Norman",
   "after_dependencies": [
+    "frontend",
     "http",
-    "lovelace"
+    "lovelace",
+    "panel_custom"
   ],
   "codeowners": [
     "@kedube"

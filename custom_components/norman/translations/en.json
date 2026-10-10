@@ -50,12 +50,14 @@
         "data": {
           "poll_interval": "Poll interval",
           "wake_interval": "Wake sweep interval",
-          "control_interval": "Command spacing"
+          "control_interval": "Command spacing",
+          "show_sidebar_panel": "Show Norman Shades in the sidebar"
         },
         "data_description": {
           "poll_interval": "How often to re-read every blind's position from the hub. Lower notices a stale position sooner; higher does less work. 0 turns polling off, leaving updates to the hub's notifications alone.",
           "wake_interval": "How often to have every blind report in (battery, position, last seen), as the Norman app's refresh does. This refreshes the hub's own cache, which the poll above only re-reads. 0 turns it off; otherwise 600 to 86400 seconds.",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds."
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
+          "show_sidebar_panel": "Add a Norman Shades entry to the Home Assistant sidebar that opens the dashboard card full screen, so there's no dashboard to build. With more than one hub, each gets its own entry. Turn off to remove it; you can still add the card to any dashboard."
         }
       }
     },

@@ -16,7 +16,7 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 <img src="images/dashboard-card.png" alt="The Norman Shades card: blinds grouped by room, each drawn as a window with its own kind of shade, drape or shutter in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
 
 *The bundled **Norman Shades** card: drag a shade's pull tab, or a shutter's tilt rod, to move it.
-It registers itself, finds your blinds, and needs no configuration.*
+It opens from **Norman Shades** in the sidebar, finds your blinds, and needs no configuration.*
 
 ## Contents
 
@@ -46,7 +46,7 @@ It registers itself, finds your blinds, and needs no configuration.*
 | [docs/dashboard.md](docs/dashboard.md) | The bundled **Norman Shades** card, and building your own views |
 | [examples/dashboard.yaml](examples/dashboard.yaml) | A ready-made dashboard view to copy from |
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
-| [docs/options.md](docs/options.md) | Polling, wake sweeps, and command spacing |
+| [docs/options.md](docs/options.md) | Polling, wake sweeps, command spacing, and the sidebar entry |
 | [docs/services.md](docs/services.md) | All four actions, and the hub verbs `send_hub_command` can send |
 | [docs/NORMAN_API.md](docs/NORMAN_API.md) | The hub's local API, for contributors |
 
@@ -126,8 +126,8 @@ with the version you came from and the version you moved to is the fastest way t
 ## Configuration
 
 The only setting needed to get going is the hub's address, and usually Home Assistant finds it
-for you. Three tuning options (polling, wake sweeps, and command spacing) are described in
-[docs/options.md](docs/options.md).
+for you. Three tuning options (polling, wake sweeps, and command spacing) and the sidebar
+entry's switch are described in [docs/options.md](docs/options.md).
 
 **Discovered.** The hub announces itself on the local network, so once the integration is
 installed a **Norman Hub (address)** card appears under **Settings → Devices & services →
@@ -205,8 +205,8 @@ Configuration, and the model, firmware and serial number come from the hub.*
 ### Dashboard card
 
 The integration ships a **Norman Shades** Lovelace card: every blind, by room, drawn as a window
-you drag by each rail's pull tab. It registers itself, so it is in the **Add card** picker with
-nothing to install and nothing to configure.
+you drag by each rail's pull tab. It is in Home Assistant's sidebar from the start, one entry per
+hub, and in the **Add card** picker for any dashboard, with nothing to install or configure.
 
 It is [pictured at the top of this page](#unofficial-norman-smart-blinds-for-home-assistant). Full detail,
 options, and how to build the same thing from Home Assistant's own cards are in

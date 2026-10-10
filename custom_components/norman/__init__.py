@@ -26,7 +26,7 @@ from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import DOMAIN, MANUFACTURER, PLATFORMS
 from .coordinator import NormanConfigEntry, NormanCoordinator
 from .entity import hub_identifier
-from .frontend import async_register_card
+from .frontend import async_add_entry_panel, async_register_card, async_remove_entry_panel
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -93,6 +93,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
 
     # Serve and register the dashboard card. Best-effort: every entity works without it.
     await async_register_card(hass)
+    # The sidebar entry that opens the card full screen (when the option is on).
+    await async_add_entry_panel(hass, entry)
     return True
 
 
@@ -123,7 +125,10 @@ async def _async_reload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bool:
     """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        await async_remove_entry_panel(hass, entry)
+    return unload_ok
 
 
 async def async_remove_config_entry_device(

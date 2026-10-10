@@ -107,6 +107,13 @@ MIN_CONTROL_INTERVAL = 0.3
 MAX_CONTROL_INTERVAL = 5.0
 CONF_CONTROL_INTERVAL = "control_interval"
 
+# A "Norman Shades" entry in Home Assistant's sidebar that opens the dashboard card full
+# screen (frontend.py registers it), so the card needs no dashboard to be built. On by
+# default; with several hubs each gets its own entry. Changing it reloads the entry, which
+# re-syncs the sidebar.
+CONF_SHOW_SIDEBAR_PANEL = "show_sidebar_panel"
+DEFAULT_SHOW_SIDEBAR_PANEL = True
+
 # Pairing. `{"PairingMode": 5}` on control opens the hub's pairing window; status then
 # reports `PairingMode: 5` for ten minutes (22:08:47 to 22:18:48 on 2026-09-18) and 0 after.
 # The hub refused it with Error 8 while sweeping its blinds, and with Error 10 in an

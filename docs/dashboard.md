@@ -24,7 +24,23 @@ the card picker used to supply that automatically. Remove the `title` line to ge
 [`examples/dashboard.yaml`](../examples/dashboard.yaml) is a minimal dashboard built on this
 card. Paste its view into your dashboard's raw configuration editor.
 
-## Adding it
+## In the sidebar
+
+You don't have to build anything to use the card. Once the integration is set up, **Norman
+Shades** appears in Home Assistant's sidebar (<code>/norman-shades</code>) and opens the card
+full screen — no dashboard, no YAML. On a phone it runs edge to edge, and its header carries the
+usual button for opening the sidebar. It is there for every user of your Home Assistant, like any
+dashboard.
+
+- **More than one hub?** Each gets its own sidebar entry, named after its integration entry
+  (rename the entry to rename it) and showing only that hub's blinds.
+- **Don't want it?** Turn off **Show Norman Shades in the sidebar** in the integration's
+  [options](options.md#show-norman-shades-in-the-sidebar); the entry disappears straight away.
+  You can still put the card on any dashboard.
+- It is the same card and the same code as on a dashboard, with no options set. For the list
+  layout or any of the `hide_*` options, put the card on a dashboard instead.
+
+## Adding it to a dashboard
 
 The integration serves the card and registers it as a dashboard resource on its own, so there
 is nothing to install. After setting up the integration (and one Home Assistant restart, if you
@@ -36,7 +52,8 @@ had just installed the integration itself):
 
 In **YAML mode** dashboards the resource list is not writable by an integration, so add it
 once under your `resources:` as a JavaScript module — the log line at startup names the exact
-URL, which is `/norman/norman-shades-card.js?v=<integration version>`.
+URL, which is `/norman/norman-shades-card.js?v=<integration version>`. The sidebar entry needs
+none of this.
 
 ## What it shows
 
@@ -255,6 +272,7 @@ Every option is optional; the card works with none of them.
 ```yaml
 type: custom:norman-shades-card
 title: Norman Hub          # omit to use the hub's own name
+config_entry_id: <id>      # only with more than one hub: show just this one
 hide_picture: false        # list layout: a slider per rail instead of the windows
 hide_battery: false        # hide the battery readings
 hide_room_names: false     # one grid instead of room headings
@@ -269,7 +287,12 @@ bottom_label: Bottom rail  # rename the rails (the status line uses the first wo
 middle_label: Middle rail
 ```
 
-`title` and the `hide_*` options are also available in the card's visual editor.
+`title`, the hub and the `hide_*` options are also available in the card's visual editor.
+
+With more than one hub, a card with no `config_entry_id` shows every hub's blinds together, and
+its whole-house and room presets have no single hub to send to. Pick the hub in the visual
+editor, which fills in `config_entry_id` for you, to give each hub a card of its own. The
+sidebar entries already do this.
 
 ## Using the built-in cards instead
 
@@ -315,6 +338,12 @@ A [diagnostics download](../README.md#diagnostics) reports the same comparison u
 useful when attaching to an issue, since it does not depend on the reporter's browser.
 
 ## Troubleshooting
+
+**There is no Norman Shades in the sidebar.** Check that **Show Norman Shades in the sidebar**
+is on in the integration's options, and that the hub's entry is loaded: the sidebar entry is
+added when the hub is set up, so a hub that was unreachable at startup adds it once it
+connects. Then refresh the browser. A [diagnostics download](../README.md#diagnostics) lists the
+sidebar entries the integration added, under `frontend` as `sidebar_panels`.
 
 **The card is not in the "Add card" list.** Hard-refresh the browser (⇧ and reload) — the
 resource is registered at startup, and a tab open from before will not have it. If it is still

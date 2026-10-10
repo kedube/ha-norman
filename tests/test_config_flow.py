@@ -19,9 +19,11 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 from custom_components.norman.const import (
     CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
+    CONF_SHOW_SIDEBAR_PANEL,
     CONF_WAKE_INTERVAL,
     DEFAULT_CONTROL_INTERVAL,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_SHOW_SIDEBAR_PANEL,
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     MAX_CONTROL_INTERVAL,
@@ -361,11 +363,13 @@ async def test_options_flow_stores_the_poll_interval(hass: HomeAssistant, value:
         result["flow_id"], user_input={CONF_POLL_INTERVAL: value}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    # The wake sweep field keeps its 0 default when only the poll is given.
+    # The wake sweep field keeps its 0 default when only the poll is given, and the sidebar
+    # entry stays on.
     assert entry.options == {
         CONF_POLL_INTERVAL: value,
         CONF_WAKE_INTERVAL: WAKE_DISABLED,
         CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
+        CONF_SHOW_SIDEBAR_PANEL: True,
     }
     assert isinstance(entry.options[CONF_POLL_INTERVAL], int)
 
@@ -490,6 +494,13 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
                 }
             },
         },
+        {
+            "name": CONF_SHOW_SIDEBAR_PANEL,
+            "required": True,
+            "default": DEFAULT_SHOW_SIDEBAR_PANEL,
+            "description": {"suggested_value": DEFAULT_SHOW_SIDEBAR_PANEL},
+            "selector": {"boolean": {}},
+        },
     ]
 
 
@@ -507,6 +518,7 @@ async def test_options_flow_stores_the_wake_interval(hass: HomeAssistant, value:
         CONF_POLL_INTERVAL: 0,
         CONF_WAKE_INTERVAL: value,
         CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
+        CONF_SHOW_SIDEBAR_PANEL: True,
     }
     assert isinstance(entry.options[CONF_WAKE_INTERVAL], int)
 
@@ -534,7 +546,8 @@ async def test_options_flow_rejects_a_wake_interval_below_the_floor(
 async def test_options_form_suggests_both_intervals_when_unconfigured(hass: HomeAssistant) -> None:
     """A fresh entry is seeded with the suggested poll and wake values, not the 0 defaults.
 
-    Command spacing has no "off" value, so its suggestion is simply its default.
+    Command spacing has no "off" value, so its suggestion is simply its default; the sidebar
+    entry is on.
     """
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     result = await _open_options(hass, entry)
@@ -545,4 +558,31 @@ async def test_options_form_suggests_both_intervals_when_unconfigured(hass: Home
         CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL,
         CONF_WAKE_INTERVAL: SUGGESTED_WAKE_INTERVAL,
         CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
+        CONF_SHOW_SIDEBAR_PANEL: True,
     }
+
+
+async def test_options_flow_turns_the_sidebar_entry_off(hass: HomeAssistant) -> None:
+    """Unticking the sidebar toggle is stored, so the next setup leaves the panel out."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={CONF_POLL_INTERVAL: 0, CONF_SHOW_SIDEBAR_PANEL: False}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_SHOW_SIDEBAR_PANEL] is False
+
+
+async def test_options_saved_before_the_sidebar_toggle_show_it_on(hass: HomeAssistant) -> None:
+    """Options stored by an older release have no sidebar key; the form offers it ticked.
+
+    The other fields are seeded from what is stored, so this one must not come back blank,
+    which would read as "off" to someone who never chose that.
+    """
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_POLL_INTERVAL: 120})
+    result = await _open_options(hass, entry)
+
+    schema = result["data_schema"].schema
+    key = next(k for k in schema if str(k) == CONF_SHOW_SIDEBAR_PANEL)
+    assert key.default() is True

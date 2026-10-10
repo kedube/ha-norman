@@ -50,12 +50,14 @@
         "data": {
           "poll_interval": "ポーリング間隔",
           "wake_interval": "ウェイク間隔",
-          "control_interval": "Command spacing"
+          "control_interval": "Command spacing",
+          "show_sidebar_panel": "サイドバーに Norman Shades を表示"
         },
         "data_description": {
           "poll_interval": "各ブラインドの位置をハブから再取得する間隔。短いほど古い位置に早く気づき、長いほど負荷が減ります。0 でポーリングを無効にし、更新はハブの通知のみになります。",
           "wake_interval": "Norman アプリの更新と同じように、すべてのブラインドに応答（バッテリー、位置、最終受信）を求める頻度です。上のポーリングが読み直すだけのハブ側キャッシュを更新します。0 で無効、それ以外は 600〜86400 秒。",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds."
+          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
+          "show_sidebar_panel": "Home Assistant のサイドバーに「Norman Shades」の項目を追加し、カードを全画面で開きます。ダッシュボードを作る必要はありません。ハブが複数ある場合は、ハブごとに項目が追加されます。オフにすると項目は削除されますが、カードは引き続き任意のダッシュボードに追加できます。"
         }
       }
     },

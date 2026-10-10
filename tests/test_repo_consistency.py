@@ -332,6 +332,24 @@ def test_card_file_is_served_from_the_registered_directory() -> None:
     assert CARD_URL_PATH.endswith(CARD_FILENAME)
 
 
+def test_sidebar_panel_matches_its_registration() -> None:
+    """The panel file must ship, define the element frontend.py registers, and load the card.
+
+    A mismatch is silent in the wild: the sidebar entry appears, and opens a blank page.
+    """
+    from custom_components.norman.frontend import CARD_FILENAME, PANEL_ELEMENT, PANEL_FILENAME
+
+    panel = (COMPONENT / "www" / PANEL_FILENAME).read_text(encoding="utf-8")
+    assert set(re.findall(r'customElements\.define\("([a-z-]+)"', panel)) == {PANEL_ELEMENT}
+    # The card it hosts, imported beside it at the panel's own ?v= so the two never mix
+    # versions, and created by the name the card file defines.
+    assert f"./{CARD_FILENAME}?v=" in panel
+    assert 'searchParams.get("v")' in panel
+    assert 'createElement("norman-shades-card")' in panel
+    # The card hides its menu button unless the panel marks it as the panel's.
+    assert 'setAttribute("panel", "")' in panel
+
+
 def test_probe_script_refuses_write_endpoints() -> None:
     """The endpoint prober must never send anything that could change the hub.
 
