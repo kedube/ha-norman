@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.71 — 2026-10-10
 - **The example dashboard is gone.** `examples/dashboard.yaml` was a dashboard to paste in by
   hand; Norman Shades is now in the sidebar with nothing to build, and adding it to a dashboard
   is one card from the picker ([docs/dashboard.md](docs/dashboard.md#on-a-dashboard)).
