@@ -9,9 +9,10 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 > not affiliated with or endorsed by Norman. The protocol has no vendor documentation and could
 > change in a hub firmware update. Use at your own risk; it may void your warranty.
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![GitHub Release](https://img.shields.io/github/v/release/kedube/ha-norman?sort=semver)](https://github.com/kedube/ha-norman/releases)
 [![CI](https://github.com/kedube/ha-norman/actions/workflows/ci.yml/badge.svg)](https://github.com/kedube/ha-norman/actions/workflows/ci.yml)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Release](https://img.shields.io/github/v/release/kedube/ha-norman?sort=semver)](https://github.com/kedube/ha-norman/releases)
+[![License](https://img.shields.io/github/license/kedube/ha-norman)](LICENSE)
 
 <img src="images/dashboard-card.png" alt="Norman Shades: blinds grouped by room, each drawn as a window with its own kind of shade, drape or shutter in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
 
