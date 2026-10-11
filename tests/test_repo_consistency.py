@@ -71,7 +71,8 @@ def test_hacs_declares_a_minimum_home_assistant_version() -> None:
 def test_entity_translation_keys_are_translated() -> None:
     """Every entity description's translation_key needs a name (and buttons an icon)."""
     from custom_components.norman.binary_sensor import CONNECTION, PAIRING_MODE
-    from custom_components.norman.button import BUTTONS, HUB_BUTTONS
+    from custom_components.norman.button import BUTTONS, HUB_BUTTONS, ROOM_BUTTONS
+    from custom_components.norman.number import HUB_NUMBERS, NUMBERS, ROOM_NUMBERS
     from custom_components.norman.sensor import HUB_SENSORS, SENSORS
 
     strings = _load(COMPONENT / "strings.json")["entity"]
@@ -80,7 +81,11 @@ def test_entity_translation_keys_are_translated() -> None:
     assert {CONNECTION.translation_key, PAIRING_MODE.translation_key} == set(
         strings["binary_sensor"]
     )
-    button_keys = {description.translation_key for description in (*BUTTONS, *HUB_BUTTONS)}
+    number_keys = {d.translation_key for d in (*NUMBERS, *ROOM_NUMBERS, *HUB_NUMBERS)}
+    assert number_keys == set(strings["number"])
+    button_keys = {
+        description.translation_key for description in (*BUTTONS, *HUB_BUTTONS, *ROOM_BUTTONS)
+    }
     assert button_keys == set(strings["button"])
     icons = _load(COMPONENT / "icons.json")["entity"]["button"]
     assert button_keys == set(icons)
@@ -288,6 +293,27 @@ def test_card_matches_the_translation_keys_the_entities_use() -> None:
     assert {"bottom_rail", "middle_rail"} <= matched, (
         "the card must match both rail covers by translation key"
     )
+
+
+def test_card_finds_the_hub_by_keys_only_the_hub_has() -> None:
+    """``HUB_KEYS`` must name hub entities, and only hub entities.
+
+    The card titles itself after the device carrying one of them. A room device carries no
+    cover either, so "the device without a cover" stopped meaning the hub once rooms became
+    devices -- and a renamed hub key would leave the card titled after nothing, silently.
+    """
+    from custom_components.norman.binary_sensor import PAIRING_MODE
+    from custom_components.norman.button import HUB_BUTTONS
+    from custom_components.norman.sensor import HUB_SENSORS
+
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    block = re.search(r"^const HUB_KEYS = new Set\(\[(.*?)\]\);", card, re.M | re.S)
+    assert block, "no HUB_KEYS set found in the card"
+    hub_keys = set(re.findall(r'"(\w+)"', block.group(1)))
+
+    hub_only = {d.translation_key for d in (*HUB_SENSORS, *HUB_BUTTONS, PAIRING_MODE)}
+    assert hub_keys, "HUB_KEYS is empty"
+    assert hub_keys <= hub_only, f"not hub entities: {sorted(hub_keys - hub_only)}"
 
 
 def test_card_controls_each_rail_independently() -> None:

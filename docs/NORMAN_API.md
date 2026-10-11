@@ -248,6 +248,25 @@ The hub acknowledges immediately, echoing the fields it accepted (`PeripheralUID
 positions, `TaskID`, `RequestTimestamp`) plus its own millisecond `Timestamp`. The blind then
 moves and the new position arrives through the notification stream and the next `status` call.
 
+**Room-wide position moves work too.** On 2026-10-10, a single `/control` request with
+`RoomID` and both rail fields, but no `PeripheralUID` or `GroupID`, moved both two-rail blinds
+in the Office room. `{"RoomID": 29550, "BottomRailPosition": 25, "MiddleRailPosition": 100}`
+sent both bottom rails from 0 to 25 (one reported 24); a second request with bottom 25 and
+middle 75 brought both blinds to 25/75. A third request with bottom 0 and middle 100 restored
+both to their starting positions. All three replies had `Error: 0`, and no blind outside Office
+changed position during the first move. The hub exposed each target immediately, while actual
+positions arrived about 10 seconds later. This room-wide form has not been seen from the
+ShadeAuto app; it was tested directly against the hub.
+
+**Hub-wide position moves also work without any address field.** On 2026-10-10,
+`{"BottomRailPosition": 0, "MiddleRailPosition": 100}` with no `RoomID`, `GroupID`, or
+`PeripheralUID` returned `Error: 0` and set the bottom-rail target to 0 on all three
+previously open single-rail Den shades. Two reached 0; the third reported stopping at 18.
+Separate per-blind moves returned all three to their original 100, and a final `status` read
+matched the starting positions of all 13 blinds on the hub. The partial move means the reply
+and target alone are not proof that every blind reaches the requested position. The ShadeAuto
+app has not been seen sending this hub-wide position form either.
+
 `GroupID` is the blind's **address within its room** — the button (1, 2, 4, ...) a paired
 Norman remote uses for it. The same value repeats across rooms, so it is only meaningful with
 `RoomID`, and the pair `(RoomID, GroupID)` is **unique per blind** (verified across every blind
@@ -260,7 +279,8 @@ alongside as well, but the room/group pair is what selects the target — which 
 test of `{"Favorite": 0, "PeripheralUID": …}` alone appeared to do nothing.
 
 The app also sends `RoomID` and `GroupID` with every move; the hub accepts moves without them,
-so the integration does not send them. For a single-rail blind (`ModuleType` 32) the app sends
+so the integration does not send them with one blind's move (a `RoomID` without
+`PeripheralUID` is the room-wide move above). For a single-rail blind (`ModuleType` 32) the app sends
 `BottomRailPosition` only and the hub's echo reports `MiddleRailPosition: 0`; the integration
 sends both rails for every type, which the hub accepts equally.
 
@@ -281,7 +301,7 @@ observed. All of the following were captured from the Norman app:
 | `MotorStop` | 170 | Stop the motor where it is. **Used** by the integration for `stop_cover` and `stop_cover_tilt` (one motor, one stop). |
 | `SetMotorToTopLimit` | 170 | Drive toward the stored top limit **while held**: the app sends it every ~0.3 s for as long as its OPEN control is pressed, only inside the Shade Limit Setting screen. Not a one-shot move, so it has no button; `send_hub_command` can send it. |
 | `SetMotorToBottomLimit` | 170 | The same, downward. Also hold-to-run, also no button. |
-| `MotorFineTuneToUp` | 170 | Jog up one small step. Sent as discrete taps (the capture shows single sends as well as short bursts as the user nudges a rail), unlike the run-to-limit verbs' steady ~0.3 s repeat while held — which is why this one suits a button. Addressed by `PeripheralUID`, never by room/group. **Used** (Jog up button). |
+| `MotorFineTuneToUp` | 170 | Jog up one small step. Sent as discrete taps (the capture shows single sends as well as short bursts as the user nudges a rail), unlike the run-to-limit verbs' steady ~0.3 s repeat while held — which is why this one suits a button. The app uses `PeripheralUID`; direct tests also confirmed room and hub scope. **Used** (Jog up button). |
 | `MotorFineTuneToDown` | 170 | Jog down a small step. **Used** (Jog down button). |
 | `FindTop` | 0 | Sent when opening the limit-setting screen and again when leaving it; presumably re-syncs the motor to its top. |
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
@@ -308,10 +328,54 @@ and clean verbs change how a blind behaves and may need a physical recalibration
 
 ### Room-wide and hub-wide control
 
-Two verbs work **without** `PeripheralUID`, addressing every blind in a room or on the hub in
-one request. Both scopes are captured from the app: the **room** forms from a room screen, and
-the **hub-wide** forms from the **All Rooms** header on the app's hub main page
+The `Switch` and `Favorite` verbs work **without** `PeripheralUID`, addressing every blind in
+a room or on the hub in one request. Both scopes are captured from the app: the **room** forms
+come from a room screen, and the **hub-wide** forms from the **All Rooms** header on its main page
 (`Hub_Main_Page_Header_All_Rooms`), which offers the same three buttons for the whole house.
+The position fields also accept room-wide and hub-wide scopes, as tested above, though neither
+form has been captured from the app.
+
+| Control fields | One blind | One room | Whole hub |
+|---|---|---|---|
+| `BottomRailPosition` + `MiddleRailPosition` | Confirmed | Confirmed on the two Office dual-rail blinds | Confirmed fan-out on the three Den single-rail blinds; one stopped short |
+| One rail field alone | Captured from the app | Middle-only returned `Error: 2`; bottom-only was accepted but set the middle target to 0 | Middle-only returned `Error: 2`; bottom-only not tested |
+| `Switch` / `Favorite` | Captured from the app and confirmed | Confirmed | Confirmed |
+| `MotorStop` | Captured from the app | Stopped both moving Office shades | Stopped one moving Office shade; simultaneous motors in multiple rooms not tested |
+| `MotorFineTuneToUp` / `MotorFineTuneToDown` | Captured from the app | Small position changes on both Office shades | Small position changes in Office and Den; all 13 blinds reported in |
+| `StatusRequest` / `ReportBatteryLevel` | `StatusRequest` confirmed | `ReportBatteryLevel` confirmed | `ReportBatteryLevel` confirmed |
+| Shutter `Position` (0–7) | Built by the app's library; no live Shutter test here | Not tested | Not tested |
+
+The current hub has cellular shades only (module types 32 and 33). The position result does
+not establish how a room or hub-wide command would affect a SmartDrape, PerfectSheer, or
+Shutter. An `Error: 0` reply and a changed target also do not guarantee every motor completes
+its move, as the Den test shows.
+
+**A missing rail field is not preserved at broader scopes.** A room request containing only
+`MiddleRailPosition: 75` returned `Error: 2` six times, while a two-field request to the same
+room succeeded. The hub-wide middle-only form also returned `Error: 2`. A room request with
+only `BottomRailPosition: 0` returned `Error: 0` but set both Office shades' *middle* targets
+to 0, even though they had been at 100. An explicit two-field request restored them. Use both
+rail fields for room or hub-wide position moves; the hub-wide bottom-only form was not tested.
+
+**Stop and jog also accept broader scopes.** From about 25/75, room-scoped fine-tune taps
+produced small position changes on both Office shades. A room-scoped `MotorStop: 170` stopped
+the pair at bottom 48 and 49 while they were heading for 100. An unscoped `MotorStop: 170`
+stopped one moving Office shade at 26 instead of 100. Two unscoped
+`MotorFineTuneToDown: 170` taps shifted the staged Office shade from 25/75 to 24/74 and all
+three Den shades from bottom 100 to 99; all 13 blinds' last-seen timestamps advanced. All
+were returned to their starting positions. The unscoped stop test had only one motor moving,
+so stopping several rooms at once remains unverified.
+
+The hub acknowledged a later room position restore and stored both Office targets, but one
+shade did not move until its position command was resent individually. Multi-blind commands
+need an actual-position check and a recovery path; `Error: 0` is only acceptance by the hub.
+
+The integration's room and **All blinds** position sliders work within these limits
+(`NormanCoordinator.async_move_room`). Every room request carries both rail fields. It is sent
+only when every blind in scope is a single- or two-rail shade (`ROOM_POSITION_TYPES`) and
+would be sent the same pair by its own slider anyway; otherwise each blind is sent its own move,
+paced. Each blind moved is then watched like any single move, and the recovery is that
+blind's own position command, never the room request again.
 
 The hub-wide form is simply the bare verb with **no scope field at all** — no `RoomID`, no
 all-rooms marker: `{"Switch": 0}`, `{"Switch": 1}`, `{"Favorite": 0}`. An omitted scope means
@@ -361,10 +425,10 @@ and the blackout below it covers the window. Reading this from a capture alone i
 `Switch` left the middle rail untouched. Stage a blind away from both rails' end positions
 before drawing conclusions.
 
-`norman.room_command` sends these three, and the hub's three **All blinds** buttons send
-the hub-wide form. The hub echoes `Switch` / `Favorite` and `RoomID`.
+`norman.room_command` and each room's buttons send these three, and the hub's three **All
+blinds** buttons send the hub-wide form. The hub echoes `Switch` / `Favorite` and `RoomID`.
 
-**Both verbs take three scopes, selected by which address fields are present:**
+**`Switch` and `Favorite` take three scopes, selected by which address fields are present:**
 
 | Scope | Address fields | Sent by |
 |---|---|---|
@@ -702,6 +766,9 @@ cover / number action ──► control (both positions) ──► status (reque
 cover stop ──► control (MotorStop) ──► status (request_refresh)
 button press ──► control (Switch / Favorite by room+group, or jog by uid) ──► status (refresh)
                   (Switch / Favorite are then watched, and resent once if the blind never moved)
+room / hub slider ──► control (both positions, RoomID or no address; or one per blind) ──► status
+                  (each blind is then watched, and sent its own move if it never moved)
+room / hub button ──► control (verb, RoomID or no address) ──► status (refresh)
 get_hub_data action ──► GetAllPeripheral + status (redacted, returned as the response)
 send_hub_command action ──► control (caller's fields) ──► status
 mDNS announcement ──► config flow ──► registration (identity) ──► offer, or refresh the address
@@ -712,8 +779,9 @@ the local ARP table when the entry loads, so it is only available when Home Assi
 network segment with the hub. Do not go looking for it in a capture.
 
 The rail sliders (`number`) and the covers share one code path, so both send the same
-both-rails `control` call. The five buttons are the only place the integration sends a
-[control verb](#control-verbs) other than `MotorStop` without the user reaching for
+both-rails `control` call; a room's and the hub's sliders work each blind's move out the same
+way. The buttons — a blind's, a room's and the hub's — are the only place the integration sends
+a [control verb](#control-verbs) other than `MotorStop` without the user reaching for
 `send_hub_command`.
 
 `status` can also be re-read on a timer (off by default; see the poll interval option), which

@@ -153,6 +153,18 @@
       },
       "middle_rail_position": {
         "name": "Posición del riel intermedio"
+      },
+      "room_bottom_rail_position": {
+        "name": "Posición del riel inferior"
+      },
+      "room_middle_rail_position": {
+        "name": "Posición del riel intermedio"
+      },
+      "all_bottom_rail_position": {
+        "name": "All blinds bottom rail position"
+      },
+      "all_middle_rail_position": {
+        "name": "All blinds middle rail position"
       }
     },
     "button": {
@@ -164,6 +176,15 @@
       },
       "all_favorite": {
         "name": "All blinds favorite position"
+      },
+      "all_stop": {
+        "name": "All blinds stop"
+      },
+      "all_jog_up": {
+        "name": "All blinds jog up"
+      },
+      "all_jog_down": {
+        "name": "All blinds jog down"
       },
       "best_privacy": {
         "name": "Máxima privacidad"
@@ -188,6 +209,27 @@
       },
       "start_pairing": {
         "name": "Iniciar emparejamiento"
+      },
+      "room_stop": {
+        "name": "Detener"
+      },
+      "room_best_privacy": {
+        "name": "Máxima privacidad"
+      },
+      "room_best_view": {
+        "name": "Mejor vista"
+      },
+      "room_favorite": {
+        "name": "Posición favorita"
+      },
+      "room_jog_up": {
+        "name": "Paso hacia arriba"
+      },
+      "room_jog_down": {
+        "name": "Paso hacia abajo"
+      },
+      "room_refresh": {
+        "name": "Actualizar persianas"
       }
     },
     "sensor": {

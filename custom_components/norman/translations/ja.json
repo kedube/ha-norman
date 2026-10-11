@@ -153,6 +153,18 @@
       },
       "middle_rail_position": {
         "name": "ミッドレール位置"
+      },
+      "room_bottom_rail_position": {
+        "name": "ボトムレール位置"
+      },
+      "room_middle_rail_position": {
+        "name": "ミッドレール位置"
+      },
+      "all_bottom_rail_position": {
+        "name": "All blinds bottom rail position"
+      },
+      "all_middle_rail_position": {
+        "name": "All blinds middle rail position"
       }
     },
     "button": {
@@ -164,6 +176,15 @@
       },
       "all_favorite": {
         "name": "All blinds favorite position"
+      },
+      "all_stop": {
+        "name": "All blinds stop"
+      },
+      "all_jog_up": {
+        "name": "All blinds jog up"
+      },
+      "all_jog_down": {
+        "name": "All blinds jog down"
       },
       "best_privacy": {
         "name": "プライバシー重視"
@@ -188,6 +209,27 @@
       },
       "start_pairing": {
         "name": "ペアリングを開始"
+      },
+      "room_stop": {
+        "name": "停止"
+      },
+      "room_best_privacy": {
+        "name": "プライバシー重視"
+      },
+      "room_best_view": {
+        "name": "眺望重視"
+      },
+      "room_favorite": {
+        "name": "お気に入り位置"
+      },
+      "room_jog_up": {
+        "name": "上へ微調整"
+      },
+      "room_jog_down": {
+        "name": "下へ微調整"
+      },
+      "room_refresh": {
+        "name": "ブラインドを更新"
       }
     },
     "sensor": {

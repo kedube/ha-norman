@@ -55,7 +55,9 @@ data:
 
 Run one of the Norman app's own **room** buttons against every blind in a room. The hub
 accepts `RoomID` in place of `PeripheralUID` for these verbs, so this is a single request no
-matter how many blinds the room holds — the same request the app sends.
+matter how many blinds the room holds — the same request the app sends. Each room's device has
+the same four as buttons ([Rooms and the whole house](entities.md#rooms-and-the-whole-house));
+this action is for naming the room in a script.
 
 | Field | Required | Values | Meaning |
 |---|---|---|---|
@@ -67,7 +69,7 @@ matter how many blinds the room holds — the same request the app sends.
 |---|---|---|
 | `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that draws the blackout, which hangs below the middle rail, across the window, with the light-filtering sheer above it stacked fully open. |
 | `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. |
-| `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant has no equivalent, so this action is the only way to reach it for a whole room. |
+| `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant's cover actions have no equivalent; the room's own **Favorite position** button sends the same request. |
 | `refresh` | `{"ReportBatteryLevel": 0, "RoomID": …}` | Asks every blind in the room to **report in** — battery, position and last-seen — the same request the app's refresh sends on its device & battery status screen. Nothing moves. On hardware all three blinds in a room answered within five seconds; hub-wide, every battery blind over about half a minute. The hub-wide sweep skips wired (single-rail) blinds, so each of those in scope gets its own `StatusRequest` afterwards. The answers arrive as the hub's own notifications, so the entities follow a few seconds after the call returns. The **Request status** button does this for one blind and **Refresh blinds** on the hub for all of them (see [docs/entities.md](entities.md#hub-buttons)). |
 
 ```yaml
@@ -92,10 +94,32 @@ All four commands work without a room — the first three are what the app's **A
 
 ### A whole room to any position
 
-The hub has no room-wide position command. The app's room screen offers only the buttons
-above, and no other room verb has been captured from it, so `room_command` cannot send a room to,
-say, 40%. Home Assistant can, by targeting the room's **area** with the standard cover action,
-which sends each blind its own command:
+Each room has its own **Bottom rail position** and **Middle rail position** sliders, and the
+hub has **All blinds** ones ([Rooms and the whole house](entities.md#rooms-and-the-whole-house)).
+They are `number` entities, so `number.set_value` drives them:
+
+```yaml
+action: number.set_value
+target:
+  entity_id: number.office_office_bottom_rail_position
+data:
+  value: 40
+```
+
+That moves the bottom rail of every blind in the office to 40 and leaves each one's middle rail
+where it was going. When the blinds are already moving together — after a preset, or an
+earlier room move — it is **one** request to the hub, a `/control` payload with `RoomID` and
+both rail fields, the form a [live test](NORMAN_API.md#post-nmv1control) confirmed; when they
+are not, each blind is sent its own move so no middle rail is dragged to a neighbour's. Every
+blind moved is checked afterwards and sent its move again if it did not go: the hub accepting a
+room request is not proof that every blind carried it out. Stop and jog for a room are its
+**Stop**, **Jog up** and **Jog down** buttons; for the house, the hub's **All blinds** ones.
+
+Two positions at once — say bottom 25 and middle 75 for the whole room — are two
+`number.set_value` calls, or a scene holding both sliders; the second starts from the first.
+
+Home Assistant can also target the room's **area** with the standard cover action, which sends
+each blind its own command:
 
 ```yaml
 action: cover.set_cover_position
@@ -207,13 +231,14 @@ clears a setting. These were captured from the Norman app, so they are known to 
 | `{Calibration: 0}` | Run the motor's calibration. | changes the blind's travel |
 | `{StatusRequest: 0}` | Ask this blind to report in; nothing moves. The **Request status** button. | yes |
 
-Three more verbs are confirmed only in their **room-wide** form, which this action cannot send
-because it always addresses one blind: `{Switch: 1}` / `{Switch: 0}` opens or closes every
-blind in a room (or on the hub), `{Favorite: 0}` sends a room to its favorite positions, and
-`{ReportBatteryLevel: 0}` has a room (or the hub) report in — `norman.room_command`'s `refresh`.
-The per-blind `Switch` form has not been captured; the per-blind `Favorite` form is what the
-the Favorite position button sends. The rest of the vocabulary (`MotorSpeedAdjust`,
-`ReverseMotorDirection`, and others; see [docs/NORMAN_API.md](NORMAN_API.md#control-verbs))
+`Switch` and `Favorite` are confirmed at blind, room, and hub scope. For one blind the app
+uses `RoomID` + `GroupID`; the Best privacy, Best view, and Favorite buttons already send
+those forms. `ReportBatteryLevel` refreshes a room or the whole hub, while `StatusRequest`
+refreshes one blind. This action always fills in `PeripheralUID`, so use
+[`norman.room_command`](#normanroom_command) for room or hub presets and refresh. Arbitrary
+room and hub positions are confirmed in the raw API but have no integration action yet. The
+rest of the vocabulary (`MotorSpeedAdjust`, `ReverseMotorDirection`, and others; see
+[docs/NORMAN_API.md](NORMAN_API.md#control-verbs))
 has not been seen from the app at all. If you confirm one, open an issue with the fields and
 the reply so it can get a proper entity.
 

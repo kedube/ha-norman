@@ -46,13 +46,8 @@ from .const import (
     SHUTTER_CLOSED,
     SHUTTER_OPEN,
 )
-from .coordinator import NormanConfigEntry, NormanCoordinator
-from .entity import (
-    NormanRailMixin,
-    async_add_entities_for_new_devices,
-    async_remove_entity,
-    clamp_position,
-)
+from .coordinator import NormanConfigEntry, NormanCoordinator, clamp_position
+from .entity import NormanRailMixin, async_add_entities_for_new_devices, async_remove_entity
 
 _LOGGER = logging.getLogger(__name__)
 

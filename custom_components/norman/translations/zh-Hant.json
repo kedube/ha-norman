@@ -153,6 +153,18 @@
       },
       "middle_rail_position": {
         "name": "中樑位置"
+      },
+      "room_bottom_rail_position": {
+        "name": "下樑位置"
+      },
+      "room_middle_rail_position": {
+        "name": "中樑位置"
+      },
+      "all_bottom_rail_position": {
+        "name": "All blinds bottom rail position"
+      },
+      "all_middle_rail_position": {
+        "name": "All blinds middle rail position"
       }
     },
     "button": {
@@ -164,6 +176,15 @@
       },
       "all_favorite": {
         "name": "All blinds favorite position"
+      },
+      "all_stop": {
+        "name": "All blinds stop"
+      },
+      "all_jog_up": {
+        "name": "All blinds jog up"
+      },
+      "all_jog_down": {
+        "name": "All blinds jog down"
       },
       "best_privacy": {
         "name": "最佳隱私"
@@ -188,6 +209,27 @@
       },
       "start_pairing": {
         "name": "開始配對"
+      },
+      "room_stop": {
+        "name": "停止"
+      },
+      "room_best_privacy": {
+        "name": "最佳隱私"
+      },
+      "room_best_view": {
+        "name": "最佳視野"
+      },
+      "room_favorite": {
+        "name": "我的最愛位置"
+      },
+      "room_jog_up": {
+        "name": "向上微調"
+      },
+      "room_jog_down": {
+        "name": "向下微調"
+      },
+      "room_refresh": {
+        "name": "重新整理窗簾"
       }
     },
     "sensor": {

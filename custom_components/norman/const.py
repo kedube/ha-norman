@@ -300,6 +300,9 @@ SENSITIVE_HUB_KEYS = frozenset(
 HUB_COMMAND_TRIGGER = 170
 HUB_COMMAND_SETTING = 0
 HUB_CMD_STOP = "MotorStop"
+# Stop and the two jogs take PeripheralUID (one blind, as the app sends them), RoomID (every
+# blind in a room) or no address (every blind on the hub); the broader two were confirmed by
+# direct tests on 2026-10-10, not captured from the app.
 HUB_CMD_JOG_UP = "MotorFineTuneToUp"
 HUB_CMD_JOG_DOWN = "MotorFineTuneToDown"
 # SetMotorToTopLimit / SetMotorToBottomLimit deliberately have no constant here. They are
@@ -387,6 +390,19 @@ MODULE_DETAIL_COVER_TYPES: dict[tuple[int, int], str] = {
     (49, 3): COVER_TYPE_SHEER,
 }
 DEFAULT_COVER_TYPE = COVER_TYPE_TWO_RAIL
+
+# The cover types a single room- or hub-wide position request may reach. The hub takes
+# `RoomID` (or no address at all) with both rail fields and sends every blind in scope the
+# same pair: confirmed on 2026-10-10 on two-rail cellular shades in one room and single-rail
+# ones across the hub (docs/NORMAN_API.md, "Room-wide and hub-wide control"). What the same
+# request does to a SmartDrape's vanes, a PerfectSheer's or a Shutter's louvers is unknown, so
+# a room holding one of those is moved one blind at a time instead.
+ROOM_POSITION_TYPES: frozenset[str] = frozenset({COVER_TYPE_SINGLE_RAIL, COVER_TYPE_TWO_RAIL})
+# The middle rail a room request carries when nothing in scope has one. It still has to be
+# sent (see ROOM_POSITION_TYPES), and 100 is what the hub's own Best privacy and Best view
+# record for every blind, single-rail ones included -- and what the hub-wide test moved the
+# single-rail den shades with.
+ROOM_MIDDLE_WITHOUT_TWO_RAIL = 100
 
 # A SmartDrape's vanes take seven positions and nothing else: the app sends only these
 # values for its seven-stop vane slider, and draws them symmetrically -- 0 and 100 fully

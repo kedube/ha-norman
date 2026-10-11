@@ -153,6 +153,18 @@
       },
       "middle_rail_position": {
         "name": "Position du rail intermédiaire"
+      },
+      "room_bottom_rail_position": {
+        "name": "Position du rail inférieur"
+      },
+      "room_middle_rail_position": {
+        "name": "Position du rail intermédiaire"
+      },
+      "all_bottom_rail_position": {
+        "name": "All blinds bottom rail position"
+      },
+      "all_middle_rail_position": {
+        "name": "All blinds middle rail position"
       }
     },
     "button": {
@@ -164,6 +176,15 @@
       },
       "all_favorite": {
         "name": "All blinds favorite position"
+      },
+      "all_stop": {
+        "name": "All blinds stop"
+      },
+      "all_jog_up": {
+        "name": "All blinds jog up"
+      },
+      "all_jog_down": {
+        "name": "All blinds jog down"
       },
       "best_privacy": {
         "name": "Intimité maximale"
@@ -188,6 +209,27 @@
       },
       "start_pairing": {
         "name": "Démarrer l'appairage"
+      },
+      "room_stop": {
+        "name": "Arrêt"
+      },
+      "room_best_privacy": {
+        "name": "Intimité maximale"
+      },
+      "room_best_view": {
+        "name": "Meilleure vue"
+      },
+      "room_favorite": {
+        "name": "Position favorite"
+      },
+      "room_jog_up": {
+        "name": "Pas vers le haut"
+      },
+      "room_jog_down": {
+        "name": "Pas vers le bas"
+      },
+      "room_refresh": {
+        "name": "Actualiser les stores"
       }
     },
     "sensor": {

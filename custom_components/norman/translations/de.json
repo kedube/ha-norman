@@ -153,6 +153,18 @@
       },
       "middle_rail_position": {
         "name": "Position der mittleren Schiene"
+      },
+      "room_bottom_rail_position": {
+        "name": "Position der unteren Schiene"
+      },
+      "room_middle_rail_position": {
+        "name": "Position der mittleren Schiene"
+      },
+      "all_bottom_rail_position": {
+        "name": "All blinds bottom rail position"
+      },
+      "all_middle_rail_position": {
+        "name": "All blinds middle rail position"
       }
     },
     "button": {
@@ -164,6 +176,15 @@
       },
       "all_favorite": {
         "name": "All blinds favorite position"
+      },
+      "all_stop": {
+        "name": "All blinds stop"
+      },
+      "all_jog_up": {
+        "name": "All blinds jog up"
+      },
+      "all_jog_down": {
+        "name": "All blinds jog down"
       },
       "best_privacy": {
         "name": "Beste Privatsphäre"
@@ -188,6 +209,27 @@
       },
       "start_pairing": {
         "name": "Kopplung starten"
+      },
+      "room_stop": {
+        "name": "Stopp"
+      },
+      "room_best_privacy": {
+        "name": "Beste Privatsphäre"
+      },
+      "room_best_view": {
+        "name": "Beste Aussicht"
+      },
+      "room_favorite": {
+        "name": "Favoritenposition"
+      },
+      "room_jog_up": {
+        "name": "Schritt nach oben"
+      },
+      "room_jog_down": {
+        "name": "Schritt nach unten"
+      },
+      "room_refresh": {
+        "name": "Jalousien aktualisieren"
       }
     },
     "sensor": {

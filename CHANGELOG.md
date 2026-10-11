@@ -5,6 +5,35 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Every room has its own controls, and so does the whole house.** Each of the hub's rooms
+  is now a device in its area, with a **Bottom rail position** and **Middle rail position**
+  slider (for the rails its blinds have) and **Stop**, **Best privacy**, **Best view**,
+  **Favorite position**, **Jog up**, **Jog down** and **Refresh blinds** buttons. The hub's
+  device gains **All blinds** bottom and middle rail sliders and **All blinds stop**, **jog
+  up** and **jog down**. Each is one request to the hub however many blinds it moves. A room
+  slider moves every blind exactly as its own slider would: when the blinds would all be sent
+  the same pair, that is one request; when they would not, each is sent its own, so no blind's
+  other rail is dragged to a neighbour's. Rooms holding a SmartDrape, PerfectSheer or Shutter
+  are moved blind by blind, as the room request has not been tried on them. Every blind a
+  slider moves is watched and, if it does not go, sent the move on its own. See
+  [Rooms and the whole house](docs/entities.md#rooms-and-the-whole-house).
+- **Norman Shades no longer mistakes a room for the hub.** The card titled itself after the
+  first Norman device without a cover, which a room device now is too; it now looks for the
+  hub's own entities.
+- **Confirmed room-wide and hub-wide arbitrary positions on the hub.** A single `RoomID` plus
+  `BottomRailPosition` and `MiddleRailPosition` control request moved both office blinds
+  to 25/75 and restored them to 0/100. Omitting the address moved two den blinds to 0; a
+  third stopped at 18 before all three were restored to 100. The protocol and service docs
+  now record these capabilities and which other control scopes remain untested.
+- **Direct hub tests also confirmed room and hub stop and jog.** A room stop halted both
+  moving office shades, a hub stop halted one, and a hub jog made small changes in office
+  and den shades. Single-field room positions are unsafe to infer from per-blind behavior:
+  middle-only was rejected, while bottom-only reset the omitted middle target to 0. A
+  room restore also needed one per-blind resend despite the hub accepting it. The protocol
+  reference records the results and the remaining limits.
+
 ## 0.71 — 2026-10-10
 - **The example dashboard is gone.** `examples/dashboard.yaml` was a dashboard to paste in by
   hand; Norman Shades is now in the sidebar with nothing to build, and adding it to a dashboard

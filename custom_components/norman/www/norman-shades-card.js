@@ -57,6 +57,18 @@ const KEY_LOUVERS = "louvers";
 const KEY_BOTTOM_POSITION = "bottom_rail_position";
 const KEY_MIDDLE_POSITION = "middle_rail_position";
 const KEY_BATTERY = "battery_level";
+// Entities only the hub device carries, which is how the card tells the hub from the rest:
+// each of the hub's rooms is a Norman device without a cover as well. Several, because the
+// frontend registry leaves out disabled entities and any one of these can be disabled.
+const HUB_KEYS = new Set([
+  "mac_address",
+  "time_zone",
+  "wifi_ssid",
+  "wifi_rssi",
+  "pairing_mode",
+  "refresh_blinds",
+  "start_pairing",
+]);
 
 // The Norman app's three presets. The short label is what is printed; the title is the full
 // name, used for the tooltip and for assistive technology.
@@ -1263,7 +1275,7 @@ class NormanShadesCard extends HTMLElement {
       blind.stack = STACK_SIDES[stack] ? stack : "left";
     }
 
-    // A device with no cover is the hub, not a blind.
+    // A device with no cover is the hub or one of its rooms, not a blind.
     return [...blinds.values()].filter((blind) => blind.bottomCover);
   }
 
@@ -1287,9 +1299,11 @@ class NormanShadesCard extends HTMLElement {
   /**
    * The hub's name, as Home Assistant has it.
    *
-   * The hub is the one Norman device with entities but no cover -- it carries the MAC
-   * address, Wi-Fi and time-zone sensors. `name_by_user` wins, matching how Home Assistant
-   * shows the device everywhere else. Returns null when there is no hub to name.
+   * The hub is the Norman device carrying the hub's own entities (`HUB_KEYS`): its MAC
+   * address, Wi-Fi and time-zone sensors, pairing and refresh. Not just any device without a
+   * cover -- each of the hub's rooms is one of those too. `name_by_user` wins, matching how
+   * Home Assistant shows the device everywhere else. Returns null when there is no hub to
+   * name.
    */
   _hubName() {
     const hass = this._hass;
@@ -1297,19 +1311,12 @@ class NormanShadesCard extends HTMLElement {
 
     const registry = hass.entities || {};
     const devices = hass.devices || {};
-    const withCovers = new Set();
-    const norman = new Set();
 
-    for (const [entityId, entry] of Object.entries(registry)) {
+    for (const entry of Object.values(registry)) {
       if (entry.platform !== DOMAIN || !entry.device_id) continue;
+      if (!HUB_KEYS.has(entry.translation_key)) continue;
       if (!this._inScope(entry.device_id)) continue;
-      norman.add(entry.device_id);
-      if (entityId.startsWith("cover.")) withCovers.add(entry.device_id);
-    }
-
-    for (const deviceId of norman) {
-      if (withCovers.has(deviceId)) continue;
-      const device = devices[deviceId];
+      const device = devices[entry.device_id];
       const name = device && (device.name_by_user || device.name);
       if (name) return name;
     }
@@ -1602,9 +1609,9 @@ class NormanShadesCard extends HTMLElement {
    * sends. They carry the app's names rather than open/close arrows because they are not
    * open and close: "Best privacy" leaves a two-rail blind's middle rail fully OPEN.
    *
-   * There is deliberately no house-wide Stop: the hub's stop is per blind, so it would have
-   * to fan out over every cover, and a Stop that lags the blinds it is stopping is worse
-   * than none. A room's Stop fans out over a smaller set.
+   * There is no house-wide Stop button. The hub accepted an unscoped MotorStop and stopped
+   * one moving blind in a direct test, but stopping simultaneous motors across rooms has
+   * not been verified. A room's Stop here still fans out through its covers.
    */
   _buildHomeControls() {
     const controls = el("div", "segmented home-buttons");
@@ -2467,7 +2474,7 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /**
-   * Stop a blind. The hub's stop is per blind, so one call on a moving rail stops them all;
+   * Stop this blind. Its rails share one motor, so one call on a moving rail stops them all;
    * a second would only queue behind it at the hub's pace.
    */
   _stop(rails) {

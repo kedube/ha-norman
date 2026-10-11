@@ -21,14 +21,22 @@ from .const import (
     HUB_CMD_JOG_DOWN,
     HUB_CMD_JOG_UP,
     HUB_CMD_REQUEST_STATUS,
+    HUB_CMD_STOP,
     HUB_CMD_SWITCH,
     HUB_COMMAND_SETTING,
     HUB_COMMAND_TRIGGER,
     HUB_SWITCH_CLOSE,
     HUB_SWITCH_OPEN,
 )
-from .coordinator import NormanConfigEntry, NormanCoordinator
-from .entity import NormanEntity, NormanHubEntity, async_add_entities_for_new_devices
+from .coordinator import NormanConfigEntry, NormanCoordinator, rooms_of
+from .entity import (
+    NormanEntity,
+    NormanHubEntity,
+    NormanScopeEntity,
+    async_add_entities_for_new_devices,
+    async_add_scope_entities,
+)
+from .models import NormanDevices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,8 +49,9 @@ class NormanButtonDescription(ButtonEntityDescription):
     """A button that sends one verb field to the hub's control call."""
 
     fields: dict[str, Any]
-    # Switch and Favorite are addressed by RoomID + GroupID, not PeripheralUID; the motor
-    # verbs (jog, run-to-limit) take PeripheralUID as usual.
+    # Switch and Favorite are addressed by RoomID + GroupID, not PeripheralUID; these
+    # per-blind motor buttons take PeripheralUID. Stop and jog also accept broader scopes
+    # on the hub, but these buttons target one blind.
     addressed: bool = False
     # Whether the verb moves the blind, and so replaces any move still in flight.
     moves: bool = True
@@ -118,7 +127,7 @@ class NormanHubButtonDescription(ButtonEntityDescription):
     """
 
     press_fn: Callable[[NormanCoordinator], Awaitable[Any]]
-    # Whether the action moves every blind, and so replaces any move still in flight.
+    # Whether the action moves or stops every blind, and so replaces any move still in flight.
     moves_blinds: bool = False
 
 
@@ -163,6 +172,37 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
             None, {HUB_CMD_FAVORITE: HUB_COMMAND_SETTING}
         ),
     ),
+    # Stop and jog for the whole house, the same way: the bare verb with no scope field.
+    # Not from the app, which has no such buttons; confirmed by direct tests on 2026-10-10. An
+    # unscoped stop halted the one shade moving at the time and an unscoped jog nudged every
+    # blind, but stopping motors in several rooms at once has not been tried. Stop sits with
+    # the hub's sliders rather than under Configuration: it is the control they need.
+    NormanHubButtonDescription(
+        key="all_stop",
+        translation_key="all_stop",
+        moves_blinds=True,
+        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+            None, {HUB_CMD_STOP: HUB_COMMAND_TRIGGER}
+        ),
+    ),
+    NormanHubButtonDescription(
+        key="all_jog_up",
+        translation_key="all_jog_up",
+        entity_category=EntityCategory.CONFIG,
+        moves_blinds=True,
+        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+            None, {HUB_CMD_JOG_UP: HUB_COMMAND_TRIGGER}
+        ),
+    ),
+    NormanHubButtonDescription(
+        key="all_jog_down",
+        translation_key="all_jog_down",
+        entity_category=EntityCategory.CONFIG,
+        moves_blinds=True,
+        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+            None, {HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER}
+        ),
+    ),
     NormanHubButtonDescription(
         key="refresh_blinds",
         translation_key="refresh_blinds",
@@ -176,6 +216,89 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         press_fn=lambda coordinator: coordinator.api.async_start_pairing(),
     ),
 )
+
+
+@dataclass(frozen=True, kw_only=True)
+class NormanRoomButtonDescription(ButtonEntityDescription):
+    """A button on a room's device: one request for every blind in the room."""
+
+    press_fn: Callable[[NormanCoordinator, int | None], Awaitable[Any]]
+    # Whether the action moves or stops the room's blinds, and so replaces their moves.
+    moves_blinds: bool = True
+
+
+# The room's own buttons: one request with the room's RoomID, however many blinds it holds.
+# The three presets are the app's room screen (captured); stop and the jogs were confirmed
+# by direct tests on 2026-10-10 -- a room stop halted both moving office shades, a room jog
+# nudged both -- and the hub accepts them on any blind, though only cellular shades have been
+# tried. Laid out as a blind's device page is: Stop with the room's sliders, the moves under
+# Configuration, and Refresh blinds with the diagnostics.
+ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
+    NormanRoomButtonDescription(
+        key="room_stop",
+        translation_key="room_stop",
+        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+            room_id, {HUB_CMD_STOP: HUB_COMMAND_TRIGGER}
+        ),
+    ),
+    NormanRoomButtonDescription(
+        key="room_best_privacy",
+        translation_key="room_best_privacy",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+            room_id, {HUB_CMD_SWITCH: HUB_SWITCH_CLOSE}
+        ),
+    ),
+    NormanRoomButtonDescription(
+        key="room_best_view",
+        translation_key="room_best_view",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+            room_id, {HUB_CMD_SWITCH: HUB_SWITCH_OPEN}
+        ),
+    ),
+    NormanRoomButtonDescription(
+        key="room_favorite",
+        translation_key="room_favorite",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+            room_id, {HUB_CMD_FAVORITE: HUB_COMMAND_SETTING}
+        ),
+    ),
+    NormanRoomButtonDescription(
+        key="room_jog_up",
+        translation_key="room_jog_up",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+            room_id, {HUB_CMD_JOG_UP: HUB_COMMAND_TRIGGER}
+        ),
+    ),
+    NormanRoomButtonDescription(
+        key="room_jog_down",
+        translation_key="room_jog_down",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+            room_id, {HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER}
+        ),
+    ),
+    # The room form of the hub's Refresh blinds, which norman.room_command's `refresh` sends:
+    # the room sweep plus a status request to each wired blind in the room.
+    NormanRoomButtonDescription(
+        key="room_refresh",
+        translation_key="room_refresh",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        moves_blinds=False,
+        press_fn=lambda coordinator, room_id: coordinator.async_refresh_blinds(room_id),
+    ),
+)
+
+
+def _room_buttons(
+    devices: NormanDevices,
+) -> list[tuple[int | None, NormanRoomButtonDescription]]:
+    """Every room's buttons: the hub takes all of them for any room."""
+    return [(room_id, description) for room_id in rooms_of(devices) for description in ROOM_BUTTONS]
+
 
 # There are no "run to top/bottom limit" buttons. `SetMotorToTopLimit` /
 # `SetMotorToBottomLimit` are not one-shot moves: the app sends them every ~0.3 s for as long
@@ -191,7 +314,7 @@ async def async_setup_entry(
     entry: NormanConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the buttons for every blind, including ones paired later."""
+    """Set up the buttons for the hub, every room and every blind, including ones added later."""
     coordinator = entry.runtime_data
 
     async_add_entities(
@@ -202,6 +325,13 @@ async def async_setup_entry(
         return [NormanButton(coordinator, device_id, entry, description) for description in BUTTONS]
 
     async_add_entities_for_new_devices(entry, async_add_entities, _buttons_for)
+
+    def _room_button(
+        room_id: int | None, description: NormanRoomButtonDescription
+    ) -> NormanRoomButton:
+        return NormanRoomButton(coordinator, entry, room_id, description)
+
+    async_add_scope_entities(entry, async_add_entities, _room_buttons, _room_button)
 
 
 class NormanHubButton(NormanHubEntity, ButtonEntity):
@@ -236,6 +366,36 @@ class NormanHubButton(NormanHubEntity, ButtonEntity):
                 translation_key="hub_button_failed",
                 translation_placeholders={
                     "command": self.entity_description.key,
+                    "error": str(err),
+                },
+            ) from err
+        await self.coordinator.async_request_refresh()
+
+
+class NormanRoomButton(NormanScopeEntity, ButtonEntity):
+    """One action for every blind in one of the hub's rooms."""
+
+    entity_description: NormanRoomButtonDescription
+
+    async def async_press(self) -> None:
+        """Run the action for the room, then re-read the hub.
+
+        Like the hub's own buttons, these are not watched blind by blind: the hub carries
+        the command to each blind itself. They do replace any move in flight in the room,
+        whose watch would otherwise take the blinds' new heading for a move that never
+        arrived and send it again.
+        """
+        if self.entity_description.moves_blinds:
+            self.coordinator.async_supersede_room(self._room_id)
+        try:
+            await self.entity_description.press_fn(self.coordinator, self._room_id)
+        except (NormanApiError, NormanConnectionError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="button_failed",
+                translation_placeholders={
+                    "command": self.entity_description.key,
+                    "name": self._scope_name,
                     "error": str(err),
                 },
             ) from err

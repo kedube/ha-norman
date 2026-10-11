@@ -153,6 +153,18 @@
       },
       "middle_rail_position": {
         "name": "Middle rail position"
+      },
+      "room_bottom_rail_position": {
+        "name": "Bottom rail position"
+      },
+      "room_middle_rail_position": {
+        "name": "Middle rail position"
+      },
+      "all_bottom_rail_position": {
+        "name": "All blinds bottom rail position"
+      },
+      "all_middle_rail_position": {
+        "name": "All blinds middle rail position"
       }
     },
     "button": {
@@ -164,6 +176,15 @@
       },
       "all_favorite": {
         "name": "All blinds favorite position"
+      },
+      "all_stop": {
+        "name": "All blinds stop"
+      },
+      "all_jog_up": {
+        "name": "All blinds jog up"
+      },
+      "all_jog_down": {
+        "name": "All blinds jog down"
       },
       "best_privacy": {
         "name": "Best privacy"
@@ -188,6 +209,27 @@
       },
       "start_pairing": {
         "name": "Start pairing"
+      },
+      "room_stop": {
+        "name": "Stop"
+      },
+      "room_best_privacy": {
+        "name": "Best privacy"
+      },
+      "room_best_view": {
+        "name": "Best view"
+      },
+      "room_favorite": {
+        "name": "Favorite position"
+      },
+      "room_jog_up": {
+        "name": "Jog up"
+      },
+      "room_jog_down": {
+        "name": "Jog down"
+      },
+      "room_refresh": {
+        "name": "Refresh blinds"
       }
     },
     "sensor": {

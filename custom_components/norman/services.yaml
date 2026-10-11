@@ -108,6 +108,6 @@ send_hub_command:
       name: Fields
       description: Extra JSON fields for the control call. PeripheralUID, Timestamp and TaskID are filled in automatically.
       required: true
-      example: '{"MotorStop": 1}'
+      example: '{"MotorStop": 170}'
       selector:
         object:

@@ -191,10 +191,11 @@ jog down and **request status** (ask a quiet blind to report in); diagnostic sen
 **battery**, **last seen** and, disabled by default, **signal strength** and **firmware
 version**; and a **connection** sensor that turns off after a day of silence, the app's own
 "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
-and (disabled) **Wi-Fi signal** sensors; **all blinds** best privacy, best view and favorite
-buttons (the app's All Rooms header, one request for the whole house); **refresh blinds**,
-**start pairing** and a **pairing mode** sensor. Full detail, including
-availability rules, is in [docs/entities.md](docs/entities.md).
+and (disabled) **Wi-Fi signal** sensors; **all blinds** rail sliders and best privacy, best
+view, favorite, stop and jog buttons (one request for the whole house); **refresh blinds**,
+**start pairing** and a **pairing mode** sensor. **Each room** gets a device in its area with
+the same for the room: a slider per rail, stop, the presets, jog and refresh, each one request
+to the hub. Full detail, including availability rules, is in [docs/entities.md](docs/entities.md).
 
 <img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, connection, last seen and Request status; Activity with the rails' recent moves." width="820">
 
@@ -220,7 +221,7 @@ Alongside the standard cover actions, the integration provides five of its own:
   a SmartDrape's, PerfectSheer's or Shutter's vanes and louvers).
 - `norman.room_command` — run a Norman app room button (`best_privacy`, `best_view`,
   `favorite`) against every blind in a room, in one request to the hub. For any other position,
-  see [a whole room to any position](docs/services.md#a-whole-room-to-any-position).
+  use the room's sliders ([a whole room to any position](docs/services.md#a-whole-room-to-any-position)).
 - `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports.
 - `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for
   one blind, for the verbs that have no entity of their own (limits, calibration, run-to-limit).
@@ -343,7 +344,8 @@ unknown-type warning or behaves differently from its row.
   the previous value.
 - **Commanding many blinds at once takes time.** The hub's radio drops commands sent too
   fast, so they are queued and spaced: thirteen blinds take about 21 seconds. Tunable; see
-  [docs/options.md](docs/options.md#command-spacing).
+  [docs/options.md](docs/options.md#command-spacing). A room's or the hub's own controls send
+  one request instead, as long as the blinds they move are heading the same way.
 - **Hub schedules are not exposed.** The hub stores its own sunrise/sunset and clock schedules;
   the integration neither shows nor edits them, since Home Assistant automations do the same
   job with more flexibility. Delete hub schedules that would fight your automations.

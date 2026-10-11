@@ -108,8 +108,8 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
     know how to send yet (limits, calibration, motor speed, ...). The hub's reply is
     returned so the outcome can be seen. The blind will do whatever the hub makes of it.
 
-    Note this always addresses by ``PeripheralUID``, which is right for the motor verbs but
-    **not** how the app targets ``Switch`` or ``Favorite`` -- those take ``RoomID`` +
+    Note this always addresses by ``PeripheralUID``, matching the app's per-blind motor
+    verbs but **not** how it targets ``Switch`` or ``Favorite`` -- those take ``RoomID`` +
     ``GroupID`` (see docs/NORMAN_API.md). Pass those fields yourself to reproduce the app's
     payload; they are merged in as given. ``norman.room_command`` already does this for the
     three commands that need it.

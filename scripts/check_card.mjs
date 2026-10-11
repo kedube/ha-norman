@@ -294,6 +294,22 @@ const headerTextOf = (cfg, h = hass) => byClass(rendered(cfg, h).shadowRoot, "he
   const c = new Card(); c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass;
   check("_hubName returns the hub device's name", c._hubName() === "Norman Hub", String(c._hubName()));
 }
+{
+  // Each of the hub's rooms is a device too, with sliders and buttons but no cover. Listed
+  // ahead of the hub, it must neither name the card nor be drawn as a blind.
+  const withRoom = {
+    ...hass,
+    entities: {
+      "number.den_den_bottom_rail_position": { platform:"norman", device_id:"r1", translation_key:"room_bottom_rail_position" },
+      "button.den_den_stop": { platform:"norman", device_id:"r1", translation_key:"room_stop" },
+      ...hass.entities,
+    },
+    devices: { r1:{ name:"Den", area_id:"a2" }, ...hass.devices },
+  };
+  const c = new Card(); c._hass = withRoom; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = withRoom;
+  check("a room device is not taken for the hub", c._hubName() === "Norman Hub", String(c._hubName()));
+  check("...nor drawn as a blind", c._collectBlinds().length === 2, JSON.stringify(c._collectBlinds().map(b => b.name)));
+}
 check("with no title the header shows the hub name", headerTextOf({}) === "Norman Hub", String(headerTextOf({})));
 check("an explicit title still wins", headerTextOf({ title:"Upstairs" }) === "Upstairs");
 // A user who deliberately blanks the title should get a blank header, not the hub name.

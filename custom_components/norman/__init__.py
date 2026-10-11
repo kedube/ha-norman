@@ -24,7 +24,7 @@ from homeassistant.util.network import is_ip_address
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import DOMAIN, MANUFACTURER, PLATFORMS
-from .coordinator import NormanConfigEntry, NormanCoordinator
+from .coordinator import NormanConfigEntry, NormanCoordinator, room_identifier, rooms_of
 from .entity import hub_identifier
 from .frontend import async_add_entry_panel, async_register_card, async_remove_entry_panel
 from .services import async_setup_services
@@ -134,12 +134,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> b
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: NormanConfigEntry, device_entry: dr.DeviceEntry
 ) -> bool:
-    """Allow deleting a blind's device from the UI once the hub no longer reports it.
+    """Allow deleting a blind's or a room's device from the UI once the hub no longer has it.
 
-    The hub device and blinds that are still reported are refused: they would be
-    recreated on the next refresh.
+    The hub device, and blinds and rooms that are still reported, are refused: they would
+    be recreated on the next refresh. A room is reported while it holds a blind.
     """
-    live = {(DOMAIN, str(uid)) for uid in entry.runtime_data.data}
+    data = entry.runtime_data.data
+    live = {(DOMAIN, str(uid)) for uid in data}
+    live.update((DOMAIN, room_identifier(entry, room_id)) for room_id in rooms_of(data))
     live.add((DOMAIN, hub_identifier(entry)))
     return not (device_entry.identifiers & live)
 

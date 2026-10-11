@@ -3,15 +3,17 @@
 Per blind the integration creates a **cover** (two for two-rail blinds), a **position slider**
 per rail, six **buttons**, four **diagnostic sensors**, and a **connection** sensor, all on one
 **device**. The hub gets a device of its own carrying four diagnostic sensors, a pairing-mode
-sensor, and five buttons.
+sensor, a slider per rail for every blind at once, and eight buttons. Each of the hub's
+**rooms** gets a device too, with a slider per rail and seven buttons that act on the whole room
+([Rooms and the whole house](#rooms-and-the-whole-house)).
 
-| | Per blind | On the hub |
-|---|---|---|
-| Cover | Bottom rail (Louvers on a Shutter); Middle rail on two-rail blinds | — |
-| Number | Bottom rail position (not on a Shutter); Middle rail position on two-rail blinds | — |
-| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | All blinds best privacy, All blinds best view, All blinds favorite position, Refresh blinds, Start pairing |
-| Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
-| Binary sensor | Connection | Pairing mode |
+| | Per blind | Per room | On the hub |
+|---|---|---|---|
+| Cover | Bottom rail (Louvers on a Shutter); Middle rail on two-rail blinds | — | — |
+| Number | Bottom rail position (not on a Shutter); Middle rail position on two-rail blinds | Bottom rail position, Middle rail position, when a blind in the room has that rail | All blinds bottom rail position, All blinds middle rail position |
+| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | Stop, Best privacy, Best view, Favorite position, Jog up, Jog down, Refresh blinds | All blinds best privacy, All blinds best view, All blinds favorite position, All blinds stop, All blinds jog up, All blinds jog down, Refresh blinds, Start pairing |
+| Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | — | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
+| Binary sensor | Connection | — | Pairing mode |
 
 \* disabled by default; enable from the entity's settings.
 
@@ -27,13 +29,14 @@ one declares.*
 | Device | Identifiers | Notes |
 |---|---|---|
 | Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address; the MAC address is attached as a network connection when it can be resolved (see below). |
+| Room | `norman` / `room_<entry id>_<RoomID>` | Named after the room in the Norman app, model "Room", suggested into the area of the same name so its controls sit beside its blinds on the area's page; `via_device` links it to the hub. One per room that holds a blind. |
 | Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman app's product name for its `ModuleType` and `ModuleDetail` — "Shutter", "Cellular Shade", "Cellular Shade (dual rail)", "Roller Shade", "Roman Shade", "PerfectSheer" or "SmartDrape" (see [Cover entities](#cover-entities)); a type the app does not know is "Window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
 
 The device page therefore mirrors the app's blind details: room (area), battery (sensor),
 version, module type (model id), and serial number.
 
-Renaming a blind or the hub in the Norman app renames the device here too (the hub announces
-the edit and the integration re-reads the names). A name set in Home Assistant is kept; the
+Renaming a blind, a room or the hub in the Norman app renames the device here too (the hub
+announces the edit and the integration re-reads the names). A name set in Home Assistant is kept; the
 app's name shows underneath it as the device's original name. Room changes update the
 *suggested* area only, which Home Assistant applies when a device is first created.
 
@@ -149,10 +152,12 @@ it never holds up the next command.
 For a preset, the check aims at the position the hub records when it accepts the command. It
 has to read that straight away: once the blind reports in, the hub replaces its target with
 wherever the blind actually is. A new move, preset or jog for the same blind replaces the check
-and a stop cancels it. Room-wide and hub-wide commands (the room and hub buttons,
-`norman.room_command`) are sent to every blind by the hub itself and are not checked, but they
-cancel the check of every blind they reach: left running, it would take the blind heading for
-the preset as a move that never arrived, and send the move again.
+and a stop cancels it. Room-wide and hub-wide buttons (and `norman.room_command`) are sent to
+every blind by the hub itself and are not checked, but they cancel the check of every blind
+they reach: left running, it would take the blind heading for the preset as a move that never
+arrived, and send the move again. The room and hub-wide **sliders** are checked, blind by blind:
+a blind that ignores the room's request is sent the move on its own
+([Rooms and the whole house](#rooms-and-the-whole-house)).
 
 The event's data, for automations that want to notify someone or try something else:
 
@@ -254,7 +259,16 @@ they were already at their end position when it fired. Staged away from it, all 
 to its own stored position.
 
 Blinds take 30–60 s to travel and the hub keeps reporting the old position meanwhile, so the
-entities will lag the press. The room-scoped forms are `norman.room_command` with a `room`.
+entities will lag the press. The room-scoped forms are each room's own buttons
+([Rooms and the whole house](#rooms-and-the-whole-house)), or `norman.room_command` with a
+`room`.
+
+**All blinds stop**, **All blinds jog up** and **All blinds jog down** are the same idea for
+the motor verbs: `{"MotorStop": 170}` and the two fine-tune verbs with no scope field. The app
+has no such buttons; the hub accepted all three in direct tests on 2026-10-10. An unscoped stop
+halted the one shade moving at the time, and an unscoped jog nudged every blind, but stopping
+motors in several rooms at once has not been tried. Stop sits with the hub's sliders, under
+Controls; the jogs are under Configuration with the presets.
 
 **Refresh blinds** sends `{"ReportBatteryLevel": 0}` with no scope field: the same request the
 Norman app's refresh button sends on its device & battery status screen. The hub then polls
@@ -297,6 +311,64 @@ Single-rail blinds report two versions: `FirmwareVersion` (4.1.0.4 on every one 
 that is what the device's `sw_version` and the firmware sensor show; both raw values are on
 the sensor as the `module_firmware` and `rf_firmware` attributes. Two-rail blinds report only
 `FirmwareVersion`, which is shown as is.
+
+## Rooms and the whole house
+
+The hub takes most of its commands for a whole room (`RoomID`) or for every blind it has (no
+address at all) as readily as for one blind, in **one** request that it carries to each blind
+itself ([docs/NORMAN_API.md](NORMAN_API.md#room-wide-and-hub-wide-control)). So each of the
+hub's rooms gets a device of its own, named after the room and placed in its area beside its
+blinds, and the hub's device carries the same controls for the whole house.
+
+| Entity | On each room | On the hub | Sends |
+|---|---|---|---|
+| Bottom rail position | when a blind in the room has a bottom rail (all but a Shutter) | All blinds bottom rail position | both rail fields, with `RoomID` / no address |
+| Middle rail position | when a two-rail blind is in the room | All blinds middle rail position | the same |
+| Stop | always | All blinds stop | `MotorStop: 170` |
+| Best privacy, Best view, Favorite position | always, under Configuration | All blinds best privacy, best view, favorite position | `Switch: 0`, `Switch: 1`, `Favorite: 0` |
+| Jog up, Jog down | always, under Configuration | All blinds jog up, jog down | `MotorFineTuneToUp` / `…Down: 170` |
+| Refresh blinds | always, under Diagnostic | Refresh blinds | `ReportBatteryLevel: 0`, then a status request to each wired blind |
+
+A room's entities are named after the room ("Office Bottom rail position", "Office Stop").
+There is deliberately **no room cover**: "close the office blinds", or a `cover` action aimed
+at the Office area, already reaches every blind's own cover there, and a room cover in the same
+area would have the hub sent each command twice. The rooms are the hub's own, as the Norman app
+has them, not Home Assistant areas: moving a blind to another area does not change which room
+the hub moves it with.
+
+**The sliders move each blind as its own slider would.** Setting a room's bottom rail to 30
+moves the bottom rail of every blind in the room that has one to 30, and leaves each blind's
+middle rail where *that* blind is heading, carried along where the bottom rail would pass it,
+exactly as on a blind's own slider. The hub's room request cannot do that by itself: it sends
+every blind the same pair, and it needs both rails (a room request with the middle rail alone
+was refused, and one with the bottom rail alone reset every middle rail to 0). So:
+
+- When every blind in the room would be sent the same pair anyway — a room moved together, by
+  a preset or by an earlier room move, which is the usual case — that pair goes as **one**
+  request, and every blind moves at once.
+- When they would not, one request would drag a blind's middle rail to its neighbour's. Each
+  blind is sent its own move instead, paced like any batch (about 1.6 s apart), so the room
+  still gets there and nothing else is disturbed.
+- A room holding a SmartDrape, a PerfectSheer or a Shutter is always moved blind by blind. A
+  room-wide position has only been tried on single- and two-rail shades, and what it does to
+  a drape's vanes or a Shutter's louvers is unknown. A Shutter has no rails, so the sliders do
+  not move it at all.
+
+A slider shows the average of its blinds' positions, as a Home Assistant cover group does: once
+they have all arrived it reads what it was set to. A room with no two-rail blind has no middle
+rail slider.
+
+**Every blind a slider moves is watched,** like any other move ([data updates](#data-updates)).
+The hub accepting a room request is not the blinds carrying it out: in a live test it acked a
+room restore that one of two shades only made once its own command was resent. So a blind that
+has not moved a minute later is asked to report in and, if it still has not, sent the move on
+its own — up to three sends, then the `norman_command_failed` event. The buttons are not
+watched, as the hub's own buttons are not.
+
+Stop, the presets and the jogs were tried at room scope on cellular shades; the hub takes them
+for any room, but what a drape or a Shutter makes of a room-wide jog has not been seen. A room's
+device can be deleted once the hub no longer has the room (see
+[Removing a blind](#removing-a-blind)).
 
 ## Diagnostic sensors
 
@@ -373,7 +445,8 @@ And one binary sensor:
 Once the hub stops reporting a blind (it was unpaired or is not responding), its device can be
 deleted from **Settings → Devices & services → Norman → the device → ⋮ → Delete**. Blinds the
 hub still reports, and the hub device itself, refuse deletion because they would come straight
-back on the next refresh.
+back on the next refresh. A room's device works the same way: its entities turn unavailable
+once the room holds no blind, and it can then be deleted.
 
 ## Not exposed (yet)
 
@@ -382,8 +455,9 @@ not established: `PacketReceiveRate`, `StallCurrent`, and the hub's `OTA` and `P
 flags.
 
 Of the hub's control verbs, fine-tune, favorite, and the two Switch positions are
-[buttons](#buttons), and
-stop is on the covers. The ones still without an entity are the limit-setting family
+[buttons](#buttons), and stop is on the covers — and all of them, with position, also act on a
+whole room or the whole house ([Rooms and the whole house](#rooms-and-the-whole-house)). The
+ones still without an entity are the limit-setting family
 (`SetTopLimit`, `CleanTopLimit`, and their bottom and middle equivalents), `Calibration`, and
 the unconfirmed `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`,
 `SmartDialSwitch`, and the `RailSpacing` group. All can be sent with `norman.send_hub_command`;

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import codecs
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 import itertools
 import json
@@ -462,7 +462,35 @@ class NormanApiClient:
         """
         await self._async_move(device_id, {HUB_CMD_SHUTTER_POSITION: position})
 
+    async def async_set_room_position(
+        self, room_id: int | None, bottom_rail_position: int, middle_rail_position: int
+    ) -> None:
+        """Move every blind in a room, or on the hub (``room_id`` None), in one request.
+
+        Every blind in scope is sent the same pair. Both rails always go: the hub refused a
+        room request carrying only ``MiddleRailPosition`` (Error 2), and one carrying only
+        ``BottomRailPosition`` set every blind's middle-rail target to 0 (docs/NORMAN_API.md,
+        "Room-wide and hub-wide control"). An ``Error 0`` reply means the hub accepted it,
+        not that every blind moved; the coordinator watches each blind afterwards.
+        """
+        fields = {
+            "BottomRailPosition": bottom_rail_position,
+            "MiddleRailPosition": middle_rail_position,
+        }
+        await self._async_while_busy(
+            lambda: self.async_send_room_control(room_id, fields),
+            "every blind" if room_id is None else f"room {room_id}",
+        )
+
     async def _async_move(self, device_id: int, fields: dict[str, Any]) -> None:
+        """Send one blind a move, retrying while the hub answers busy."""
+        await self._async_while_busy(
+            lambda: self.async_send_control(device_id, fields), str(device_id)
+        )
+
+    async def _async_while_busy(
+        self, send: Callable[[], Awaitable[dict[str, Any]]], target: str
+    ) -> None:
         """Send a move, retrying while the hub answers busy.
 
         A move the hub answers with ``Error 2`` is retried, ``HUB_BUSY_RETRIES`` times and
@@ -473,14 +501,14 @@ class NormanApiClient:
         """
         for attempt in range(HUB_BUSY_RETRIES + 1):
             try:
-                await self.async_send_control(device_id, fields)
+                await send()
             except NormanApiError as err:
                 if err.code != HUB_ERROR_BUSY or attempt == HUB_BUSY_RETRIES:
                     raise
                 _LOGGER.debug(
                     "Hub answered busy (Error %s) moving %s; retrying in %s s (%s of %s)",
                     HUB_ERROR_BUSY,
-                    device_id,
+                    target,
                     HUB_BUSY_RETRY_DELAY,
                     attempt + 1,
                     HUB_BUSY_RETRIES,
@@ -593,11 +621,12 @@ class NormanApiClient:
     async def async_send_room_control(
         self, room_id: int | None, fields: dict[str, Any]
     ) -> dict[str, Any]:
-        """POST a room-wide command: every blind in one room, in a single request.
+        """POST a room- or hub-wide command in a single request.
 
-        The hub accepts ``RoomID`` in place of ``PeripheralUID`` for the ``Switch`` and
-        ``Favorite`` verbs (docs/NORMAN_API.md, "Room-wide and hub-wide control"). This is
-        what the Norman app's Best Privacy / Best View / Remote Favorite buttons send.
+        The hub accepts ``RoomID`` in place of ``PeripheralUID`` for ``Switch``,
+        ``Favorite``, both position fields together, ``MotorStop``, and the fine-tune
+        verbs (docs/NORMAN_API.md, "Room-wide and hub-wide control"). The Norman app
+        sends the presets; the other room and hub forms were confirmed by direct tests.
 
         ``room_id`` of ``None`` omits the field entirely, which addresses **every blind on
         the hub** -- an empty scope means "everything", not "nothing", so never pass None

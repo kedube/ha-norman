@@ -197,14 +197,21 @@ def _hub_button(hass: HomeAssistant, entry: MockConfigEntry, key: str) -> er.Reg
 
 
 async def test_hub_gets_its_buttons(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
-    """The hub device carries the three All Rooms verbs, refresh, and start pairing."""
+    """The hub device carries the three All Rooms verbs, stop and jog, refresh, and pairing."""
     assert [d.key for d in HUB_BUTTONS] == [
         "all_best_privacy",
         "all_best_view",
         "all_favorite",
+        "all_stop",
+        "all_jog_up",
+        "all_jog_down",
         "refresh_blinds",
         "start_pairing",
     ]
+    # Stop is a control, beside the hub's sliders; the jogs are moves, with the presets.
+    assert _hub_button(hass, init_integration, "all_stop").entity_category is None
+    for key in ("all_jog_up", "all_jog_down"):
+        assert _hub_button(hass, init_integration, key).entity_category is EntityCategory.CONFIG
     entry = _hub_button(hass, init_integration, "refresh_blinds")
     assert entry.entity_category is EntityCategory.DIAGNOSTIC
     assert entry.disabled_by is None
@@ -288,6 +295,10 @@ async def test_refresh_blinds_failure_names_the_hub(
         ("all_best_privacy", {"Switch": 0}),
         ("all_best_view", {"Switch": 1}),
         ("all_favorite", {"Favorite": 0}),
+        # Not from the app; an unscoped stop and jog were confirmed by direct tests.
+        ("all_stop", {"MotorStop": HUB_COMMAND_TRIGGER}),
+        ("all_jog_up", {"MotorFineTuneToUp": HUB_COMMAND_TRIGGER}),
+        ("all_jog_down", {"MotorFineTuneToDown": HUB_COMMAND_TRIGGER}),
     ],
 )
 async def test_hub_wide_buttons_send_the_bare_verb(

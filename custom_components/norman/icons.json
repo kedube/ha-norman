@@ -10,6 +10,15 @@
       "all_favorite": {
         "default": "mdi:star"
       },
+      "all_stop": {
+        "default": "mdi:stop"
+      },
+      "all_jog_up": {
+        "default": "mdi:arrow-up-bold"
+      },
+      "all_jog_down": {
+        "default": "mdi:arrow-down-bold"
+      },
       "best_privacy": {
         "default": "mdi:blinds-horizontal"
       },
@@ -33,6 +42,27 @@
       },
       "start_pairing": {
         "default": "mdi:link-plus"
+      },
+      "room_stop": {
+        "default": "mdi:stop"
+      },
+      "room_best_privacy": {
+        "default": "mdi:blinds-horizontal"
+      },
+      "room_best_view": {
+        "default": "mdi:weather-sunny"
+      },
+      "room_favorite": {
+        "default": "mdi:star"
+      },
+      "room_jog_up": {
+        "default": "mdi:arrow-up-bold"
+      },
+      "room_jog_down": {
+        "default": "mdi:arrow-down-bold"
+      },
+      "room_refresh": {
+        "default": "mdi:refresh"
       }
     },
     "binary_sensor": {

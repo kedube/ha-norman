@@ -8,14 +8,20 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity import Entity, EntityDescription
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import NormanApiError, NormanConnectionError
-from .const import COVER_TYPE_TWO_RAIL, DOMAIN, MANUFACTURER
-from .coordinator import NormanConfigEntry, NormanCoordinator, hub_identifier
-from .models import NormanPeripheralData
+from .const import DOMAIN, MANUFACTURER
+from .coordinator import (
+    NormanConfigEntry,
+    NormanCoordinator,
+    hub_identifier,
+    room_identifier,
+    rooms_of,
+)
+from .models import NormanDevices, NormanPeripheralData
 
 # Model names are the Norman app's (its General_Display_* strings, English and Japanese), as
 # the app picks them from ModuleType and ModuleDetail. 32 and 33 are both "Cellular Shade" in
@@ -120,43 +126,23 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
         return super().available and self._device_id in self.coordinator.data
 
 
-def clamp_position(value: int) -> int:
-    """Clamp a rail position to the 0-100 range Home Assistant uses."""
-    return max(0, min(100, value))
-
-
 class NormanRailMixin(NormanEntity):
-    """Shared rail arithmetic for entities that move a blind.
+    """Shared rail handling for entities that move a blind.
 
     The hub's control call always takes **both** rails, so any entity that moves one rail
     has to send the other back unchanged. That rule, and the "move in flight, then target,
-    then current, then fully open" fallback it needs, lives here so the cover and number
-    platforms cannot drift apart.
+    then current, then fully open" fallback it needs, lives in the coordinator
+    (``heading_rails``, ``rails_to_send``) so the cover and number platforms -- and the room
+    sliders, which apply it to every blind in a room -- cannot drift apart.
     """
 
     def _target_or_current_bottom(self) -> int:
         """Bottom rail value to send when a command leaves the bottom rail alone."""
-        if (commanded := self.coordinator.commanded_rails(self._device_id)) is not None:
-            return commanded[0]
-        data = self._data
-        if data is None:
-            return 100
-        for value in (data.target_bottom_rail_position, data.bottom_rail_position):
-            if value is not None:
-                return value
-        return 100
+        return self.coordinator.heading_rails(self._device_id)[0]
 
     def _target_or_current_middle(self) -> int:
         """Middle rail value to send when a command leaves the middle rail alone."""
-        if (commanded := self.coordinator.commanded_rails(self._device_id)) is not None:
-            return commanded[1]
-        data = self._data
-        if data is None:
-            return 100
-        for value in (data.target_middle_rail_position, data.middle_rail_position):
-            if value is not None:
-                return value
-        return 100
+        return self.coordinator.heading_rails(self._device_id)[1]
 
     async def _async_set_position(
         self,
@@ -167,34 +153,12 @@ class NormanRailMixin(NormanEntity):
     ) -> None:
         """Send both rail positions to the hub; ``None`` keeps a rail where it is heading.
 
-        On a two-rail blind the middle rail always hangs above the bottom rail, so a rail
-        kept where it is heading is carried along when the other would pass it: lowering
-        the middle rail below the bottom rail takes the bottom rail down with it, and raising
-        the bottom rail above the middle rail takes the middle rail up. Both go in the one
-        command, so the hub is never asked for a shape the blind cannot make, and the
-        dashboard card can move either rail from anywhere -- fully open included. A drape's
-        two values are how far it is drawn and how its vanes are tilted, which do not
-        constrain each other, so they are sent as asked.
-
-        "Where it is heading" is the last move sent from here while that move is in flight,
-        and the hub's target otherwise (``NormanCoordinator.async_note_move``). The move is
-        recorded before it waits its turn to be sent, so a second command right behind it --
-        or issued at the same moment, as a scene does -- keeps it rather than undoing it.
+        A two-rail blind's rail kept where it is heading is carried along when the other
+        would pass it, so the dashboard card can move either rail from anywhere -- fully open
+        included (``rails_to_send`` in the coordinator, which ``async_move_blind`` applies).
         """
-        bottom_val = self._target_or_current_bottom() if bottom is None else clamp_position(bottom)
-        middle_val = self._target_or_current_middle() if middle is None else clamp_position(middle)
-        data = self._data
-        if data is not None and data.type == COVER_TYPE_TWO_RAIL:
-            if middle is None:
-                middle_val = max(middle_val, bottom_val)
-            elif bottom is None:
-                bottom_val = min(bottom_val, middle_val)
-
-        serial = self.coordinator.async_note_move(self._device_id, bottom_val, middle_val)
-        sent = False
         try:
-            await self.coordinator.api.async_set_position(self._device_id, bottom_val, middle_val)
-            sent = True
+            await self.coordinator.async_move_blind(self._device_id, bottom, middle)
         except (NormanApiError, NormanConnectionError) as err:
             detail = f" (value: {value})" if value is not None else ""
             raise HomeAssistantError(
@@ -206,10 +170,6 @@ class NormanRailMixin(NormanEntity):
                     "error": str(err),
                 },
             ) from err
-        finally:
-            if not sent:
-                self.coordinator.async_forget_move(self._device_id, serial)
-        self.coordinator.async_watch_move(self._device_id, bottom_val, middle_val, serial)
         await self.coordinator.async_request_refresh()
 
     async def _async_stop_motor(self) -> None:
@@ -235,6 +195,96 @@ class NormanHubEntity(CoordinatorEntity[NormanCoordinator]):
         """Attach the entity to the hub device created at setup."""
         super().__init__(coordinator)
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, hub_identifier(entry))})
+
+
+class NormanScopeEntity(CoordinatorEntity[NormanCoordinator]):
+    """An entity that acts on every blind in one of the hub's rooms, or on the whole hub.
+
+    ``room_id`` None is the whole hub, and the entity goes on the hub device. A room gets a
+    device of its own, named as the hub names the room and suggested into the area of the
+    same name, so its controls sit beside its blinds. The hub's room is what counts, not the
+    Home Assistant area: the hub addresses a room by its ``RoomID``, whatever area a blind
+    has since been moved to.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: NormanCoordinator,
+        entry: NormanConfigEntry,
+        room_id: int | None,
+        description: EntityDescription,
+    ) -> None:
+        """Attach the entity to its room's device, or to the hub's."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._room_id = room_id
+        if room_id is None:
+            # Alongside the hub's other entities, which are keyed the same way.
+            self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+            self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, hub_identifier(entry))})
+            return
+        self._attr_unique_id = f"{entry.entry_id}_{room_id}_{description.key}"
+        name = rooms_of(coordinator.data).get(room_id, f"Room {room_id}")
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, room_identifier(entry, room_id))},
+            name=name,
+            manufacturer=MANUFACTURER,
+            model="Room",
+            suggested_area=name,
+            **_via_hub(coordinator, entry),
+        )
+
+    @property
+    def _blinds(self) -> NormanDevices:
+        """The blinds this entity acts on, as the hub reports them now."""
+        return self.coordinator.blinds_in(self._room_id)
+
+    @property
+    def _scope_name(self) -> str:
+        """The room's name, or the hub's, for error messages."""
+        if self._room_id is None:
+            return self.coordinator.hub.custom_name or self.coordinator.config_entry.title
+        return rooms_of(self.coordinator.data).get(self._room_id, f"Room {self._room_id}")
+
+    @property
+    def available(self) -> bool:
+        """Unavailable while the hub is unreachable, and once a room holds no blinds."""
+        return super().available and (self._room_id is None or bool(self._blinds))
+
+
+@callback
+def async_add_scope_entities[D: EntityDescription](
+    entry: NormanConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+    wanted: Callable[[NormanDevices], Iterable[tuple[int | None, D]]],
+    factory: Callable[[int | None, D], Entity],
+) -> None:
+    """Create room and hub-wide entities now, and as the blinds that call for them appear.
+
+    ``wanted`` lists the ``(room id, description)`` pairs the hub's blinds call for -- a
+    room id of None meaning the whole hub -- and ``factory`` builds the entity for one. A
+    newly paired blind can bring a room, or a rail a room did not have before, so the list
+    is re-read on every update; each pair is built once. The listener is detached when the
+    entry unloads.
+    """
+    coordinator = entry.runtime_data
+    known: set[tuple[int | None, str]] = set()
+
+    @callback
+    def _async_add_new() -> None:
+        new: list[Entity] = []
+        for room_id, description in wanted(coordinator.data):
+            if (room_id, description.key) in known:
+                continue
+            known.add((room_id, description.key))
+            new.append(factory(room_id, description))
+        if new:
+            async_add_entities(new)
+
+    _async_add_new()
+    entry.async_on_unload(coordinator.async_add_listener(_async_add_new))
 
 
 @callback

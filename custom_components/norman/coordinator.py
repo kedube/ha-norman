@@ -21,6 +21,7 @@ from .const import (
     CONF_WAKE_INTERVAL,
     COVER_TYPE_SHUTTER,
     COVER_TYPE_SINGLE_RAIL,
+    COVER_TYPE_TWO_RAIL,
     DEFAULT_CONTROL_INTERVAL,
     DEFAULT_COVER_TYPE,
     DEFAULT_POLL_INTERVAL,
@@ -43,6 +44,8 @@ from .const import (
     MSD_STACK_SIDES,
     POLL_DISABLED,
     RECONNECT_INTERVAL,
+    ROOM_MIDDLE_WITHOUT_TWO_RAIL,
+    ROOM_POSITION_TYPES,
     SHUTTER_CLOSED,
     WAKE_DISABLED,
 )
@@ -91,6 +94,81 @@ def _distance(rails: _Rails, goal: _Rails) -> int:
 def hub_identifier(entry: ConfigEntry) -> str:
     """Device-registry identifier of the hub device for ``entry``."""
     return f"hub_{entry.entry_id}"
+
+
+def room_identifier(entry: ConfigEntry, room_id: int) -> str:
+    """Device-registry identifier of one of the hub's rooms.
+
+    Scoped to the entry: room ids are the hub's own, and a second hub numbers its rooms
+    independently.
+    """
+    return f"room_{entry.entry_id}_{room_id}"
+
+
+def clamp_position(value: int) -> int:
+    """Clamp a rail position to the 0-100 range Home Assistant uses."""
+    return max(0, min(100, value))
+
+
+def has_bottom_rail(cover_type: str) -> bool:
+    """Whether a blind of this type has a bottom rail to move. A Shutter has only louvers."""
+    return cover_type != COVER_TYPE_SHUTTER
+
+
+def has_middle_rail(cover_type: str) -> bool:
+    """Whether a blind of this type has a middle rail of its own.
+
+    Only a two-rail shade does. A single-rail blind reports the field as a constant 0, and on
+    a drape or a PerfectSheer it is the vane tilt, which belongs to the cover.
+    """
+    return cover_type == COVER_TYPE_TWO_RAIL
+
+
+def rails_to_send(
+    cover_type: str | None,
+    heading: tuple[int, int],
+    bottom: int | None,
+    middle: int | None,
+) -> tuple[int, int]:
+    """The pair a move sends to one blind; ``None`` keeps a rail where it is ``heading``.
+
+    The hub's control call takes both rails, so a move of one rail has to send the other.
+    On a two-rail blind the middle rail always hangs above the bottom rail, so a rail kept
+    where it is heading is carried along when the other would pass it: lowering the middle
+    rail below the bottom rail takes the bottom rail down with it, and raising the bottom
+    rail above the middle rail takes the middle rail up. The hub is never asked for a shape
+    the blind cannot make. A drape's two values are how far it is drawn and how its vanes are
+    tilted, which do not constrain each other, so they are sent as asked.
+    """
+    bottom_val = heading[0] if bottom is None else clamp_position(bottom)
+    middle_val = heading[1] if middle is None else clamp_position(middle)
+    if cover_type == COVER_TYPE_TWO_RAIL:
+        if middle is None:
+            middle_val = max(middle_val, bottom_val)
+        elif bottom is None:
+            bottom_val = min(bottom_val, middle_val)
+    return bottom_val, middle_val
+
+
+def _reaches(cover_type: str, bottom: int | None, middle: int | None) -> bool:
+    """Whether a move of these rails has anything to move on a blind of this type."""
+    return (bottom is not None and has_bottom_rail(cover_type)) or (
+        middle is not None and has_middle_rail(cover_type)
+    )
+
+
+def _first_known(*values: int | None) -> int:
+    """The first of ``values`` that is known, or 100 (fully open) if none is."""
+    return next((value for value in values if value is not None), 100)
+
+
+def rooms_of(devices: NormanDevices) -> dict[int, str]:
+    """The hub's rooms that hold a blind, by id, each with the name the hub gives it."""
+    rooms: dict[int, str] = {}
+    for device in devices.values():
+        if device.room_id is not None and device.room_id not in rooms:
+            rooms[device.room_id] = device.room_name or f"Room {device.room_id}"
+    return rooms
 
 
 def _poll_interval(entry: NormanConfigEntry) -> timedelta | None:
@@ -281,11 +359,140 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         if room_id is None:
             self.async_supersede()
             return
-        self.async_supersede(
-            device_id
+        self.async_supersede(self.blinds_in(room_id))
+
+    def blinds_in(self, room_id: int | None) -> dict[int, NormanPeripheralData]:
+        """The blinds in one of the hub's rooms, or every blind on the hub for None."""
+        return {
+            device_id: device
             for device_id, device in (self.data or {}).items()
-            if device.room_id == room_id
+            if room_id is None or device.room_id == room_id
+        }
+
+    def heading_rails(self, device_id: int) -> tuple[int, int]:
+        """Where a blind's rails are heading, for a move that leaves one of them alone.
+
+        The last move sent from here while it is in flight (``async_note_move``), otherwise
+        the hub's target, falling back to where the rail is and then to fully open.
+        """
+        if (commanded := self.commanded_rails(device_id)) is not None:
+            return commanded
+        data = (self.data or {}).get(device_id)
+        if data is None:
+            return (100, 100)
+        return (
+            _first_known(data.target_bottom_rail_position, data.bottom_rail_position),
+            _first_known(data.target_middle_rail_position, data.middle_rail_position),
         )
+
+    async def async_move_blind(
+        self, device_id: int, bottom: int | None, middle: int | None
+    ) -> None:
+        """Move one blind's rails, ``None`` keeping a rail where it is heading.
+
+        The move is recorded before it waits its turn to be sent, so a second command right
+        behind it -- or issued at the same moment, as a scene does -- keeps it rather than
+        undoing it (``async_note_move``). Once sent it is watched until the blind reports it
+        moved (``async_watch_move``). Raises the client's errors; a move that could not be
+        sent leaves no record behind.
+        """
+        data = (self.data or {}).get(device_id)
+        rails = rails_to_send(
+            data.type if data else None, self.heading_rails(device_id), bottom, middle
+        )
+        serial = self.async_note_move(device_id, *rails)
+        try:
+            await self.api.async_set_position(device_id, *rails)
+        except BaseException:
+            self.async_forget_move(device_id, serial)
+            raise
+        self.async_watch_move(device_id, *rails, serial)
+
+    async def async_move_room(
+        self, room_id: int | None, bottom: int | None, middle: int | None
+    ) -> None:
+        """Move a rail of every blind in a room (every blind on the hub, for None).
+
+        Each blind that has the rail is moved exactly as its own slider would move it: its
+        other rail stays where it is heading, and is carried along where the move would pass
+        it (``rails_to_send``). Blinds without the rail are left alone.
+
+        That usually takes one request. A room-wide position reaches every blind in scope
+        with the same pair (``async_set_room_position``), so when every blind would be sent
+        the same pair anyway -- a room moved together, by a preset or an earlier room move --
+        that is what goes. When they would not, one request would drag a blind's other rail
+        to its neighbour's, so each blind is sent its own instead, paced like any batch. So
+        is a room holding a product the room request has not been tried on
+        (``ROOM_POSITION_TYPES``).
+
+        Either way, every blind moved is watched afterwards and sent its move on its own if
+        it does not go: on 2026-10-10 the hub acked a room restore that one of two shades
+        only carried out when its own command was resent.
+        """
+        blinds = self.blinds_in(room_id)
+        moves = {
+            device_id: rails_to_send(device.type, self.heading_rails(device_id), bottom, middle)
+            for device_id, device in blinds.items()
+            if _reaches(device.type, bottom, middle)
+        }
+        if not moves:
+            return
+        rails = self._shared_rails(blinds, moves)
+        if rails is None:
+            await self._async_move_each(moves)
+            return
+        serials = {device_id: self.async_note_move(device_id, *rails) for device_id in moves}
+        try:
+            await self.api.async_set_room_position(room_id, *rails)
+        except BaseException:
+            for device_id, serial in serials.items():
+                self.async_forget_move(device_id, serial)
+            raise
+        for device_id, serial in serials.items():
+            self.async_watch_move(device_id, *rails, serial)
+
+    def _shared_rails(
+        self, blinds: dict[int, NormanPeripheralData], moves: dict[int, tuple[int, int]]
+    ) -> tuple[int, int] | None:
+        """The one pair a room request can send in place of ``moves``, if there is one.
+
+        The request reaches every blind in the room, including any the move is not for (a
+        single-rail blind, when the middle rails move), so those must be heading to the same
+        bottom rail already. A single-rail blind's middle value is moot -- it has no middle
+        rail to move -- so only the two-rail blinds have to agree on it.
+        """
+        if any(device.type not in ROOM_POSITION_TYPES for device in blinds.values()):
+            return None
+        bottoms = {
+            moves[device_id][0] if device_id in moves else self.heading_rails(device_id)[0]
+            for device_id in blinds
+        }
+        middles = {
+            rails[1]
+            for device_id, rails in moves.items()
+            if has_middle_rail(blinds[device_id].type)
+        }
+        if len(bottoms) != 1 or len(middles) > 1:
+            return None
+        return bottoms.pop(), middles.pop() if middles else ROOM_MIDDLE_WITHOUT_TWO_RAIL
+
+    async def _async_move_each(self, moves: dict[int, tuple[int, int]]) -> None:
+        """Send each blind its own move, one after another.
+
+        Every move is recorded before the first is sent, as ``async_move_blind`` does for one,
+        so a command issued while these queue sees where each blind is going. A failure
+        stops the rest, and the moves left unsent are forgotten.
+        """
+        pending = {
+            device_id: self.async_note_move(device_id, *rails) for device_id, rails in moves.items()
+        }
+        try:
+            for device_id, rails in moves.items():
+                await self.api.async_set_position(device_id, *rails)
+                self.async_watch_move(device_id, *rails, pending.pop(device_id))
+        finally:
+            for device_id, serial in pending.items():
+                self.async_forget_move(device_id, serial)
 
     @callback
     def async_watch_move(
@@ -668,6 +875,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         """
         registry = dr.async_get(self.hass)
         wanted = {str(device_id): data.name for device_id, data in devices.items()}
+        for room_id, room_name in rooms_of(devices).items():
+            wanted[room_identifier(self.config_entry, room_id)] = room_name
         if self.hub_device_id and self.hub.custom_name:
             wanted[hub_identifier(self.config_entry)] = self.hub.custom_name
         # Devices are looked up through the entry rather than by identifier: identifiers
