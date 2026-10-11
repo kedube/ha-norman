@@ -463,30 +463,12 @@ capturing what you need; it is verbose while blinds are moving.
 
 ## Development
 
-This repository is structured as a HACS-compatible custom integration repository:
-
-- integration code under `custom_components/norman`
-- Norman Shades in `custom_components/norman/www/` (the card and its sidebar panel), served
-  and registered by `frontend.py`
-- metadata in `custom_components/norman/manifest.json` and `hacs.json`
-- translations in `custom_components/norman/translations/`
-- brand images (icon and logo) in `custom_components/norman/brand/`, which Home Assistant
-  2026.3+ serves itself for the integrations list and device pages
-- a pytest suite under `tests/` that drives the integration against a fake hub at the HTTP
-  level (setup, unique-id migration, config flow, covers, rail sliders, buttons, sensors,
-  actions, discovery, the notification stream, the traffic recorder, diagnostics, device
-  removal, brand image serving) and pins repo metadata (translations, exception keys,
-  `services.yaml`, `icons.json`, brand image sizes, docs links) so it cannot drift
-- `scripts/probe_hub_endpoints.py`, a read-only prober for finding hub endpoints nobody has
-  documented (see [CONTRIBUTING.md](CONTRIBUTING.md))
-- GitHub Actions for HACS validation, `hassfest`, Ruff, and pytest ([ci.yml](.github/workflows/ci.yml))
-- an automated release on every green push to `main` ([release.yml](.github/workflows/release.yml))
-- issue templates, a [contributing guide](CONTRIBUTING.md), a [changelog](CHANGELOG.md), and a
-  documented [quality-scale target](QUALITY_SCALE.md)
-
-Version history: each push to `main` publishes a tagged release with generated notes — see the
-[Releases page](https://github.com/kedube/ha-norman/releases). The installed version appears in
-`manifest.json` and under **Settings → Devices & services → Norman**.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers setting up, running the CI checks locally, the
+[project layout](CONTRIBUTING.md#project-layout), and adding support for another Norman
+product. CI runs HACS validation, `hassfest`, Ruff, Mypy, the card check and pytest
+([ci.yml](.github/workflows/ci.yml)); every green push to `main` publishes a release
+([release.yml](.github/workflows/release.yml)) and a [changelog](CHANGELOG.md) entry. The
+[quality-scale target](QUALITY_SCALE.md) tracks Home Assistant's integration quality rules.
 
 ## Disclaimers
 

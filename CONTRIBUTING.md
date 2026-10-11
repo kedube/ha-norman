@@ -107,8 +107,7 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   reports every field outside the catalogue in `const.py`, once per name.
 
   `tests/test_repo_consistency.py` checks that every relative Markdown link resolves to a real
-  file and heading, and that the README stays under 500 lines — if that trips, move the newest
-  reference material into `docs/` rather than raising the limit.
+  file and heading.
 - `hacs.json` and `manifest.json` contain release and integration metadata.
 - `custom_components/norman/brand/` holds the icon (`icon.png` 256×256, `icon@2x.png` 512×512:
   the brass "N" monogram) and logo (`logo.png` / `logo@2x.png`: the full wordmark, 256 / 512 px
