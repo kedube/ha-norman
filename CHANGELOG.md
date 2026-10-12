@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.74 — 2026-10-12
 
 - **Shade controls stay available when the hub's configuration read fails.** The integration
   keeps the last good room and name data while updating positions from `status`. After a
