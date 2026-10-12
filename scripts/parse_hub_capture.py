@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Reassemble the Norman hub's HTTP traffic from a packet capture.
 
-The hub speaks plain HTTP on port 10123, so a capture of the Norman app talking to it is the
-only way to learn verbs the app uses but the integration does not know about. This script
-turns a pcap into readable request/response pairs, with no third-party dependencies.
+The hub speaks plain HTTP on port 10123, so a capture of the Norman app talking to it reveals
+verbs the app uses but the integration does not know about. This script turns a pcap into
+readable request/response pairs, with no third-party dependencies.
 
-Capture (macOS, app on the same machine or the same LAN):
+Capture on an interface that actually sees app-to-hub traffic: the app's own machine,
+a mirrored router/AP port, or a capture on the phone. A laptop merely on the same LAN
+usually cannot see the phone's unicast packets. For an app running on this Mac:
 
     sudo tcpdump -i en0 -w ~/Downloads/norman-app.pcap 'tcp port 10123'
 
@@ -18,6 +20,9 @@ DNS lookup per address and appears to hang.
 
 A capture contains your hub's identity (ThingName) and blind names; scrub before attaching to
 an issue. See docs/NORMAN_API.md, "Capturing traffic".
+
+This parser accepts classic pcap files containing IPv4 over Ethernet, loopback, or raw IP.
+Convert pcapng captures to pcap first, and use another decoder for IPv6 traffic.
 """
 
 from collections import defaultdict

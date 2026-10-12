@@ -5,6 +5,18 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Shade controls stay available when the hub's configuration read fails.** The integration
+  keeps the last good room and name data while updating positions from `status`. After a
+  restart it keeps the device and room names already in Home Assistant; a fresh setup uses
+  generic names and the room/group IDs in `status`. The configuration read is retried after a
+  short delay.
+- **Expanded the local API reference.** Direct hub tests confirm saved scene and scene-group
+  reads, writes, and activation; the reference also records the observed failure of the hub's
+  configuration reader after scene updates and a power cycle. New scripts help inspect hub
+  report requests and run a saved scene with actual-position checks.
+
 ## 0.72 — 2026-10-11
 
 - **Every room has its own controls, and so does the whole house.** Each of the hub's rooms

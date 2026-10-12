@@ -74,16 +74,16 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   detail here:
   - [`docs/dashboard.md`](docs/dashboard.md) — Norman Shades, and the card's options on a
     dashboard.
+  - [`docs/entities.md`](docs/entities.md) — entities, devices, attributes, availability.
+  - [`docs/services.md`](docs/services.md) — all four actions, and the hub verbs `send_hub_command` can send.
+  - [`docs/NORMAN_API.md`](docs/NORMAN_API.md) — the hub protocol. Read it before changing
+    `api.py` or `coordinator.py`.
 - `scripts/check_card.mjs` runs the card and its sidebar panel under Node against a realistic `hass`
   object (`node scripts/check_card.mjs`). The card reads the **frontend** entity registry,
   which does not carry `unique_id` — only `translation_key` and a handful of display fields —
   so a wrong field name there fails silently rather than erroring. Run it after touching
   `www/norman-shades-card.js`; CI has no Node, so `tests/test_repo_consistency.py` pins the
   same contract.
-  - [`docs/entities.md`](docs/entities.md) — entities, devices, attributes, availability.
-  - [`docs/services.md`](docs/services.md) — all four actions, and the hub verbs `send_hub_command` can send.
-  - [`docs/NORMAN_API.md`](docs/NORMAN_API.md) — the hub protocol. Read it before changing
-    `api.py` or `coordinator.py`.
 - `custom_components/norman/translations/` holds one file per language. `en.json` is the
   source of truth and must match `strings.json` exactly. Japanese and both Chinese files use
   the vocabulary of the Norman app itself (its language tables ship unencrypted in the app
@@ -96,7 +96,8 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   rather than an English string.
 - `scripts/probe_hub_endpoints.py` looks for hub endpoints nobody has documented. It sends an
   identity-only body (`ThingName`, `TaskID`, `Timestamp`) and refuses by name to send anything
-  that could write, so it cannot move a blind:
+  that looks like a write. This is a name-based safeguard, not proof that an unknown endpoint
+  is free of side effects:
 
   ```console
   python3 scripts/probe_hub_endpoints.py <hub-ip>
@@ -105,6 +106,16 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   Anything it marks UNDOCUMENTED belongs in `docs/NORMAN_API.md`. To find undocumented
   *fields* rather than endpoints, turn on debug logging and leave it running: the coordinator
   reports every field outside the catalogue in `const.py`, once per name.
+
+  `scripts/explore_hub.py` compares all blind states before and after one `StatusRequest`,
+  `ReportBatteryLevel`, or per-blind `RequestModuleInfo`. It prints a dry-run summary by default;
+  `--observe-only` measures background reports, and `--execute` sends the selected command.
+  Use the [direct hub test workflow](docs/NORMAN_API.md#direct-hub-capability-tests) to interpret
+  the result; an `Error: 0` acknowledgement alone is not evidence that blinds acted.
+
+  `scripts/run_hub_scene.py` reads a saved room scene and reports its target count without
+  printing names or IDs. With `--execute`, it sends `RoomID` plus `SetToScene` and checks
+  actual positions and changes outside the scene. It also defaults to a dry run.
 
   `tests/test_repo_consistency.py` checks that every relative Markdown link resolves to a real
   file and heading.

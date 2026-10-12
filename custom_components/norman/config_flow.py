@@ -171,9 +171,9 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> ConfigFlowResult:
         """Handle a hub found by mDNS.
 
-        The hub announces ``NienMadeLocal._nien_made._tcp.local.`` on port 10123 with no TXT
-        record, so its identity has to be read from the hub itself. A hub that is already
-        configured has its stored address refreshed (which reloads the entry when it changed),
+        The hub announces ``NienMadeLocal._nien_made._tcp.local.`` on port 10123. TXT identity
+        fields vary, so registration validates the address and supplies its identity. A hub
+        already configured has its stored address refreshed, reloading the entry if changed,
         so a DHCP change heals itself the next time the hub announces.
         """
         host = discovery_info.host

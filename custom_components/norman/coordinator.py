@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime, timedelta
 import logging
+import time
 from typing import Any, NamedTuple
 
 from homeassistant.config_entries import ConfigEntry
@@ -30,6 +31,10 @@ from .const import (
     EVENT_COMMAND_FAILED,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
+    KNOWN_SCENE_FIELDS,
+    KNOWN_SCENE_GROUP_FIELDS,
+    KNOWN_SCENE_GROUP_ITEM_FIELDS,
+    KNOWN_SCENE_TARGET_FIELDS,
     MAX_CONTROL_INTERVAL,
     MAX_POLL_INTERVAL,
     MAX_WAKE_INTERVAL,
@@ -52,6 +57,7 @@ from .const import (
 from .models import NormanDevices, NormanHubData, NormanPeripheralData
 
 _LOGGER = logging.getLogger(__name__)
+DEVICE_LIST_RETRY_INTERVAL = 60  # seconds after a failed configuration read
 
 type NormanConfigEntry = ConfigEntry[NormanCoordinator]
 
@@ -255,6 +261,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # What the hub says about itself; refreshed alongside the peripherals
         self.hub = NormanHubData(model=api.hub_model, firmware_version=api.hub_firmware_version)
         self._device_info: dict[str, Any] = {}
+        self._device_info_stale = True
+        self._device_info_error_logged = False
+        self._next_device_info_retry = 0.0
         self._unknown_fields: set[tuple[str, str]] = set()
         self._unknown_module_types: set[int | None] = set()
         # True while the notification stream is known to be down, so that the outage is
@@ -781,8 +790,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                         _LOGGER.info("Norman hub notification stream restored")
                     if self._structure_changed(notification):
                         # A rename, room edit, or hub rename in the Norman app: re-read
-                        # the device list so names and rooms follow.
-                        self._device_info = {}
+                        # the device list so names and rooms follow. Keep the last good
+                        # tree if that read fails; status can still update the blinds.
+                        self._device_info_stale = True
                     # Debounced rather than immediate: the hub answers a sweep with one
                     # notification *per blind* over ~30 s (docs/NORMAN_API.md, "Waking a
                     # blind"), so a thirteen-blind hub would otherwise fire thirteen full
@@ -820,7 +830,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
             # Re-fetch the device list and states before the next connection so anything
             # that changed while the stream was down (or a newly paired blind) is picked up.
-            self._device_info = {}
+            self._device_info_stale = True
             await self.async_refresh()
 
     @staticmethod
@@ -847,10 +857,28 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
         """
         try:
-            # The device list rarely changes, so it is only re-read when it has been
-            # invalidated (first refresh, or a listener reconnect).
-            if not self._device_info:
-                self._device_info = await self.api.async_get_devices()
+            # A hub can keep answering status while its configuration reader returns
+            # "Request process fail." Keep the last good tree, or use status-only
+            # placeholders on first setup, and retry the structure read next refresh.
+            if self._device_info_stale and time.monotonic() >= self._next_device_info_retry:
+                try:
+                    self._device_info = await self.api.async_get_devices()
+                except (NormanConnectionError, NormanApiError) as err:
+                    self._next_device_info_retry = time.monotonic() + DEVICE_LIST_RETRY_INTERVAL
+                    if not self._device_info_error_logged:
+                        _LOGGER.warning(
+                            "Norman hub device list unavailable: %s; using status and cached names",
+                            err,
+                        )
+                        self._device_info_error_logged = True
+                    else:
+                        _LOGGER.debug("Norman hub device list still unavailable: %s", err)
+                else:
+                    self._device_info_stale = False
+                    self._next_device_info_retry = 0.0
+                    if self._device_info_error_logged:
+                        _LOGGER.info("Norman hub device list restored")
+                        self._device_info_error_logged = False
 
             # Status is the lightweight call that carries positions
             status_data = await self.api.async_get_status()
@@ -862,9 +890,29 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self._log_unknown_fields(self._device_info, status_data)
         self._update_hub_data(self._device_info, status_data)
         devices = self._process_data(self._device_info, status_data)
+        if not self._device_info:
+            self._keep_registry_names(devices)
         self._warn_about_unknown_module_types(devices)
         self._sync_device_names(devices)
         return devices
+
+    def _keep_registry_names(self, devices: NormanDevices) -> None:
+        """Name status-only placeholders as the device registry already has them.
+
+        Without the device list every blind is ``Norman <uid>`` and every room
+        ``Room <id>``. A restart while the hub cannot read its configuration would otherwise
+        push those placeholders over the names the registry kept from the last good read.
+        """
+        registry = dr.async_get(self.hass)
+        known: dict[str, str] = {}
+        for device in dr.async_entries_for_config_entry(registry, self.config_entry.entry_id):
+            for domain, identifier in device.identifiers:
+                if domain == DOMAIN and device.name:
+                    known[identifier] = device.name
+        for device_id, data in devices.items():
+            data.name = known.get(str(device_id), data.name)
+            if data.room_id is not None and not data.room_name:
+                data.room_name = known.get(room_identifier(self.config_entry, data.room_id))
 
     def _sync_device_names(self, devices: NormanDevices) -> None:
         """Carry renames made in the Norman app into the device registry.
@@ -920,9 +968,23 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             for peripheral in top.get("Peripherals") or []:
                 if isinstance(peripheral, dict):
                     self._note_unknown("peripheral", KNOWN_PERIPHERAL_FIELDS, peripheral)
+            for scene_group in top.get("SceneGroupList") or []:
+                if not isinstance(scene_group, dict):
+                    continue
+                self._note_unknown("scene group", KNOWN_SCENE_GROUP_FIELDS, scene_group)
+                for item in scene_group.get("SceneList") or []:
+                    if isinstance(item, dict):
+                        self._note_unknown("scene group item", KNOWN_SCENE_GROUP_ITEM_FIELDS, item)
             for room in top.get("RoomList") or []:
                 if not isinstance(room, dict):
                     continue
+                for scene in room.get("SceneList") or []:
+                    if not isinstance(scene, dict):
+                        continue
+                    self._note_unknown("scene", KNOWN_SCENE_FIELDS, scene)
+                    for target in scene.get("PeripheralList") or []:
+                        if isinstance(target, dict):
+                            self._note_unknown("scene target", KNOWN_SCENE_TARGET_FIELDS, target)
                 for group in room.get("GroupList") or []:
                     if not isinstance(group, dict):
                         continue
@@ -1022,6 +1084,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     id=peripheral_uid,
                     name=f"Norman {peripheral_uid}",
                     type=cover_type(module_type, module_detail),
+                    room_id=_parse_int(peripheral.get("RoomID")),
+                    group_id=_parse_int(peripheral.get("GroupID")),
                     module_type=module_type,
                     module_detail=module_detail,
                 )

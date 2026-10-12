@@ -254,7 +254,7 @@ async def test_reconfigure_errors(
 
 
 def _discovery(host: str = HUB_HOST) -> ZeroconfServiceInfo:
-    """What Home Assistant hands the flow for the hub's mDNS announcement (no TXT record)."""
+    """A valid hub mDNS announcement without optional TXT fields."""
     return ZeroconfServiceInfo(
         ip_address=ip_address(host),
         ip_addresses=[ip_address(host)],

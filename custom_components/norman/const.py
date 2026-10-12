@@ -206,6 +206,27 @@ KNOWN_HUB_FIELDS = frozenset(
     }
 )
 
+KNOWN_SCENE_FIELDS = frozenset(
+    {"SceneID", "SceneName", "Icon", "Color", "Sorting", "PeripheralList"}
+)
+
+KNOWN_SCENE_TARGET_FIELDS = frozenset(
+    {
+        "PeripheralUID",
+        "Position",
+        "BottomRailPosition",
+        "MiddleRailPosition",
+        "ModuleType",
+        "ModuleDetail",
+    }
+)
+
+KNOWN_SCENE_GROUP_FIELDS = frozenset(
+    {"SceneGroupID", "SceneGroupName", "Icon", "Color", "Sorting", "SceneList"}
+)
+
+KNOWN_SCENE_GROUP_ITEM_FIELDS = frozenset({"RoomID", "SceneID", "SceneName"})
+
 KNOWN_PERIPHERAL_FIELDS = frozenset(
     {
         # identity and placement

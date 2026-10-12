@@ -98,12 +98,26 @@ def test_observed_fields_are_catalogued() -> None:
     documented in NORMAN_API.md but missing from the catalogue would be reported as new on
     every install, and one added to the catalogue without documentation is invisible.
     """
-    from custom_components.norman.const import KNOWN_HUB_FIELDS, KNOWN_PERIPHERAL_FIELDS
+    from custom_components.norman.const import (
+        KNOWN_HUB_FIELDS,
+        KNOWN_PERIPHERAL_FIELDS,
+        KNOWN_SCENE_FIELDS,
+        KNOWN_SCENE_GROUP_FIELDS,
+        KNOWN_SCENE_GROUP_ITEM_FIELDS,
+        KNOWN_SCENE_TARGET_FIELDS,
+    )
 
     api_doc = (REPO / "docs" / "NORMAN_API.md").read_text(encoding="utf-8")
     observed = api_doc.split("## Observed fields", 1)[1].split("## Error conventions", 1)[0]
     documented = set(re.findall(r"`([A-Z][A-Za-z]+)`", observed))
-    known = KNOWN_HUB_FIELDS | KNOWN_PERIPHERAL_FIELDS
+    known = (
+        KNOWN_HUB_FIELDS
+        | KNOWN_PERIPHERAL_FIELDS
+        | KNOWN_SCENE_FIELDS
+        | KNOWN_SCENE_TARGET_FIELDS
+        | KNOWN_SCENE_GROUP_FIELDS
+        | KNOWN_SCENE_GROUP_ITEM_FIELDS
+    )
     # Prose in that section also names cover types and endpoints; only check field-shaped
     # names, i.e. ones that appear in a table row's first column.
     fields = {

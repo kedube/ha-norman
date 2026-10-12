@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""Probe a Norman hub for undocumented **read-only** endpoints.
+"""Probe a Norman hub for additional **read-only** endpoints.
 
-The hub's local API has no authentication and no discovery mechanism, so the only way to
-find an endpoint is to ask for it by name. This script asks for a list of plausible names
-and reports which ones answer, so the protocol reference can be extended without guessing.
+The hub's local API exposes no endpoint index. App traffic reveals paths the app uses; this
+script tries plausible read names and reports which answer.
 
-**It is read-only by construction.** Every request body carries only ``ThingName``,
-``TaskID`` and ``Timestamp`` -- never a control verb, a position, or any field that would
-write to the hub. Names that look like writes (Add/Set/Update/Delete/Clean/Control/...) are
-refused before a request is made, so a typo cannot turn into a command. Nothing here can
-move a blind; the worst case is an unknown endpoint returning an error.
+It sends only read-looking path names and identity fields (``ThingName``, ``TaskID``, and
+``Timestamp``), never a control verb or position. Names that look like writes
+(Add/Set/Update/Delete/Clean/Control/...) are refused before a request is made. This is a
+name-based safeguard, not proof that an unknown endpoint has no side effects.
 
 Usage:
 
     python3 scripts/probe_hub_endpoints.py 192.168.0.22
     python3 scripts/probe_hub_endpoints.py 192.168.0.22 --extra GetAllZone,GetTimer
     python3 scripts/probe_hub_endpoints.py 192.168.0.22 --json > hub-endpoints.json
+
+The output includes only the first 400 characters of each response, so it is an endpoint
+inventory, not a full response-schema capture. The sample may contain identifiers; scrub it
+before sharing.
 
 Findings worth acting on are endpoints that answer with ``status.code: 0`` (or ``Error: 0``)
 and a payload the integration does not already model. Please attach the output to an issue.
@@ -33,23 +35,23 @@ import urllib.request
 DEFAULT_PORT = 10123
 TIMEOUT = 5.0
 
-# Endpoints the integration already knows about (documented in docs/NORMAN_API.md). They are
-# probed too so the output shows what a known-good reply looks like next to the unknown ones.
+# Read endpoints already documented in docs/NORMAN_API.md. They are probed too so the output
+# shows known-good replies next to paths that may be new to the reference.
 KNOWN = (
     "registration",
     "GetAllPeripheral",
     "status",
     "GetAllSchedule",
     "GetDeviceInfo",
+    "GetAllScene",
+    "GetAllSceneGroup",
 )
 
 # Names to try. Built from three sources: the plural of every noun the hub's payloads use
 # (Scene, SceneGroup, Room, Group, Peripheral), the naming style the app's own endpoints
 # follow (GetAllX / GetX), and features the app has that we have not seen an endpoint for.
 CANDIDATES = (
-    # scenes: SceneList and SceneGroupList appear in GetAllPeripheral but are always empty
-    "GetAllScene",
-    "GetAllSceneGroup",
+    # Other scene reads: SceneList and SceneGroupList appear in GetAllPeripheral
     "GetScene",
     "GetSceneGroup",
     # rooms and groups as their own reads
@@ -200,7 +202,7 @@ def main() -> int:
     parser.add_argument("host", help="hub IP address or hostname")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--extra", default="", help="comma-separated extra names to try")
-    parser.add_argument("--json", action="store_true", help="emit raw JSON results")
+    parser.add_argument("--json", action="store_true", help="emit JSON summaries")
     args = parser.parse_args()
 
     names = list(dict.fromkeys((*KNOWN, *CANDIDATES, *filter(None, args.extra.split(",")))))

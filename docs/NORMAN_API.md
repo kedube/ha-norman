@@ -1,8 +1,8 @@
 # Norman Hub local API reference
 
 This is the contributor reference for the hub protocol the integration speaks. It is
-reverse-engineered from observing a Norman Hub on a local network; nothing here comes from
-vendor documentation or vendor code. Field names are reproduced exactly as the hub sends them.
+reverse-engineered from direct hub tests, app traffic, and inspection of the installed
+ShadeAuto app's network library. Field names are reproduced exactly as the hub sends them.
 Where a field's meaning is inferred rather than confirmed, the text says so.
 
 Read this before changing anything in [`api.py`](../custom_components/norman/api.py) or
@@ -22,8 +22,10 @@ Read this before changing anything in [`api.py`](../custom_components/norman/api
   - [Waking a blind](#waking-a-blind)
   - [Pairing mode](#pairing-mode)
   - [POST /NM/v1/notification](#post-nmv1notification)
-- [The complete endpoint surface](#the-complete-endpoint-surface)
-- [Configuration endpoints used by the app](#configuration-endpoints-used-by-the-app)
+- [Known endpoint surface](#known-endpoint-surface)
+- [Configuration endpoints](#configuration-endpoints)
+- [Open questions and coverage workflow](#open-questions-and-coverage-workflow)
+  - [Direct hub capability tests](#direct-hub-capability-tests)
 - [Observed fields](#observed-fields)
 - [Error conventions](#error-conventions)
 - [How the integration uses the endpoints](#how-the-integration-uses-the-endpoints)
@@ -45,8 +47,9 @@ Every request body carries `"Timestamp": <unix seconds>`. Command-style requests
 counter modulo 10000. No response has ever been observed to depend on the value.
 
 The Norman app (`User-Agent: SmartShutter/0.8.32`) speaks exactly this protocol to the hub when
-it is on the same network; a packet capture of the app is how the [control verbs](#control-verbs)
-and the [discovery](#discovery-mdns) record below were confirmed.
+it is on the same network; app traffic established many [control verbs](#control-verbs),
+while direct hub tests established additional scopes and the [discovery](#discovery-mdns)
+record was checked with mDNS browsing.
 
 ## Discovery (mDNS)
 
@@ -58,12 +61,12 @@ The hub announces itself with multicast DNS, which is what the integration's zer
 | Service type | `_nien_made._tcp.local.` |
 | Instance | `NienMadeLocal._nien_made._tcp.local.` |
 | Target host | `Dexatek.local.` (Dexatek is the hub's ODM), port `10123`, A and AAAA records |
-| TXT | none |
+| TXT | `thing_name`, `multicast_group`, `multicast_port` on the hub checked 2026-10-11; an earlier capture had no TXT fields |
 
-Because there is no TXT record, the announcement carries no identity: the config flow calls
-`registration` on the discovered address to get the `ThingName`, and only then decides whether
-the hub is new (offer it) or known (refresh its stored address). The app itself resolves the
-instance name with a unicast SRV query rather than browsing.
+The config flow calls `registration` on the discovered address to validate it and get the
+`ThingName`, whether or not a TXT identity is present. It then decides whether the hub is new
+(offer it) or known (refresh its stored address). The app itself resolves the instance name
+with a unicast SRV query rather than browsing.
 
 ## Endpoints
 
@@ -320,11 +323,18 @@ observed. All of the following were captured from the Norman app:
 
 The registration reply lists more verbs per blind than the app was seen to use (`Favorite`,
 `MotorSpeedAdjust`, `ReverseMotorDirection`, `Switch`, `RailSpacing…`, `SmartDialSwitch`,
-`CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo`, `ConfigToScene`,
+`CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `ConfigToScene`,
 `SetToScene`, `SetMiddleLimit`, `CleanMiddleLimit`, `StopSensorSwitch`). Their values there
 (`170` or `259` for motor verbs, `0`/`1` for settings) are consistent with the same convention,
 but they are unconfirmed. `norman.send_hub_command` can send any of them; the limit, direction,
 and clean verbs change how a blind behaves and may need a physical recalibration to undo.
+
+`RequestModuleInfo: 0` is advertised by both module types 32 and 33 and was tested directly
+with `PeripheralUID` on one of each on 2026-10-11. Both requests returned `Error: 0` and echoed
+the verb, with no extra module-information fields in the synchronous reply. Each addressed
+blind reported a newer `Timestamp` within 10 s; no other blind reported and no position or
+target changed during the watch. It therefore works as a per-blind report request on these
+products, but what additional module information it may retrieve is still unknown.
 
 ### Room-wide and hub-wide control
 
@@ -342,7 +352,8 @@ form has been captured from the app.
 | `Switch` / `Favorite` | Captured from the app and confirmed | Confirmed | Confirmed |
 | `MotorStop` | Captured from the app | Stopped both moving Office shades | Stopped one moving Office shade; simultaneous motors in multiple rooms not tested |
 | `MotorFineTuneToUp` / `MotorFineTuneToDown` | Captured from the app | Small position changes on both Office shades | Small position changes in Office and Den; all 13 blinds reported in |
-| `StatusRequest` / `ReportBatteryLevel` | `StatusRequest` confirmed | `ReportBatteryLevel` confirmed | `ReportBatteryLevel` confirmed |
+| `StatusRequest` / `ReportBatteryLevel` | `StatusRequest` confirmed; `ReportBatteryLevel` with only `PeripheralUID` appears to cause a broader sweep | `ReportBatteryLevel` confirmed; `StatusRequest` with room or room/group fields appears to cause a broader sweep | `ReportBatteryLevel` confirmed; unscoped `StatusRequest` was acknowledged and six of 13 blinds reported within 30 s |
+| Saved scene `SetToScene` | Not tested | Confirmed with `RoomID` and numeric `SceneID` as the `SetToScene` value | Not tested |
 | Shutter `Position` (0–7) | Built by the app's library; no live Shutter test here | Not tested | Not tested |
 
 The current hub has cellular shades only (module types 32 and 33). The position result does
@@ -479,6 +490,28 @@ liveness signal rather than a last-change time. Timings on the reference hub:
   but a per-blind `StatusRequest` to one of them was answered in 4 s, so the integration
   follows every sweep with one request per type 32 blind.
 
+Direct tests on 2026-10-11 found that `StatusRequest` does **not** appear to use the same scope
+rules as `ReportBatteryLevel`. With `PeripheralUID`, its one target reported within **10 s**
+and no other blind reported during a 60 s watch. With `RoomID` alone, neither blind in the
+selected room reported within 10 s, but both had reported by 30 s and ten blinds outside the
+room had reported by 60 s. With `RoomID` + `GroupID`, the selected blind reported by 30 s and
+nine outside it by 60 s. An unscoped request was acknowledged and six of 13 blinds reported
+within 30 s. Every request returned `Error: 0`; no positions changed.
+
+These results suggest that omitting `PeripheralUID` may turn `StatusRequest` into a hub-wide
+report-in sweep, even when room/group fields are present. They do not prove which specific
+request caused each report: in no-command 60 s comparisons, two to four blinds outside the
+selected room reported, while neither blind in that room did. The existing
+`ReportBatteryLevel` room form is the confirmed way to refresh a room.
+
+The converse scope also behaves unexpectedly. In a quiet no-command minute on 2026-10-11,
+none of 13 blinds reported. Sending `ReportBatteryLevel: 0` with one `PeripheralUID` returned
+`Error: 0`; eight blinds, including the addressed one, reported within 60 s. All eight had
+changes in reported position and target fields, consistent with a stale hub cache being
+corrected during a broad report-in. No physical motor movement was verified. Use
+`StatusRequest` to refresh a single blind; an accepted `ReportBatteryLevel` with a UID is not
+evidence that it was scoped to that blind.
+
 Each report arrives as a `{"Status": …, "PeripheralList": [uid]}` notification, so a client
 holding the notification stream sees them without polling. The app taps the button several
 times in a row; nothing suggests that is needed.
@@ -557,41 +590,186 @@ Response stream, as observed:
   are logged at debug level and skipped; an object that never closes is discarded once the
   buffer exceeds `NOTIF_MAX_BUFFER` (64 KiB).
 
-## The complete endpoint surface
+## Known endpoint surface
 
-Eleven endpoints are known: the five the integration uses, and six more the app uses or a
-probe found. The hub answers **HTTP 404** for any other path, which makes probing reliable —
-`scripts/probe_hub_endpoints.py` sends an identity-only body to a list of candidate names and
-reports which answer (it refuses, by name, to send anything that could write). Running it
-against the reference hub with 43 candidates found exactly two undocumented endpoints, both
-scene reads, so the surface below is believed complete for firmware 6.1.25.
+Twenty local paths are known on the reference hub (firmware 6.1.25). The integration calls
+five; fifteen more were captured from the app or tested directly. The hub returned **HTTP 404**
+for the other names tried, and `scripts/probe_hub_endpoints.py` found two scene reads among 43
+read candidates. That scan tests candidate names, not every possible path or request body. It
+does not establish that the local API is complete, even for this firmware.
 
-```
-registration  GetAllPeripheral  status  control  notification      (the integration)
-GetAllSchedule  AddSchedule  DeleteSchedule                        (schedules, app only)
-UpdateRoom  UpdatePeripheral  UpdateDeviceInfo  GetDeviceInfo      (names, app only)
-GetAllScene  GetAllSceneGroup                                      (found by probing)
-```
+| Path suffix under `/NM/v1/` | Evidence | Integration |
+|---|---|---|
+| `registration`, `GetAllPeripheral`, `status`, `control`, `notification` | app traffic and direct use | used |
+| `GetAllSchedule`, `AddSchedule`, `DeleteSchedule` | app traffic | not used |
+| `UpdateRoom`, `UpdatePeripheral`, `UpdateDeviceInfo`, `GetDeviceInfo` | app traffic | not used |
+| `GetAllScene`, `GetAllSceneGroup` | direct read probe; one saved scene now observed in `GetAllScene` | not used |
+| `AddScene`, `UpdateScene`, `DeleteScene`, `AddSceneGroup`, `UpdateSceneGroup`, `DeleteSceneGroup` | direct create/update/read/delete tests with disposable records | not used |
 
-## Configuration endpoints used by the app
+The principal integration gaps are:
+
+| Hub capability | Direct evidence | Integration today |
+|---|---|---|
+| Saved room scenes | Read, create, update, delete, and activate tested on this hub | No scene discovery, entity, or dedicated action; a caller can supply the confirmed `RoomID`/`SetToScene` body through `send_hub_command` |
+| Saved scene groups | Read, create, update, delete, and cross-room activation tested; one motor missed the group command | No scene-group model or dedicated action; a raw `SceneGroupID` control call is possible, without per-member completion checks |
+| Hub schedules | Read, create, and delete observed in app traffic | Not modelled; Home Assistant automations remain the intended scheduler |
+| Names and room styling | `UpdateRoom`, `UpdatePeripheral`, and `UpdateDeviceInfo` observed in app traffic | Reads names and styling where useful, but does not offer these writes |
+| Device information | `GetDeviceInfo` observed in app traffic | Gets hub identity from `registration` and the tree instead |
+
+This table counts **dedicated integration support**, not every body a caller could send with
+the raw command action. Scene and scene-group activation would need member-level status
+checks before being treated as reliable actions.
+
+An independent [hub-binary string listing](https://community.home-assistant.io/t/norman-tdbu-blind-control/705405?page=2)
+also names two paths not yet tested on firmware 6.1.25:
+`UpdatePeripheralGroupName` and `UpdateSchedule`. These remain
+**candidates**; their bodies and behavior have not been confirmed on the hub. The listing
+has 22 paths in total, including all 20 in the table. Its firmware version was not reported.
+The installed ShadeAuto 0.8.33 library has builders that suggest
+`{RoomID, GroupID, GroupName}` for group renaming and
+`{ScheduleID, ScheduleEnable, Conditions, Executions}` for schedule updates, in addition
+to `ThingName`. Neither body was sent to the hub during this exploration, so the mapping
+to those two candidate paths and their effects are unverified.
+
+The app may reach other paths in screens or workflows that have not been captured. A feature
+visible in the app is not by itself evidence of a *local* endpoint: check its destination in
+a capture before adding it to this list.
+
+## Configuration endpoints
 
 These were captured from the Norman app or found by probing, and are documented for
 completeness; the integration does not call any of them. All take `ThingName`, `Timestamp`, and `TaskID` in the body and
-answer in the `{"status": {"code", "error"}, "results": {…}}` shape, echoing what was written.
-Each write is followed by an `UpdateTime` notification (above) and the app re-reads the
-matching list.
+answer in the `{"status": {"code", "error"}, "results": {…}}` shape. The captured writes
+were followed by an `UpdateTime` notification (above), and the app re-read the matching list.
 
 | Endpoint | Body (besides the common fields) | Effect |
 |---|---|---|
 | `GetAllSchedule` | — | `results.ScheduleList`: every schedule stored **on the hub**. |
-| `GetAllScene` | — | `results.RoomList`: `[{RoomID, SceneList}]`, one entry per room. Empty on every room of the reference hub, so a scene's shape is still unknown. Found by probing, not seen from the app. |
-| `GetAllSceneGroup` | — | `results.SceneGroupList`, empty on the reference hub. Found by probing. |
+| `GetAllScene` | — | `results.RoomList`: `[{RoomID, SceneList}]`, one entry per room. One saved scene observed on 2026-10-11. Found by probing, not seen from the app. |
+| `GetAllSceneGroup` | — | `results.SceneGroupList`; tested with a disposable two-scene group, then empty after cleanup. Found by probing. |
+| `AddScene` | `RoomID`, `SceneID`, `SceneName`, `Icon`, `Color`, `Sorting`, `PeripheralList` | Creates a room scene. Tested with one shade and a numeric-string scene ID supplied by the client; `status.code: 0`, then present in `GetAllScene`. |
+| `UpdateScene` | `RoomID`, `SceneList: [full scene object]` | A full object with a changed name returned `status.code: 0` and the new name appeared in `GetAllScene`. A partial rename object returned `status.code: 1` and had no effect. |
+| `DeleteScene` | `RoomID`, `SceneID` | Removes a scene. Tested on the disposable one; `status.code: 0`, then absent from `GetAllScene`. |
+| `AddSceneGroup` | `SceneGroupName`, `SceneList: [{RoomID, SceneID}]`, `Sorting`, `Icon`, `Color` | Creates a group of room scenes. Tested with two scenes in separate rooms; the reply assigned a UUID-string `SceneGroupID`, and the group appeared in `GetAllSceneGroup`. |
+| `UpdateSceneGroup` | `SceneGroupList: [full group object]` | A full object with a changed name returned `status.code: 0` and the new name appeared in `GetAllSceneGroup`. |
+| `DeleteSceneGroup` | `SceneGroupID` | Removes a group. Tested on the disposable one; `status.code: 0`, then absent from `GetAllSceneGroup`. |
 | `AddSchedule` | `Conditions`, `Executions`, `ScheduleEnable` | Creates a schedule; the reply carries the hub-assigned `ScheduleID` (a UUID). |
 | `DeleteSchedule` | `ScheduleID` | Removes one. |
 | `UpdateRoom` | `RoomList: [{RoomID, RoomName, Icon, Color, Sorting}]` (all strings) | Renames / restyles rooms. |
 | `UpdatePeripheral` | `RoomID`, `GroupID`, `PeripheralList: [{PeripheralUID, PeripheralName, Sorting}]` (strings) | Renames blinds. |
 | `UpdateDeviceInfo` | `CustomDeviceName` | Renames the hub. |
 | `GetDeviceInfo` | — | `results.CustomDeviceName` (and `ThingName`). |
+
+A newly saved room scene on firmware 6.1.25 produced this shape in `GetAllScene`. The same
+scene object also appeared under the matching room's `SceneList` in `GetAllPeripheral`.
+Identifiers and the name below are placeholders; the position and module values are from the
+observed response. **Every value inside the scene and its targets was a string**, including
+IDs and positions:
+
+```json
+{
+  "RoomID": "12345",
+  "SceneList": [{
+    "SceneID": "1",
+    "SceneName": "Example",
+    "Icon": "<icon>",
+    "Color": "",
+    "Sorting": "1",
+    "PeripheralList": [
+      {"PeripheralUID": "1001", "Position": "0", "BottomRailPosition": "0", "MiddleRailPosition": "100", "ModuleType": "33", "ModuleDetail": "<detail>"},
+      {"PeripheralUID": "1002", "Position": "0", "BottomRailPosition": "0", "MiddleRailPosition": "100", "ModuleType": "33", "ModuleDetail": "<detail>"}
+    ]
+  }]
+}
+```
+
+The two listed UIDs belonged to blinds in that room, and their saved rail positions matched
+`status` when read. `Position` was present as `"0"` even though these type-33 blinds have
+no `Position` in their live `status` entries. This is one example, not a guarantee that every
+scene is confined to its room or has exactly these target fields.
+
+The disposable scene write used the same six fields per `PeripheralList` target shown above:
+`PeripheralUID`, `Position`, `BottomRailPosition`, `MiddleRailPosition`, `ModuleType`, and
+`ModuleDetail`, all as strings. `AddScene` echoed the supplied scene object in `results`.
+`AddSceneGroup` returned its new UUID-string `SceneGroupID`; a subsequent `GetAllSceneGroup`
+returned `SceneGroupName`, `SceneGroupID`, `Icon`, `Color`, `Sorting`, and a `SceneList` of
+`{RoomID, SceneID, SceneName}` objects. A second one-scene group also appeared in
+`GetAllPeripheral` under `results.SceneGroupList`, but its item had only `RoomID` and
+`SceneID`; treat `SceneName` as optional in that list. The delete requests returned success,
+and the records disappeared on the next read. These are tested request forms, not proof that
+every field is required or every alternative value is accepted.
+
+`UpdateScene` succeeded with the complete saved scene object in `SceneList`, changing
+`SceneName` while retaining `SceneID`, `Icon`, `Color`, `Sorting`, and `PeripheralList`.
+A shorter entry containing only `SceneID`, `SceneName`, `Icon`, and `Color` returned
+`status.code: 1` (`"Request process fail."`) and left the name unchanged.
+`UpdateSceneGroup` likewise succeeded with the complete saved group object in
+`SceneGroupList`, changing `SceneGroupName` while retaining `SceneGroupID`, `SceneList`,
+`Sorting`, `Icon`, and `Color`. Both updates were checked with fresh reads and their
+disposable records were removed afterward. These observations do not establish whether
+all unchanged fields are required, only that the full-object forms work.
+
+**Post-write read failure on the reference hub:** after the full-object update tests and
+cleanup, repeated valid `GetAllPeripheral` requests returned
+`{"status": {"code": 1, "error": "Request process fail."}}` with no `RoomList`.
+`registration`, `status` (all 13 blinds), `GetAllScene` (the original scene),
+`GetAllSceneGroup` (empty), and `GetAllSchedule` (empty) still answered normally.
+`GetAllPeripheral` had succeeded after the earlier add/delete tests, but the exact write
+that led to this failure is not isolated. An accepted empty `UpdateSceneGroup` request did
+not restore it. Further configuration writes were stopped. A power cycle did **not** restore
+`GetAllPeripheral`: it still returns code 1 after startup. `GetDeviceInfo` also returns code
+1. `GetAllScene` now returns an empty `RoomList`, so the user's previously saved scene is no
+longer visible through that read. `registration` and `status` still show the same 13 blind IDs;
+all reported actual positions match the saved pretest baseline, and status still carries six
+distinct `RoomID` values. The configuration store may be damaged or inaccessible; the cause
+and the scene's persistence are not yet known. No additional configuration writes should be
+sent to this hub until it is recovered.
+
+#### Run a saved scene
+
+The installed ShadeAuto 0.8.33 `DKIoTClient.framework` has a
+`CreateNormanHub:setToSceneControl:withRoomId:taskIdentifier:` builder. Its control body
+sets `RoomID` and a `SetToScene` field whose **numeric value is the saved `SceneID`**.
+This was tested directly on firmware 6.1.25, with `SceneID: "1"` in the read reply:
+
+```json
+{"RoomID": 12345, "SetToScene": 1, "Timestamp": 1700000000, "TaskID": 8200}
+```
+
+`POST /NM/v1/control` answered `Error: 0` and echoed `RoomID` and `SetToScene`. Before
+the call, the two scene blinds were moved from their saved bottom/middle positions of
+`0/100` to approximately `25/75`. Immediately after the call, both targets read `0/100`;
+by the next five-second status check, **both actual positions** read `0/100`. No position
+changed among the other eleven blinds, and a final `status` read matched all 13 blinds'
+starting positions. This confirms scene activation by the hub on this room and product
+type, not merely acceptance of the request.
+
+`scripts/run_hub_scene.py` repeats this check using room and scene indexes from
+`GetAllScene`. It defaults to a dry run and requires `--execute` to send the command;
+it checks actual positions for every scene target and reports observed changes outside the
+scene. Stage at least one target away from its saved position to verify physical movement.
+
+Do not confuse this use of `SetToScene: 1` with the per-blind registration vocabulary,
+which advertises `SetToScene: 287`; the latter's behavior is untested. The app library
+also builds a control body with `SceneGroupID` for running a scene group. A direct test
+used the UUID-string ID assigned by `AddSceneGroup`:
+
+```json
+{"SceneGroupID": "<group UUID>", "Timestamp": 1700000000, "TaskID": 8800}
+```
+
+The hub returned `Error: 0` and echoed `SceneGroupID`. The group contained three blinds
+across two rooms; one blind in each room had been staged away from its saved scene position.
+The group call changed their targets to the saved positions, and the shade in the original
+scene moved back. **The staged shade in the disposable scene did not move back within
+90 seconds**, although its target changed. Seven `PeripheralList` notifications arrived;
+all mentioned only the group's three blinds, and one listed all three. No other blind's
+actual position changed. A separate per-blind position command restored the missed shade.
+This establishes that group activation is accepted and can fan out across rooms, but one
+successful acknowledgment did not complete every member's move. Group activation needs
+per-blind completion checks and a recovery path. The disposable group and scene were then
+deleted; a final read found only the user's original scene, no groups, and all 13 blinds at
+their pretest positions.
 
 A schedule as the hub stores it:
 
@@ -611,17 +789,102 @@ A schedule as the hub stores it:
 exposed by the integration: Home Assistant automations cover the same ground with far more
 flexibility, and a schedule on the hub would fight them.
 
+## Open questions and coverage workflow
+
+Known gaps between the hub and the integration include hub-stored scenes and schedules, and
+configuration writes. Gaps in the **protocol reference** include group activation reliability,
+schedule updates, group renaming, the rest of pairing, control-field and scope combinations, and
+products absent from the reference hub.
+Norman's [ShadeAuto manual](https://normanusa.com/app/uploads/2024/01/ShadeAuto-Manual.pdf)
+shows scene creation and activation, multiple scenes, group renaming, firmware updates, and
+device setup; it does not specify which of those use the local API. App captures reveal request
+shapes the app uses, but they cannot bound what the hub accepts: room-wide and hub-wide position
+moves were found by sending `/control` forms the app has not been seen sending. Start from the
+direct hub results already recorded above; capture the app only when a particular missing body
+shape cannot be established from hub reads, controlled tests, or available handler code.
+The 2026-10-11 read baseline on the reference hub confirmed firmware 6.1.25, 13 blinds in six
+rooms, and empty schedule, scene, and scene-group lists. A scene was then created. A
+disposable second scene and scene group were tested and removed. After the configuration
+read failure and power cycle, `GetAllScene` returns no rooms; the original scene needs a
+recovery check before treating it as present or permanently lost.
+
+| Question | Best evidence to collect |
+|---|---|
+| Which scene update caused `GetAllPeripheral` to fail? | A hub restart did not restore the read. Determine whether the configuration store can be recovered without further writes; then, on a separate test hub, run one full-object update at a time and check `GetAllPeripheral` immediately after each write and deletion. A successful update reply and changed name did not establish later read health. |
+| When does a scene group drop a member's move? | Repeat controlled group activation with blinds staged in two rooms, collecting each member's actual position and report-in after the command. Compare the radio pacing and recovery behavior with separate room scene calls. One three-blind group call left a staged member unmoved. |
+| How does a schedule change after creation? | Read `GetAllSchedule` and inspect the candidate `UpdateSchedule` handler or a controlled enable/disable operation; compare stored state before and after. |
+| How does group renaming work? | Inspect candidate `UpdatePeripheralGroupName`, then verify its effect with `GetAllPeripheral` on a test group. |
+| What is the rest of pairing? | Record `registration`, `status`, and peripheral lists before and after a controlled pairing test; identify the `SearchForPeripheral` command's reply and notifications. Inspect handler code first where available. |
+| How do other products behave? | Collect redacted `registration`, `GetAllPeripheral`, `status`, and notifications from hubs with Shutter, Roman, PerfectSheer, MRS2, and SmartDrape products. Record `ModuleType`/`ModuleDetail`, firmware, and actual movement for each command. |
+| Are there more local paths? | Compare path strings from a matching hub binary with this table, then probe additional plausible `Get*` names. Repeat on other hub firmware versions. A 404 for a guessed name is only negative evidence for that name and firmware. |
+
+### Direct hub capability tests
+
+Treat `/control` as a matrix of **address scope** and **command fields**, rather than a fixed
+list of app buttons. Four address forms have been observed for at least one command:
+`PeripheralUID`, `RoomID` plus `GroupID`, `RoomID` alone, and no address (whole hub). Cross
+those with the field families
+below, recording accepted requests, actual behavior, and product/firmware differences. The
+[room-wide and hub-wide control table](#room-wide-and-hub-wide-control) is the current partial
+matrix; a blank or "not tested" cell is an experiment to run, not evidence of rejection.
+
+For the report-in rows, `scripts/explore_hub.py` runs one command with an explicit scope and
+compares **all** blind timestamps and positions at chosen intervals. It defaults to a dry run,
+allows `StatusRequest`, `ReportBatteryLevel`, and per-blind `RequestModuleInfo`, and prints no
+hub or blind identifiers in normal output.
+Use `--observe-only` for a no-command comparison, then `--execute` for one controlled request:
+
+```sh
+python3 scripts/explore_hub.py Dexatek.local --verb StatusRequest --scope room --room-index 1 --observe-only
+python3 scripts/explore_hub.py Dexatek.local --verb StatusRequest --scope room --room-index 1 --execute
+```
+
+| Field family | Examples | Open behavior questions |
+|---|---|---|
+| Positions | both rails, either rail alone, Shutter `Position` | Which scopes and module types accept each form? Does an omitted rail reset its target? |
+| Presets and motion | `Switch`, `Favorite`, `MotorStop`, fine-tune verbs | Does each scope reach every intended blind? What happens when two motors are already moving? |
+| Report-in | `StatusRequest`, `ReportBatteryLevel` | Which scopes wake which module types, and how long do replies take? |
+| Advertised settings | verbs in each blind's `registration` record | Which fields are supported by each product, and what values or prerequisites do they require? Capture app behavior or inspect handler logic before testing writes that change calibration or pairing. |
+
+For a reversible test, save full `status` and `GetAllPeripheral` snapshots first. Send one
+request with known affected blinds, wait for the hub's radio and physical movement, then read
+`status` for **every** blind: `Error: 0` and a changed target do not prove delivery. Record
+request, reply, notifications, final positions, hub firmware, and module types. Restore the
+starting positions with individually checked moves. Test field omission and alternate scopes
+separately; the observed room-only bottom-rail request unexpectedly changed middle-rail
+targets, while middle-only returned `Error: 2`. Space commands as described under
+[Control commands are paced](#control-commands-are-paced).
+
+For each app experiment, save a **before snapshot**, perform one action, save the request and
+reply and any `notification` events, then take an **after snapshot**. A capture can be decoded
+with `scripts/parse_hub_capture.py`; `norman.get_hub_data` or a diagnostics export supplies the
+current read payloads. Capture on the app device or at a router/AP mirror that sees its
+traffic to the hub; a laptop simply connected to the same LAN usually cannot see it. The
+parser accepts classic pcap with IPv4, so convert pcapng first. Scrub identifiers and names
+before sharing. The endpoint probe's
+`--json` output contains only a 400-character response sample, so it cannot establish a full
+response schema; retain a separately redacted full reply for newly discovered reads.
+
+Document each confirmed operation with its method/path, required and optional body fields,
+response and error shape, notification side effects, scope (blind, room, hub), app and hub
+versions, product type, and whether it was observed from the app or tested on hardware. Keep
+untested values and inferred meanings marked as such. Start with candidate read probes; test
+writes that alter limits, pairing, firmware, or network settings only on hardware prepared for that
+change. Even a successful `/control` reply needs a later state check to establish its effect.
+
 ## Observed fields
 
 Everything below comes from captures of a real hub (`NienMadeHub`, firmware 6.1.25, 13 blinds
 of two types). Only the fields marked **used** are read by the integration; the rest are kept
 verbatim in the diagnostics capture and are candidates for future features.
 
-This list is also **executable**: `KNOWN_HUB_FIELDS` and `KNOWN_PERIPHERAL_FIELDS` in
-`const.py` hold the same names, and the coordinator logs (at debug level, once per name) any
-field the hub sends that is missing from them. So a firmware update that adds a field, or a
-product nobody has captured, announces itself in the log rather than being silently dropped.
-`tests/test_repo_consistency.py` checks the two lists against each other, so a field
+This list is also **executable**: the `KNOWN_HUB_FIELDS`, `KNOWN_PERIPHERAL_FIELDS`,
+`KNOWN_SCENE_FIELDS`, `KNOWN_SCENE_TARGET_FIELDS`, `KNOWN_SCENE_GROUP_FIELDS`, and
+`KNOWN_SCENE_GROUP_ITEM_FIELDS` sets in `const.py` hold the same names.
+The coordinator checks hub, peripheral, saved scene, and scene-group objects in `GetAllPeripheral` and
+logs an unrecognized field at debug level, once per name. So a firmware update that adds a
+field in one of these objects announces itself in the log rather than being silently dropped.
+`tests/test_repo_consistency.py` checks the lists against this table, so a field
 documented here must be catalogued and vice versa.
 
 ### Hub level
@@ -639,9 +902,33 @@ documented here must be catalogued and vice versa.
 | `PairingMode` | registration (`4`), status (`0` / `5`) | `5` | **used** (pairing-mode sensor): `5` in status while the hub's ten-minute pairing window is open, see [Pairing mode](#pairing-mode). |
 | `OTA`, `DeviceType`, `FirmwareId`, `FirmwareCode`, `TotalSegment`/`Segment`, `CleanPairing` | registration, status | `0`, `48` | not used. `OTA` was `1` in one registration reply while status said `0`. |
 | `StatusRequest`, `ReportBatteryLevel` | registration (`0`) | `0` | The hub's own report-in verbs, listed the same way a blind lists its command vocabulary. **Used** as `control` verbs (see [Waking a blind](#waking-a-blind)); the registration field itself is not read. |
-| `SceneGroupList`, rooms' `SceneList` | GetAllPeripheral | `[]` | not used |
+| `SceneGroupList`, rooms' `SceneList` | GetAllPeripheral | `[]` or saved scene objects | not used |
 | rooms' `Icon`, `Color`, `Sorting`; groups' `Sorting` | GetAllPeripheral | `"3"` | not used |
 | `RequestTimestamp` / `Timestamp` | every reply | seconds / milliseconds | not used |
+
+### Saved scene
+
+These fields were observed in one room scene in `GetAllPeripheral` and `GetAllScene`.
+
+| Field | Where | Observed value | Used |
+|---|---|---|---|
+| `SceneID`, `SceneName` | room's `SceneList` | numeric string, user-chosen string | not used |
+| `Icon`, `Color`, `Sorting` | scene | strings; `Color` was empty | not used |
+| `PeripheralList` | scene | two target objects | not used |
+| `PeripheralUID`, `ModuleType`, `ModuleDetail` | each target | strings | not used |
+| `Position`, `BottomRailPosition`, `MiddleRailPosition` | each target | `"0"`, `"0"`, `"100"` | not used |
+
+### Saved scene group
+
+These fields were observed with disposable groups in `GetAllSceneGroup` and
+`GetAllPeripheral`.
+
+| Field | Where | Observed value | Used |
+|---|---|---|---|
+| `SceneGroupID`, `SceneGroupName` | `SceneGroupList` item | UUID string, user-chosen string | not used |
+| `Icon`, `Color`, `Sorting` | group | strings | not used |
+| `SceneList` | group | one or two room-scene references | not used |
+| `RoomID`, `SceneID`, optional `SceneName` | each reference | strings | not used |
 
 ### Per peripheral
 
@@ -710,7 +997,7 @@ The hub uses two different shapes:
 | Endpoint | Success | Failure |
 |---|---|---|
 | registration, status, control | `"Error": 0` | `"Error": <non-zero int>` |
-| GetAllPeripheral | `"status": {"code": 0}` | `"status": {"code": <non-zero>, "error": "<message>"}` |
+| GetAllPeripheral and configuration endpoints | `"status": {"code": 0}` | `"status": {"code": <non-zero>, "error": "<message>"}` |
 
 **Observed error codes.** Three non-zero `Error` values have been captured, all on `/control`,
 all with HTTP 200 and the fields echoed back, so the code is the only signal of failure:
@@ -773,6 +1060,14 @@ get_hub_data action ──► GetAllPeripheral + status (redacted, returned as t
 send_hub_command action ──► control (caller's fields) ──► status
 mDNS announcement ──► config flow ──► registration (identity) ──► offer, or refresh the address
 ```
+
+If `GetAllPeripheral` fails while `status` still works, the coordinator keeps its last good
+room/name tree and continues updating positions. On a fresh setup without a cached tree it
+creates generic `Norman <uid>` devices from `status`, preserving room and group IDs when
+`status` supplies them. It retries the tree read after at least 60 seconds on a subsequent
+refresh and applies the names when it recovers. This fallback was added after the reference
+hub's configuration reader stayed broken across a power cycle; it does not repair the hub's
+configuration store or make saved scenes available.
 
 The hub's **MAC address is not in any payload**: no endpoint reports it. It is resolved from
 the local ARP table when the entry loads, so it is only available when Home Assistant shares a

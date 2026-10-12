@@ -41,6 +41,7 @@ from custom_components.norman.coordinator import (
     _poll_interval,
     _wake_interval,
     cover_type,
+    room_identifier,
 )
 from custom_components.norman.entity import hub_identifier
 
@@ -383,6 +384,60 @@ async def test_undocumented_fields_are_logged_once_each(
     )
 
 
+async def test_saved_scene_and_group_unknown_fields_are_logged_once(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Saved scenes and groups are checked for new nested fields on refresh."""
+    fake_hub.devices["results"]["RoomList"][0]["SceneList"] = [
+        {
+            "SceneID": "1",
+            "SceneName": "Example",
+            "Icon": "normal",
+            "Color": "",
+            "Sorting": "1",
+            "FutureSceneField": 2,
+            "PeripheralList": [
+                {
+                    "PeripheralUID": str(UID_LIVING),
+                    "Position": "0",
+                    "BottomRailPosition": "0",
+                    "MiddleRailPosition": "100",
+                    "ModuleType": "33",
+                    "ModuleDetail": "1",
+                    "FutureTargetField": 3,
+                }
+            ],
+        }
+    ]
+    fake_hub.devices["results"]["SceneGroupList"] = [
+        {
+            "SceneGroupID": "group-id",
+            "SceneGroupName": "Example group",
+            "Icon": "normal",
+            "Color": "",
+            "Sorting": "1",
+            "FutureGroupField": 4,
+            "SceneList": [{"RoomID": "1", "SceneID": "1", "FutureGroupItemField": 5}],
+        }
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.norman.coordinator"):
+        for _ in range(2):
+            await notifications.put({"UpdateTime": {"room": 1}})
+            await settle(hass)
+
+    messages = [r.getMessage() for r in caplog.records if "undocumented" in r.getMessage()]
+    assert sum("FutureSceneField" in message for message in messages) == 1
+    assert sum("FutureTargetField" in message for message in messages) == 1
+    assert sum("FutureGroupField" in message for message in messages) == 1
+    assert sum("FutureGroupItemField" in message for message in messages) == 1
+    assert len(messages) == 4
+
+
 async def test_documented_fields_are_not_logged(
     hass: HomeAssistant,
     init_with_every_product: MockConfigEntry,
@@ -510,6 +565,92 @@ async def test_periodic_reconnect_refreshes_device_list(
     await settle(hass)
 
     assert len(fake_hub.calls_to("GetAllPeripheral")) == device_calls + 1
+
+
+async def test_failed_device_list_read_keeps_cached_names_and_live_positions(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A broken configuration read must not take working status updates offline."""
+    coordinator = init_integration.runtime_data
+    original_devices = fake_hub.devices
+    fake_hub.devices = {"status": {"code": 1, "error": "Request process fail."}}
+    fake_hub.set_position(UID_LIVING, bottom=25)
+
+    await notifications.put(None)  # reconnect invalidates the tree
+    await settle(hass)
+
+    assert coordinator.last_update_success
+    assert coordinator.data[UID_LIVING].name == "Living Drape"
+    assert coordinator.data[UID_LIVING].bottom_rail_position == 25
+    assert any("device list unavailable" in record.message for record in caplog.records)
+
+    device_calls = len(fake_hub.calls_to("GetAllPeripheral"))
+    await coordinator.async_refresh()
+    assert len(fake_hub.calls_to("GetAllPeripheral")) == device_calls
+
+    fake_hub.devices = original_devices
+    original_devices["results"]["RoomList"][0]["GroupList"][0]["PeripheralList"][0][
+        "PeripheralName"
+    ] = "Renamed blind"
+    coordinator._next_device_info_retry = 0
+    await coordinator.async_refresh()
+
+    assert coordinator.last_update_success
+    assert coordinator.data[UID_LIVING].name == "Renamed blind"
+    assert not coordinator._device_info_stale
+
+
+async def test_first_refresh_uses_status_when_device_list_fails(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """A new setup can still expose shade controls while the room tree is unavailable."""
+    fake_hub.devices = {"status": {"code": 1, "error": "Request process fail."}}
+    fake_hub.peripheral_status(UID_LIVING).update({"RoomID": 1, "GroupID": 10})
+
+    from .conftest import loaded
+
+    async with loaded(hass, mock_config_entry) as entry:
+        coordinator = entry.runtime_data
+        assert coordinator.last_update_success
+        assert coordinator.data[UID_LIVING].name == f"Norman {UID_LIVING}"
+        assert coordinator.data[UID_LIVING].bottom_rail_position == 40
+        assert coordinator.data[UID_LIVING].room_id == 1
+        assert coordinator.data[UID_LIVING].group_id == 10
+        assert coordinator._device_info_stale
+
+
+async def test_restart_without_device_list_keeps_registry_names(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+) -> None:
+    """A restart while the tree is unreadable must not rename devices to placeholders."""
+    fake_hub.devices = {"status": {"code": 1, "error": "Request process fail."}}
+    fake_hub.peripheral_status(UID_LIVING).update({"RoomID": 1, "GroupID": 10})
+
+    assert await hass.config_entries.async_reload(init_integration.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = init_integration.runtime_data
+    assert coordinator._device_info_stale
+    assert coordinator.data[UID_LIVING].name == "Living Drape"
+    assert coordinator.data[UID_LIVING].room_name == "Living Room"
+    names = {
+        identifier: device.name
+        for device in dr.async_entries_for_config_entry(
+            dr.async_get(hass), init_integration.entry_id
+        )
+        for _, identifier in device.identifiers
+    }
+    assert names[str(UID_LIVING)] == "Living Drape"
+    assert names[room_identifier(init_integration, 1)] == "Living Room"
 
 
 async def test_listener_survives_an_unexpected_error(
