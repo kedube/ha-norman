@@ -33,6 +33,9 @@ from custom_components.norman.coordinator import NormanCoordinator, room_identif
 
 from .conftest import FakeHub, loaded, settle
 from .const import (
+    HUB_HOST,
+    HUB_THING_NAME,
+    MOCK_CONFIG,
     SHUTTER_DEVICE,
     SHUTTER_STATUS,
     SMARTDRAPE_DEVICE,
@@ -191,6 +194,60 @@ async def test_a_room_the_hub_cannot_name_gets_no_area(
         assert device.name == f"Room {LIVING_ROOM}"
         assert device.area_id is None
         assert ar.async_get(hass).async_get_area_by_name(f"Room {LIVING_ROOM}") is None
+
+
+async def test_a_room_the_hub_cannot_name_takes_its_blinds_area(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """An unnamed room is named after, and put in, the one area its blinds are in."""
+    fake_hub.devices = {"status": {"code": 1, "error": "Request process fail."}}
+    fake_hub.peripheral_status(UID_LIVING).update({"RoomID": LIVING_ROOM, "GroupID": 10})
+
+    async with loaded(hass, mock_config_entry) as entry:
+        assert _room_device(hass, entry, LIVING_ROOM).name == f"Room {LIVING_ROOM}"
+        area = ar.async_get(hass).async_create("Living Room")
+        blind = _device(hass, entry, str(UID_LIVING))
+        dr.async_get(hass).async_update_device(blind.id, area_id=area.id)
+
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        room = _room_device(hass, entry, LIVING_ROOM)
+        assert room.name == "Living Room"
+        assert room.area_id == area.id
+        assert entry.runtime_data.data[UID_LIVING].room_name == "Living Room"
+
+
+async def test_a_re_added_hub_names_its_rooms_after_the_restored_areas(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Deleting and re-adding the hub while it cannot name rooms keeps rooms in their areas.
+
+    Home Assistant restores a re-added blind's area, but a room's device is keyed by the
+    entry and comes back new, so its name and area have to come from the blinds.
+    """
+    mock_config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    area_id = _room_device(hass, mock_config_entry, LIVING_ROOM).area_id
+    assert area_id
+    await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    fake_hub.devices = {"status": {"code": 1, "error": "Request process fail."}}
+    fake_hub.peripheral_status(UID_LIVING).update({"RoomID": LIVING_ROOM, "GroupID": 10})
+    re_added = MockConfigEntry(
+        domain=DOMAIN,
+        title=f"Norman Hub ({HUB_HOST})",
+        data=MOCK_CONFIG,
+        unique_id=HUB_THING_NAME,
+        entry_id="norman-re-added-entry",
+    )
+    async with loaded(hass, re_added) as entry:
+        assert _device(hass, entry, str(UID_LIVING)).area_id == area_id
+        room = _room_device(hass, entry, LIVING_ROOM)
+        assert room.name == "Living Room"
+        assert room.area_id == area_id
 
 
 async def test_a_room_gets_a_slider_for_each_rail_its_blinds_have(

@@ -307,5 +307,19 @@
     "hub_button_failed": {
       "message": "無法將 {command} 傳送至集線器：{error}"
     }
+  },
+  "issues": {
+    "hub_time_zone_missing": {
+      "title": "Norman Hub {hub} 未設定時區",
+      "description": "{hub} 未回報時區，因此 Hub 自行執行的排程可能會在錯誤的時間開始。請在 Norman App 中設定 Hub 的時區。Hub 回報時區後，此修復項目會自動消失。"
+    },
+    "hub_time_zone_mismatch": {
+      "title": "Norman Hub {hub} 的時間不同",
+      "description": "{hub} 設定為 {hub_time_zone}，但 Home Assistant 使用 {ha_time_zone}。Hub 依自己的時鐘執行排程，因此排程可能會在與您預期不同的時間開始。請更正錯誤的一方：在 Norman App 中變更 Hub 的時區，或在「設定 → 系統 → 一般」中變更 Home Assistant 的時區。兩者時間一致後，此修復項目會自動消失。"
+    },
+    "hub_location_missing": {
+      "title": "Norman Hub {hub} 未設定位置",
+      "description": "{hub} 未回報位置，因此其日出與日落排程可能無法正常執行。請在 Norman App 中設定 Hub 的位置。Hub 回報位置後，此修復項目會自動消失。"
+    }
   }
 }

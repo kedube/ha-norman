@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import logging
 import time
 from typing import Any, NamedTuple
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
@@ -100,6 +103,43 @@ def _distance(rails: _Rails, goal: _Rails) -> int:
 def hub_identifier(entry: ConfigEntry) -> str:
     """Device-registry identifier of the hub device for ``entry``."""
     return f"hub_{entry.entry_id}"
+
+
+# The hub's own settings that get a repair when they are missing or wrong
+HUB_SETTINGS = ("time_zone", "location")
+
+
+def hub_issue_id(entry: ConfigEntry, setting: str) -> str:
+    """Issue-registry id of the repair about one of the hub's ``HUB_SETTINGS``."""
+    return f"hub_{setting}_{entry.entry_id}"
+
+
+def _has_location(geo_loc: Any) -> bool:
+    """Whether ``GeoLoc`` carries both coordinates. Only the fact is kept, never the values."""
+    return isinstance(geo_loc, dict) and all(
+        str(geo_loc.get(key) or "").strip() for key in ("Latitude", "Longitude")
+    )
+
+
+async def _same_clock(hub_zone: str, ha_zone: str) -> bool:
+    """Whether two IANA zones keep the same time, so that aliases such as US/Eastern match.
+
+    Compared by their UTC offsets in January and July, which tells standard time and
+    daylight saving time apart. A name either side cannot resolve counts as a match rather
+    than raising a repair the user may not be able to act on.
+    """
+    if hub_zone == ha_zone:
+        return True
+    hub_tz = await dt_util.async_get_time_zone(hub_zone)
+    ha_tz = await dt_util.async_get_time_zone(ha_zone)
+    if hub_tz is None or ha_tz is None:
+        return True
+    year = dt_util.utcnow().year
+    return all(
+        datetime(year, month, 1, 12, tzinfo=UTC).astimezone(hub_tz).utcoffset()
+        == datetime(year, month, 1, 12, tzinfo=UTC).astimezone(ha_tz).utcoffset()
+        for month in (1, 7)
+    )
 
 
 def room_identifier(entry: ConfigEntry, room_id: int) -> str:
@@ -263,6 +303,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self._device_info: dict[str, Any] = {}
         self._device_info_stale = True
         self._device_info_error_logged = False
+        # Area ids for rooms named after their blinds' area while the hub cannot name them
+        self._room_areas: dict[int, str] = {}
+        # What the hub-settings repairs were last raised for, so they are not redone per refresh
+        self._hub_settings_checked: tuple[Any, ...] | None = None
         self._next_device_info_retry = 0.0
         self._unknown_fields: set[tuple[str, str]] = set()
         self._unknown_module_types: set[int | None] = set()
@@ -894,7 +938,58 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             self._keep_registry_names(devices)
         self._warn_about_unknown_module_types(devices)
         self._sync_device_names(devices)
+        await self._async_check_hub_settings()
         return devices
+
+    async def _async_check_hub_settings(self) -> None:
+        """Raise a repair when the hub has no time zone, a different clock, or no location.
+
+        Home Assistant never uses either setting, but the hub runs its own schedules by
+        them: its clock for timed ones, its location for sunrise and sunset. Nothing else
+        shows their loss. On the reference hub both vanished when its configuration store
+        failed, and the time zone sensor went on showing the old zone. Nothing is known
+        until the device list has been read, so nothing is raised before that.
+        """
+        if not isinstance(self._device_info.get("results"), dict):
+            return
+        hub = self.hub.custom_name or self.config_entry.title
+        ha_zone = self.hass.config.time_zone
+        checked = (hub, self.hub.time_zone, self.hub.has_location, ha_zone)
+        if checked == self._hub_settings_checked:
+            return
+        self._hub_settings_checked = checked
+
+        time_zone_issue: str | None = None
+        if not self.hub.time_zone:
+            time_zone_issue = "hub_time_zone_missing"
+        elif not await _same_clock(self.hub.time_zone, ha_zone):
+            time_zone_issue = "hub_time_zone_mismatch"
+        placeholders = {
+            "hub": hub,
+            "hub_time_zone": self.hub.time_zone or "",
+            "ha_time_zone": ha_zone,
+        }
+        self._set_issue("time_zone", time_zone_issue, placeholders)
+        location_issue = None if self.hub.has_location else "hub_location_missing"
+        self._set_issue("location", location_issue, {"hub": hub})
+
+    def _set_issue(
+        self, setting: str, translation_key: str | None, placeholders: dict[str, str]
+    ) -> None:
+        """Raise (or update) the repair for ``setting``, or clear it when ``translation_key`` is None."""
+        issue_id = hub_issue_id(self.config_entry, setting)
+        if translation_key is None:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=translation_key,
+            translation_placeholders=placeholders,
+        )
 
     def _keep_registry_names(self, devices: NormanDevices) -> None:
         """Name status-only placeholders as the device registry already has them.
@@ -906,9 +1001,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         """
         registry = dr.async_get(self.hass)
         known: dict[str, str] = {}
+        areas: dict[str, str | None] = {}
         for device in dr.async_entries_for_config_entry(registry, self.config_entry.entry_id):
             for domain, identifier in device.identifiers:
-                if domain == DOMAIN and device.name:
+                if domain != DOMAIN:
+                    continue
+                areas[identifier] = device.area_id
+                if device.name:
                     known[identifier] = device.name
         if not self.hub.custom_name:
             self.hub.custom_name = known.get(hub_identifier(self.config_entry))
@@ -919,13 +1018,51 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 # A placeholder kept from an earlier unreadable start is not the hub's name
                 if room_name != f"Room {data.room_id}":
                     data.room_name = room_name
+        self._name_rooms_after_areas(devices, areas)
+
+    def _name_rooms_after_areas(self, devices: NormanDevices, areas: dict[str, str | None]) -> None:
+        """Name a room the hub cannot name after the one area all of its blinds are in.
+
+        Home Assistant keeps a blind's area across a restart and restores it when the
+        integration is re-added, so the blinds still say where a room is. A room whose
+        blinds are spread over several areas, or not placed yet, keeps its placeholder.
+        """
+        unnamed: dict[int, set[str | None]] = {}
+        for device_id, data in devices.items():
+            if data.room_id is not None and not data.room_name:
+                unnamed.setdefault(data.room_id, set()).add(areas.get(str(device_id)))
+        area_registry = ar.async_get(self.hass)
+        self._room_areas = {}
+        for room_id, room_areas in unnamed.items():
+            area_id = room_areas.pop() if len(room_areas) == 1 else None
+            area = area_registry.async_get_area(area_id) if area_id else None
+            if area is None:
+                continue
+            self._room_areas[room_id] = area.id
+            for data in devices.values():
+                if data.room_id == room_id:
+                    data.room_name = area.name
+
+    @callback
+    def async_apply_registry_names(self) -> None:
+        """Re-run the registry fallbacks once the platforms have created their devices.
+
+        The first refresh runs before the blinds' devices exist, and on a re-add before
+        Home Assistant has restored their areas, so the rooms can only be named after that.
+        """
+        if self._device_info or self.data is None:
+            return
+        self._keep_registry_names(self.data)
+        self._sync_device_names(self.data)
+        self.async_update_listeners()
 
     def _sync_device_names(self, devices: NormanDevices) -> None:
         """Carry renames made in the Norman app into the device registry.
 
         Devices are named when they are created and Home Assistant does not re-read
         ``DeviceInfo`` afterwards, so the hub's names are pushed here. A name the user set
-        in Home Assistant (``name_by_user``) is untouched: it always takes precedence.
+        in Home Assistant (``name_by_user``) is untouched: it always takes precedence. A room
+        named after its blinds' area is also put in that area, unless it already has one.
         """
         registry = dr.async_get(self.hass)
         wanted = {str(device_id): data.name for device_id, data in devices.items()}
@@ -935,18 +1072,32 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             wanted[hub_identifier(self.config_entry)] = self.hub.custom_name
         # Devices are looked up through the entry rather than by identifier: identifiers
         # are no longer unique across config entries in Home Assistant 2026.9.
+        room_areas = {
+            room_identifier(self.config_entry, room_id): area_id
+            for room_id, area_id in self._room_areas.items()
+        }
         for device in dr.async_entries_for_config_entry(registry, self.config_entry.entry_id):
             for domain, identifier in device.identifiers:
-                name = wanted.get(identifier) if domain == DOMAIN else None
+                if domain != DOMAIN:
+                    continue
+                name = wanted.get(identifier)
                 if name and device.name != name:
                     registry.async_update_device(device.id, name=name)
+                area_id = room_areas.get(identifier)
+                if area_id and device.area_id is None:
+                    registry.async_update_device(device.id, area_id=area_id)
+        # Placed once: a room taken out of its area afterwards is not put back
+        self._room_areas = {}
 
     def _update_hub_data(self, device_info: dict[str, Any], status_data: dict[str, Any]) -> None:
         """Refresh the hub's own attributes from the two payloads."""
         results = device_info.get("results")
         if isinstance(results, dict):
             self.hub.custom_name = results.get("CustomDeviceName") or self.hub.custom_name
-            self.hub.time_zone = results.get("TimeZone") or self.hub.time_zone
+            # As reported, not kept from an earlier read: a hub that loses either setting has
+            # to show it (see _async_check_hub_settings)
+            self.hub.time_zone = results.get("TimeZone") or None
+            self.hub.has_location = _has_location(results.get("GeoLoc"))
         self.hub.model = self.api.hub_model or self.hub.model
         self.hub.firmware_version = self.api.hub_firmware_version or self.hub.firmware_version
         self.hub.wifi_ssid = self.api.hub_wifi_ssid or self.hub.wifi_ssid

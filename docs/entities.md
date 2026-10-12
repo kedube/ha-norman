@@ -430,7 +430,7 @@ The hub device has its own diagnostic sensors:
 | Sensor | Source | Default | Notes |
 |---|---|---|---|
 | MAC address | the local network (ARP), not the hub | enabled | The hub never reports its MAC. It is looked up when the entry loads, which only works when Home Assistant is on the same network segment as the hub; otherwise the sensor is unknown. When found it is also attached to the device as a network connection. |
-| Time zone | `TimeZone` in the device list | enabled | The IANA zone set in the Norman app; the hub uses it for its own schedules. |
+| Time zone | `TimeZone` in the device list | enabled | The IANA zone set in the Norman app; the hub uses it for its own schedules. Unknown when the hub reports none, which also raises a [repair](#hub-settings-repairs). |
 | Wi-Fi network | `WiFiSSID` in the registration reply | enabled | The network the hub is joined to. Diagnostics downloads still redact it. |
 | Wi-Fi signal | `WiFiRSSI` in status | disabled | dBm. |
 
@@ -439,6 +439,23 @@ And one binary sensor:
 | Binary sensor | Source | Notes |
 |---|---|---|
 | Pairing mode | `PairingMode` in status | **On** while the hub's pairing window is open (status reports `5`; it lasts ten minutes after **Start pairing** or the app opens it), **off** at `0`. |
+
+### Hub settings repairs
+
+The hub runs its own schedules by two settings Home Assistant never uses: its time zone for
+timed schedules, and its location for sunrise and sunset ones. Both are set in the Norman app,
+and losing them is otherwise silent, so the integration raises a warning in **Settings →
+Repairs** when the device list shows:
+
+| Repair | When |
+|---|---|
+| No time zone | `TimeZone` is missing or empty. |
+| A different time | The hub's zone keeps a different time from Home Assistant's. Zones are compared by their UTC offsets in January and July, so an alias such as `US/Eastern` for `America/New_York` matches. The repair names both zones; fix whichever is wrong. |
+| No location | `GeoLoc` is missing, or lacks a latitude or longitude. Only whether a location is set is checked; the coordinates are not stored or shown. |
+
+Each repair clears itself on the next read once the hub reports the setting, and is removed
+with the hub's config entry. Nothing is raised before the device list has been read, since
+nothing is known about the settings until then.
 
 ## Removing a blind
 

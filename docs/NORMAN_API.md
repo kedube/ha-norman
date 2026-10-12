@@ -897,8 +897,9 @@ documented here must be catalogued and vice versa.
 | `CustomDeviceName` | GetAllPeripheral | `ShadeAuto Hub` | **used** (hub device name); redacted |
 | `WiFiRSSI` | status | `-53` | **used** (Wi-Fi signal sensor) |
 | `WiFiSSID` | registration | | **used** (Wi-Fi network sensor); redacted in diagnostics |
-| `TimeZone` | GetAllPeripheral | `America/New_York` | **used** (time zone sensor); redacted in diagnostics |
-| `GeoLoc` (`Latitude`/`Longitude`), `NetworkID` | registration, GetAllPeripheral | | not used; redacted |
+| `TimeZone` | GetAllPeripheral | `America/New_York` | **used** (time zone sensor, time zone repair); redacted in diagnostics |
+| `GeoLoc` (`Latitude`/`Longitude`) | registration, GetAllPeripheral | | **used** only to check that both coordinates are set (location repair); the values are not stored; redacted |
+| `NetworkID` | registration, GetAllPeripheral | | not used; redacted |
 | `PairingMode` | registration (`4`), status (`0` / `5`) | `5` | **used** (pairing-mode sensor): `5` in status while the hub's ten-minute pairing window is open, see [Pairing mode](#pairing-mode). |
 | `OTA`, `DeviceType`, `FirmwareId`, `FirmwareCode`, `TotalSegment`/`Segment`, `CleanPairing` | registration, status | `0`, `48` | not used. `OTA` was `1` in one registration reply while status said `0`. |
 | `StatusRequest`, `ReportBatteryLevel` | registration (`0`) | `0` | The hub's own report-in verbs, listed the same way a blind lists its command vocabulary. **Used** as `control` verbs (see [Waking a blind](#waking-a-blind)); the registration field itself is not read. |

@@ -18,13 +18,23 @@ from homeassistant.helpers import (
 from homeassistant.helpers import (
     entity_registry as er,
 )
+from homeassistant.helpers import (
+    issue_registry as ir,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util.network import is_ip_address
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import DOMAIN, MANUFACTURER, PLATFORMS
-from .coordinator import NormanConfigEntry, NormanCoordinator, room_identifier, rooms_of
+from .coordinator import (
+    HUB_SETTINGS,
+    NormanConfigEntry,
+    NormanCoordinator,
+    hub_issue_id,
+    room_identifier,
+    rooms_of,
+)
 from .entity import hub_identifier
 from .frontend import async_add_entry_panel, async_register_card, async_remove_entry_panel
 from .services import async_setup_services
@@ -90,6 +100,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # With the hub's device list unreadable, rooms are named after their blinds' areas,
+    # which exist (or are restored on a re-add) only now that the platforms have run.
+    coordinator.async_apply_registry_names()
 
     # Serve and register the dashboard card. Best-effort: every entity works without it.
     await async_register_card(hass)
@@ -129,6 +142,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> b
     if unload_ok:
         await async_remove_entry_panel(hass, entry)
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
+    """Clear the repairs about the hub's settings along with its entry."""
+    for setting in HUB_SETTINGS:
+        ir.async_delete_issue(hass, DOMAIN, hub_issue_id(entry, setting))
 
 
 async def async_remove_config_entry_device(

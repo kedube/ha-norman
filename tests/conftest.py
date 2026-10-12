@@ -76,6 +76,16 @@ def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Load custom_components/ for every test."""
 
 
+@pytest.fixture(autouse=True)
+async def _hub_time_zone(hass: HomeAssistant) -> None:
+    """Run Home Assistant in the fake hub's time zone (``TimeZone`` in tests/const.py).
+
+    The test harness defaults to US/Pacific, which would raise the hub's time-zone repair
+    in every test. Tests of that repair pick their own zone.
+    """
+    await hass.config.async_set_time_zone("America/New_York")
+
+
 @pytest.fixture
 def mock_config_entry() -> MockConfigEntry:
     """A config entry for the test hub."""

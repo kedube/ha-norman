@@ -307,5 +307,19 @@
     "hub_button_failed": {
       "message": "Impossible d'envoyer {command} au hub : {error}"
     }
+  },
+  "issues": {
+    "hub_time_zone_missing": {
+      "title": "Le Norman Hub {hub} n'a pas de fuseau horaire",
+      "description": "{hub} n'indique aucun fuseau horaire : les programmations que le hub exécute lui-même risquent de démarrer à la mauvaise heure. Définissez le fuseau horaire du hub dans l'application Norman. Cette réparation disparaît d'elle-même dès que le hub en indique un."
+    },
+    "hub_time_zone_mismatch": {
+      "title": "Le Norman Hub {hub} n'est pas à la même heure",
+      "description": "{hub} est réglé sur {hub_time_zone}, mais Home Assistant utilise {ha_time_zone}. Le hub exécute ses programmations selon sa propre horloge : elles risquent de démarrer à une autre heure que prévu. Corrigez celui qui est faux : le fuseau horaire du hub dans l'application Norman, ou celui de Home Assistant dans Paramètres → Système → Général. Cette réparation disparaît d'elle-même dès que les deux sont à la même heure."
+    },
+    "hub_location_missing": {
+      "title": "Le Norman Hub {hub} n'a pas d'emplacement",
+      "description": "{hub} n'indique aucun emplacement : ses programmations au lever et au coucher du soleil risquent de ne pas fonctionner correctement. Définissez l'emplacement du hub dans l'application Norman. Cette réparation disparaît d'elle-même dès que le hub en indique un."
+    }
   }
 }

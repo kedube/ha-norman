@@ -63,10 +63,11 @@ rules:
     comment: The cover device class provides the icons.
   reconfiguration-flow: done
   repair-issues:
-    status: exempt
+    status: done
     comment: >-
-      Nothing the integration detects needs the user to fix it. A blind that ignores a command
-      is logged and fires an event; a flat battery shows on its battery sensor.
+      The hub's time zone and location, which it runs its own schedules by, raise a repair
+      when missing (or, for the time zone, keeping a different time from Home Assistant's).
+      A blind that ignores a command is not a repair: it is logged and fires an event.
   stale-devices: done
 
   # Platinum

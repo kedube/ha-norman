@@ -307,5 +307,19 @@
     "hub_button_failed": {
       "message": "Failed to send {command} to the hub: {error}"
     }
+  },
+  "issues": {
+    "hub_time_zone_missing": {
+      "title": "Norman Hub {hub} has no time zone",
+      "description": "{hub} reports no time zone, so the schedules the hub runs on its own may start at the wrong time. Set the hub's time zone in the Norman app. This repair clears itself once the hub reports one."
+    },
+    "hub_time_zone_mismatch": {
+      "title": "Norman Hub {hub} keeps a different time",
+      "description": "{hub} is set to {hub_time_zone}, but Home Assistant uses {ha_time_zone}. The hub runs its schedules by its own clock, so they may start at a different time than you expect. Change whichever is wrong: the hub's time zone in the Norman app, or Home Assistant's in Settings → System → General. This repair clears itself once both keep the same time."
+    },
+    "hub_location_missing": {
+      "title": "Norman Hub {hub} has no location",
+      "description": "{hub} reports no location, so its sunrise and sunset schedules may not run correctly. Set the hub's location in the Norman app. This repair clears itself once the hub reports one."
+    }
   }
 }

@@ -5,6 +5,21 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Rooms the hub cannot name follow their blinds' area.** While the hub cannot read its
+  device list, a room whose blinds are all in one area is named after that area and placed
+  in it, so a restart or a re-added hub keeps its rooms in place. Home Assistant restores a
+  re-added blind's area; a room whose blinds are spread over several areas, or not placed
+  yet, keeps its generic name.
+- **A repair when the hub loses its time zone or location.** The hub runs its own schedules by
+  both, and losing them was silent: Settings → Repairs now warns when the hub reports no time
+  zone, one that keeps a different time from Home Assistant's, or no location. Each clears
+  itself once the hub reports the setting again. Only whether a location is set is checked;
+  the coordinates are not stored.
+- **The time zone sensor shows what the hub reports.** It no longer keeps showing an earlier
+  zone after the hub stops reporting one.
+
 ## 0.75 — 2026-10-12
 
 - **The hub keeps its name when its configuration read fails.** A restart while the hub

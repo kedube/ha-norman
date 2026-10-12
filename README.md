@@ -192,7 +192,8 @@ jog down and **request status** (ask a quiet blind to report in); diagnostic sen
 **battery**, **last seen** and, disabled by default, **signal strength** and **firmware
 version**; and a **connection** sensor that turns off after a day of silence, the app's own
 "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
-and (disabled) **Wi-Fi signal** sensors; **all blinds** rail sliders and best privacy, best
+and (disabled) **Wi-Fi signal** sensors, and a repair is raised when the hub has lost its
+time zone or location; **all blinds** rail sliders and best privacy, best
 view, favorite, stop and jog buttons (one request for the whole house); **refresh blinds**,
 **start pairing** and a **pairing mode** sensor. **Each room** gets a device in its area with
 the same for the room: a slider per rail, stop, the presets, jog and refresh, each one request
