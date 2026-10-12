@@ -484,11 +484,11 @@ liveness signal rather than a last-change time. Timings on the reference hub:
 - **Per blind** (`StatusRequest`): the blind's `Timestamp` moved within **5 s**, on every try,
   including a blind that had ignored the hub-wide sweep.
 - **Per room** (`ReportBatteryLevel` + `RoomID`): all three blinds in the room within **5 s**.
-- **Hub-wide** (`ReportBatteryLevel`): the hub polls the battery (type 33) blinds one after
+- **Hub-wide** (`ReportBatteryLevel`): the hub polls the two-rail (type 33) blinds one after
   another; seven of nine had reported within ~30 s, and the remaining two only on a later
-  try. The four type 32 blinds (`RssiMean` 34, wired) did not respond to the sweep at all —
-  but a per-blind `StatusRequest` to one of them was answered in 4 s, so the integration
-  follows every sweep with one request per type 32 blind.
+  try. The four type 32 blinds (single-rail, and battery-powered like the rest) did not
+  respond to the sweep at all — but a per-blind `StatusRequest` to one of them was answered
+  in 4 s, so the integration follows every sweep with one request per single-rail blind.
 
 Direct tests on 2026-10-11 found that `StatusRequest` does **not** appear to use the same scope
 rules as `ReportBatteryLevel`. With `PeripheralUID`, its one target reported within **10 s**

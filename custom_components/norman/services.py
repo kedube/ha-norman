@@ -137,7 +137,7 @@ async def _async_send_room_fields(
     coordinator = entry.runtime_data
     try:
         if command == "refresh":
-            # The sweep plus a per-blind status request to each wired blind in scope.
+            # The sweep plus a per-blind status request to each single-rail blind in scope.
             await coordinator.async_refresh_blinds(room_id)
         else:
             coordinator.async_supersede_room(room_id)

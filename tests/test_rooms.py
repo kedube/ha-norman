@@ -556,7 +556,7 @@ async def test_room_buttons_send_the_verb_with_the_room(
     assert len(fake_hub.calls_to("/status")) == status_calls + 1
 
 
-async def test_room_refresh_sweeps_the_room_then_pokes_its_wired_blinds(
+async def test_room_refresh_sweeps_the_room_then_pokes_its_single_rail_blinds(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
     """norman.room_command's refresh, as a button: the room sweep, then each single-rail blind."""

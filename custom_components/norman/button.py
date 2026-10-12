@@ -132,11 +132,11 @@ class NormanHubButtonDescription(ButtonEntityDescription):
 
 
 # The hub's own buttons. Refresh blinds is the app's refresh on its device & battery status
-# screen: the hub polls every battery blind in turn (~30 s for the reference hub's nine),
-# and the coordinator follows up with a status request to each wired blind, which the
-# hub-wide sweep skips. Room scope is `norman.room_command` with `refresh`. Start pairing
-# opens the hub's ten-minute pairing window (the Pairing mode sensor shows it); the rest of
-# pairing happens at the blind and in the app.
+# screen: the hub polls its blinds in turn (~30 s for the reference hub's nine two-rail
+# ones), and the coordinator follows up with a status request to each single-rail blind,
+# which the hub-wide sweep skipped on the reference hub. Room scope is `norman.room_command`
+# with `refresh`. Start pairing opens the hub's ten-minute pairing window (the Pairing mode
+# sensor shows it); the rest of pairing happens at the blind and in the app.
 HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
     # The app's All Rooms header offers the same three buttons for the whole house, and the
     # hub takes them with no scope field at all (docs/NORMAN_API.md, "Room-wide and hub-wide
@@ -282,7 +282,7 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
         ),
     ),
     # The room form of the hub's Refresh blinds, which norman.room_command's `refresh` sends:
-    # the room sweep plus a status request to each wired blind in the room.
+    # the room sweep plus a status request to each single-rail blind in the room.
     NormanRoomButtonDescription(
         key="room_refresh",
         translation_key="room_refresh",

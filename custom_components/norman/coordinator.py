@@ -303,8 +303,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     async def async_refresh_blinds(self, room_id: int | None = None) -> None:
         """Have every blind (in a room, or on the hub) report in.
 
-        The hub-wide ``ReportBatteryLevel`` sweep reaches only the battery (two-rail) blinds:
-        on the reference hub the four single-rail blinds ignored it every time, while a
+        The hub-wide ``ReportBatteryLevel`` sweep reached only the two-rail blinds: on the
+        reference hub the four single-rail blinds ignored it every time, while a
         per-blind ``StatusRequest`` had one answering in four seconds. So the sweep is
         followed by a status request to each single-rail blind in scope. Nothing moves; the
         answers arrive as notifications over the next half minute, each refreshing the data.

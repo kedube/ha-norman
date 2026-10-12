@@ -537,8 +537,9 @@ class NormanApiClient:
         """Ask every blind in a room, or on the hub, to report in.
 
         ``{"ReportBatteryLevel": 0}`` is what the app's refresh button sends (captured
-        2026-09-18). The hub polls its battery blinds one after another; the whole hub took
-        about 30 s, one room about 5 s. Despite the name the reply carries position and
+        2026-09-18). The hub polls its blinds one after another; the whole hub took about
+        30 s, one room about 5 s, though the reference hub's single-rail blinds ignored the
+        hub-wide form. Despite the name the reply carries position and
         last-seen as well as battery. ``room_id`` of ``None`` addresses the whole hub.
         """
         await self.async_send_room_control(room_id, {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING})

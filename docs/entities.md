@@ -272,14 +272,14 @@ Controls; the jogs are under Configuration with the presets.
 
 **Refresh blinds** sends `{"ReportBatteryLevel": 0}` with no scope field: the same request the
 Norman app's refresh button sends on its device & battery status screen. The hub then polls
-every battery blind in turn and each one reports in over the next half minute (about 30 s for
-nine blinds), each as its own notification. Despite the verb's name the answer carries position
-and last-seen as well as battery. Nothing moves. The hub-wide sweep does **not** reach wired
-(single-rail) blinds — on the reference hub all four ignored it every time, while a per-blind
+its blinds in turn and each one reports in over the next half minute (about 30 s for nine
+blinds), each as its own notification. Despite the verb's name the answer carries position
+and last-seen as well as battery. Nothing moves. On the reference hub the hub-wide sweep did
+**not** reach the single-rail blinds — all four ignored it every time, while a per-blind
 status request had one answering in four seconds — so the button follows the sweep with a
 `StatusRequest` to each single-rail blind. The room-scoped form is `norman.room_command` with
 `refresh` ([docs/services.md](services.md)), which had a whole room reporting in within five
-seconds and does the same follow-up for the room's wired blinds. The **wake sweep** option
+seconds and does the same follow-up for the room's single-rail blinds. The **wake sweep** option
 (below) runs this on a timer.
 
 **Start pairing** sends `{"PairingMode": 5}`, which opens the hub's pairing window for ten
@@ -298,7 +298,7 @@ still works — it just takes a little longer.
 
 **Settings → Devices & services → Norman → Configure** has a second interval next to the poll:
 the **wake sweep**. Every interval it does what Refresh blinds does — the hub-wide sweep plus a
-status request per wired blind — so the hub's own cache is refreshed rather than merely
+status request per single-rail blind — so the hub's own cache is refreshed rather than merely
 re-read. The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's middle
 rail at 100, and when the blinds reported in several read 0; nothing had moved, the cache was
 stale. Off by default. The floor is ten minutes, because a sweep wakes every battery blind's
@@ -327,7 +327,7 @@ blinds, and the hub's device carries the same controls for the whole house.
 | Stop | always | All blinds stop | `MotorStop: 170` |
 | Best privacy, Best view, Favorite position | always, under Configuration | All blinds best privacy, best view, favorite position | `Switch: 0`, `Switch: 1`, `Favorite: 0` |
 | Jog up, Jog down | always, under Configuration | All blinds jog up, jog down | `MotorFineTuneToUp` / `…Down: 170` |
-| Refresh blinds | always, under Diagnostic | Refresh blinds | `ReportBatteryLevel: 0`, then a status request to each wired blind |
+| Refresh blinds | always, under Diagnostic | Refresh blinds | `ReportBatteryLevel: 0`, then a status request to each single-rail blind |
 
 A room's entities are named after the room ("Office Bottom rail position", "Office Stop").
 There is deliberately **no room cover**: "close the office blinds", or a `cover` action aimed

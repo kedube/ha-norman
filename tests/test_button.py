@@ -248,15 +248,15 @@ async def test_start_pairing_opens_the_window_and_re_reads_status(
     assert len(fake_hub.calls_to("/status")) == status_calls + 1
 
 
-async def test_refresh_blinds_sweeps_the_hub_then_pokes_each_wired_blind(
+async def test_refresh_blinds_sweeps_the_hub_then_pokes_each_single_rail_blind(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
     """One press is `{"ReportBatteryLevel": 0}` with no scope field, then one StatusRequest
     per single-rail blind.
 
     Captured from the app's refresh button on 2026-09-18. On hardware the hub-wide sweep
-    never reached the wired (single-rail) blinds, while a per-blind status request did, so
-    the button follows up with one for each of them. The battery blinds answer the sweep on
+    never reached the single-rail blinds, while a per-blind status request did, so the
+    button follows up with one for each of them. The two-rail blinds answer the sweep on
     their own, one notification at a time over the next half minute.
     """
     before = len(fake_hub.control_calls)

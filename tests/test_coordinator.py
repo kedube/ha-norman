@@ -852,12 +852,12 @@ def test_wake_interval_option(option: object, expected: timedelta | None) -> Non
 async def test_wake_sweep_has_every_blind_report_in_on_the_timer(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """Each tick sends the hub-wide report verb, then a status request per wired blind.
+    """Each tick sends the hub-wide report verb, then a status request per single-rail blind.
 
-    The hub-wide ReportBatteryLevel sweep reached only the battery blinds on hardware; the
-    four wired (single-rail) ones ignored it every time, while a per-blind StatusRequest
-    had one answering in four seconds. So the sweep is followed by one request per wired
-    blind. Battery blinds get nothing extra: the sweep already covers them.
+    The hub-wide ReportBatteryLevel sweep reached only the two-rail blinds on hardware; the
+    four single-rail ones ignored it every time, while a per-blind StatusRequest had one
+    answering in four seconds. So the sweep is followed by one request per single-rail
+    blind. Two-rail blinds get nothing extra: the sweep already covers them.
     """
     hass.config_entries.async_update_entry(init_integration, options={CONF_WAKE_INTERVAL: 3600})
     await hass.async_block_till_done()

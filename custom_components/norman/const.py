@@ -61,12 +61,13 @@ SUGGESTED_POLL_INTERVAL = 60
 CONF_POLL_INTERVAL = "poll_interval"
 
 # The wake sweep: have every blind report in on a timer, the way the Norman app's refresh
-# does (hub-wide ReportBatteryLevel, plus a StatusRequest to each wired blind, which the
-# hub-wide sweep skips). The poll above only re-reads the hub's *cache*, and the capture of
-# 2026-09-18 showed that cache being wrong for a blind that had gone quiet -- middle rails
-# the hub reported at 100 read 0 once the blinds reported in. The sweep refreshes the cache
-# itself: positions, battery and last-seen become what the blind says now. Off by default;
-# the floor keeps a sweep from waking battery blinds more than a few times an hour.
+# does (hub-wide ReportBatteryLevel, plus a StatusRequest to each single-rail blind, which
+# the hub-wide sweep skipped on the reference hub). The poll above only re-reads the hub's
+# *cache*, and the capture of 2026-09-18 showed that cache being wrong for a blind that had
+# gone quiet -- middle rails the hub reported at 100 read 0 once the blinds reported in. The
+# sweep refreshes the cache itself: positions, battery and last-seen become what the blind
+# says now. Off by default; the floor keeps a sweep from waking battery blinds more than a
+# few times an hour.
 WAKE_DISABLED = 0
 DEFAULT_WAKE_INTERVAL = WAKE_DISABLED
 MIN_WAKE_INTERVAL = 600
@@ -356,8 +357,9 @@ HUB_SWITCH_CLOSE = 0
 # 2026-09-18 and confirmed against its network library (DKIoTClient.framework builds both
 # with the same value-0 literal it uses for FindTop and Favorite):
 #   {"StatusRequest": 0, "PeripheralUID": X}  -- one blind; it answered within 5 s each time
-#   {"ReportBatteryLevel": 0}                  -- every battery blind on the hub (the app's
-#                                                refresh button); ~30 s for all to report
+#   {"ReportBatteryLevel": 0}                  -- every blind on the hub (the app's refresh
+#                                                button); ~30 s for all to report, though
+#                                                single-rail blinds ignored it
 #   {"ReportBatteryLevel": 0, "RoomID": R}     -- one room; all three blinds in 5 s
 # Neither moves anything. A blind that reports in updates its `Timestamp` in `status` and the
 # hub pushes a PeripheralList notification for it, which is how the coordinator learns of it.

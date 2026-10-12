@@ -281,7 +281,7 @@ async def test_room_command_refresh_asks_the_room_to_report_in(
     """`refresh` is the app's report-in verb: ReportBatteryLevel 0, room- or hub-wide.
 
     Verified on hardware on 2026-09-18: the room form had all three blinds in the room
-    report in within 5 s; the hub-wide form took about 30 s for every battery blind.
+    report in within 5 s; the hub-wide form took about 30 s for every two-rail blind.
     Nothing moves.
     """
     before = len(fake_hub.control_calls)
@@ -301,7 +301,7 @@ async def test_room_command_refresh_asks_the_room_to_report_in(
     )
     calls = fake_hub.control_calls[before:]
     assert calls[0]["RoomID"] == 2
-    # The bedroom's single-rail shade is poked individually: the sweep skips wired blinds.
+    # The bedroom's single-rail shade is poked individually: the sweep skips single-rail blinds.
     assert [c.get("PeripheralUID") for c in calls[1:]] == [UID_BEDROOM]
     assert calls[1]["StatusRequest"] == 0
 
