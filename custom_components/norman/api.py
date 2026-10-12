@@ -49,7 +49,6 @@ _LOGGER = logging.getLogger(__name__)
 # API endpoints
 ENDPOINT_REGISTRATION = "/NM/v1/registration"
 ENDPOINT_GET_ALL_PERIPHERAL = "/NM/v1/GetAllPeripheral"
-ENDPOINT_GET_ALL_SCHEDULE = "/NM/v1/GetAllSchedule"
 ENDPOINT_STATUS = "/NM/v1/status"
 ENDPOINT_CONTROL = "/NM/v1/control"
 ENDPOINT_NOTIFICATION = "/NM/v1/notification"
@@ -407,17 +406,14 @@ class NormanApiClient:
         self.hub_wifi_ssid = data.get("WiFiSSID") or self.hub_wifi_ssid
         return data
 
-    async def _async_config_read(self, endpoint: str, name: str) -> dict[str, Any]:
-        """Send one of the hub's configuration reads and check its ``status.code``.
-
-        These reads need the ThingName obtained during registration, and report errors
-        under ``status`` rather than ``Error``.
-        """
+    async def async_get_devices(self) -> dict[str, Any]:
+        """Get the list of all devices (rooms, groups, peripherals) from the hub."""
+        # GetAllPeripheral needs the ThingName obtained during registration
         if not self._thing_name:
             await self._async_registration()
 
         data = await self._async_request(
-            endpoint,
+            ENDPOINT_GET_ALL_PERIPHERAL,
             {
                 "ThingName": self._thing_name,
                 "TaskID": self._next_task_id(),
@@ -426,27 +422,13 @@ class NormanApiClient:
         )
         status = data.get("status")
         if isinstance(status, dict) and status.get("code", 0) != 0:
-            raise NormanApiError(f"{name} failed: {status.get('error', 'Unknown error')}")
-        return data
-
-    async def async_get_devices(self) -> dict[str, Any]:
-        """Get the list of all devices (rooms, groups, peripherals) from the hub."""
-        data = await self._async_config_read(ENDPOINT_GET_ALL_PERIPHERAL, "GetAllPeripheral")
+            raise NormanApiError(f"GetAllPeripheral failed: {status.get('error', 'Unknown error')}")
         # Without a RoomList the reply names no rooms or blinds. Taking it as an empty house
         # would rename every device to its placeholder, so it counts as a failed read.
         results = data.get("results")
         if not isinstance(results, dict) or not isinstance(results.get("RoomList"), list):
             raise NormanApiError("GetAllPeripheral returned no RoomList")
         return data
-
-    async def async_get_schedules(self) -> list[dict[str, Any]]:
-        """Get the schedules stored on the hub. They are only inspected, never changed."""
-        data = await self._async_config_read(ENDPOINT_GET_ALL_SCHEDULE, "GetAllSchedule")
-        results = data.get("results")
-        schedules = results.get("ScheduleList") if isinstance(results, dict) else None
-        if not isinstance(schedules, list):
-            raise NormanApiError("GetAllSchedule returned no ScheduleList")
-        return [schedule for schedule in schedules if isinstance(schedule, dict)]
 
     async def async_get_status(self) -> dict[str, Any]:
         """Get the current status (positions, battery, firmware) of all devices."""

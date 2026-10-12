@@ -307,19 +307,5 @@
     "hub_button_failed": {
       "message": "{command} konnte nicht an den Hub gesendet werden: {error}"
     }
-  },
-  "issues": {
-    "hub_time_zone_missing": {
-      "title": "{hub} hat keine Zeitzone",
-      "description": "{hub} meldet keine Zeitzone, hat aber eigene Zeitpläne, die zur falschen Zeit laufen können. Die Norman-App bietet keine Einstellung für die Zeitzone des Hubs. Ersetze diese Zeitpläne am besten durch Home-Assistant-Automationen und lösche sie in der Norman-App. Diese Reparatur verschwindet von selbst, sobald der Hub eine Zeitzone meldet oder keine aktiven Zeitpläne mehr hat."
-    },
-    "hub_time_zone_mismatch": {
-      "title": "{hub} geht nach einer anderen Uhr",
-      "description": "{hub} ist auf {hub_time_zone} eingestellt, Home Assistant verwendet aber {ha_time_zone}. Der Hub führt seine Zeitpläne nach seiner eigenen Uhr aus, daher können sie zu einer anderen Zeit starten als erwartet. Ist die Zeitzone von Home Assistant die falsche, ändere sie unter Einstellungen → System → Allgemein; für die des Hubs bietet die Norman-App keine Einstellung. Andernfalls ersetze die Zeitpläne des Hubs am besten durch Home-Assistant-Automationen. Diese Reparatur verschwindet von selbst, sobald beide dieselbe Zeit haben oder der Hub keine aktiven Zeitpläne mehr hat."
-    },
-    "hub_location_missing": {
-      "title": "{hub} hat keinen Standort",
-      "description": "{hub} meldet keinen Standort, daher laufen seine Zeitpläne nach Sonnenaufgang und Sonnenuntergang möglicherweise nicht richtig. Die Norman-App bietet keine Einstellung für den Standort des Hubs. Ersetze diese Zeitpläne am besten durch Home-Assistant-Automationen, die den Standort von Home Assistant verwenden, und lösche sie in der Norman-App. Diese Reparatur verschwindet von selbst, sobald der Hub einen Standort meldet oder keine aktiven Zeitpläne nach Sonnenaufgang oder Sonnenuntergang mehr hat."
-    }
   }
 }

@@ -76,16 +76,6 @@ def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Load custom_components/ for every test."""
 
 
-@pytest.fixture(autouse=True)
-async def _hub_time_zone(hass: HomeAssistant) -> None:
-    """Run Home Assistant in the fake hub's time zone (``TimeZone`` in tests/const.py).
-
-    The test harness defaults to US/Pacific, which would raise the hub's time-zone repair
-    in every test. Tests of that repair pick their own zone.
-    """
-    await hass.config.async_set_time_zone("America/New_York")
-
-
 @pytest.fixture
 def mock_config_entry() -> MockConfigEntry:
     """A config entry for the test hub."""
@@ -116,29 +106,18 @@ class FakeHub:
         self.control_responses: list[dict[str, Any]] = []
         self.control_exc: Exception | None = None
         self.status_exc: Exception | None = None
-        # The hub's stored schedules (none by default, as on the reference hub); set
-        # schedule_response to answer GetAllSchedule with something else entirely
-        self.schedules: list[dict[str, Any]] = []
-        self.schedule_response: dict[str, Any] | None = None
         self.notification_body: str = json.dumps({"Error": 0})
         self._register()
 
     def _register(self) -> None:
         self.mock.post(f"{HUB_URL}/NM/v1/registration", json=REGISTRATION_RESPONSE)
         self.mock.post(f"{HUB_URL}/NM/v1/GetAllPeripheral", side_effect=self._devices)
-        self.mock.post(f"{HUB_URL}/NM/v1/GetAllSchedule", side_effect=self._schedules)
         self.mock.post(f"{HUB_URL}/NM/v1/status", side_effect=self._status)
         self.mock.post(f"{HUB_URL}/NM/v1/control", side_effect=self._control)
         self.mock.post(f"{HUB_URL}/NM/v1/notification", side_effect=self._notification)
 
     async def _devices(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
         return AiohttpClientMockResponse(method, url, json=self.devices)
-
-    async def _schedules(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
-        if self.schedule_response is not None:
-            return AiohttpClientMockResponse(method, url, json=self.schedule_response)
-        body = {"status": {"code": 0, "error": ""}, "results": {"ScheduleList": self.schedules}}
-        return AiohttpClientMockResponse(method, url, json=body)
 
     async def _status(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
         if self.status_exc is not None:

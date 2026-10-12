@@ -307,19 +307,5 @@
     "hub_button_failed": {
       "message": "No se pudo enviar {command} al hub: {error}"
     }
-  },
-  "issues": {
-    "hub_time_zone_missing": {
-      "title": "{hub} no tiene zona horaria",
-      "description": "{hub} no indica ninguna zona horaria, pero tiene programaciones propias que pueden ejecutarse a la hora equivocada. La app de Norman no tiene ningún ajuste para la zona horaria del hub. Considera sustituir esas programaciones por automatizaciones de Home Assistant y eliminarlas en la app de Norman. Esta reparación desaparece sola en cuanto el hub indique una zona horaria o no tenga programaciones activas."
-    },
-    "hub_time_zone_mismatch": {
-      "title": "{hub} usa otra hora",
-      "description": "{hub} está configurado en {hub_time_zone}, pero Home Assistant usa {ha_time_zone}. El hub ejecuta sus programaciones con su propio reloj, así que pueden empezar a una hora distinta de la que esperas. Si la zona horaria incorrecta es la de Home Assistant, cámbiala en Ajustes → Sistema → General; la app de Norman no tiene ningún ajuste para la del hub. Si no, considera sustituir las programaciones del hub por automatizaciones de Home Assistant. Esta reparación desaparece sola en cuanto ambos tengan la misma hora o el hub no tenga programaciones activas."
-    },
-    "hub_location_missing": {
-      "title": "{hub} no tiene ubicación",
-      "description": "{hub} no indica ninguna ubicación, así que sus programaciones de amanecer y atardecer pueden no funcionar bien. La app de Norman no tiene ningún ajuste para la ubicación del hub. Considera sustituir esas programaciones por automatizaciones de Home Assistant, que usan la ubicación de Home Assistant, y eliminarlas en la app de Norman. Esta reparación desaparece sola en cuanto el hub indique una ubicación o no tenga programaciones activas de amanecer o atardecer."
-    }
   }
 }

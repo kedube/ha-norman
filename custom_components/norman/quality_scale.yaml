@@ -63,11 +63,13 @@ rules:
     comment: The cover device class provides the icons.
   reconfiguration-flow: done
   repair-issues:
-    status: done
+    status: exempt
     comment: >-
-      A hub schedule that needs a time zone or location the hub has lost (or a time zone
-      keeping a different time from Home Assistant's) raises a repair. A blind that ignores a
-      command is not a repair: it is logged and fires an event.
+      Nothing the integration detects is something the user can fix. The hub's time zone and
+      location, which it can lose, cannot be set in the Norman app once the hub is set up, and
+      only the hub's own schedules use them; the time zone sensor shows when it is missing. A
+      blind that ignores a command is logged and fires an event; a flat battery shows on its
+      battery sensor.
   stale-devices: done
 
   # Platinum

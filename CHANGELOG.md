@@ -5,6 +5,13 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **No more time zone and location repairs.** The hub's location (which also gives it its time
+  zone) cannot be changed in the Norman app once the hub is set up, so nothing the repairs
+  pointed at could be fixed, and only the hub's own schedules use either. The integration no longer reads the
+  hub's schedule list. The time zone sensor still shows unknown while the hub reports none.
+
 ## 0.77 — 2026-10-12
 
 - **The hub's entry is named as in the Norman app.** A new entry is still titled

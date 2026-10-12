@@ -18,9 +18,6 @@ from homeassistant.helpers import (
 from homeassistant.helpers import (
     entity_registry as er,
 )
-from homeassistant.helpers import (
-    issue_registry as ir,
-)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util.network import is_ip_address
@@ -28,10 +25,8 @@ from homeassistant.util.network import is_ip_address
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import DOMAIN, MANUFACTURER, PLATFORMS, is_default_title
 from .coordinator import (
-    HUB_SETTINGS,
     NormanConfigEntry,
     NormanCoordinator,
-    hub_issue_id,
     room_identifier,
     rooms_of,
 )
@@ -168,12 +163,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> b
     if unload_ok:
         await async_remove_entry_panel(hass, entry)
     return unload_ok
-
-
-async def async_remove_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
-    """Clear the repairs about the hub's settings along with its entry."""
-    for setting in HUB_SETTINGS:
-        ir.async_delete_issue(hass, DOMAIN, hub_issue_id(entry, setting))
 
 
 async def async_remove_config_entry_device(

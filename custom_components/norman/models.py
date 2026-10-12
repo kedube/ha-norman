@@ -51,7 +51,6 @@ class NormanHubData:
     custom_name: str | None = None  # the name given in the Norman app
     mac_address: str | None = None  # resolved from the network; the hub never reports it
     time_zone: str | None = None  # IANA name, as configured in the app
-    has_location: bool | None = None  # whether GeoLoc is set; the coordinates are not kept
     wifi_ssid: str | None = None
     wifi_rssi: int | None = None  # dBm
     ota_in_progress: bool | None = None

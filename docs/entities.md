@@ -430,7 +430,7 @@ The hub device has its own diagnostic sensors:
 | Sensor | Source | Default | Notes |
 |---|---|---|---|
 | MAC address | the local network (ARP), not the hub | enabled | The hub never reports its MAC. It is looked up when the entry loads, which only works when Home Assistant is on the same network segment as the hub; otherwise the sensor is unknown. When found it is also attached to the device as a network connection. |
-| Time zone | `TimeZone` in the device list | enabled | The IANA zone set in the Norman app; the hub uses it for its own schedules. Unknown when the hub reports none; that raises a [repair](#hub-settings-repairs) if a hub schedule needs it. |
+| Time zone | `TimeZone` in the device list | enabled | The IANA zone the hub uses for its own schedules. It comes with the hub's location, a single setting in the Norman app that cannot be changed once the hub is set up. Unknown while the hub reports none: the reference hub has lost it and regained it for a while, so the sensor's history shows when it had one. |
 | Wi-Fi network | `WiFiSSID` in the registration reply | enabled | The network the hub is joined to. Diagnostics downloads still redact it. |
 | Wi-Fi signal | `WiFiRSSI` in status | disabled | dBm. |
 
@@ -439,28 +439,6 @@ And one binary sensor:
 | Binary sensor | Source | Notes |
 |---|---|---|
 | Pairing mode | `PairingMode` in status | **On** while the hub's pairing window is open (status reports `5`; it lasts ten minutes after **Start pairing** or the app opens it), **off** at `0`. |
-
-### Hub settings repairs
-
-The hub runs its own schedules by two settings Home Assistant never uses: its time zone for
-the days and times, and its location for sunrise and sunset. The Norman app has no setting for
-either once the hub is set up, and the reference hub lost both when its configuration store
-failed. Losing them matters only to the hub's own schedules, so the integration reads the
-schedule list (`GetAllSchedule`) and raises a warning in **Settings → Repairs** only when an
-enabled schedule depends on what is missing:
-
-| Repair | When |
-|---|---|
-| No time zone | The hub has an enabled schedule and reports no `TimeZone`. |
-| A different time | The hub has an enabled schedule and its zone keeps a different time from Home Assistant's. Zones are compared by their UTC offsets in January and July, so an alias such as `US/Eastern` for `America/New_York` matches. The repair names both zones: fix Home Assistant's if that is the wrong one. |
-| No location | The hub has an enabled sunrise or sunset schedule and its `GeoLoc` is missing or lacks a latitude or longitude. Only whether a location is set is checked; the coordinates are not stored or shown. |
-
-Since the hub's settings cannot be fixed from the app, the repairs suggest replacing those
-schedules with Home Assistant automations and deleting them in the Norman app. A hub with no
-schedules, or only disabled ones, never raises either. Each repair clears itself once its
-cause is gone. The schedule list is read with the device list, again after a schedule change in
-the app, and on each reconnect; a failed read raises nothing. Repairs are removed with the hub's
-config entry.
 
 ## Removing a blind
 

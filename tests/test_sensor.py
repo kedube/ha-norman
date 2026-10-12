@@ -202,3 +202,23 @@ async def test_battery_voltage_unique_id_is_migrated(
     assert entry.unique_id == f"{UID_LIVING}_battery_level"
     assert hass.states.get("sensor.living_drape_battery_voltage").state == "73"
     assert registry.async_get_entity_id("sensor", DOMAIN, f"{UID_LIVING}_battery_voltage") is None
+
+
+async def test_hub_time_zone_follows_what_the_hub_reports(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """A hub that stops reporting its time zone shows unknown, not the zone it had."""
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{init_integration.entry_id}_time_zone"
+    )
+    assert entity_id
+    assert hass.states.get(entity_id).state == "America/New_York"
+
+    del fake_hub.devices["results"]["TimeZone"]
+    await notifications.put(None)  # a reconnect re-reads the device list
+    await settle(hass)
+
+    assert hass.states.get(entity_id).state == "unknown"

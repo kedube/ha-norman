@@ -593,7 +593,7 @@ Response stream, as observed:
 ## Known endpoint surface
 
 Twenty local paths are known on the reference hub (firmware 6.1.25). The integration calls
-six; fourteen more were captured from the app or tested directly. The hub returned **HTTP 404**
+five; fifteen more were captured from the app or tested directly. The hub returned **HTTP 404**
 for the other names tried, and `scripts/probe_hub_endpoints.py` found two scene reads among 43
 read candidates. That scan tests candidate names, not every possible path or request body. It
 does not establish that the local API is complete, even for this firmware.
@@ -601,8 +601,7 @@ does not establish that the local API is complete, even for this firmware.
 | Path suffix under `/NM/v1/` | Evidence | Integration |
 |---|---|---|
 | `registration`, `GetAllPeripheral`, `status`, `control`, `notification` | app traffic and direct use | used |
-| `GetAllSchedule` | app traffic | used, only to decide the hub-settings repairs |
-| `AddSchedule`, `DeleteSchedule` | app traffic | not used |
+| `GetAllSchedule`, `AddSchedule`, `DeleteSchedule` | app traffic | not used |
 | `UpdateRoom`, `UpdatePeripheral`, `UpdateDeviceInfo`, `GetDeviceInfo` | app traffic | not used |
 | `GetAllScene`, `GetAllSceneGroup` | direct read probe; one saved scene now observed in `GetAllScene` | not used |
 | `AddScene`, `UpdateScene`, `DeleteScene`, `AddSceneGroup`, `UpdateSceneGroup`, `DeleteSceneGroup` | direct create/update/read/delete tests with disposable records | not used |
@@ -613,7 +612,7 @@ The principal integration gaps are:
 |---|---|---|
 | Saved room scenes | Read, create, update, delete, and activate tested on this hub | No scene discovery, entity, or dedicated action; a caller can supply the confirmed `RoomID`/`SetToScene` body through `send_hub_command` |
 | Saved scene groups | Read, create, update, delete, and cross-room activation tested; one motor missed the group command | No scene-group model or dedicated action; a raw `SceneGroupID` control call is possible, without per-member completion checks |
-| Hub schedules | Read, create, and delete observed in app traffic | Read only to tell whether one needs the hub's time zone or location; not modelled otherwise, and Home Assistant automations remain the intended scheduler |
+| Hub schedules | Read, create, and delete observed in app traffic | Not modelled; Home Assistant automations remain the intended scheduler |
 | Names and room styling | `UpdateRoom`, `UpdatePeripheral`, and `UpdateDeviceInfo` observed in app traffic | Reads names and styling where useful, but does not offer these writes |
 | Device information | `GetDeviceInfo` observed in app traffic | Gets hub identity from `registration` and the tree instead |
 
@@ -639,7 +638,7 @@ a capture before adding it to this list.
 ## Configuration endpoints
 
 These were captured from the Norman app or found by probing, and are documented for
-completeness; the integration calls only `GetAllSchedule`, to decide its hub-settings repairs. All take `ThingName`, `Timestamp`, and `TaskID` in the body and
+completeness; the integration does not call any of them. All take `ThingName`, `Timestamp`, and `TaskID` in the body and
 answer in the `{"status": {"code", "error"}, "results": {…}}` shape. The captured writes
 were followed by an `UpdateTime` notification (above), and the app re-read the matching list.
 
@@ -735,9 +734,9 @@ the app offers no setting for either. After a later reboot the hub moved to a ne
 address and reported a time zone for a while, then dropped it again; registration no longer
 carries `GeoLoc` either. Where the hub gets these two settings is not known: since the app
 cannot set them, an outside source such as a cloud lookup that fails intermittently is one
-possibility. Only the hub's own schedules use them, which is why the integration raises a
-repair about them only when an enabled schedule depends on one (see
-[Hub settings repairs](entities.md#hub-settings-repairs)).
+possibility. In the app the time zone and location are a single setting, which cannot be changed once
+the hub is set up. Only the hub's own schedules use them, and nothing local can set them, so the
+integration only shows the time zone as a sensor (unknown while missing) and raises no repair.
 
 #### Run a saved scene
 
@@ -801,9 +800,7 @@ A schedule as the hub stores it:
 `Executions` is any of `RoomIdList` (room + `Switch` open/close), `SceneIdList`, and
 `SceneGroupIdList`; the app sends the unused lists empty. Schedules are deliberately not
 exposed by the integration: Home Assistant automations cover the same ground with far more
-flexibility, and a schedule on the hub would fight them. The integration reads them only to
-tell whether an enabled schedule depends on a time zone or location the hub has lost (see
-[Hub settings repairs](entities.md#hub-settings-repairs)).
+flexibility, and a schedule on the hub would fight them.
 
 ## Open questions and coverage workflow
 
@@ -913,9 +910,8 @@ documented here must be catalogued and vice versa.
 | `CustomDeviceName` | GetAllPeripheral | `ShadeAuto Hub` | **used** (hub device name); redacted |
 | `WiFiRSSI` | status | `-53` | **used** (Wi-Fi signal sensor) |
 | `WiFiSSID` | registration | | **used** (Wi-Fi network sensor); redacted in diagnostics |
-| `TimeZone` | GetAllPeripheral | `America/New_York` | **used** (time zone sensor, time zone repair); redacted in diagnostics |
-| `GeoLoc` (`Latitude`/`Longitude`) | registration, GetAllPeripheral | | **used** only to check that both coordinates are set (location repair); the values are not stored; redacted |
-| `NetworkID` | registration, GetAllPeripheral | | not used; redacted |
+| `TimeZone` | GetAllPeripheral | `America/New_York` | **used** (time zone sensor; unknown when absent); redacted in diagnostics |
+| `GeoLoc` (`Latitude`/`Longitude`), `NetworkID` | registration, GetAllPeripheral | | not used; redacted |
 | `PairingMode` | registration (`4`), status (`0` / `5`) | `5` | **used** (pairing-mode sensor): `5` in status while the hub's ten-minute pairing window is open, see [Pairing mode](#pairing-mode). |
 | `OTA`, `DeviceType`, `FirmwareId`, `FirmwareCode`, `TotalSegment`/`Segment`, `CleanPairing` | registration, status | `0`, `48` | not used. `OTA` was `1` in one registration reply while status said `0`. |
 | `StatusRequest`, `ReportBatteryLevel` | registration (`0`) | `0` | The hub's own report-in verbs, listed the same way a blind lists its command vocabulary. **Used** as `control` verbs (see [Waking a blind](#waking-a-blind)); the registration field itself is not read. |

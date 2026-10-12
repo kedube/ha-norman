@@ -307,19 +307,5 @@
     "hub_button_failed": {
       "message": "Impossible d'envoyer {command} au hub : {error}"
     }
-  },
-  "issues": {
-    "hub_time_zone_missing": {
-      "title": "{hub} n'a pas de fuseau horaire",
-      "description": "{hub} n'indique aucun fuseau horaire, mais il a ses propres programmations, qui risquent de s'exécuter à la mauvaise heure. L'application Norman ne propose aucun réglage pour le fuseau horaire du hub. Envisagez de remplacer ces programmations par des automatisations Home Assistant et de les supprimer dans l'application Norman. Cette réparation disparaît d'elle-même dès que le hub indique un fuseau horaire ou n'a plus de programmation active."
-    },
-    "hub_time_zone_mismatch": {
-      "title": "{hub} n'est pas à la même heure",
-      "description": "{hub} est réglé sur {hub_time_zone}, mais Home Assistant utilise {ha_time_zone}. Le hub exécute ses programmations selon sa propre horloge : elles risquent de démarrer à une autre heure que prévu. Si c'est le fuseau horaire de Home Assistant qui est faux, modifiez-le dans Paramètres → Système → Général ; l'application Norman ne propose aucun réglage pour celui du hub. Sinon, envisagez de remplacer les programmations du hub par des automatisations Home Assistant. Cette réparation disparaît d'elle-même dès que les deux sont à la même heure ou que le hub n'a plus de programmation active."
-    },
-    "hub_location_missing": {
-      "title": "{hub} n'a pas d'emplacement",
-      "description": "{hub} n'indique aucun emplacement : ses programmations au lever et au coucher du soleil risquent de ne pas fonctionner correctement. L'application Norman ne propose aucun réglage pour l'emplacement du hub. Envisagez de remplacer ces programmations par des automatisations Home Assistant, qui utilisent l'emplacement de Home Assistant, et de les supprimer dans l'application Norman. Cette réparation disparaît d'elle-même dès que le hub indique un emplacement ou n'a plus de programmation active au lever ou au coucher du soleil."
-    }
   }
 }
