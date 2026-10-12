@@ -5,6 +5,16 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **The hub keeps its name when its configuration read fails.** A restart while the hub
+  cannot read its device list no longer renames the hub device to the entry title.
+- **A device list with no rooms counts as a failed read.** A reply from the hub that reports
+  success but carries no `RoomList` is retried instead of renaming every blind and room to
+  its generic name.
+- **No more "Room <id>" areas.** Setting up while the hub cannot read its device list no
+  longer creates an area for each unnamed room; the room's device is left without an area.
+
 ## 0.74 — 2026-10-12
 
 - **Shade controls stay available when the hub's configuration read fails.** The integration

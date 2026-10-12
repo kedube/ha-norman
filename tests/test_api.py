@@ -142,6 +142,25 @@ async def test_get_devices_status_error(
         await client.async_get_devices()
 
 
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"status": {"code": 0}},
+        {"status": {"code": 0}, "results": {"TaskID": 1}},
+        {"status": {"code": 0}, "results": {"RoomList": None}},
+    ],
+)
+async def test_get_devices_without_room_list(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker, reply: dict
+) -> None:
+    """A reply that names no rooms is a failed read, not a hub with no blinds."""
+    aioclient_mock.post(REGISTRATION, json={"Error": 0, "ThingName": HUB_THING_NAME})
+    aioclient_mock.post(GET_ALL, json=reply)
+
+    with pytest.raises(NormanApiError, match="no RoomList"):
+        await client.async_get_devices()
+
+
 async def test_get_status(client: NormanApiClient, aioclient_mock: AiohttpClientMocker) -> None:
     """Status does not need registration and surfaces its Error field."""
     aioclient_mock.post(STATUS, json={"Error": 0, "Peripherals": []})

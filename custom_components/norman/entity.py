@@ -227,12 +227,17 @@ class NormanScopeEntity(CoordinatorEntity[NormanCoordinator]):
             return
         self._attr_unique_id = f"{entry.entry_id}_{room_id}_{description.key}"
         name = rooms_of(coordinator.data).get(room_id, f"Room {room_id}")
+        # While the hub's device list is unreadable a room has only its placeholder name.
+        # Suggesting that would create an area called "Room <id>", so the room gets none.
+        named = any(
+            data.room_id == room_id and data.room_name for data in coordinator.data.values()
+        )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, room_identifier(entry, room_id))},
             name=name,
             manufacturer=MANUFACTURER,
             model="Room",
-            suggested_area=name,
+            suggested_area=name if named else None,
             **_via_hub(coordinator, entry),
         )
 

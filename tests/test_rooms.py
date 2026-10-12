@@ -179,6 +179,20 @@ async def test_every_room_gets_a_device_in_its_area(
         assert ar.async_get(hass).async_get_area(device.area_id).name == name
 
 
+async def test_a_room_the_hub_cannot_name_gets_no_area(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A fresh setup without the device list must not create a "Room <id>" area."""
+    fake_hub.devices = {"status": {"code": 1, "error": "Request process fail."}}
+    fake_hub.peripheral_status(UID_LIVING).update({"RoomID": LIVING_ROOM, "GroupID": 10})
+
+    async with loaded(hass, mock_config_entry) as entry:
+        device = _room_device(hass, entry, LIVING_ROOM)
+        assert device.name == f"Room {LIVING_ROOM}"
+        assert device.area_id is None
+        assert ar.async_get(hass).async_get_area_by_name(f"Room {LIVING_ROOM}") is None
+
+
 async def test_a_room_gets_a_slider_for_each_rail_its_blinds_have(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:

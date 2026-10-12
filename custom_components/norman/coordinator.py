@@ -899,9 +899,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     def _keep_registry_names(self, devices: NormanDevices) -> None:
         """Name status-only placeholders as the device registry already has them.
 
-        Without the device list every blind is ``Norman <uid>`` and every room
-        ``Room <id>``. A restart while the hub cannot read its configuration would otherwise
-        push those placeholders over the names the registry kept from the last good read.
+        Without the device list every blind is ``Norman <uid>``, every room ``Room <id>``,
+        and the hub has no custom name (setup would fall back to the entry title). A restart
+        while the hub cannot read its configuration would otherwise push those placeholders
+        over the names the registry kept from the last good read.
         """
         registry = dr.async_get(self.hass)
         known: dict[str, str] = {}
@@ -909,10 +910,15 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             for domain, identifier in device.identifiers:
                 if domain == DOMAIN and device.name:
                     known[identifier] = device.name
+        if not self.hub.custom_name:
+            self.hub.custom_name = known.get(hub_identifier(self.config_entry))
         for device_id, data in devices.items():
             data.name = known.get(str(device_id), data.name)
             if data.room_id is not None and not data.room_name:
-                data.room_name = known.get(room_identifier(self.config_entry, data.room_id))
+                room_name = known.get(room_identifier(self.config_entry, data.room_id))
+                # A placeholder kept from an earlier unreadable start is not the hub's name
+                if room_name != f"Room {data.room_id}":
+                    data.room_name = room_name
 
     def _sync_device_names(self, devices: NormanDevices) -> None:
         """Carry renames made in the Norman app into the device registry.

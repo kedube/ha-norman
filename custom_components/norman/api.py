@@ -423,6 +423,11 @@ class NormanApiClient:
         status = data.get("status")
         if isinstance(status, dict) and status.get("code", 0) != 0:
             raise NormanApiError(f"GetAllPeripheral failed: {status.get('error', 'Unknown error')}")
+        # Without a RoomList the reply names no rooms or blinds. Taking it as an empty house
+        # would rename every device to its placeholder, so it counts as a failed read.
+        results = data.get("results")
+        if not isinstance(results, dict) or not isinstance(results.get("RoomList"), list):
+            raise NormanApiError("GetAllPeripheral returned no RoomList")
         return data
 
     async def async_get_status(self) -> dict[str, Any]:

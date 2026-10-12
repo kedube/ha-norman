@@ -651,6 +651,7 @@ async def test_restart_without_device_list_keeps_registry_names(
     }
     assert names[str(UID_LIVING)] == "Living Drape"
     assert names[room_identifier(init_integration, 1)] == "Living Room"
+    assert names[hub_identifier(init_integration)] == "ShadeAuto Hub"
 
 
 async def test_listener_survives_an_unexpected_error(
