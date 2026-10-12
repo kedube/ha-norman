@@ -15,8 +15,16 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 
 from custom_components.norman.const import DOMAIN
 
-from .conftest import HUB_MAC, FakeHub, cover_entity_id, settle
-from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
+from .conftest import HUB_MAC, FakeHub, cover_entity_id, loaded, settle
+from .const import (
+    HUB_HOST,
+    HUB_THING_NAME,
+    HUB_URL,
+    MOCK_CONFIG,
+    UID_BEDROOM,
+    UID_LIVING,
+    UID_STATUS_ONLY,
+)
 
 
 async def test_setup_creates_devices_and_unloads_cleanly(
@@ -182,3 +190,35 @@ async def test_remove_device_only_for_blinds_the_hub_dropped(
 
     assert await async_remove_config_entry_device(hass, entry, status_only)
     assert not await async_remove_config_entry_device(hass, entry, living)
+
+
+async def test_the_entry_is_titled_after_the_hub(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The default ``Norman Hub (<host>)`` gives way to the name set in the Norman app."""
+    assert init_integration.title == "ShadeAuto Hub"
+    # Renamed before the update listener exists, so the entry was not reloaded for it
+    assert len(fake_hub.calls_to("registration")) == 1
+
+
+async def test_the_entry_title_follows_a_hub_rename(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A title taken from the hub's old name follows its new one."""
+    async with loaded(hass, mock_config_entry) as entry:
+        assert entry.title == "ShadeAuto Hub"
+        fake_hub.devices["results"]["CustomDeviceName"] = "Annisquam Shades"
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.title == "Annisquam Shades"
+
+
+async def test_a_title_chosen_in_home_assistant_stays(
+    hass: HomeAssistant, fake_hub: FakeHub
+) -> None:
+    """Only titles the integration gave are replaced."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="Upstairs shades", data=MOCK_CONFIG, unique_id=HUB_THING_NAME
+    )
+    async with loaded(hass, entry):
+        assert entry.title == "Upstairs shades"

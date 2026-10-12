@@ -20,9 +20,9 @@ basis. This page explains the status of the ones that are not simply "done".
   capture of the Norman app); the announcement has no TXT record, so the flow reads the hub's
   identity over HTTP before offering or updating it. Every error the integration raises
   carries a translation key (`exceptions` in `strings.json`), so `exception-translations` is
-  done, and so is the rest of Gold. `repair-issues` is done: a hub missing its time zone or
-  location, or keeping a different time from Home Assistant, raises a repair, since the hub's
-  own schedules depend on them. A blind that ignores a command is logged and fires an event
+  done, and so is the rest of Gold. `repair-issues` is done: a hub schedule that depends on a
+  time zone or location the hub has lost, or on a time zone keeping a different time from Home
+  Assistant's, raises a repair. A blind that ignores a command is logged and fires an event
   instead.
 - **Platinum:** complete. The integration is annotated throughout and `mypy` reports no issues;
   a CI job runs it on every push so it stays that way. Note that Platinum formally requires the

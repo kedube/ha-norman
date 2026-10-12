@@ -593,7 +593,7 @@ Response stream, as observed:
 ## Known endpoint surface
 
 Twenty local paths are known on the reference hub (firmware 6.1.25). The integration calls
-five; fifteen more were captured from the app or tested directly. The hub returned **HTTP 404**
+six; fourteen more were captured from the app or tested directly. The hub returned **HTTP 404**
 for the other names tried, and `scripts/probe_hub_endpoints.py` found two scene reads among 43
 read candidates. That scan tests candidate names, not every possible path or request body. It
 does not establish that the local API is complete, even for this firmware.
@@ -601,7 +601,8 @@ does not establish that the local API is complete, even for this firmware.
 | Path suffix under `/NM/v1/` | Evidence | Integration |
 |---|---|---|
 | `registration`, `GetAllPeripheral`, `status`, `control`, `notification` | app traffic and direct use | used |
-| `GetAllSchedule`, `AddSchedule`, `DeleteSchedule` | app traffic | not used |
+| `GetAllSchedule` | app traffic | used, only to decide the hub-settings repairs |
+| `AddSchedule`, `DeleteSchedule` | app traffic | not used |
 | `UpdateRoom`, `UpdatePeripheral`, `UpdateDeviceInfo`, `GetDeviceInfo` | app traffic | not used |
 | `GetAllScene`, `GetAllSceneGroup` | direct read probe; one saved scene now observed in `GetAllScene` | not used |
 | `AddScene`, `UpdateScene`, `DeleteScene`, `AddSceneGroup`, `UpdateSceneGroup`, `DeleteSceneGroup` | direct create/update/read/delete tests with disposable records | not used |
@@ -612,7 +613,7 @@ The principal integration gaps are:
 |---|---|---|
 | Saved room scenes | Read, create, update, delete, and activate tested on this hub | No scene discovery, entity, or dedicated action; a caller can supply the confirmed `RoomID`/`SetToScene` body through `send_hub_command` |
 | Saved scene groups | Read, create, update, delete, and cross-room activation tested; one motor missed the group command | No scene-group model or dedicated action; a raw `SceneGroupID` control call is possible, without per-member completion checks |
-| Hub schedules | Read, create, and delete observed in app traffic | Not modelled; Home Assistant automations remain the intended scheduler |
+| Hub schedules | Read, create, and delete observed in app traffic | Read only to tell whether one needs the hub's time zone or location; not modelled otherwise, and Home Assistant automations remain the intended scheduler |
 | Names and room styling | `UpdateRoom`, `UpdatePeripheral`, and `UpdateDeviceInfo` observed in app traffic | Reads names and styling where useful, but does not offer these writes |
 | Device information | `GetDeviceInfo` observed in app traffic | Gets hub identity from `registration` and the tree instead |
 
@@ -638,7 +639,7 @@ a capture before adding it to this list.
 ## Configuration endpoints
 
 These were captured from the Norman app or found by probing, and are documented for
-completeness; the integration does not call any of them. All take `ThingName`, `Timestamp`, and `TaskID` in the body and
+completeness; the integration calls only `GetAllSchedule`, to decide its hub-settings repairs. All take `ThingName`, `Timestamp`, and `TaskID` in the body and
 answer in the `{"status": {"code", "error"}, "results": {…}}` shape. The captured writes
 were followed by an `UpdateTime` notification (above), and the app re-read the matching list.
 
@@ -722,8 +723,21 @@ not restore it. Further configuration writes were stopped. A power cycle did **n
 longer visible through that read. `registration` and `status` still show the same 13 blind IDs;
 all reported actual positions match the saved pretest baseline, and status still carries six
 distinct `RoomID` values. The configuration store may be damaged or inaccessible; the cause
-and the scene's persistence are not yet known. No additional configuration writes should be
-sent to this hub until it is recovered.
+and the scene's persistence are not yet known.
+
+Only `GetDeviceInfo` and `GetAllPeripheral` failed, the two reads that carry the hub's own
+record (`CustomDeviceName`, `TimeZone`, `GeoLoc`); the scene, scene-group and schedule reads
+did not. **Recovery:** the owner renamed the hub, every room and every blind in the Norman
+app and changed their icons, rewriting each record. Both reads then returned `status.code: 0`
+again, with all 6 rooms and 13 blinds named as before and the hub under its new name; the
+saved scene did not come back. `TimeZone` and `GeoLoc` stayed absent from both replies, and
+the app offers no setting for either. After a later reboot the hub moved to a new DHCP
+address and reported a time zone for a while, then dropped it again; registration no longer
+carries `GeoLoc` either. Where the hub gets these two settings is not known: since the app
+cannot set them, an outside source such as a cloud lookup that fails intermittently is one
+possibility. Only the hub's own schedules use them, which is why the integration raises a
+repair about them only when an enabled schedule depends on one (see
+[Hub settings repairs](entities.md#hub-settings-repairs)).
 
 #### Run a saved scene
 
@@ -787,7 +801,9 @@ A schedule as the hub stores it:
 `Executions` is any of `RoomIdList` (room + `Switch` open/close), `SceneIdList`, and
 `SceneGroupIdList`; the app sends the unused lists empty. Schedules are deliberately not
 exposed by the integration: Home Assistant automations cover the same ground with far more
-flexibility, and a schedule on the hub would fight them.
+flexibility, and a schedule on the hub would fight them. The integration reads them only to
+tell whether an enabled schedule depends on a time zone or location the hub has lost (see
+[Hub settings repairs](entities.md#hub-settings-repairs)).
 
 ## Open questions and coverage workflow
 

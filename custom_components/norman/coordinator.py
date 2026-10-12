@@ -121,6 +121,26 @@ def _has_location(geo_loc: Any) -> bool:
     )
 
 
+def _schedules_need(schedules: list[dict[str, Any]]) -> tuple[bool, bool]:
+    """Whether the hub's enabled schedules need its time zone, and its location.
+
+    Every schedule runs on given weekdays and most at a set time, both by the hub's clock;
+    a sunrise or sunset one also needs the hub's location. A schedule whose
+    ``ScheduleEnable`` is missing counts as enabled.
+    """
+    enabled = [
+        schedule
+        for schedule in schedules
+        if str(schedule.get("ScheduleEnable")).strip().lower() not in ("false", "0")
+    ]
+    by_sun = any(
+        isinstance(conditions := schedule.get("Conditions"), dict)
+        and ("SunriseOffsetMin" in conditions or "SunsetOffsetMin" in conditions)
+        for schedule in enabled
+    )
+    return bool(enabled), by_sun
+
+
 async def _same_clock(hub_zone: str, ha_zone: str) -> bool:
     """Whether two IANA zones keep the same time, so that aliases such as US/Eastern match.
 
@@ -307,6 +327,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self._room_areas: dict[int, str] = {}
         # What the hub-settings repairs were last raised for, so they are not redone per refresh
         self._hub_settings_checked: tuple[Any, ...] | None = None
+        # The hub's schedules, read only to decide those repairs; None until one read works
+        self._schedules: list[dict[str, Any]] | None = None
+        self._schedules_stale = True
         self._next_device_info_retry = 0.0
         self._unknown_fields: set[tuple[str, str]] = set()
         self._unknown_module_types: set[int | None] = set()
@@ -837,6 +860,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                         # the device list so names and rooms follow. Keep the last good
                         # tree if that read fails; status can still update the blinds.
                         self._device_info_stale = True
+                    if self._schedules_changed(notification):
+                        self._schedules_stale = True
                     # Debounced rather than immediate: the hub answers a sweep with one
                     # notification *per blind* over ~30 s (docs/NORMAN_API.md, "Waking a
                     # blind"), so a thirteen-blind hub would otherwise fire thirteen full
@@ -875,6 +900,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             # Re-fetch the device list and states before the next connection so anything
             # that changed while the stream was down (or a newly paired blind) is picked up.
             self._device_info_stale = True
+            self._schedules_stale = True
             await self.async_refresh()
 
     @staticmethod
@@ -883,12 +909,18 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
         ``UpdateTime`` carries one key per changed thing: ``room``, ``peripheral``,
         ``device`` (the hub itself), or ``schedule``. Schedules are not modelled, so they
-        do not invalidate anything.
+        do not invalidate the device list (see ``_schedules_changed``).
         """
         update = notification.get("UpdateTime")
         if not isinstance(update, dict):
             return False
         return any(key != "schedule" for key in update)
+
+    @staticmethod
+    def _schedules_changed(notification: dict[str, Any]) -> bool:
+        """Whether a notification says a schedule was added, changed or removed."""
+        update = notification.get("UpdateTime")
+        return isinstance(update, dict) and "schedule" in update
 
     async def _async_update_data(self) -> NormanDevices:
         """Fetch data from API.
@@ -942,27 +974,39 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         return devices
 
     async def _async_check_hub_settings(self) -> None:
-        """Raise a repair when the hub has no time zone, a different clock, or no location.
+        """Raise a repair when the hub's schedules lack the time zone or location they need.
 
         Home Assistant never uses either setting, but the hub runs its own schedules by
-        them: its clock for timed ones, its location for sunrise and sunset. Nothing else
-        shows their loss. On the reference hub both vanished when its configuration store
-        failed, and the time zone sensor went on showing the old zone. Nothing is known
-        until the device list has been read, so nothing is raised before that.
+        them: its clock for the days and times, its location for sunrise and sunset. The
+        Norman app has no setting for either once the hub is set up, so a repair is raised
+        only when an enabled schedule depends on what is missing or wrong; a hub without
+        schedules is fine without them. Nothing is known until the device list has been
+        read, nor about the schedules until their list has, so nothing is raised before.
         """
         if not isinstance(self._device_info.get("results"), dict):
             return
+        await self._async_refresh_schedules()
+        if self._schedules is None:
+            return
+        needs_clock, needs_location = _schedules_need(self._schedules)
         hub = self.hub.custom_name or self.config_entry.title
         ha_zone = self.hass.config.time_zone
-        checked = (hub, self.hub.time_zone, self.hub.has_location, ha_zone)
+        checked = (
+            hub,
+            self.hub.time_zone,
+            self.hub.has_location,
+            ha_zone,
+            needs_clock,
+            needs_location,
+        )
         if checked == self._hub_settings_checked:
             return
         self._hub_settings_checked = checked
 
         time_zone_issue: str | None = None
-        if not self.hub.time_zone:
+        if needs_clock and not self.hub.time_zone:
             time_zone_issue = "hub_time_zone_missing"
-        elif not await _same_clock(self.hub.time_zone, ha_zone):
+        elif needs_clock and not await _same_clock(self.hub.time_zone or "", ha_zone):
             time_zone_issue = "hub_time_zone_mismatch"
         placeholders = {
             "hub": hub,
@@ -970,8 +1014,24 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             "ha_time_zone": ha_zone,
         }
         self._set_issue("time_zone", time_zone_issue, placeholders)
-        location_issue = None if self.hub.has_location else "hub_location_missing"
+        location_issue = (
+            "hub_location_missing" if needs_location and not self.hub.has_location else None
+        )
         self._set_issue("location", location_issue, {"hub": hub})
+
+    async def _async_refresh_schedules(self) -> None:
+        """Re-read the hub's schedules after a reconnect or a schedule change.
+
+        Only the settings repairs use them, so a failed read does not fail the update: the
+        last list read (or none, which raises nothing) stands until the next attempt.
+        """
+        if not self._schedules_stale:
+            return
+        self._schedules_stale = False
+        try:
+            self._schedules = await self.api.async_get_schedules()
+        except (NormanConnectionError, NormanApiError) as err:
+            _LOGGER.debug("Norman hub schedules unavailable: %s", err)
 
     def _set_issue(
         self, setting: str, translation_key: str | None, placeholders: dict[str, str]

@@ -22,6 +22,7 @@ from .const import HUB_HOST, HUB_THING_NAME, HUB_URL
 
 REGISTRATION = f"{HUB_URL}/NM/v1/registration"
 GET_ALL = f"{HUB_URL}/NM/v1/GetAllPeripheral"
+GET_SCHEDULES = f"{HUB_URL}/NM/v1/GetAllSchedule"
 STATUS = f"{HUB_URL}/NM/v1/status"
 CONTROL = f"{HUB_URL}/NM/v1/control"
 NOTIFICATION = f"{HUB_URL}/NM/v1/notification"
@@ -159,6 +160,37 @@ async def test_get_devices_without_room_list(
 
     with pytest.raises(NormanApiError, match="no RoomList"):
         await client.async_get_devices()
+
+
+async def test_get_schedules(client: NormanApiClient, aioclient_mock: AiohttpClientMocker) -> None:
+    """GetAllSchedule needs the ThingName too, and yields the hub's ScheduleList."""
+    aioclient_mock.post(REGISTRATION, json={"Error": 0, "ThingName": HUB_THING_NAME})
+    aioclient_mock.post(
+        GET_SCHEDULES,
+        json={"status": {"code": 0}, "results": {"ScheduleList": [{"ScheduleID": "a"}, "junk"]}},
+    )
+
+    assert await client.async_get_schedules() == [{"ScheduleID": "a"}]
+    assert aioclient_mock.mock_calls[1][2]["ThingName"] == HUB_THING_NAME
+
+
+@pytest.mark.parametrize(
+    ("reply", "match"),
+    [
+        ({"status": {"code": 1, "error": "Request process fail."}}, "Request process fail"),
+        ({"status": {"code": 0}}, "no ScheduleList"),
+        ({"status": {"code": 0}, "results": {"ScheduleList": None}}, "no ScheduleList"),
+    ],
+)
+async def test_get_schedules_errors(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker, reply: dict, match: str
+) -> None:
+    """A failed or empty-handed schedule read is an API error, like the device list's."""
+    aioclient_mock.post(REGISTRATION, json={"Error": 0, "ThingName": HUB_THING_NAME})
+    aioclient_mock.post(GET_SCHEDULES, json=reply)
+
+    with pytest.raises(NormanApiError, match=match):
+        await client.async_get_schedules()
 
 
 async def test_get_status(client: NormanApiClient, aioclient_mock: AiohttpClientMocker) -> None:

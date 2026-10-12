@@ -116,18 +116,29 @@ class FakeHub:
         self.control_responses: list[dict[str, Any]] = []
         self.control_exc: Exception | None = None
         self.status_exc: Exception | None = None
+        # The hub's stored schedules (none by default, as on the reference hub); set
+        # schedule_response to answer GetAllSchedule with something else entirely
+        self.schedules: list[dict[str, Any]] = []
+        self.schedule_response: dict[str, Any] | None = None
         self.notification_body: str = json.dumps({"Error": 0})
         self._register()
 
     def _register(self) -> None:
         self.mock.post(f"{HUB_URL}/NM/v1/registration", json=REGISTRATION_RESPONSE)
         self.mock.post(f"{HUB_URL}/NM/v1/GetAllPeripheral", side_effect=self._devices)
+        self.mock.post(f"{HUB_URL}/NM/v1/GetAllSchedule", side_effect=self._schedules)
         self.mock.post(f"{HUB_URL}/NM/v1/status", side_effect=self._status)
         self.mock.post(f"{HUB_URL}/NM/v1/control", side_effect=self._control)
         self.mock.post(f"{HUB_URL}/NM/v1/notification", side_effect=self._notification)
 
     async def _devices(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
         return AiohttpClientMockResponse(method, url, json=self.devices)
+
+    async def _schedules(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        if self.schedule_response is not None:
+            return AiohttpClientMockResponse(method, url, json=self.schedule_response)
+        body = {"status": {"code": 0, "error": ""}, "results": {"ScheduleList": self.schedules}}
+        return AiohttpClientMockResponse(method, url, json=body)
 
     async def _status(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
         if self.status_exc is not None:

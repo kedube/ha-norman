@@ -65,9 +65,9 @@ rules:
   repair-issues:
     status: done
     comment: >-
-      The hub's time zone and location, which it runs its own schedules by, raise a repair
-      when missing (or, for the time zone, keeping a different time from Home Assistant's).
-      A blind that ignores a command is not a repair: it is logged and fires an event.
+      A hub schedule that needs a time zone or location the hub has lost (or a time zone
+      keeping a different time from Home Assistant's) raises a repair. A blind that ignores a
+      command is not a repair: it is logged and fires an event.
   stale-devices: done
 
   # Platinum

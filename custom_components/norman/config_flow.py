@@ -22,6 +22,7 @@ from homeassistant.helpers.selector import (
     NumberSelectorMode,
 )
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+from homeassistant.helpers.typing import UNDEFINED
 from homeassistant.util.network import is_host_valid
 
 # Home Assistant 2026.9 replaced voluptuous with probatio, a drop-in for it, and 2026.10 no
@@ -52,6 +53,8 @@ from .const import (
     SUGGESTED_POLL_INTERVAL,
     SUGGESTED_WAKE_INTERVAL,
     WAKE_DISABLED,
+    default_title,
+    is_default_title,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -158,7 +161,7 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured(updates={CONF_HOST: host})
                 return self.async_create_entry(
-                    title=f"Norman Hub ({host})",
+                    title=default_title(host),
                     data={CONF_HOST: host},
                 )
 
@@ -201,7 +204,7 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="unknown")
         if user_input is not None:
             return self.async_create_entry(
-                title=f"Norman Hub ({host})",
+                title=default_title(host),
                 data={CONF_HOST: host},
             )
         return self.async_show_form(
@@ -223,8 +226,12 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
             elif unique_id := await self._async_validate_host(host, errors):
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_mismatch(reason="wrong_hub")
+                # A title the integration gave follows the address; one chosen in Home
+                # Assistant, or taken from the hub's name, stays.
                 return self.async_update_reload_and_abort(
-                    entry, data_updates={CONF_HOST: host}, title=f"Norman Hub ({host})"
+                    entry,
+                    data_updates={CONF_HOST: host},
+                    title=default_title(host) if is_default_title(entry.title) else UNDEFINED,
                 )
 
         return self.async_show_form(

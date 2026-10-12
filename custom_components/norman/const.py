@@ -9,6 +9,17 @@ from homeassistant.const import Platform
 DOMAIN = "norman"
 MANUFACTURER = "Norman"
 
+
+def default_title(host: str) -> str:
+    """The title a new entry gets: registration does not carry the name set in the app."""
+    return f"Norman Hub ({host})"
+
+
+def is_default_title(title: str) -> bool:
+    """Whether ``title`` is one the integration gave, for this or an earlier address."""
+    return title.startswith("Norman Hub (") and title.endswith(")")
+
+
 # Platforms
 PLATFORMS = [
     Platform.BINARY_SENSOR,

@@ -310,16 +310,16 @@
   },
   "issues": {
     "hub_time_zone_missing": {
-      "title": "Norman Hub {hub} has no time zone",
-      "description": "{hub} reports no time zone, so the schedules the hub runs on its own may start at the wrong time. Set the hub's time zone in the Norman app. This repair clears itself once the hub reports one."
+      "title": "{hub} has no time zone",
+      "description": "{hub} reports no time zone, but it has schedules of its own, which may run at the wrong time. The Norman app has no setting for the hub's time zone. Consider replacing those schedules with Home Assistant automations and deleting them in the Norman app. This repair clears itself once the hub reports a time zone or has no enabled schedules."
     },
     "hub_time_zone_mismatch": {
-      "title": "Norman Hub {hub} keeps a different time",
-      "description": "{hub} is set to {hub_time_zone}, but Home Assistant uses {ha_time_zone}. The hub runs its schedules by its own clock, so they may start at a different time than you expect. Change whichever is wrong: the hub's time zone in the Norman app, or Home Assistant's in Settings → System → General. This repair clears itself once both keep the same time."
+      "title": "{hub} keeps a different time",
+      "description": "{hub} is set to {hub_time_zone}, but Home Assistant uses {ha_time_zone}. The hub runs its schedules by its own clock, so they may start at a different time than you expect. If Home Assistant's time zone is the wrong one, change it in Settings → System → General; the Norman app has no setting for the hub's. Otherwise consider replacing the hub's schedules with Home Assistant automations. This repair clears itself once both keep the same time or the hub has no enabled schedules."
     },
     "hub_location_missing": {
-      "title": "Norman Hub {hub} has no location",
-      "description": "{hub} reports no location, so its sunrise and sunset schedules may not run correctly. Set the hub's location in the Norman app. This repair clears itself once the hub reports one."
+      "title": "{hub} has no location",
+      "description": "{hub} reports no location, so its sunrise and sunset schedules may not run correctly. The Norman app has no setting for the hub's location. Consider replacing those schedules with Home Assistant automations, which use Home Assistant's own location, and deleting them in the Norman app. This repair clears itself once the hub reports a location or has no enabled sunrise or sunset schedules."
     }
   }
 }

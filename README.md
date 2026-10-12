@@ -132,7 +132,8 @@ entry's switch are described in [docs/options.md](docs/options.md).
 **Discovered.** The hub announces itself on the local network, so once the integration is
 installed a **Norman Hub (address)** card appears under **Settings → Devices & services →
 Discovered**. Click **Add**, confirm, and Home Assistant contacts the hub, reads its identity,
-and creates one cover entity per blind, named as in the Norman app. Discovery needs Home
+and creates one cover entity per blind, named as in the Norman app; the entry itself takes the
+hub's name from the app. Discovery needs Home
 Assistant and the hub on the same network segment (mDNS does not cross routers or most VLANs).
 
 **By address.** If nothing is discovered:
@@ -192,8 +193,8 @@ jog down and **request status** (ask a quiet blind to report in); diagnostic sen
 **battery**, **last seen** and, disabled by default, **signal strength** and **firmware
 version**; and a **connection** sensor that turns off after a day of silence, the app's own
 "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
-and (disabled) **Wi-Fi signal** sensors, and a repair is raised when the hub has lost its
-time zone or location; **all blinds** rail sliders and best privacy, best
+and (disabled) **Wi-Fi signal** sensors, and a repair is raised when one of the hub's own
+schedules needs a time zone or location the hub has lost; **all blinds** rail sliders and best privacy, best
 view, favorite, stop and jog buttons (one request for the whole house); **refresh blinds**,
 **start pairing** and a **pairing mode** sensor. **Each room** gets a device in its area with
 the same for the room: a slider per rail, stop, the presets, jog and refresh, each one request

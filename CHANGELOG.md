@@ -5,6 +5,20 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **The hub's entry is named as in the Norman app.** A new entry is still titled
+  `Norman Hub (<address>)`, since the hub only gives its name once it is read, but setup now
+  retitles it with the hub's name and follows later renames. A title changed in Home Assistant
+  is kept, and so is any non-default title when the address is reconfigured.
+- **Time zone and location repairs only when a hub schedule needs them.** The Norman app
+  cannot set either after the hub's setup, and nothing but the hub's own schedules uses them,
+  so a hub without schedules no longer gets a repair it cannot act on. The integration reads
+  the hub's schedule list (read-only) to decide, and the repairs now suggest replacing those
+  schedules with Home Assistant automations.
+- **Repair titles name the hub once.** They read "Annisquam Shades has no time zone" instead
+  of "Norman Hub Annisquam Shades has no time zone".
+
 ## 0.76 — 2026-10-12
 
 - **Rooms the hub cannot name follow their blinds' area.** While the hub cannot read its

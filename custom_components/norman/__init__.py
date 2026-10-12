@@ -26,7 +26,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.util.network import is_ip_address
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
-from .const import DOMAIN, MANUFACTURER, PLATFORMS
+from .const import DOMAIN, MANUFACTURER, PLATFORMS, is_default_title
 from .coordinator import (
     HUB_SETTINGS,
     NormanConfigEntry,
@@ -67,6 +67,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
     coordinator = NormanCoordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    # Before the update listener below is added: a title change would otherwise reload the entry
+    _async_title_after_hub(hass, entry, coordinator.hub.custom_name)
     coordinator.hub.mac_address = await _async_resolve_mac(hass, entry.data[CONF_HOST])
 
     # The hub itself gets a device so every blind can hang off it as a via-device.
@@ -109,6 +111,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
     # The sidebar entry that opens the card full screen (when the option is on).
     await async_add_entry_panel(hass, entry)
     return True
+
+
+@callback
+def _async_title_after_hub(
+    hass: HomeAssistant, entry: NormanConfigEntry, hub_name: str | None
+) -> None:
+    """Title the entry after the hub's name in the Norman app, as its device is named.
+
+    Only a title the integration gave is replaced: the ``Norman Hub (<host>)`` a new entry
+    gets, or the hub's previous name (its device's name until this setup renames it). A
+    title chosen in Home Assistant stays.
+    """
+    if not hub_name or entry.title == hub_name:
+        return
+    previous = next(
+        (
+            device.name
+            for device in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+            if (DOMAIN, hub_identifier(entry)) in device.identifiers
+        ),
+        None,
+    )
+    if is_default_title(entry.title) or entry.title == previous:
+        hass.config_entries.async_update_entry(entry, title=hub_name)
 
 
 async def _async_resolve_mac(hass: HomeAssistant, host: str) -> str | None:

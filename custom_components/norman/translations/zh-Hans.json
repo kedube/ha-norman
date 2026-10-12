@@ -310,16 +310,16 @@
   },
   "issues": {
     "hub_time_zone_missing": {
-      "title": "Norman Hub {hub} 未设置时区",
-      "description": "{hub} 未报告时区，因此 Hub 自行运行的日程可能会在错误的时间开始。请在 Norman 应用中设置 Hub 的时区。Hub 报告时区后，此修复项会自动消失。"
+      "title": "{hub} 未设置时区",
+      "description": "{hub} 未报告时区，但它有自己的日程，这些日程可能会在错误的时间运行。Norman 应用中没有设置 Hub 时区的选项。建议将这些日程替换为 Home Assistant 自动化，并在 Norman 应用中删除它们。Hub 报告时区或不再有已启用的日程后，此修复项会自动消失。"
     },
     "hub_time_zone_mismatch": {
-      "title": "Norman Hub {hub} 的时间不同",
-      "description": "{hub} 设置为 {hub_time_zone}，但 Home Assistant 使用 {ha_time_zone}。Hub 按自己的时钟运行日程，因此日程可能会在与您预期不同的时间开始。请更正错误的一方：在 Norman 应用中更改 Hub 的时区，或在“设置 → 系统 → 常规”中更改 Home Assistant 的时区。两者时间一致后，此修复项会自动消失。"
+      "title": "{hub} 的时间不同",
+      "description": "{hub} 设置为 {hub_time_zone}，但 Home Assistant 使用 {ha_time_zone}。Hub 按自己的时钟运行日程，因此日程可能会在与您预期不同的时间开始。如果是 Home Assistant 的时区有误，请在“设置 → 系统 → 常规”中更改；Norman 应用中没有设置 Hub 时区的选项。否则，建议将 Hub 的日程替换为 Home Assistant 自动化。两者时间一致或 Hub 不再有已启用的日程后，此修复项会自动消失。"
     },
     "hub_location_missing": {
-      "title": "Norman Hub {hub} 未设置位置",
-      "description": "{hub} 未报告位置，因此其日出和日落日程可能无法正常运行。请在 Norman 应用中设置 Hub 的位置。Hub 报告位置后，此修复项会自动消失。"
+      "title": "{hub} 未设置位置",
+      "description": "{hub} 未报告位置，因此其日出和日落日程可能无法正常运行。Norman 应用中没有设置 Hub 位置的选项。建议将这些日程替换为使用 Home Assistant 位置的 Home Assistant 自动化，并在 Norman 应用中删除它们。Hub 报告位置或不再有已启用的日出或日落日程后，此修复项会自动消失。"
     }
   }
 }
