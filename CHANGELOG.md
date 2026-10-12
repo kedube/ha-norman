@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.77 — 2026-10-12
 
 - **The hub's entry is named as in the Norman app.** A new entry is still titled
   `Norman Hub (<address>)`, since the hub only gives its name once it is read, but setup now
