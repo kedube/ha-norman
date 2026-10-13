@@ -285,6 +285,105 @@ check("_build drops presets when hidden", countIn({ hide_room_presets:true }, "r
   check("the room's presets button folds them out", tray.hidden === false && more.attrs["aria-expanded"] === "true");
 }
 
+// --- a room's scenes, after its presets ---------------------------------------------------
+{
+  // Den's room device (r2) holds two scenes, one hidden in Home Assistant, and the hub -- here
+  // placed in Den's area too -- holds a scene group, which belongs to no single room. Loft
+  // has a scene but no blinds, so no section on the card.
+  const sceneHass = (extra = {}, states = {}) => ({
+    ...hass,
+    entities: {
+      ...hass.entities,
+      "scene.den_home_assistant": { platform:"norman", device_id:"r2", translation_key:"room_scene", name:"Home Assistant" },
+      "scene.den_evening": { platform:"norman", device_id:"r2", translation_key:"room_scene", name:"Evening" },
+      "scene.den_hidden": { platform:"norman", device_id:"r2", translation_key:"room_scene", name:"Hidden", hidden:true },
+      "scene.norman_hub_bedtime": { platform:"norman", device_id:"hub", translation_key:"scene_group", name:"Bedtime" },
+      "scene.loft_morning": { platform:"norman", device_id:"r3", translation_key:"room_scene", name:"Morning" },
+      ...extra,
+    },
+    devices: {
+      ...hass.devices,
+      hub: { name:"Norman Hub", area_id:"a2" },
+      r2: { name:"Den", area_id:"a2" },
+      r3: { name:"Loft", area_id:"a3" },
+    },
+    areas: { ...hass.areas, a3: { name:"Loft" } },
+    states: {
+      ...hass.states,
+      "scene.den_home_assistant": { state:"2026-10-12T21:24:02+00:00", attributes:{} },
+      "scene.den_evening": { state:"unknown", attributes:{} },
+      ...states,
+    },
+    callService: (d, s2, data) => calls.push([d, s2, data]),
+  });
+  const trayOf = (c, room) => {
+    const rooms = byClass(c.shadowRoot, "room");
+    const section = rooms.find((r) => byClass(r, "room-name")[0]?.textContent === room);
+    return section && byClass(section, "tray")[0];
+  };
+  const sceneChips = (tray) => (byClass(tray, "room-scenes")[0]?.children || []);
+  const words = (chips) => chips.map((chip) => chip.children[1].textContent);
+
+  let c = rendered({}, sceneHass());
+  const denTray = trayOf(c, "Den");
+  check("a room's scenes follow its presets in the tray",
+        denTray?.children.length === 2 && denTray.children[0].className.includes("room-presets") &&
+        denTray.children[1].className.includes("room-scenes"),
+        JSON.stringify(denTray?.children.map((ch) => ch.className)));
+  check("a room's scenes are folded away with its presets", denTray?.hidden === true);
+  check("a room's scenes are listed by name, without hidden ones or scene groups",
+        JSON.stringify(words(sceneChips(denTray))) === JSON.stringify(["Evening", "Home Assistant"]),
+        JSON.stringify(words(sceneChips(denTray))));
+  const fbTray = trayOf(c, "Front Bedroom");
+  check("a room without scenes shows only its presets",
+        fbTray?.children.length === 1 && !byClass(fbTray, "room-scenes").length,
+        JSON.stringify(fbTray?.children.map((ch) => ch.className)));
+  check("a scene in a room with no blinds is not shown",
+        !byClass(c.shadowRoot, "room-scenes").some((group) => words(group.children).includes("Morning")));
+  check("a hub without scenes shows none", countIn({}, "room-scenes") === 0);
+  check("hiding the room presets hides the scenes too", byClass(rendered({ hide_room_presets:true }, sceneHass()).shadowRoot, "room-scenes").length === 0);
+
+  const [evening] = sceneChips(denTray);
+  check("a scene chip says which room it acts on", evening.title === "Evening — Den", evening.title);
+  calls.length = 0;
+  evening._on.click();
+  check("a scene chip runs the scene",
+        JSON.stringify(calls) === JSON.stringify([["scene", "turn_on", { entity_id:"scene.den_evening" }]]),
+        JSON.stringify(calls));
+
+  // Greyed out while the scene is unavailable, and back when it returns.
+  const down = sceneHass({}, { "scene.den_home_assistant": { state:"unavailable", attributes:{} } });
+  c = rendered({}, down);
+  const chipFor = (card, entityId) =>
+    sceneChips(trayOf(card, "Den")).find((chip) => chip.dataset.entityId === entityId);
+  check("an unavailable scene's chip is disabled", chipFor(c, "scene.den_home_assistant")?.disabled === true);
+  check("an available scene's chip is not", chipFor(c, "scene.den_evening")?.disabled === false);
+  c._hass = sceneHass(); c._update();
+  check("a scene's chip comes back when the scene does", chipFor(c, "scene.den_home_assistant")?.disabled === false);
+
+  // A scene added, or renamed, in the app rebuilds the room's tray.
+  c._hass = sceneHass({ "scene.den_movie": { platform:"norman", device_id:"r2", translation_key:"room_scene", name:"Movie" } });
+  c._update();
+  check("a new scene appears in its room",
+        JSON.stringify(words(sceneChips(trayOf(c, "Den")))) === JSON.stringify(["Evening", "Home Assistant", "Movie"]),
+        JSON.stringify(words(sceneChips(trayOf(c, "Den")))));
+
+  // An area set on the scene itself wins over its room device's, as everywhere in Home Assistant.
+  c = rendered({}, sceneHass({ "scene.den_evening": { platform:"norman", device_id:"r2", translation_key:"room_scene", name:"Evening", area_id:"a1" } }));
+  check("a scene placed in another area shows in that room",
+        JSON.stringify(words(sceneChips(trayOf(c, "Front Bedroom")))) === JSON.stringify(["Evening"]) &&
+        JSON.stringify(words(sceneChips(trayOf(c, "Den")))) === JSON.stringify(["Home Assistant"]));
+
+  // With a hub configured, only that hub's scenes.
+  const scoped = new Card();
+  const two = sceneHass();
+  two.devices = { ...two.devices, r2: { ...two.devices.r2, config_entries:["home"] } };
+  scoped._hass = two; scoped.setConfig({ type:"custom:norman-shades-card", config_entry_id:"cabin" }); scoped._hass = two;
+  check("another hub's scenes are left out", scoped._collectScenes().size === 0);
+  scoped.setConfig({ type:"custom:norman-shades-card", config_entry_id:"home" }); scoped._hass = two;
+  check("this hub's scenes are kept", scoped._collectScenes().get("Den")?.length === 2);
+}
+
 // --- presets are labelled chips ---------------------------------------------------------
 {
   const c = rendered();

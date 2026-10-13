@@ -100,7 +100,7 @@ EVENT_COMMAND_FAILED = f"{DOMAIN}_command_failed"
 # (diagnostics of 2026-09-21, every request stamped 1790018526) had the hub serialise them
 # ~333 ms apart, ack every one with Error 0, store every target -- and eleven of thirteen
 # blinds never moved, having missed their transmission. Pacing the sends fixes it. The
-# threshold was measured on the reference hub twice, and the two tests disagreed: sending
+# threshold was measured on real hardware twice, and the two tests disagreed: sending
 # the thirteen commands by hand, 1.0-1.2 s still lost a few and 1.3 s got them all; but the
 # same house running the scene through a Home Assistant automation kept losing a blind now
 # and then at 1.3 s, so the hand test was the easier case. At 1.5 s several consecutive
@@ -368,9 +368,9 @@ HUB_SWITCH_CLOSE = 0
 #                                                ~30 s for all to report, though
 #                                                single-rail blinds ignored it
 #   {"ReportBatteryLevel": 0, "RoomID": R}     -- one room; all three blinds in 5 s
-# Neither moved anything on the reference hub. On a hub of type 48 roller shades, the
-# hub-wide form followed by a StatusRequest to each shade closed every shade (issue #5). A
-# blind that reports in updates its `Timestamp` in `status` and the hub pushes a
+# Neither moves a cellular shade (verified on real hardware). On a hub of type 48 roller
+# shades, the hub-wide form followed by a StatusRequest to each shade closed every shade
+# (issue #5). A blind that reports in updates its `Timestamp` in `status` and the hub pushes a
 # PeripheralList notification for it, which is how the coordinator learns of it. See
 # docs/NORMAN_API.md, "Waking a blind".
 HUB_CMD_REQUEST_STATUS = "StatusRequest"
@@ -406,7 +406,7 @@ UNRESPONSIVE_AFTER = timedelta(hours=24)
 # sliders a blind gets (its getPositionTypes) and what it is called:
 #   1        Shutter (MS4). Driven by one louver field, Position 0-7, not by the rails.
 #   32       Cellular Shade (MCS). ModuleDetail 3-5 get two sliders (a top-down/bottom-up
-#            shade); 0 and 2 one. The reference hub's are 32/2: middle rail always 0.
+#            shade); 0 and 2 one. 32/2 is verified on real hardware: middle rail always 0.
 #   33       Cellular Shade, dual (DMCS), ModuleDetail 3-5: two rails for its two fabrics.
 #   48, 49   The roller family (MRS1, MRS2), named by ModuleDetail: 1 Roller Shade and
 #            2 Roman Shade (one rail), 3 PerfectSheer (the rail plus a vane control on the
@@ -416,8 +416,8 @@ UNRESPONSIVE_AFTER = timedelta(hours=24)
 # A two-rail shade's rails hang one above the other and carry each other when they would
 # cross; a drape's or a PerfectSheer's two values are independent motions.
 # Unknown types fall back to two-rail -- the safer default, since a two-rail blind driven as
-# single-rail would leave its middle rail unreachable -- and are logged once so the owner can
-# report the hub payload. The fallback is not free on a single-rail product: Best Privacy and
+# single-rail would leave its middle rail unreachable -- and are logged once so the hub payload
+# can be reported. The fallback is not free on a single-rail product: Best Privacy and
 # Best View record a middle-rail target of 100 (see HUB_CMD_SWITCH) that such a blind never
 # reports, so one already at the preset never looks arrived, and the move watchdog resends it
 # and then gives up. That is how the roller shades in issue #2 were found.

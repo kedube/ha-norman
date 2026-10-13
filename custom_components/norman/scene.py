@@ -25,6 +25,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.typing import UndefinedType
 
 from .api import NormanApiError, NormanConnectionError
 from .const import DOMAIN
@@ -33,6 +34,10 @@ from .entity import NormanScopeEntity, scope_unique_id
 from .models import NormanScene, NormanSceneGroup
 
 PARALLEL_UPDATES = 0
+
+# The scenes' translation keys (strings.json, entity.scene).
+ROOM_SCENE_KEY = "room_scene"
+SCENE_GROUP_KEY = "scene_group"
 
 
 async def async_setup_entry(
@@ -101,12 +106,16 @@ class NormanSceneEntity(NormanScopeEntity, Scene):
         self._name = name
 
     @property
-    def name(self) -> str:
-        """The scene's name in the Norman app, following renames there."""
+    def name(self) -> str | UndefinedType | None:
+        """The scene's name in the Norman app, following renames there.
+
+        A scene saved without one is called what its kind is called ("Scene", "Scene
+        group"), in the user's language, through its translation key.
+        """
         saved = self._saved
         if saved is not None:
             self._name = saved.name
-        return self._name
+        return self._name or super().name
 
     @property
     def available(self) -> bool:
@@ -120,6 +129,11 @@ class NormanSceneEntity(NormanScopeEntity, Scene):
 
 class NormanRoomScene(NormanSceneEntity):
     """A scene saved in one of the hub's rooms."""
+
+    # The name is the app's; the translated one is only for a scene saved without one. The
+    # key is also how the dashboard card tells a room's scenes from the hub's scene groups:
+    # the registry it reads carries no unique id.
+    _attr_translation_key = ROOM_SCENE_KEY
 
     def __init__(
         self, coordinator: NormanCoordinator, entry: NormanConfigEntry, scene: NormanScene
@@ -155,6 +169,8 @@ class NormanRoomScene(NormanSceneEntity):
 
 class NormanSceneGroupEntity(NormanSceneEntity):
     """A group of room scenes saved on the hub, run together across rooms."""
+
+    _attr_translation_key = SCENE_GROUP_KEY
 
     def __init__(
         self, coordinator: NormanCoordinator, entry: NormanConfigEntry, group: NormanSceneGroup

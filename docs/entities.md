@@ -44,8 +44,8 @@ app's name shows underneath it as the device's original name. Room changes updat
 
 The hub's `ModuleType`, and for some types its `ModuleDetail`, decide what kind of cover a
 blind gets. The table is the Norman app's own (ShadeAuto 0.8.33): the controls it shows each
-product and the values it sends. The reference hub's 32/2 and 33/3, and issue #2's 48/1 and
-80/1, have been seen from a hub; the rest follow the app alone.
+product and the values it sends. 32/2 and 33/3 are verified on real hardware, and 48/1 and
+80/1 were seen in issue #2; the rest follow the app alone.
 
 | `ModuleType` / `ModuleDetail` | Product | Cover entities | Device class | Features |
 |---|---|---|---|---|
@@ -263,7 +263,7 @@ these are not paced from Home Assistant (see
 [Command spacing](options.md#command-spacing)); one press is one request however many blinds
 you have.
 
-Verified on the reference hub with every blind staged at 50/50 first, which matters: an
+Verified on real hardware with every blind staged at 50/50 first, which matters: an
 earlier capture could not tell whether single-rail blinds honour a hub-wide `Favorite`, because
 they were already at their end position when it fired. Staged away from it, all thirteen moved
 — the single-rail blinds to 50%. Best privacy puts the bottom rail at 0 and the middle rail at
@@ -287,10 +287,10 @@ Norman app sent to refresh from its device & battery status screen, which offers
 while it lists a blind as disconnected. The hub then polls
 its blinds in turn and each one reports in over the next half minute (about 30 s for nine
 blinds), each as its own notification. Despite the verb's name the answer carries position
-and last-seen as well as battery. Nothing moved on the reference hub, but on a hub of type 48
-roller shades a press closed every shade
-([#5](https://github.com/kedube/ha-norman/issues/5)). On the reference hub the hub-wide sweep did
-**not** reach the single-rail blinds — all four ignored it every time, while a per-blind
+and last-seen as well as battery. Nothing moves on cellular shades (verified on real hardware),
+but on a hub of type 48 roller shades a press closed every shade
+([#5](https://github.com/kedube/ha-norman/issues/5)). In testing the hub-wide sweep did **not**
+reach the single-rail blinds — all four ignored it every time, while a per-blind
 status request had one answering in four seconds — so the button follows the sweep with a
 `StatusRequest` to each single-rail blind. The room-scoped form is `norman.room_command` with
 `refresh` ([docs/services.md](services.md)), which had a whole room reporting in within five
@@ -392,7 +392,9 @@ device can be deleted once the hub no longer has the room (see
 ## Scenes
 
 Scenes saved in the Norman app are Home Assistant
-[scenes](https://www.home-assistant.io/integrations/scene/), named as the app names them.
+[scenes](https://www.home-assistant.io/integrations/scene/), named as the app names them (one
+saved without a name is called "Scene" or "Scene group"). Norman Shades lists a room's scenes
+after its presets ([dashboard](dashboard.md#the-apps-room-buttons)).
 
 | Saved on the hub | Device | Sends |
 |---|---|---|
@@ -445,8 +447,8 @@ last-heard time, read fresh on every update. It re-evaluates on every hub update
 15-minute timer, since a blind going quiet produces no hub event.
 
 The app's list does not always agree, because the app's copy of the last-heard times lags the
-hub's. On 2026-10-12 a phone listed all thirteen blinds on the reference hub as disconnected,
-and a computer only the three Den shades, while the hub had heard from the Den shades 21 hours
+hub's. On 2026-10-12 the app on a phone listed all thirteen blinds on a hub as disconnected,
+and on a computer only the three Den shades, while the hub had heard from the Den shades 21 hours
 earlier and from every other blind within 2.
 
 Off does **not** make the blind's other entities unavailable. A quiet blind is usually one
@@ -483,7 +485,7 @@ The hub device has its own diagnostic sensors:
 | Sensor | Source | Default | Notes |
 |---|---|---|---|
 | MAC address | the local network (ARP), not the hub | enabled | The hub never reports its MAC. It is looked up when the entry loads, which only works when Home Assistant is on the same network segment as the hub; otherwise the sensor is unknown. When found it is also attached to the device as a network connection. |
-| Time zone | `TimeZone` in the device list | enabled | The IANA zone the hub uses for its own schedules. It comes with the hub's location, a single setting in the Norman app that cannot be changed once the hub is set up. Unknown while the hub reports none: the reference hub has lost it and regained it for a while, so the sensor's history shows when it had one. |
+| Time zone | `TimeZone` in the device list | enabled | The IANA zone the hub uses for its own schedules. It comes with the hub's location, a single setting in the Norman app that cannot be changed once the hub is set up. Unknown while the hub reports none: a hub has been seen to lose it and regain it for a while, so the sensor's history shows when it had one. |
 | Wi-Fi network | `WiFiSSID` in the registration reply | enabled | The network the hub is joined to. Diagnostics downloads still redact it. |
 | Wi-Fi signal | `WiFiRSSI` in status | disabled | dBm. |
 

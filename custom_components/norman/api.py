@@ -608,8 +608,8 @@ class NormanApiClient:
         ``{"ReportBatteryLevel": 0}`` is what the app sent to refresh from its device &
         battery status screen (captured 2026-09-18), which offers a refresh only while it
         lists a blind as disconnected. The hub polls its blinds one after another; the
-        whole hub took about 30 s, one room about 5 s, though the reference hub's
-        single-rail blinds ignored the hub-wide form. Despite the name the reply carries
+        whole hub took about 30 s, one room about 5 s, though single-rail blinds ignored
+        the hub-wide form in testing. Despite the name the reply carries
         position and last-seen as well as battery. ``room_id`` of ``None`` addresses the
         whole hub. On a hub of type 48 roller shades this, with the status requests that
         follow it, closed every shade (issue #5).

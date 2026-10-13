@@ -133,9 +133,9 @@ class NormanHubButtonDescription(ButtonEntityDescription):
 
 # The hub's own buttons. Refresh blinds sends the hub-wide report-in the app sent from its
 # device & battery status screen, which offers it only while a blind is listed as
-# disconnected: the hub polls its blinds in turn (~30 s for the reference hub's nine two-rail
-# ones), and the coordinator follows up with a status request to each single-rail blind,
-# which the hub-wide sweep skipped on the reference hub. On a hub of type 48 roller shades a
+# disconnected: the hub polls its blinds in turn (~30 s for nine two-rail blinds when
+# tested), and the coordinator follows up with a status request to each single-rail blind,
+# which the hub-wide sweep skipped in testing. On a hub of type 48 roller shades a
 # press closed every shade (issue #5). Room scope is `norman.room_command`
 # with `refresh`. Start pairing opens the hub's ten-minute pairing window (the Pairing mode
 # sensor shows it); the rest of pairing happens at the blind and in the app.
@@ -144,7 +144,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
     # hub takes them with no scope field at all (docs/NORMAN_API.md, "Room-wide and hub-wide
     # control"). One request moves every blind: the hub fans out over its own radio, so
     # these are not paced from here the way thirteen per-blind commands would be. Verified
-    # on the reference hub with every blind staged at 50/50 first -- all thirteen moved,
+    # on real hardware with every blind staged at 50/50 first -- all thirteen moved,
     # including the four single-rail ones, which the original capture could not settle
     # because they were already at their end position when it fired. Every blind is then
     # watched, and one that never moves is sent the preset on its own

@@ -231,7 +231,8 @@ ROLLER_MRS2_STATUS = {**_rails(UID_ROLLER_MRS2, 49, 1, bottom=100, middle=0), "M
 TDBU_DEVICE = _device(UID_TDBU, "Nursery", 32, 4)
 TDBU_STATUS = _rails(UID_TDBU, 32, 4, bottom=30, middle=80)
 
-# Every product the app knows beyond the reference hub's two, as (device, status) pairs.
+# Every product the app knows beyond the two verified on real hardware (32/2 and 33/3), as
+# (device, status) pairs.
 EVERY_NEW_PRODUCT: tuple[tuple[dict[str, Any], dict[str, Any]], ...] = (
     (ROLLER_DEVICE, ROLLER_STATUS),
     (SMARTDRAPE_DEVICE, SMARTDRAPE_STATUS),

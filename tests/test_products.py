@@ -1,9 +1,9 @@
 """Every product in the Norman app's module table, and how each one is driven.
 
 The table comes from the ShadeAuto app (0.8.33): six ModuleTypes, with the ModuleDetail
-deciding the product where one type covers several. The reference hub has only the two
-cellular shades and issue #2 added a roller shade and a SmartDrape; the rest are pinned to
-what the app does with them. See const.py, "Cover types".
+deciding the product where one type covers several. Only the two cellular shades are
+verified on real hardware, and issue #2 added a roller shade and a SmartDrape; the rest are
+pinned to what the app does with them. See const.py, "Cover types".
 """
 
 from __future__ import annotations

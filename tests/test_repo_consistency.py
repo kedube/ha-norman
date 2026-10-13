@@ -73,6 +73,7 @@ def test_entity_translation_keys_are_translated() -> None:
     from custom_components.norman.binary_sensor import CONNECTION, PAIRING_MODE
     from custom_components.norman.button import BUTTONS, HUB_BUTTONS, ROOM_BUTTONS
     from custom_components.norman.number import HUB_NUMBERS, NUMBERS, ROOM_NUMBERS
+    from custom_components.norman.scene import ROOM_SCENE_KEY, SCENE_GROUP_KEY
     from custom_components.norman.sensor import HUB_SENSORS, SENSORS
 
     strings = _load(COMPONENT / "strings.json")["entity"]
@@ -89,6 +90,8 @@ def test_entity_translation_keys_are_translated() -> None:
     assert button_keys == set(strings["button"])
     icons = _load(COMPONENT / "icons.json")["entity"]["button"]
     assert button_keys == set(icons)
+    # A scene is named as in the Norman app; the translated name is for one saved without.
+    assert {ROOM_SCENE_KEY, SCENE_GROUP_KEY} == set(strings["scene"])
 
 
 def test_observed_fields_are_catalogued() -> None:
@@ -292,7 +295,9 @@ def test_card_matches_the_translation_keys_the_entities_use() -> None:
     strings = json.loads((COMPONENT / "strings.json").read_text(encoding="utf-8"))
 
     declared = {
-        key for section in ("cover", "number", "sensor") for key in strings["entity"][section]
+        key
+        for section in ("cover", "number", "sensor", "scene")
+        for key in strings["entity"][section]
     }
     # The KEY_* constants are exactly what the card matches entities on.
     matched = set(re.findall(r'^const KEY_\w+ = "(\w+)";', card, re.M))

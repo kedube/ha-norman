@@ -265,6 +265,14 @@
       "pairing_mode": {
         "name": "配對模式"
       }
+    },
+    "scene": {
+      "room_scene": {
+        "name": "場景"
+      },
+      "scene_group": {
+        "name": "場景群組"
+      }
     }
   },
   "exceptions": {

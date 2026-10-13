@@ -265,6 +265,14 @@
       "pairing_mode": {
         "name": "ペアリングモード"
       }
+    },
+    "scene": {
+      "room_scene": {
+        "name": "シーン"
+      },
+      "scene_group": {
+        "name": "シーングループ"
+      }
     }
   },
   "exceptions": {

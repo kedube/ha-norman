@@ -333,8 +333,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     async def async_refresh_blinds(self, room_id: int | None = None) -> None:
         """Have every blind (in a room, or on the hub) report in.
 
-        The hub-wide ``ReportBatteryLevel`` sweep reached only the two-rail blinds: on the
-        reference hub the four single-rail blinds ignored it every time, while a
+        The hub-wide ``ReportBatteryLevel`` sweep reached only the two-rail blinds: in
+        testing the four single-rail blinds ignored it every time, while a
         per-blind ``StatusRequest`` had one answering in four seconds. So the sweep is
         followed by a status request to each single-rail blind in scope. Nothing moves; the
         answers arrive as notifications over the next half minute, each refreshing the data.
@@ -1152,8 +1152,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         results = device_info.get("results")
         if isinstance(results, dict):
             self.hub.custom_name = results.get("CustomDeviceName") or self.hub.custom_name
-            # As reported, not kept from an earlier read: the reference hub has lost its time
-            # zone and regained it for a while, and the sensor should show which
+            # As reported, not kept from an earlier read: a hub has been seen to lose its time
+            # zone and regain it for a while, and the sensor should show which
             self.hub.time_zone = results.get("TimeZone") or None
         self.hub.model = self.api.hub_model or self.hub.model
         self.hub.firmware_version = self.api.hub_firmware_version or self.hub.firmware_version
@@ -1359,7 +1359,8 @@ def _parse_scenes(
     stored positions, and ``SceneGroupList`` holds groups of room scenes. The hub stores
     every value in them as a string, ids and positions included (docs/NORMAN_API.md). A
     scene whose id is not a number is left out, since ``SetToScene`` takes the id as one,
-    and so is a group without an id.
+    and so is a group without an id. A missing name is left empty: the scene entity is then
+    called what its kind is called, translated.
     """
     results = device_info.get("results")
     if not isinstance(results, dict):
@@ -1386,7 +1387,7 @@ def _parse_scenes(
             scene = NormanScene(
                 room_id=room_id,
                 scene_id=scene_id,
-                name=str(raw.get("SceneName") or f"Scene {scene_id}"),
+                name=str(raw.get("SceneName") or ""),
                 targets=targets,
             )
             scenes[scene.key] = scene
@@ -1403,7 +1404,7 @@ def _parse_scenes(
                 members.append(scene_key(room_id, scene_id))
         groups[group_id] = NormanSceneGroup(
             group_id=group_id,
-            name=str(raw.get("SceneGroupName") or "Scene group"),
+            name=str(raw.get("SceneGroupName") or ""),
             scene_keys=members,
         )
     return scenes, groups

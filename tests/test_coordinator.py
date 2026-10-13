@@ -244,7 +244,7 @@ async def test_unknown_module_type_is_warned_about_once(
     ("module_type", "module_detail", "expected"),
     [
         (1, 1, COVER_TYPE_SHUTTER),
-        (32, 2, COVER_TYPE_SINGLE_RAIL),  # the reference hub's single-rail shades
+        (32, 2, COVER_TYPE_SINGLE_RAIL),  # verified on real hardware
         (32, 0, COVER_TYPE_SINGLE_RAIL),
         (32, 3, COVER_TYPE_TWO_RAIL),  # top-down/bottom-up: the app gives it two sliders
         (32, 5, COVER_TYPE_TWO_RAIL),

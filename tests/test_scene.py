@@ -140,7 +140,7 @@ def test_scenes_are_parsed_from_the_strings_the_hub_stores() -> None:
     assert scene.targets == {15981: NormanSceneTarget(bottom=0, middle=90, position=0)}
     assert list(groups) == [GROUP_ID]
     assert groups[GROUP_ID].scene_keys == ["29550_1"]
-    assert groups[GROUP_ID].name == "Scene group"
+    assert groups[GROUP_ID].name == "", "named by its entity's translation instead"
 
 
 async def test_room_scenes_go_on_their_rooms_and_groups_on_the_hub(
@@ -164,6 +164,34 @@ async def test_room_scenes_go_on_their_rooms_and_groups_on_the_hub(
     assert evening.attributes["friendly_name"] == "Living Room Evening"
     group = hass.states.get(_entity_id(hass, with_scenes, f"scene_group_{GROUP_ID}"))
     assert group.attributes["friendly_name"].endswith("Bedtime")
+
+
+async def test_room_scenes_and_scene_groups_are_told_apart_in_the_registry(
+    hass: HomeAssistant, with_scenes: MockConfigEntry
+) -> None:
+    """The dashboard card reads the registry, which carries no unique id: the key is how it
+    tells a room's scenes from a scene group, which belongs to no single room."""
+    entities = er.async_get(hass)
+    room = entities.async_get(_entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_1"))
+    group = entities.async_get(_entity_id(hass, with_scenes, f"scene_group_{GROUP_ID}"))
+    assert room is not None and room.translation_key == "room_scene"
+    assert group is not None and group.translation_key == "scene_group"
+
+
+async def test_a_scene_saved_without_a_name_is_called_a_scene(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    _save_scenes(fake_hub)
+    fake_hub.devices["results"]["RoomList"][0]["SceneList"][0]["SceneName"] = ""
+    del fake_hub.devices["results"]["SceneGroupList"][0]["SceneGroupName"]
+    async with loaded(hass, mock_config_entry) as entry:
+        scene = hass.states.get(_entity_id(hass, entry, f"{LIVING_ROOM}_scene_1"))
+        group = hass.states.get(_entity_id(hass, entry, f"scene_group_{GROUP_ID}"))
+        assert scene.attributes["friendly_name"] == "Living Room Scene"
+        assert group.attributes["friendly_name"].endswith("Scene group")
 
 
 async def test_a_hub_without_scenes_has_none(
@@ -301,8 +329,12 @@ async def test_scenes_follow_the_app(
     await notifications.put({"UpdateTime": {"scene": 1}, "Timestamp": 1})
     await settle(hass)
 
-    renamed = hass.states.get(_entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_1"))
+    entity_id = _entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_1")
+    renamed = hass.states.get(entity_id)
     assert renamed.attributes["friendly_name"] == "Living Room Movie night"
+    # The registry too, which the dashboard card reads: Home Assistant carries the entity's
+    # new name into it, without waiting for a restart.
+    assert er.async_get(hass).async_get(entity_id).original_name == "Movie night"
     assert hass.states.get(_entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_2"))
     assert (
         er.async_get(hass).async_get_entity_id(
@@ -310,6 +342,24 @@ async def test_scenes_follow_the_app(
         )
         is None
     )
+
+
+async def test_a_name_set_in_home_assistant_outlasts_a_rename_in_the_app(
+    hass: HomeAssistant,
+    with_scenes: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    entities = er.async_get(hass)
+    entity_id = _entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_1")
+    entities.async_update_entity(entity_id, name="Cinema")
+    fake_hub.devices["results"]["RoomList"][0]["SceneList"][0]["SceneName"] = "Movie night"
+    await notifications.put({"UpdateTime": {"scene": 1}, "Timestamp": 1})
+    await settle(hass)
+
+    entry = entities.async_get(entity_id)
+    assert entry.name == "Cinema"
+    assert entry.original_name == "Movie night"
 
 
 async def test_scenes_outlast_an_unreadable_device_list(

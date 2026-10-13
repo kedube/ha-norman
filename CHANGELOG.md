@@ -5,6 +5,13 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Scenes in Norman Shades.** A room's scenes from the Norman app follow its Privacy, View and
+  Favorite buttons in the room's ⋯ fold-out, one button each, and run the scene with every blind
+  checked afterwards. A room without scenes shows only the three. Scene groups are left out, as
+  they act on several rooms.
+
 ## 0.82 — 2026-10-13
 
 - **Scenes saved in the Norman app are Home Assistant scenes.** A room scene goes on its room's

@@ -265,6 +265,14 @@
       "pairing_mode": {
         "name": "Mode appairage"
       }
+    },
+    "scene": {
+      "room_scene": {
+        "name": "Scène"
+      },
+      "scene_group": {
+        "name": "Groupe de scènes"
+      }
     }
   },
   "exceptions": {

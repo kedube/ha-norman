@@ -45,7 +45,7 @@ fits as many windows across as there is room for.
 
 | Element | Notes |
 |---|---|
-| Room heading | The area name, with **▲ ■ ▼** for the whole room and **⋯** for the room's presets. Blinds with no area are grouped under "Unassigned". |
+| Room heading | The area name, with **▲ ■ ▼** for the whole room and **⋯** for the room's presets and scenes. Blinds with no area are grouped under "Unassigned". |
 | The window | The blind, drawn where the hub says each rail is. **Drag a pull tab** to move that rail; the percentage shows above it as you drag, in steps of 10, and the position is sent when you let go. |
 | Blind name | Click it to open the usual more-info dialog. |
 | Battery | Beside the status: the battery icon, filled to the level, and the percentage. Amber at 30% and below, red at 15% and below. |
@@ -182,8 +182,8 @@ bottom rail — the blackout across the window.
 
 ### The app's room buttons
 
-The **⋯** at the end of each room heading folds out the app's own three for that room. On a
-dashboard, `hide_room_presets: true` removes it.
+The **⋯** at the end of each room heading folds out the app's own three for that room, then
+the room's scenes. On a dashboard, `hide_room_presets: true` removes it.
 
 | Button | Does |
 |---|---|
@@ -196,6 +196,13 @@ These send the hub's own room verbs through the
 one per blind — so they behave exactly as the app does. Favorite has no Home Assistant
 equivalent and is only reachable this way. Each button flashes when pressed, since the blinds
 take a while to answer.
+
+**Scenes** saved in the Norman app for the room follow the three, one button each in name order;
+a room without scenes shows only the three. A button runs its scene: one request to the hub, then
+every blind the scene moves is checked ([Scenes](entities.md#scenes)). It is greyed out while
+the scene is unavailable. A scene shows under the area it is in, which is its room's unless you
+move it. Scenes hidden in Home Assistant are left out, and so are scene groups, which act on
+several rooms.
 
 ### The whole house
 
@@ -228,7 +235,8 @@ stop, or the **■ Stop** on a moving blind, instead.
 The room presets match on the **hub's** room name while Norman Shades groups by Home Assistant
 **area**. The integration seeds areas from the hub's room names, so they agree out of the box; if
 you rename an area, the preset buttons for it will report that the room is unknown, and name the
-ones the hub does know. The house buttons carry no room at all, so nothing there can mismatch.
+ones the hub does know. The house buttons carry no room at all, and a scene button runs its scene
+entity, so neither can mismatch.
 
 ## On a dashboard
 
@@ -259,7 +267,7 @@ hide_picture: false        # list layout: a slider per rail instead of the windo
 hide_battery: false        # hide the battery readings
 hide_room_names: false     # one grid instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading
-hide_room_presets: false   # remove each room's ⋯ presets
+hide_room_presets: false   # remove each room's ⋯ presets and scenes
 hide_home_controls: false  # remove the whole-house presets from the header
 rooms:                     # only these areas, in this order
   - Master Bedroom

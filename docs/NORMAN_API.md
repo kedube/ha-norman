@@ -279,8 +279,8 @@ app has not been seen sending this hub-wide position form either.
 
 `GroupID` is the blind's **address within its room** — the button (1, 2, 4, ...) a paired
 Norman remote uses for it. The same value repeats across rooms, so it is only meaningful with
-`RoomID`, and the pair `(RoomID, GroupID)` is **unique per blind** (verified across every blind
-on the reference hub).
+`RoomID`, and the pair `(RoomID, GroupID)` is **unique per blind** (verified on real hardware
+across 13 blinds).
 
 That pair is how the `Switch` and `Favorite` verbs address a single blind. They are **not**
 addressed by `PeripheralUID`: sending `{"Switch": 1, "RoomID": 29550, "GroupID": 1}` moved only
@@ -321,7 +321,7 @@ app's network library and then sent directly:
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
 | `CleanTopLimit` / `CleanBottomLimit` | 0 | Clear the stored limit (the app sends this right before setting a new one). |
 | `Calibration` | 0 | Run the motor's calibration. |
-| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`). The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification for it. On the reference hub nothing moved and every try was answered within 5 s; on a hub of type 48 roller shades one request went unanswered. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
+| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`). The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification for it. Verified on real hardware: nothing moved and every try was answered within 5 s; on a hub of type 48 roller shades one request went unanswered. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
 | `ReportBatteryLevel` | 0 | Ask every blind on the hub (no scope field) or in a room (`RoomID`) to report in. Sent by the app's refresh, which it offers only for a disconnected blind. Closed every shade on a hub of type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)). Despite the name the answer carries position and last-seen too. **Used** (Refresh blinds button, `room_command: refresh`). |
 
 ```json
@@ -367,8 +367,8 @@ form has been captured from the app.
 | Saved scene `SetToScene` | Not tested | Confirmed with `RoomID` and numeric `SceneID` as the `SetToScene` value | Not tested |
 | Shutter `Position` (0–7) | Built by the app's library; no live Shutter test here | Not tested | Not tested |
 
-The reference hub has cellular shades only (module types 32 and 33). The position result does
-not establish how a room or hub-wide command would affect a SmartDrape, PerfectSheer, or
+Only cellular shades (module types 32 and 33) have been tested. The position result does not
+establish how a room or hub-wide command would affect a SmartDrape, PerfectSheer, or
 Shutter. An `Error: 0` reply and a changed target also do not guarantee every motor completes
 its move, as the Den test shows.
 
@@ -438,7 +438,7 @@ watching the targets it produced:
 |---|---|---|
 | Best Privacy | `{"Switch": 0, "RoomID": …}` | bottom **0**, middle **100** |
 | Best View | `{"Switch": 1, "RoomID": …}` | bottom **100**, middle **100** |
-| Remote Favorite | `{"Favorite": 0, "RoomID": …}` | the blind's stored favorite (0/50 on the reference hub) |
+| Remote Favorite | `{"Favorite": 0, "RoomID": …}` | the blind's stored favorite (0/50 when tested) |
 
 "Best Privacy" therefore means the middle rail fully up and the bottom rail fully down: on a
 day/night shade the light-filtering sheer, which hangs above the middle rail, is stacked away
@@ -495,7 +495,7 @@ no refresh, so the app never asks a healthy blind to report in.
 
 What happens next is visible in `status`: each blind's `Timestamp` is **when the hub last
 heard from it**, and it moves when a blind reports in with nothing changed, so it is a
-liveness signal rather than a last-change time. Timings on the reference hub:
+liveness signal rather than a last-change time. Measured timings:
 
 - **Per blind** (`StatusRequest`): the blind's `Timestamp` moved within **5 s**, on every try,
   including a blind that had ignored the hub-wide sweep.
@@ -534,7 +534,7 @@ evidence that it was scoped to that blind.
 with three type 48 / detail 1 roller shades at firmware 2.4.1, the hub-wide `ReportBatteryLevel`
 followed by a `StatusRequest` to each shade closed the shades, with no move command sent. It
 happened twice: when the wake sweep ran (two of the three closed) and when Refresh blinds was
-pressed (all three, by the owner's account). Each shade first answered its own `StatusRequest`
+pressed (all three, as reported in the issue). Each shade first answered its own `StatusRequest`
 within 2–4 s at its old position, then reported closed 37–55 s after the hub-wide request. A
 lone `StatusRequest` to one shade closed nothing, but that shade never answered it either, so
 whether a lone `StatusRequest` is safe on these shades is not known. Since then the wake sweep
@@ -557,13 +557,13 @@ now against the blind's last-heard time and flags it past **86400 s** (24 h). Th
 integration's connection binary sensor applies the same threshold to `status`'s `Timestamp`.
 
 What the app shows is only as fresh as its copy of those times, and that copy lags the hub's.
-On 2026-10-12 the owner's phone listed all 13 blinds as disconnected and their computer only
+On 2026-10-12 the app on a phone listed all 13 blinds as disconnected, and on a computer only
 the three Den shades; `status` at the time had the Den shades last heard 21.4 h earlier and
 every other blind within 2 h, so by the hub's own times none was. How the app gets its copy is
 not known. The hub reports no time zone, and an app adding the local UTC offset (4 h, EDT)
 would explain the computer's list, but not the phone's.
 
-**Why reporting in matters: the hub's cache can be wrong.** In the same session the hub had
+**Why reporting in matters: the hub's cache can be wrong.** On 2026-09-18 the hub had
 reported every type 33 blind's `MiddleRailPosition` as 100 for the preceding hour; when the
 blinds reported in, several read 0 (nothing had moved). And a blind that accepts a move and
 does not go leaves the hub reporting the old position with the *new target* indefinitely:
@@ -632,7 +632,7 @@ Response stream, as observed:
 
 ## Known endpoint surface
 
-Twenty local paths are known on the reference hub (firmware 6.1.25). The integration calls
+Twenty local paths are known on firmware 6.1.25. The integration calls
 five; fifteen more were captured from the app or tested directly. The hub returned **HTTP 404**
 for the other names tried, and `scripts/probe_hub_endpoints.py` found two scene reads among 43
 read candidates. That scan tests candidate names, not every possible path or request body. It
@@ -650,7 +650,7 @@ The principal integration gaps are:
 
 | Hub capability | Direct evidence | Integration today |
 |---|---|---|
-| Saved room scenes | Read, create, update, delete, and activate tested on this hub | Read from `GetAllPeripheral` and run (`SetToScene`) as a scene entity on the room's device, every blind then watched; never written |
+| Saved room scenes | Read, create, update, delete, and activate tested on real hardware | Read from `GetAllPeripheral` and run (`SetToScene`) as a scene entity on the room's device, every blind then watched; never written |
 | Saved scene groups | Read, create, update, delete, and cross-room activation tested; one motor missed the group command | Run (`SceneGroupID`) as a scene entity on the hub's device, every member blind then watched; never written |
 | Hub schedules | Read, create, and delete observed in app traffic | Not modelled; Home Assistant automations remain the intended scheduler |
 | Names and room styling | `UpdateRoom`, `UpdatePeripheral`, and `UpdateDeviceInfo` observed in app traffic | Reads names and styling where useful, but does not offer these writes |
@@ -750,7 +750,7 @@ A shorter entry containing only `SceneID`, `SceneName`, `Icon`, and `Color` retu
 disposable records were removed afterward. These observations do not establish whether
 all unchanged fields are required, only that the full-object forms work.
 
-**Post-write read failure on the reference hub:** after the full-object update tests and
+**Post-write read failure:** after the full-object update tests and
 cleanup, repeated valid `GetAllPeripheral` requests returned
 `{"status": {"code": 1, "error": "Request process fail."}}` with no `RoomList`.
 `registration`, `status` (all 13 blinds), `GetAllScene` (the original scene),
@@ -759,7 +759,7 @@ cleanup, repeated valid `GetAllPeripheral` requests returned
 that led to this failure is not isolated. An accepted empty `UpdateSceneGroup` request did
 not restore it. Further configuration writes were stopped. A power cycle did **not** restore
 `GetAllPeripheral`: it still returns code 1 after startup. `GetDeviceInfo` also returns code
-1. `GetAllScene` now returns an empty `RoomList`, so the user's previously saved scene is no
+1. `GetAllScene` now returns an empty `RoomList`, so the scene saved earlier in the app is no
 longer visible through that read. `registration` and `status` still show the same 13 blind IDs;
 all reported actual positions match the saved pretest baseline, and status still carries six
 distinct `RoomID` values. The configuration store may have been damaged or inaccessible; the
@@ -767,8 +767,8 @@ cause is not known.
 
 Only `GetDeviceInfo` and `GetAllPeripheral` failed, the two reads that carry the hub's own
 record (`CustomDeviceName`, `TimeZone`, `GeoLoc`); the scene, scene-group and schedule reads
-did not. **Recovery:** the owner renamed the hub, every room and every blind in the Norman
-app and changed their icons, rewriting each record. Both reads then returned `status.code: 0`
+did not. **Recovery:** renaming the hub, every room and every blind in the Norman app and
+changing their icons rewrote each record. Both reads then returned `status.code: 0`
 again, with all 6 rooms and 13 blinds named as before and the hub under its new name; the
 saved scene did not come back. `TimeZone` and `GeoLoc` stayed absent from both replies, and
 the app offers no way to change either. After a later reboot the hub moved to a new DHCP
@@ -798,6 +798,10 @@ changed among the other eleven blinds, and a final `status` read matched all 13 
 starting positions. This confirms scene activation by the hub on this room and product
 type, not merely acceptance of the request.
 
+**Verified on real hardware through the integration** (0.82, 2026-10-12): a scene saved in the
+app, two type 33 shades at `0/90` and `0/80`, run twice from `0/100`. Both shades arrived
+within 9 s each time, the per-blind checks sent nothing extra, and no other blind moved.
+
 `scripts/run_hub_scene.py` repeats this check using room and scene indexes from
 `GetAllScene`. It defaults to a dry run and requires `--execute` to send the command;
 it checks actual positions for every scene target and reports observed changes outside the
@@ -822,7 +826,7 @@ actual position changed. A separate per-blind position command restored the miss
 This establishes that group activation is accepted and can fan out across rooms, but one
 successful acknowledgment did not complete every member's move. Group activation needs
 per-blind completion checks and a recovery path. The disposable group and scene were then
-deleted; a final read found only the user's original scene, no groups, and all 13 blinds at
+deleted; a final read found only the scene saved in the app, no groups, and all 13 blinds at
 their pretest positions.
 
 A schedule as the hub stores it:
@@ -848,7 +852,7 @@ flexibility, and a schedule on the hub would fight them.
 Known gaps between the hub and the integration include hub-stored schedules and configuration
 writes, scenes included. Gaps in the **protocol reference** include group activation reliability,
 schedule updates, group renaming, the rest of pairing, control-field and scope combinations, and
-products absent from the reference hub.
+products not yet tested on real hardware.
 Norman's [ShadeAuto manual](https://normanusa.com/app/uploads/2024/01/ShadeAuto-Manual.pdf)
 shows scene creation and activation, multiple scenes, group renaming, firmware updates, and
 device setup; it does not specify which of those use the local API. App captures reveal request
@@ -856,7 +860,7 @@ shapes the app uses, but they cannot bound what the hub accepts: room-wide and h
 moves were found by sending `/control` forms the app has not been seen sending. Start from the
 direct hub results already recorded above; capture the app only when a particular missing body
 shape cannot be established from hub reads, controlled tests, or available handler code.
-The 2026-10-11 read baseline on the reference hub confirmed firmware 6.1.25, 13 blinds in six
+The 2026-10-11 read baseline confirmed firmware 6.1.25, 13 blinds in six
 rooms, and empty schedule, scene, and scene-group lists. A scene was then created. A
 disposable second scene and scene group were tested and removed. After the configuration
 read failure, rewriting every record from the app restored the reads, but the original scene
@@ -928,9 +932,9 @@ change. Even a successful `/control` reply needs a later state check to establis
 
 ## Observed fields
 
-Most of what follows comes from the reference hub (`NienMadeHub`, firmware 6.1.25, 13 blinds
-of types 32 and 33). Rows that cite an issue come from other users' diagnostics, and rows marked
-"from the app" from the app's parsers. Only the fields marked **used** are read by the
+Most of what follows was verified on real hardware: a `NienMadeHub` on firmware 6.1.25 with 13
+blinds of types 32 and 33. Rows that cite an issue come from diagnostics attached to it, and rows
+marked "from the app" from the app's parsers. Only the fields marked **used** are read by the
 integration; the rest are kept verbatim in the diagnostics capture and are candidates for future
 features.
 
@@ -964,9 +968,9 @@ documented here must be catalogued and vice versa.
 
 ### Saved scene
 
-These fields were observed in room scenes in `GetAllPeripheral` and `GetAllScene`: a test
-scene on 2026-10-11, and on 2026-10-12 a scene the owner saved in the app (`SceneID "1"`,
-`Icon "life_8"`, two type 33 shades at bottom `"0"` and middle `"90"` and `"80"`).
+Observed in room scenes in `GetAllPeripheral` and `GetAllScene`: a test scene on 2026-10-11,
+and a scene saved in the app on 2026-10-12 (`SceneID "1"`, `Icon "life_8"`, two type 33 shades
+at bottom `"0"` and middle `"90"` and `"80"`).
 
 | Field | Where | Observed value | Used |
 |---|---|---|---|
@@ -1016,10 +1020,10 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 | `ModuleType`/`ModuleDetail` | App name (code) | Seen | Behaviour | Integration |
 |---|---|---|---|---|
 | 1 | Shutter (MS4) | app only | louvers as `Position` 0–7; no rails | one `shutter` cover, Louvers: tilt = how open, open/close turn them; no sliders |
-| 32 / 2 | Cellular Shade (MCS) | reference hub, 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only; one position slider |
+| 32 / 2 | Cellular Shade (MCS) | real hardware, 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only; one position slider |
 | 32 / 0 | Cellular Shade (MCS) | app only | the app shows one slider | as 32/2 |
 | 32 / 3–5 | Cellular Shade (MCS) | app only | the app shows two sliders: a top-down/bottom-up shade | as 33 |
-| 33 / 3 | Cellular Shade (DMCS; Japanese "twin, up/down") | reference hub, 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); day/night cellular shades | primary cover (bottom rail, middle as tilt) + Middle rail cover; two position sliders |
+| 33 / 3 | Cellular Shade (DMCS; Japanese "twin, up/down") | real hardware, 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); day/night cellular shades | primary cover (bottom rail, middle as tilt) + Middle rail cover; two position sliders |
 | 33 / 4–5 | Cellular Shade (DMCS) | app only | the app accepts them like 33/3 | as 33/3 |
 | 48 / 1 | Roller Shade (MRS1) | issues [#2](https://github.com/kedube/ha-norman/issues/2) and [#5](https://github.com/kedube/ha-norman/issues/5), 2.4.1 | only the bottom rail moves; the middle rail reads 0. In #2 `Switch` recorded a middle-rail target of 100; in #5 a room `Switch` left it at 0. A hub-wide report-in closed the shades in #5 ([Waking a blind](#waking-a-blind)) | single-rail cover, position only; one position slider |
 | 48 / 2 | Roman Shade (MRS1) | app only | one slider | as 48/1 |
@@ -1175,7 +1179,7 @@ every request stamped with the same `Timestamp`) had the hub serialise the HTTP 
 transmitted while their acknowledgement windows overlapped, and nothing in the protocol
 reports that. Resending does not help, because a resent burst collides the same way.
 
-The gap was measured on the reference hub by sending the same thirteen commands with a
+The gap was measured on real hardware by sending the same thirteen commands with a
 fixed delay between them: at 1.0–1.2 s a few blinds still missed, and at **1.3 s all
 thirteen responded**. The same scene driven from a Home Assistant automation kept losing a
 blind occasionally at 1.3 s, so the hand test was the easier case; at **1.5 s** several
