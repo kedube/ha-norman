@@ -145,7 +145,9 @@ it never holds up the next command.
   moved towards where it was sent, the check ends; a blind that moves costs no extra requests.
 - A blind still silent after 60 seconds is asked to report in (a `StatusRequest`). If its
   answer shows it never moved, the command is sent again, with a warning in the log — up to
-  three sends in all.
+  three sends in all. The answer also corrects a blind that did move but whose report the hub
+  missed: on 2026-10-12 one closed for Best privacy while the hub showed it open, heading for
+  closed, for two hours, until it was asked.
 - A blind that ignores all three is logged as a warning naming it (Settings → System → Logs)
   and fires a `norman_command_failed` event, which an automation can turn into a notification.
   It is not raised in Repairs: one command going unanswered is not something you have to fix,
@@ -154,12 +156,18 @@ it never holds up the next command.
 For a preset, the check aims at the position the hub records when it accepts the command. It
 has to read that straight away: once the blind reports in, the hub replaces its target with
 wherever the blind actually is. A new move, preset or jog for the same blind replaces the check
-and a stop cancels it. Room-wide and hub-wide buttons (and `norman.room_command`) are sent to
-every blind by the hub itself and are not checked, but they cancel the check of every blind
-they reach: left running, it would take the blind heading for the preset as a move that never
-arrived, and send the move again. The room and hub-wide **sliders** are checked, blind by blind:
-a blind that ignores the room's request is sent the move on its own
-([Rooms and the whole house](#rooms-and-the-whole-house)).
+and a stop cancels it.
+
+A room-wide or hub-wide preset (a room's or the hub's Best privacy, Best view or Favorite
+button, or `norman.room_command`) goes to every blind in one request, which the hub carries
+to each blind itself. Every blind it reaches is then checked as if it had been sent the
+preset on its own, and a blind that ignores it is sent the preset on its own, addressed by its
+room and group as the app addresses one blind. A blind the hub lists in no room is not
+checked. Room and hub-wide stop and jog have nothing to check. Every one of these replaces
+the check of each blind it reaches: left running, that check would take the blind's new
+heading for a move that never arrived, and send the move again. The room and hub-wide
+**sliders** are checked the same way, blind by blind: a blind that ignores the room's request
+is sent the move on its own ([Rooms and the whole house](#rooms-and-the-whole-house)).
 
 The event's data, for automations that want to notify someone or try something else:
 

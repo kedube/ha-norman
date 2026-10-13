@@ -54,6 +54,17 @@ fits as many windows across as there is room for.
 
 A blind the hub has stopped reporting is greyed out, reads "Unavailable", and cannot be dragged.
 
+A blind the hub has not heard arrive 3½ minutes after it was sent somewhere reads **"Not
+confirmed"**, with no Stop button. It is drawn where it was sent, with the dashed line where the
+hub last heard it. Either could be wrong. The blind may have missed the command, or carried it
+out without the hub hearing its report: the hub keeps both values until the blind next reports
+in, which can be hours. **Request status** on the blind's device settles it.
+
+3½ minutes is as long as the integration keeps checking and resending a move, and that check
+asks a silent blind to report in ([Data updates](entities.md#data-updates)). So after a
+command from Home Assistant this is rare; after one from the Norman app or a hub schedule,
+nothing checks. Sending the blind a position from the card starts a new move.
+
 ### Moving a blind
 
 - **Mouse:** press anywhere on the window and the nearest rail follows the pointer. Where a

@@ -178,7 +178,9 @@ async def test_room_command_sends_the_room_wide_verb(
     # Addressing the room replaces the per-blind id; sending both would be ambiguous.
     assert "PeripheralUID" not in call
     assert {"Timestamp", "TaskID"} <= set(call)
-    assert len(fake_hub.calls_to("/status")) == status_calls + 1
+    # The targets the room's watches aim at, then the re-read every command gets.
+    await hass.async_block_till_done()
+    assert len(fake_hub.calls_to("/status")) == status_calls + 2
 
 
 async def test_room_command_maps_each_button_to_its_verb(

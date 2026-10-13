@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime, timedelta
+import functools
 import logging
 import time
 from typing import Any, NamedTuple
@@ -564,6 +565,37 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         """
         self._async_start_watch(device_id, None, resend, "preset")
 
+    async def async_send_room_preset(self, room_id: int | None, fields: dict[str, Any]) -> None:
+        """Send a preset to every blind in a room (every blind on the hub, for None).
+
+        One request: the hub carries the command to each blind itself. It acks it whether or
+        not each blind hears it, so every blind it reached is then watched as its own preset
+        would be (``async_watch_preset``), and one that never moves is sent the preset on its
+        own. Those watches are what catch a blind the command reached but whose report did
+        not: on 2026-10-12 blind 8399 closed for Best Privacy without the hub hearing it, and
+        the hub showed it open, heading for closed, for two hours until it was asked to report
+        in. A blind without a room and group to address it by is not watched.
+        """
+        self.async_supersede_room(room_id)
+        await self.api.async_send_room_control(room_id, fields)
+        # Every watch needs the targets the hub recorded on accepting the command, and one
+        # read serves them all. The watches are registered now rather than after it, so a
+        # stop or a move for one of these blinds meanwhile still replaces its watch.
+        targets_read = self.config_entry.async_create_task(
+            self.hass, self.async_refresh(), name="norman-room-preset-read"
+        )
+        for device_id, device in self.blinds_in(room_id).items():
+            if device.room_id is None or device.group_id is None:
+                continue
+            resend = functools.partial(
+                self.api.async_send_blind_control,
+                device.room_id,
+                device.group_id,
+                fields,
+                device_id,
+            )
+            self._async_start_watch(device_id, None, resend, "preset", targets_read=targets_read)
+
     @callback
     def _async_start_watch(
         self,
@@ -572,12 +604,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         resend: Callable[[], Awaitable[Any]],
         kind: str,
         serial: int | None = None,
+        targets_read: Awaitable[None] | None = None,
     ) -> None:
         self.async_cancel_move_watch(device_id)
         start = self._sighting(device_id)
         self._move_watchers[device_id] = self.config_entry.async_create_background_task(
             self.hass,
-            self._async_supervise(device_id, start, goal, resend, serial),
+            self._async_supervise(device_id, start, goal, resend, serial, targets_read),
             name=f"norman-{kind}-watch-{device_id}",
         )
 
@@ -610,6 +643,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         goal: _Rails | None,
         resend: Callable[[], Awaitable[Any]],
         serial: int | None = None,
+        targets_read: Awaitable[None] | None = None,
     ) -> None:
         """Confirm a command reached the blind, resending it only while the blind is silent.
 
@@ -626,8 +660,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 # A preset: read the position the hub resolved it to, now. The hub replaces
                 # its target with the blind's actual position whenever the blind reports in,
                 # so a target read after asking the blind to report in always matches -- which
-                # is how a dropped preset used to go unnoticed (blind 9943, 2026-09-21).
-                await self.async_refresh()
+                # is how a dropped preset used to go unnoticed (blind 9943, 2026-09-21). A
+                # room- or hub-wide preset shares one read among its blinds; shielded, so a
+                # watch replaced meanwhile does not cancel it for the rest.
+                if targets_read is None:
+                    await self.async_refresh()
+                else:
+                    await asyncio.shield(targets_read)
                 goal = self._hub_target(device_id)
                 if goal is None:
                     return

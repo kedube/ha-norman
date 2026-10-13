@@ -146,13 +146,15 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
     # these are not paced from here the way thirteen per-blind commands would be. Verified
     # on the reference hub with every blind staged at 50/50 first -- all thirteen moved,
     # including the four single-rail ones, which the original capture could not settle
-    # because they were already at their end position when it fired.
+    # because they were already at their end position when it fired. Every blind is then
+    # watched, and one that never moves is sent the preset on its own
+    # (coordinator.async_send_room_preset).
     NormanHubButtonDescription(
         key="all_best_privacy",
         translation_key="all_best_privacy",
         entity_category=EntityCategory.CONFIG,
         moves_blinds=True,
-        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator: coordinator.async_send_room_preset(
             None, {HUB_CMD_SWITCH: HUB_SWITCH_CLOSE}
         ),
     ),
@@ -161,7 +163,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         translation_key="all_best_view",
         entity_category=EntityCategory.CONFIG,
         moves_blinds=True,
-        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator: coordinator.async_send_room_preset(
             None, {HUB_CMD_SWITCH: HUB_SWITCH_OPEN}
         ),
     ),
@@ -170,7 +172,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         translation_key="all_favorite",
         entity_category=EntityCategory.CONFIG,
         moves_blinds=True,
-        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator: coordinator.async_send_room_preset(
             None, {HUB_CMD_FAVORITE: HUB_COMMAND_SETTING}
         ),
     ),
@@ -247,7 +249,7 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
         key="room_best_privacy",
         translation_key="room_best_privacy",
         entity_category=EntityCategory.CONFIG,
-        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator, room_id: coordinator.async_send_room_preset(
             room_id, {HUB_CMD_SWITCH: HUB_SWITCH_CLOSE}
         ),
     ),
@@ -255,7 +257,7 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
         key="room_best_view",
         translation_key="room_best_view",
         entity_category=EntityCategory.CONFIG,
-        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator, room_id: coordinator.async_send_room_preset(
             room_id, {HUB_CMD_SWITCH: HUB_SWITCH_OPEN}
         ),
     ),
@@ -263,7 +265,7 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
         key="room_favorite",
         translation_key="room_favorite",
         entity_category=EntityCategory.CONFIG,
-        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator, room_id: coordinator.async_send_room_preset(
             room_id, {HUB_CMD_FAVORITE: HUB_COMMAND_SETTING}
         ),
     ),
@@ -382,10 +384,11 @@ class NormanRoomButton(NormanScopeEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Run the action for the room, then re-read the hub.
 
-        Like the hub's own buttons, these are not watched blind by blind: the hub carries
-        the command to each blind itself. They do replace any move in flight in the room,
-        whose watch would otherwise take the blinds' new heading for a move that never
-        arrived and send it again.
+        The hub carries the command to each blind itself. The presets are then watched
+        blind by blind, as a blind's own preset is (coordinator.async_send_room_preset);
+        stop and the jogs have no target to chase. Every action that moves or stops the
+        blinds replaces any move in flight in the room, whose watch would otherwise take
+        the blinds' new heading for a move that never arrived and send it again.
         """
         if self.entity_description.moves_blinds:
             self.coordinator.async_supersede_room(self._room_id)

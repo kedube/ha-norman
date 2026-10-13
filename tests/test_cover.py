@@ -947,16 +947,18 @@ async def test_a_later_command_ends_the_move_watch(
     """A preset or jog replaces the move in flight, so the watch must not send it again.
 
     Left running, the watch saw the blind heading for the preset instead, took it for a move
-    that never arrived, and resent the move -- undoing the preset.
+    that never arrived, and resent the move -- undoing the preset. A preset puts a watch of
+    its own in its place; a jog has nothing to watch.
     """
     coordinator: NormanCoordinator = init_integration.runtime_data
     await _slide(hass, "bottom", 10)
-    assert UID_LIVING in coordinator._move_watchers
+    move_watch = coordinator._move_watchers[UID_LIVING]
 
     await press(hass, init_integration)
     await hass.async_block_till_done()
 
-    assert UID_LIVING not in coordinator._move_watchers
+    assert move_watch.cancelled()
+    assert coordinator._move_watchers.get(UID_LIVING) is not move_watch
     assert coordinator.commanded_rails(UID_LIVING) is None
 
 

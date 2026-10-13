@@ -5,6 +5,23 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Room-wide and hub-wide presets are checked blind by blind.** Best privacy, Best view and
+  Favorite for a room or the whole house (the buttons, and `norman.room_command`) go out as
+  one request that the hub carries to each blind, and nothing used to check that every blind
+  acted on it. Each blind is now checked as if it had been sent the preset on its own: one
+  still silent after a minute is asked to report in, and one that never moved is sent the
+  preset on its own, up to three sends, then logged and announced with
+  `norman_command_failed`. Asking also corrects a blind that moved without the hub hearing
+  its report.
+- **"Not confirmed" instead of "Closing" for hours.** The hub keeps a blind's old position
+  and new target until the blind next reports in. So a blind that missed a command, or
+  carried it out without the hub hearing it, read "Closing" in Norman Shades with no end: one
+  sat at "Closing · Bottom 100%" for two hours, already closed. Past the 3½ minutes the
+  integration spends checking a move, it now reads "Not confirmed", drawn where it was sent
+  with the dashed line where the hub last heard it, and offers no Stop.
+
 ## 0.80 — 2026-10-13
 
 - **The wake sweep no longer closes roller shades.** It asked every blind on the hub to report

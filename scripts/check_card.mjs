@@ -68,6 +68,10 @@ await import(url.href);
 // CSS and the JS rather than any runtime behaviour.
 const cardSource = await import("node:fs").then((fs) => fs.readFileSync(url, "utf8"));
 
+// How long the card treats a new target as a move under way, and the watchdog it mirrors:
+// three sends, each followed by MOVE_TIMEOUT and MOVE_REPORT_WAIT (const.py).
+const MOVE_WINDOW_MS = Function(`return ${/const MOVE_WINDOW_MS = ([^;]+);/.exec(cardSource)[1]}`)();
+
 // The headrail depth and rail thickness are design constants shared by the CSS and the JS;
 // read them rather than restating them.
 const HEAD = Number(/--n-head:\s*([\d.]+)%/.exec(cardSource)[1]);
@@ -120,6 +124,15 @@ card._hass = hass;
 const blinds = card._collectBlinds();
 let fail = 0;
 const check = (label, cond, extra="") => { console.log(`${cond?"PASS":"FAIL"}  ${label}${extra&&!cond?"  -> "+extra:""}`); if(!cond) fail++; };
+
+// The card's move window is the integration's watchdog, end to end.
+{
+  const constPy = await import("node:fs").then((fs) => fs.readFileSync(new URL("../const.py", url), "utf8"));
+  const number = (name) => Number(new RegExp(`^${name} = ([\\d.]+)`, "m").exec(constPy)[1]);
+  const watchdog = number("MOVE_ATTEMPTS") * (number("MOVE_TIMEOUT") + number("MOVE_REPORT_WAIT")) * 1000;
+  check("the card's move window matches the integration's watchdog", MOVE_WINDOW_MS === watchdog,
+        `${MOVE_WINDOW_MS} vs ${watchdog}`);
+}
 
 check("finds exactly 2 blinds (hub excluded)", blinds.length===2, JSON.stringify(blinds.map(b=>b.name)));
 const fb = blinds.find(b=>b.deviceId==="d1");
@@ -548,6 +561,65 @@ for (const cfg of [{}, { hide_picture:true }]) {
 
   cells = statusOf({ "cover.front_bedroom_1_middle_rail": { state:"opening", attributes:{ current_position:80, target_position:100 } } });
   check("a moving middle rail is named", cells.d1.status.textContent.replace(/ /g, " ") === "Opening · Middle 80%", cells.d1.status.textContent);
+
+  // The hub stores a target whether or not the blind hears the command, and keeps it and the
+  // old position until the blind next reports in: blind 8399 sat at bottom 100 heading for 0
+  // for two hours, and had in fact closed. Past the move window the card says neither value
+  // is confirmed, and draws the rail where it was sent with the marker where it was heard.
+  const ago = (ms) => new Date(Date.now() - ms).toISOString();
+  const den = (updated) => ({
+    "cover.den_1_bottom_rail": { state:"open", last_updated: updated, attributes:{ current_position:90, target_position:30 } } });
+  cells = statusOf(den(ago(60_000)));
+  check("a target set a minute ago is still a move", cells.d2.status.textContent === "Closing · 90%", cells.d2.status.textContent);
+  cells = statusOf(den(ago(10 * 60_000)));
+  check("a move the hub never heard arrive reads Not confirmed", cells.d2.status.textContent === "Not confirmed", cells.d2.status.textContent);
+  check("an unconfirmed move is not marked moving", !cells.d2.status.classList.contains("moving"));
+  check("an unconfirmed move offers no Stop", cells.d2.stop.hidden === true);
+  check("an unconfirmed move is drawn where it was sent",
+        near(parseFloat(cells.d2.shade.railEls[0].style.top), railTopAt(30)), cells.d2.shade.railEls[0].style.top);
+  check("an unconfirmed move marks where the hub last heard the rail",
+        cells.d2.shade.markers[0].classList.contains("on") &&
+        near(parseFloat(cells.d2.shade.markers[0].style.top), railTopAt(90) + RAIL / 2),
+        cells.d2.shade.markers[0].style.top);
+  {
+    const summaryOf = (states) => {
+      const summary = rendered({}, { ...hass, states: { ...hass.states, ...states } })._summary;
+      return findAll(summary, (el) => el._text !== undefined).map((el) => String(el._text)).join("");
+    };
+    check("the summary counts a move under way", summaryOf(den(ago(60_000))).includes("1 moving"), summaryOf(den(ago(60_000))));
+    check("the summary does not count an unconfirmed move", !summaryOf(den(ago(10 * 60_000))).includes("moving"),
+          summaryOf(den(ago(10 * 60_000))));
+  }
+  const missed = (updated) => ({ ...at(100, 100),
+    "cover.front_bedroom_1_bottom_rail": { state:"open", last_updated: updated, attributes:{ current_position:100, target_position:0 } } });
+  check("a two-rail blind closing reads Closing",
+        statusOf(missed(ago(30_000))).d1.status.textContent.replace(/ /g, " ") === "Closing · Bottom 100%",
+        statusOf(missed(ago(30_000))).d1.status.textContent);
+  check("a two-rail blind not heard closing reads Not confirmed",
+        statusOf(missed(ago(4 * 60_000))).d1.status.textContent === "Not confirmed");
+
+  // Writing the target the hub already holds restarts the window: the cover's state does not
+  // change, so its last_updated would not.
+  {
+    const h = { ...hass, states: { ...hass.states, ...den(ago(10 * 60_000)) } };
+    const c = rendered({}, h);
+    const cell = c._cells.find((x) => x.blind.deviceId === "d2");
+    c._setRail(cell.rails[0], 30);
+    c._patch();
+    check("sending a missed move again shows it moving", cell.status.textContent === "Closing · 90%", cell.status.textContent);
+    clearTimeout(c._settleTimer);
+  }
+
+  // The window closes on time even if no state changes by then.
+  {
+    const h = { ...hass, states: { ...hass.states, ...den(ago(MOVE_WINDOW_MS - 300)) } };
+    const c = rendered({}, h);
+    const cell = c._cells.find((x) => x.blind.deviceId === "d2");
+    check("a move inside its window reads Closing", cell.status.textContent === "Closing · 90%", cell.status.textContent);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    check("the card redraws when the move window closes", cell.status.textContent === "Not confirmed", cell.status.textContent);
+    clearTimeout(c._settleTimer);
+  }
 
   cells = statusOf({ "cover.den_1_bottom_rail": { state:"unavailable", attributes:{} } });
   check("an unavailable blind says so", cells.d2.status.textContent === "Unavailable");

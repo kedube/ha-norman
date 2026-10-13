@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 import copy
+import json
 from typing import Any
 from unittest.mock import patch
 
@@ -545,7 +546,10 @@ async def test_room_buttons_send_the_verb_with_the_room(
     key: str,
     expected: dict[str, int],
 ) -> None:
-    """One request with the room's RoomID and nothing narrower, then a status re-read."""
+    """One request with the room's RoomID and nothing narrower, then a status re-read.
+
+    A preset reads the hub once more, for the targets its blinds' watches aim at.
+    """
     status_calls = len(fake_hub.calls_to("/status"))
     await _press(hass, _scope_entity(hass, init_integration, BUTTON_DOMAIN, LIVING_ROOM, key))
 
@@ -553,7 +557,8 @@ async def test_room_buttons_send_the_verb_with_the_room(
     assert set(call) == {"Timestamp", "TaskID", "RoomID", *expected}
     assert call["RoomID"] == LIVING_ROOM
     assert {k: call[k] for k in expected} == expected
-    assert len(fake_hub.calls_to("/status")) == status_calls + 1
+    reads = 1 if "MotorStop" in expected or key.startswith("room_jog") else 2
+    assert len(fake_hub.calls_to("/status")) == status_calls + reads
 
 
 async def test_room_refresh_sweeps_the_room_then_pokes_its_single_rail_blinds(
@@ -586,6 +591,99 @@ async def test_a_room_stop_ends_the_moves_in_that_room_only(
     assert UID_LIVING not in coordinator._move_watchers
     assert coordinator.commanded_rails(UID_LIVING) is None
     assert UID_BEDROOM in coordinator._move_watchers
+
+
+async def test_a_room_preset_is_watched_blind_by_blind(
+    hass: HomeAssistant,
+    two_in_living_room: MockConfigEntry,
+    fake_hub: FakeHub,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Every blind a room preset reached is watched; only one that never moved is resent.
+
+    On 2026-10-12 blind 8399 closed for Best Privacy, but its report never reached the hub,
+    which showed it open and heading for closed for two hours, until it was asked to report
+    in. Here the Living Sheer does the same, and the Living Drape misses the preset outright.
+    """
+    coordinator: NormanCoordinator = two_in_living_room.runtime_data
+    orig = fake_hub._control
+
+    async def _hub(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if "Switch" in body:
+            # Stored on accept for every blind addressed, whether or not it hears it.
+            for uid in (UID_LIVING, UID_SECOND):
+                if body.get("PeripheralUID") in (None, uid):
+                    fake_hub.peripheral_status(uid).update(
+                        TargetBottomRailPosition=0, TargetMiddleRailPosition=100
+                    )
+        if "StatusRequest" in body:
+            peripheral = fake_hub.peripheral_status(body["PeripheralUID"])
+            if body["PeripheralUID"] == UID_SECOND:
+                peripheral.update(BottomRailPosition=0, MiddleRailPosition=100)
+            # Reporting in, the blind resets the hub's target to wherever it is.
+            peripheral["TargetBottomRailPosition"] = peripheral["BottomRailPosition"]
+            peripheral["TargetMiddleRailPosition"] = peripheral["MiddleRailPosition"]
+            peripheral["Timestamp"] += 5
+        return await orig(method, url, data)
+
+    with (
+        patch.object(fake_hub, "_control", _hub),
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _press(
+            hass,
+            _scope_entity(
+                hass, two_in_living_room, BUTTON_DOMAIN, LIVING_ROOM, "room_best_privacy"
+            ),
+        )
+        await _watchdogs_done(coordinator, UID_LIVING, UID_SECOND)
+
+    asked = [call["PeripheralUID"] for call in fake_hub.control_calls if "StatusRequest" in call]
+    assert asked.count(UID_SECOND) == 1, "asked once, and found where it was sent"
+    assert asked.count(UID_LIVING) == MOVE_ATTEMPTS
+    resent = [
+        {k: v for k, v in call.items() if k not in ("Timestamp", "TaskID")}
+        for call in fake_hub.control_calls
+        if "Switch" in call and "PeripheralUID" in call
+    ]
+    # On its own, addressed as the app addresses one blind: by its room and group.
+    assert resent == [
+        {"RoomID": LIVING_ROOM, "GroupID": 10, "PeripheralUID": UID_LIVING, "Switch": 0}
+    ] * (MOVE_ATTEMPTS - 1)
+    assert f"Living Drape did not move after {MOVE_ATTEMPTS} attempts" in caplog.text
+    assert "Living Sheer" not in caplog.text
+
+
+async def test_a_hub_wide_preset_watches_every_blind_it_can_address(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Each blind with a room and group is watched; one the hub lists in no room is not."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await hass.services.async_call(DOMAIN, "room_command", {"command": "favorite"}, blocking=True)
+    await hass.async_block_till_done()
+
+    assert set(coordinator._move_watchers) == {UID_LIVING, UID_BEDROOM}
+    assert UID_STATUS_ONLY in coordinator.data
+
+
+async def test_a_stop_ends_the_watches_of_a_room_preset(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Left running, a watch would take the stopped blind for one that missed the preset."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await _press(
+        hass, _scope_entity(hass, init_integration, BUTTON_DOMAIN, LIVING_ROOM, "room_best_view")
+    )
+    assert UID_LIVING in coordinator._move_watchers
+
+    await _press(
+        hass, _scope_entity(hass, init_integration, BUTTON_DOMAIN, LIVING_ROOM, "room_stop")
+    )
+    assert UID_LIVING not in coordinator._move_watchers
 
 
 async def test_a_room_button_failure_names_the_room(

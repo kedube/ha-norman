@@ -1105,7 +1105,8 @@ button press ──► control (Switch / Favorite by room+group; jog or StatusRe
 room / hub slider ──► control (both positions, RoomID or no address; or one per blind) ──► status
                   (each blind is then watched, and sent its own move if it never moved)
 room / hub button ──► control (verb, RoomID or no address) ──► status (refresh)
-                  (Refresh blinds then sends StatusRequest to each single-rail blind in scope)
+                  (a preset is then watched blind by blind, and resent to a blind by room+group
+                   if it never moved; Refresh blinds sends StatusRequest to each single-rail blind)
 move watchdog ──► control (StatusRequest by uid, 60 s after a silent move; then the move again)
 wake sweep (timer, off by default) ──► control (StatusRequest per disconnected blind)
 get_hub_data action ──► GetAllPeripheral + status (redacted, returned as the response)
@@ -1129,7 +1130,8 @@ The rail sliders (`number`) and the covers share one code path, so both send the
 both-rails `control` call; a room's and the hub's sliders work each blind's move out the same
 way. Apart from `MotorStop`, the integration sends [control verbs](#control-verbs) only from its
 buttons (a blind's, a room's and the hub's) and `norman.room_command`, plus a `StatusRequest`
-from the move watchdog and the wake sweep. Anything else needs `send_hub_command`.
+from the move watchdog and the wake sweep, and the watchdog's resend of the command it watches.
+Anything else needs `send_hub_command`.
 
 `status` is also re-read every time the stream is cycled or reconnected, and can be re-read
 on a timer (off by default; see the poll interval option). Neither catches a blind the hub has

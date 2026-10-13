@@ -58,7 +58,9 @@ Run one of the Norman app's own **room** buttons against every blind in a room. 
 accepts `RoomID` in place of `PeripheralUID` for these verbs, so this is a single request no
 matter how many blinds the room holds — the same request the app sends. Each room's device has
 the same four as buttons ([Rooms and the whole house](entities.md#rooms-and-the-whole-house));
-this action is for naming the room in a script.
+this action is for naming the room in a script. After a preset, every blind it reached is
+checked, and one that never moves is sent the preset on its own
+([Data updates](entities.md#data-updates)).
 
 | Field | Required | Values | Meaning |
 |---|---|---|---|

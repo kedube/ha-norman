@@ -39,6 +39,13 @@ const SHADE_RAIL_PCT = 4.5;
 // How long a position the user chose is drawn before the hub must have taken it up. Past this
 // the card shows the hub's own values again, so a command the hub dropped is visible.
 const PENDING_MS = 15000;
+// How long a rail counts as moving once the hub reports a new target. A blind reports its new
+// position when it stops, 10-45 s after a command, and the integration's watchdog gives a
+// silent one three sends, 70 s apart (const.py: MOVE_TIMEOUT + MOVE_REPORT_WAIT, MOVE_ATTEMPTS).
+// Past this the hub has not heard the blind arrive, and may not for hours: the blind missed the
+// command, or carried it out and its report was lost. So the card stops saying "Closing" and
+// says the move is not confirmed.
+const MOVE_WINDOW_MS = 3 * (60 + 10) * 1000;
 // Keyboard moves are gathered into one write: the hub drops commands sent closer together
 // than about 1.6 s, so one write per key press would lose most of them.
 const KEY_COMMIT_MS = 900;
@@ -121,6 +128,7 @@ const STRINGS = {
     opening_rail: "Opening · {rail} {value}%",
     closing_rail: "Closing · {rail} {value}%",
     two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    unconfirmed: "Not confirmed",
     shades_one: "{count} shade",
     shades_other: "{count} shades",
     all_closed: "all closed",
@@ -187,6 +195,7 @@ const STRINGS = {
     opening_rail: "Öffnet · {rail} {value} %",
     closing_rail: "Schließt · {rail} {value} %",
     two_rails: "{middle_rail} {middle} % · {bottom_rail} {bottom} %",
+    unconfirmed: "Nicht bestätigt",
     shades_one: "{count} Rollo",
     shades_other: "{count} Rollos",
     all_closed: "alle geschlossen",
@@ -253,6 +262,7 @@ const STRINGS = {
     opening_rail: "Abriendo · {rail} {value}%",
     closing_rail: "Cerrando · {rail} {value}%",
     two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    unconfirmed: "Sin confirmar",
     shades_one: "{count} persiana",
     shades_other: "{count} persianas",
     all_closed: "todas cerradas",
@@ -319,6 +329,7 @@ const STRINGS = {
     opening_rail: "Ouverture · {rail} {value} %",
     closing_rail: "Fermeture · {rail} {value} %",
     two_rails: "{middle_rail} {middle} % · {bottom_rail} {bottom} %",
+    unconfirmed: "Non confirmé",
     shades_one: "{count} store",
     shades_other: "{count} stores",
     all_closed: "tous fermés",
@@ -385,6 +396,7 @@ const STRINGS = {
     opening_rail: "開いています · {rail} {value}%",
     closing_rail: "閉じています · {rail} {value}%",
     two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    unconfirmed: "未確認",
     shades_one: "ブラインド {count} 台",
     shades_other: "ブラインド {count} 台",
     all_closed: "すべて閉じています",
@@ -451,6 +463,7 @@ const STRINGS = {
     opening_rail: "正在打开 · {rail} {value}%",
     closing_rail: "正在关闭 · {rail} {value}%",
     two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    unconfirmed: "未确认",
     shades_one: "{count} 个窗帘",
     shades_other: "{count} 个窗帘",
     all_closed: "全部关闭",
@@ -517,6 +530,7 @@ const STRINGS = {
     opening_rail: "正在開啟 · {rail} {value}%",
     closing_rail: "正在關閉 · {rail} {value}%",
     two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    unconfirmed: "未確認",
     shades_one: "{count} 個窗簾",
     shades_other: "{count} 個窗簾",
     all_closed: "全部關閉",
@@ -1619,6 +1633,12 @@ class NormanShadesCard extends HTMLElement {
     // Positions the user chose, drawn until the hub reports them as its target. Keyed by
     // the entity the write went to; each entry is { value, at }.
     this._pending = new Map();
+    // When this card last wrote each rail, keyed like _pending. Sending a blind the target the
+    // hub already holds leaves the cover's state as it was, so without this its last_updated
+    // would not restart the move window (see _railState).
+    this._sent = new Map();
+    // Redraws the card when the next move window closes (see _patch).
+    this._settleTimer = null;
     this._cells = [];
     // The header's text node and summary line (see _render).
     this._headerText = null;
@@ -1902,23 +1922,46 @@ class NormanShadesCard extends HTMLElement {
     return rails;
   }
 
-  /** Where the hub says a rail is, and where it is sending it (equal when idle). */
+  /**
+   * Where the hub says a rail is, and where it is sending it (equal when idle). While the two
+   * differ, `until` is when the move window closes, and past it `stale` is set.
+   *
+   * The hub stores a new target whether or not the blind hears the command, and keeps both
+   * values until the blind next reports in. So a target the blind has not been heard
+   * reaching within MOVE_WINDOW_MS is no longer a move under way, but neither value can be
+   * trusted: blind 8399 sat at "100, heading for 0" for two hours on 2026-10-12, and had
+   * closed. The rail's cover changes state whenever the hub reports a new position or target
+   * for it, so its last_updated is when the move began, unless this card has written the
+   * rail since. With neither (a state without timestamps), the move is taken as under way.
+   */
   _railState(rail) {
     const cover = this._hass.states[rail.coverId];
+    let current;
+    let heading;
     if (rail.louvers) {
       const tilt = cover?.attributes?.current_tilt_position;
-      const current = tilt === undefined || tilt === null ? null : Number(tilt);
-      const heading = cover?.attributes?.target_tilt;
-      return { current, target: heading === undefined || heading === null ? current : Number(heading) };
+      current = tilt === undefined || tilt === null ? null : Number(tilt);
+      heading = cover?.attributes?.target_tilt;
+    } else {
+      current = rail.numberId ? this._numberOf(rail.numberId) : null;
+      if (current === null) {
+        const position = cover?.attributes?.current_position;
+        current = position === undefined || position === null ? null : Number(position);
+      }
+      heading = cover?.attributes?.target_position;
     }
-    let current = rail.numberId ? this._numberOf(rail.numberId) : null;
-    if (current === null) {
-      const position = cover?.attributes?.current_position;
-      current = position === undefined || position === null ? null : Number(position);
-    }
-    const heading = cover?.attributes?.target_position;
     const target = heading === undefined || heading === null ? current : Number(heading);
-    return { current, target };
+    if (current === null || target === null || Math.round(current) === Math.round(target)) {
+      return { current, target };
+    }
+    const updated = Date.parse(cover?.last_updated);
+    const since = Math.max(
+      Number.isNaN(updated) ? -Infinity : updated,
+      this._sent.get(rail.numberId || rail.coverId) ?? -Infinity,
+    );
+    if (since === -Infinity) return { current, target };
+    const until = since + MOVE_WINDOW_MS;
+    return Date.now() < until ? { current, target, until } : { current, target, stale: true };
   }
 
   /**
@@ -2952,6 +2995,7 @@ class NormanShadesCard extends HTMLElement {
     const key = rail.numberId || rail.coverId;
     const entry = { value: position, at: Date.now() };
     this._pending.set(key, entry);
+    this._sent.set(key, entry.at);
     const retire = () => {
       if (this._pending.get(key) !== entry) return;
       this._pending.delete(key);
@@ -2990,8 +3034,8 @@ class NormanShadesCard extends HTMLElement {
    */
   _stop(rails) {
     const moving = rails.find((rail) => {
-      const { current, target } = this._railState(rail);
-      return current !== null && target !== null && Math.round(current) !== Math.round(target);
+      const { current, target, stale } = this._railState(rail);
+      return !stale && current !== null && target !== null && Math.round(current) !== Math.round(target);
     });
     for (const rail of rails) this._pending.delete(rail.numberId || rail.coverId);
     this._coverService(moving || rails[0], "stop_cover");
@@ -3005,6 +3049,7 @@ class NormanShadesCard extends HTMLElement {
     let open = 0;
     let moving = 0;
     let lowBattery = 0;
+    let settles = Infinity;
 
     for (const cell of this._cells) {
       const { blind, rails, shade } = cell;
@@ -3013,6 +3058,7 @@ class NormanShadesCard extends HTMLElement {
 
       const states = rails.map((rail) => {
         const state = this._railState(rail);
+        if (state.until) settles = Math.min(settles, state.until);
         const key = rail.numberId || rail.coverId;
         const pending = this._pending.get(key);
         // The hub has taken the choice up once it reports it as the target.
@@ -3025,9 +3071,11 @@ class NormanShadesCard extends HTMLElement {
           shown,
           moving:
             !unavailable &&
+            !state.stale &&
             state.current !== null &&
             shown !== null &&
             Math.round(shown) !== Math.round(state.current),
+          unconfirmed: !unavailable && Boolean(state.stale),
         };
       });
 
@@ -3059,6 +3107,13 @@ class NormanShadesCard extends HTMLElement {
     }
 
     this._patchSummary(this._cells.length, open, moving, lowBattery);
+
+    // Redraw when the next move window closes, even if no state changes by then: a blind that
+    // missed its move should stop reading "Closing" on time, not at the next update.
+    clearTimeout(this._settleTimer);
+    this._settleTimer = Number.isFinite(settles)
+      ? setTimeout(() => this._patch(), Math.max(0, settles - Date.now()) + 100)
+      : null;
   }
 
   _patchShade(shade, states, unavailable) {
@@ -3068,7 +3123,7 @@ class NormanShadesCard extends HTMLElement {
     if (shade.drape) {
       // One rail, drawn at a leading edge per side: each side gets the marker and the state.
       const [state] = states;
-      const showMarker = state.moving && shade.dragValues[0] === undefined;
+      const showMarker = (state.moving || state.unconfirmed) && shade.dragValues[0] === undefined;
       const reach = showMarker ? this._drapeReach(shade, state.current) : 0;
       const value = Math.round(this._shadeValue(shade, 0) ?? 0);
       for (const part of shade.parts) {
@@ -3084,7 +3139,7 @@ class NormanShadesCard extends HTMLElement {
     states.forEach((state, index) => {
       const held = shade.dragValues[index] !== undefined;
       const marker = shade.markers[index];
-      const showMarker = state.moving && !held && !shade.louvers;
+      const showMarker = (state.moving || state.unconfirmed) && !held && !shade.louvers;
       marker.classList.toggle("on", showMarker);
       if (showMarker) {
         marker.style.top = `${round3(this._railTop(shade, index, state.current) + SHADE_RAIL_PCT / 2)}%`;
@@ -3124,6 +3179,8 @@ class NormanShadesCard extends HTMLElement {
         ? this._t(`${verb}_rail`, { rail: rails[travelling].short, value })
         : this._t(verb, { value });
     }
+    // Drawn where it was sent, with the marker where the hub last heard it.
+    if (states.some((state) => state.unconfirmed)) return this._t("unconfirmed");
     const [bottom, middle] = states.map((state) => (state.shown === null ? null : Math.round(state.shown)));
     if (bottom === null) return this._t("position_unknown");
     if (rails.length < 2 || middle === null) {
