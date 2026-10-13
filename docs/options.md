@@ -28,11 +28,13 @@ suggests a value. If yours shows 60 and you never chose it, set it to 0.
 
 ## Wake sweep interval
 
-Asks each blind the Norman app would list as **disconnected** — not heard from for 24 hours,
-the same rule as the Connection sensor — to report in: battery, position, last seen. Unlike the
-poll, this refreshes the hub's cache rather than re-reading it. Connected blinds are left alone,
-as the app leaves them: it offers a refresh only for a disconnected blind. While every blind is
-connected, a sweep sends nothing.
+Asks each blind the hub has not heard from for **24 hours** to report in: battery, position,
+last seen. That is the Connection sensor's rule, and the threshold the Norman app's code uses
+for "disconnected", though the app's own list can differ
+([Connection](entities.md#connection)). Unlike the poll, this refreshes the hub's cache rather
+than re-reading it. Connected blinds are left alone, as the app leaves them: it offers a
+refresh only for a blind it lists as disconnected. While every blind is connected, a sweep
+sends nothing.
 
 It used to ask every blind on the hub, connected or not, and on a hub of type 48 roller shades
 that closed every shade each time it ran

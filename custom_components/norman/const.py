@@ -26,6 +26,7 @@ PLATFORMS = [
     Platform.BUTTON,
     Platform.COVER,
     Platform.NUMBER,
+    Platform.SCENE,
     Platform.SENSOR,
 ]
 
@@ -60,9 +61,10 @@ MIN_POLL_INTERVAL = 10
 MAX_POLL_INTERVAL = 300
 CONF_POLL_INTERVAL = "poll_interval"
 
-# The wake sweep: on a timer, ask each blind the Norman app would list as "Disconnect"
-# (UNRESPONSIVE_AFTER) to report in, one StatusRequest each. The app offers a refresh only
-# for such a blind, never for a connected one, so the sweep leaves connected blinds alone;
+# The wake sweep: on a timer, ask each blind the hub has not heard from for
+# UNRESPONSIVE_AFTER to report in, one StatusRequest each. The app offers a refresh only for
+# a blind it lists as disconnected, never for a connected one, so the sweep leaves connected
+# blinds alone;
 # asking every blind on the hub hourly closed a hub's type 48 roller shades each time (issue
 # #5). The poll above only re-reads the hub's *cache*; a blind that reports in refreshes the
 # cache itself, so its position, battery and last-seen become what it says now. Off by
@@ -373,6 +375,14 @@ HUB_SWITCH_CLOSE = 0
 # docs/NORMAN_API.md, "Waking a blind".
 HUB_CMD_REQUEST_STATUS = "StatusRequest"
 HUB_CMD_REPORT_BATTERY = "ReportBatteryLevel"
+# Running a scene saved on the hub (docs/NORMAN_API.md, "Run a saved scene"). A room scene is
+# {"RoomID": R, "SetToScene": S}, S the scene's SceneID as a number although the hub stores
+# it as a string; tested on 2026-10-11, both of the scene's blinds went to its positions and
+# no other blind moved. A scene group is {"SceneGroupID": "<uuid>"} with no RoomID; in its one
+# test a member blind's target changed but the blind never moved, so every blind a scene
+# sends is watched afterwards. Both are the app library's own builders.
+HUB_CMD_SET_TO_SCENE = "SetToScene"
+HUB_CMD_SCENE_GROUP = "SceneGroupID"
 
 # Error 2 on a position command. Observed on 2026-09-18: every move sent while the hub was
 # sweeping its blinds after three refresh taps (a ~50 s window) answered Error 2, and the
@@ -384,9 +394,11 @@ HUB_ERROR_BUSY = 2
 HUB_BUSY_RETRIES = 3
 HUB_BUSY_RETRY_DELAY = 5.0
 
-# The Norman app lists a blind under "Disconnect" when the hub has not heard from it for
-# 86400 s (the constant in its isDisconnectPeripheral:withHub: check). The connection
-# binary sensor uses the same rule so Home Assistant and the app agree.
+# A blind is disconnected once the hub has not heard from it for 86400 s, the constant in
+# the Norman app's isDisconnectPeripheral:withHub: check. The connection binary sensor and
+# the wake sweep apply it to the hub's own last-heard time. The app's display can disagree:
+# its copy of those times lags the hub's (2026-10-12: a phone listed all 13 blinds as
+# disconnected, a computer 3, and by the hub's times none was; docs/NORMAN_API.md).
 UNRESPONSIVE_AFTER = timedelta(hours=24)
 
 # Cover types, derived from the hub's ModuleType and ModuleDetail. The Norman app (ShadeAuto

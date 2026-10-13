@@ -37,9 +37,9 @@ async def test_connection_follows_the_apps_24h_rule(
 ) -> None:
     """A blind last heard from in 2023 is disconnected; one without a timestamp is unknown.
 
-    The Norman app lists a blind under "Disconnect" once the hub has not heard from it
+    The Norman app's code lists a blind under "Disconnect" once it has not been heard from
     for 86400 s (the constant in its isDisconnectPeripheral:withHub: check), and this
-    sensor applies the same threshold so the two never disagree.
+    sensor applies the same threshold to the hub's own last-heard time.
     """
     assert timedelta(hours=24) == UNRESPONSIVE_AFTER
 

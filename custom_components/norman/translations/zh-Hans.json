@@ -55,7 +55,7 @@
         },
         "data_description": {
           "poll_interval": "从中枢重新读取每个窗帘位置的频率，以防漏掉通知。它只重新读取中枢已保存的内容，不会询问窗帘。0 为关闭；否则为 10 到 300 秒，因为集成本已每 5 分钟重新读取一次。",
-          "wake_interval": "多久让 Norman 应用会显示为已断开（24 小时未上报）的每个窗帘上报一次（电量、位置、最后上报）。与应用一样，已连接的窗帘不会被打扰。这会更新中枢自身对这些窗帘的缓存，而上面的轮询只是重新读取缓存。0 为关闭；否则为 600 到 86400 秒。",
+          "wake_interval": "多久让中枢 24 小时未收到上报的每个窗帘（Norman 应用判定为已断开的标准）上报一次（电量、位置、最后上报）。与应用一样，已连接的窗帘不会被打扰。这会更新中枢自身对这些窗帘的缓存，而上面的轮询只是重新读取缓存。0 为关闭；否则为 600 到 86400 秒。",
           "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
           "show_sidebar_panel": "在 Home Assistant 侧边栏中显示 Norman 窗帘，按房间列出所有窗帘。有多个中枢时，每个中枢各有一个入口。关闭即可移除该入口；Norman 窗帘仍可作为卡片添加到仪表盘。"
         }
@@ -306,6 +306,9 @@
     },
     "hub_button_failed": {
       "message": "无法将 {command} 发送到网关：{error}"
+    },
+    "scene_failed": {
+      "message": "无法运行场景 {name}：{error}"
     }
   }
 }

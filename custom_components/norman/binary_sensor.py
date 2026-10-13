@@ -78,14 +78,14 @@ class NormanPairingModeSensor(NormanHubEntity, BinarySensorEntity):
 
 
 class NormanConnectionSensor(NormanEntity, BinarySensorEntity):
-    """On while the hub has heard from the blind within the app's "Disconnect" window.
+    """On while the hub has heard from the blind within the last ``UNRESPONSIVE_AFTER``.
 
     The hub's per-blind ``Timestamp`` is when it last heard from the blind -- it moves
     when the blind reports in with nothing changed, not only on a state change. The Norman
-    app lists a blind as "Disconnect" once that is more than 24 h old
-    (``UNRESPONSIVE_AFTER``); this sensor applies the same rule, through
-    ``NormanPeripheralData.disconnected``, so the two agree. A blind that has never
-    reported a timestamp is *unknown* rather than off.
+    app's code counts a blind as "Disconnect" once that is more than 24 h old; this sensor
+    applies the same threshold to the hub's own time, through
+    ``NormanPeripheralData.disconnected``. The app's display can lag it (const.py). A blind
+    that has never reported a timestamp is *unknown* rather than off.
 
     A quiet blind is not necessarily unreachable -- a battery blind's radio sleeps and a
     command still wakes it -- so this is deliberately a sensor and not the availability of

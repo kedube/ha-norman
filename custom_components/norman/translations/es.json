@@ -55,7 +55,7 @@
         },
         "data_description": {
           "poll_interval": "Con qué frecuencia se vuelve a leer la posición de cada persiana desde el hub, por si se perdió una notificación. Solo relee lo que el hub tiene guardado; no pregunta nada a las persianas. 0 desactiva el sondeo; si no, de 10 a 300 segundos, ya que la integración relee cada 5 minutos de todos modos.",
-          "wake_interval": "Cada cuánto pedir que informe (batería, posición, última vez visto) a cada persiana que la app Norman mostraría como desconectada (sin noticias en 24 horas). Las persianas conectadas no se tocan, igual que en la app. Esto renueva la caché del propio hub para esas persianas, que el sondeo de arriba solo vuelve a leer. 0 lo desactiva; si no, de 600 a 86400 segundos.",
+          "wake_interval": "Cada cuánto pedir que informe (batería, posición, última vez visto) a cada persiana de la que el hub no tiene noticias desde hace 24 horas (el umbral de la app Norman para considerarla desconectada). Las persianas conectadas no se tocan, igual que en la app. Esto renueva la caché del propio hub para esas persianas, que el sondeo de arriba solo vuelve a leer. 0 lo desactiva; si no, de 600 a 86400 segundos.",
           "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
           "show_sidebar_panel": "Muestra la página Persianas Norman, con todas las persianas por habitación, en la barra lateral de Home Assistant. Con más de un hub, cada uno tiene su propia entrada. Desactívalo para quitarla; la tarjeta Persianas Norman se puede seguir añadiendo a un panel de control."
         }
@@ -306,6 +306,9 @@
     },
     "hub_button_failed": {
       "message": "No se pudo enviar {command} al hub: {error}"
+    },
+    "scene_failed": {
+      "message": "No se pudo ejecutar la escena {name}: {error}"
     }
   }
 }

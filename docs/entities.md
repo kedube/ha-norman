@@ -29,7 +29,7 @@ one declares.*
 | Device | Identifiers | Notes |
 |---|---|---|
 | Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address; the MAC address is attached as a network connection when it can be resolved (see below). |
-| Room | `norman` / `room_<entry id>_<RoomID>` | Named after the room in the Norman app, model "Room", suggested into the area of the same name so its controls sit beside its blinds on the area's page; `via_device` links it to the hub. One per room that holds a blind. |
+| Room | `norman` / `room_<entry id>_<RoomID>` | Named after the room in the Norman app, model "Room", suggested into the area of the same name so its controls sit beside its blinds on the area's page; `via_device` links it to the hub. One per room that holds a blind or a scene. |
 | Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman app's product name for its `ModuleType` and `ModuleDetail` — "Shutter", "Cellular Shade", "Cellular Shade (dual rail)", "Roller Shade", "Roman Shade", "PerfectSheer" or "SmartDrape" (see [Cover entities](#cover-entities)); a type the app does not know is "Window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
 
 The device page therefore mirrors the app's blind details: room (area), battery (sensor),
@@ -192,8 +192,8 @@ blind out of date for 5 minutes at most. Optional polling shortens that:
 [options.md](options.md#poll-interval).
 
 Polling does not help a blind whose radio sleeps. The hub only hears from a battery blind when
-it wakes -- the Norman app lists one that has been quiet for a day under **Disconnect**, though
-a command still wakes it and works -- and until then the hub's own copy of its position is out
+it wakes -- after a day of silence its [Connection](#connection) sensor turns off, though a
+command still wakes it and works -- and until then the hub's own copy of its position is out
 of date, so re-reading that copy changes nothing. A stale position makes `is_closed` answer
 about the past, which quietly breaks automations that check state before acting ("close it if
 it isn't closed"). **Request status** or the [wake sweep](#wake-sweep) has the blind report in.
@@ -312,10 +312,10 @@ still works — it just takes a little longer.
 
 **Settings → Devices & services → Norman → Configure** has a second interval next to the poll:
 the **wake sweep**. Every interval it sends a status request to each blind whose
-**Connection** sensor is off — not heard from for 24 hours, the point at which the Norman app
-lists it as disconnected — so the hub's own cache for that blind is refreshed rather than
-merely re-read. The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's
-middle rail at 100, and when the blinds reported in several read 0; nothing had moved, the
+**Connection** sensor is off — not heard from for 24 hours, the Norman app's threshold for
+disconnected — so the hub's own cache for that blind is refreshed rather than merely re-read.
+The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's middle rail at
+100, and when the blinds reported in several read 0; nothing had moved, the
 cache was stale. Connected blinds are left alone, as the app leaves them, so a sweep sends
 nothing while every blind is connected. Until issue
 [#5](https://github.com/kedube/ha-norman/issues/5) it did what Refresh blinds does, which
@@ -381,13 +381,42 @@ rail slider.
 The hub accepting a room request is not the blinds carrying it out: in a live test it acked a
 room restore that one of two shades only made once its own command was resent. So a blind that
 has not moved a minute later is asked to report in and, if it still has not, sent the move on
-its own — up to three sends, then the `norman_command_failed` event. The buttons are not
-watched, as the hub's own buttons are not.
+its own — up to three sends, then the `norman_command_failed` event. So is every blind a room's
+or the hub's preset reaches; stop and the jogs have nothing to watch.
 
 Stop, the presets and the jogs were tried at room scope on cellular shades; the hub takes them
 for any room, but what a drape or a Shutter makes of a room-wide jog has not been seen. A room's
 device can be deleted once the hub no longer has the room (see
 [Removing a blind](#removing-a-blind)).
+
+## Scenes
+
+Scenes saved in the Norman app are Home Assistant
+[scenes](https://www.home-assistant.io/integrations/scene/), named as the app names them.
+
+| Saved on the hub | Device | Sends |
+|---|---|---|
+| A room scene | the room's, beside its presets | `SetToScene: <SceneID>` with the room's `RoomID` |
+| A scene group (room scenes run together) | the hub's | `SceneGroupID: <id>`, with no room |
+
+Running one is a single request: the hub sends each blind to the position the scene stored for
+that blind. That is quicker than a Home Assistant scene setting the same covers, which sends one
+command per blind, about 1.6 seconds apart. **Every blind the scene sends is then watched**, as
+a move is ([data updates](#data-updates)): the hub acknowledging a scene does not mean every
+blind went, and in its one test a scene group left a blind where it was. A blind that has not
+moved a minute later is asked to report in and, if it still has not, sent the position the scene
+stored for it on its own, not the whole scene again: up to three sends, then the
+`norman_command_failed` event.
+
+A scene added, renamed or deleted in the Norman app follows the next time the hub's device list
+is read: at once if the hub announces the change, otherwise within 5 minutes. A deleted scene's
+entity is removed. The integration only runs scenes and never creates or edits them: a run of
+scene edits while testing was followed by the hub failing to read its own configuration
+([docs/NORMAN_API.md](NORMAN_API.md#configuration-endpoints)). Make and change them in the app.
+
+Scenes have only been run on two-rail cellular shades. Every scene stores a louver position and
+both rails for each blind; which of them a Shutter, a SmartDrape or a roller shade uses is
+assumed from its covers, and has not been seen.
 
 ## Diagnostic sensors
 
@@ -410,10 +439,15 @@ example `sensor.living_room_living_drape_battery`. Installs that ran 0.11 keep t
 Each blind also gets a **Connection** binary sensor (connectivity device class, under
 **Diagnostic**): **on** while the hub has heard from the blind within the last **24 hours**,
 **off** once it has been quiet longer, and *unknown* if the hub has never dated it. The
-threshold is the Norman app's own: its device & battery status screen lists a blind under
-"Disconnect" once 86400 seconds have passed since the hub last heard from it, so this sensor
-and the app always agree. It re-evaluates on every hub update and on a 15-minute timer, since a
-blind going quiet produces no hub event.
+threshold is the Norman app's own: its code lists a blind under "Disconnect" once 86400
+seconds have passed since it was last heard from. The sensor applies it to the hub's own
+last-heard time, read fresh on every update. It re-evaluates on every hub update and on a
+15-minute timer, since a blind going quiet produces no hub event.
+
+The app's list does not always agree, because the app's copy of the last-heard times lags the
+hub's. On 2026-10-12 a phone listed all thirteen blinds on the reference hub as disconnected,
+and a computer only the three Den shades, while the hub had heard from the Den shades 21 hours
+earlier and from every other blind within 2.
 
 Off does **not** make the blind's other entities unavailable. A quiet blind is usually one
 whose radio is asleep; a command still wakes it (see [availability](#availability)). Off is

@@ -5,6 +5,21 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Scenes saved in the Norman app are Home Assistant scenes.** A room scene goes on its room's
+  device and a scene group on the hub's, named as in the app. Running one is a single request
+  that moves every blind in it to its own stored position, quicker than a Home Assistant scene
+  sending one command per blind. Every blind is then checked, and one that never moves is sent
+  its stored position on its own. Scenes follow the app as they are added, renamed or deleted;
+  the integration never edits them. Diagnostics list them.
+- **"Disconnected" is described by the hub's times, not the app's list.** The Connection
+  sensor and the wake sweep count a blind as disconnected once the hub has not heard from it
+  for 24 hours, the Norman app's own threshold. The docs and the options form said they match
+  what the app lists. They don't always, because the app's copy of the last-heard times lags
+  the hub's: one evening a phone listed all thirteen blinds as disconnected and a computer
+  three, while the hub had heard from every one within the day. Nothing changes in behaviour.
+
 ## 0.81 — 2026-10-13
 
 - **Room-wide and hub-wide presets are checked blind by blind.** Best privacy, Best view and

@@ -65,6 +65,17 @@ async def async_get_config_entry_diagnostics(
         "devices": {
             str(device_id): asdict(device) for device_id, device in (coordinator.data or {}).items()
         },
+        # As parsed from the device list; blinds keyed by id as text, like the devices above.
+        "scenes": {
+            key: {
+                **asdict(scene),
+                "targets": {str(uid): asdict(target) for uid, target in scene.targets.items()},
+            }
+            for key, scene in coordinator.scenes.items()
+        },
+        "scene_groups": {
+            group_id: asdict(group) for group_id, group in coordinator.scene_groups.items()
+        },
         # Raw exchanges with the hub, below the parsing layer: the last response per endpoint
         # in full, then the most recent requests and stream chunks. Fields the integration
         # does not understand survive here, which is what a "support my blind" report needs.

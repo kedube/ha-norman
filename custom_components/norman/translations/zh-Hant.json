@@ -55,7 +55,7 @@
         },
         "data_description": {
           "poll_interval": "從中樞重新讀取每個窗簾位置的頻率，以防漏掉通知。它只重新讀取中樞已儲存的內容，不會詢問窗簾。0 為關閉；否則為 10 到 300 秒，因為整合本已每 5 分鐘重新讀取一次。",
-          "wake_interval": "多久讓 Norman 應用程式會顯示為已中斷連線（24 小時未回報）的每個窗簾回報一次（電量、位置、最後回報）。與應用程式一樣，已連線的窗簾不會被打擾。這會更新中樞本身對這些窗簾的快取，而上面的輪詢只是重新讀取快取。0 為關閉；否則為 600 到 86400 秒。",
+          "wake_interval": "多久讓中樞 24 小時未收到回報的每個窗簾（Norman 應用程式判定為已中斷連線的標準）回報一次（電量、位置、最後回報）。與應用程式一樣，已連線的窗簾不會被打擾。這會更新中樞本身對這些窗簾的快取，而上面的輪詢只是重新讀取快取。0 為關閉；否則為 600 到 86400 秒。",
           "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
           "show_sidebar_panel": "在 Home Assistant 側邊欄顯示 Norman 窗簾，依房間列出所有窗簾。有多個中樞時，每個中樞各有一個項目。關閉即可移除該項目；Norman 窗簾仍可作為卡片新增至儀表板。"
         }
@@ -306,6 +306,9 @@
     },
     "hub_button_failed": {
       "message": "無法將 {command} 傳送至集線器：{error}"
+    },
+    "scene_failed": {
+      "message": "無法執行場景 {name}：{error}"
     }
   }
 }

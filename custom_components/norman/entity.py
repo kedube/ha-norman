@@ -197,6 +197,14 @@ class NormanHubEntity(CoordinatorEntity[NormanCoordinator]):
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, hub_identifier(entry))})
 
 
+def scope_unique_id(entry: NormanConfigEntry, room_id: int | None, key: str) -> str:
+    """The unique id of a room's entity ``key``, or the hub's for ``room_id`` None."""
+    if room_id is None:
+        # Alongside the hub's other entities, which are keyed the same way.
+        return f"{entry.entry_id}_{key}"
+    return f"{entry.entry_id}_{room_id}_{key}"
+
+
 class NormanScopeEntity(CoordinatorEntity[NormanCoordinator]):
     """An entity that acts on every blind in one of the hub's rooms, or on the whole hub.
 
@@ -220,12 +228,10 @@ class NormanScopeEntity(CoordinatorEntity[NormanCoordinator]):
         super().__init__(coordinator)
         self.entity_description = description
         self._room_id = room_id
+        self._attr_unique_id = scope_unique_id(entry, room_id, description.key)
         if room_id is None:
-            # Alongside the hub's other entities, which are keyed the same way.
-            self._attr_unique_id = f"{entry.entry_id}_{description.key}"
             self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, hub_identifier(entry))})
             return
-        self._attr_unique_id = f"{entry.entry_id}_{room_id}_{description.key}"
         name = rooms_of(coordinator.data).get(room_id, f"Room {room_id}")
         # While the hub's device list is unreadable a room has only its placeholder name.
         # Suggesting that would create an area called "Room <id>", so the room gets none.

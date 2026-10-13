@@ -198,7 +198,9 @@ and (disabled) **Wi-Fi signal** sensors; **all blinds** rail sliders and best pr
 view, favorite, stop and jog buttons, which reach the whole house in one request where they
 can; **refresh blinds**, **start pairing** and a **pairing mode** sensor. **Each room** gets a
 device in its area with the same for the room: a slider per rail, stop, the presets, jog and
-refresh. Full detail, including availability rules, is in [docs/entities.md](docs/entities.md).
+refresh. Scenes saved in the Norman app are Home Assistant **scenes**, a room's on the room's
+device and scene groups on the hub's. Full detail, including availability rules, is in
+[docs/entities.md](docs/entities.md).
 
 <img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, connection, last seen and Request status; Activity with the rails' recent moves." width="820">
 
@@ -285,7 +287,7 @@ actions:
 - **Push updates.** The integration holds a long-poll connection open to the hub, which
   notifies it whenever a blind's state changes. **Request status** (per blind) and **Refresh
   blinds** (hub) wake a quiet blind on demand; an optional wake sweep does the same on a timer
-  for blinds the Norman app would list as disconnected ([docs/options.md](docs/options.md)).
+  for blinds the hub has not heard from for 24 hours ([docs/options.md](docs/options.md)).
 - **Commands are paced.** The hub has one radio and drops commands sent faster than it can
   transmit them, so they are queued and spaced ([docs/options.md](docs/options.md#command-spacing)).
 - **Ignored commands are chased.** A blind silent a minute after a command is asked to report

@@ -538,8 +538,8 @@ pressed (all three, by the owner's account). Each shade first answered its own `
 within 2–4 s at its old position, then reported closed 37–55 s after the hub-wide request. A
 lone `StatusRequest` to one shade closed nothing, but that shade never answered it either, so
 whether a lone `StatusRequest` is safe on these shades is not known. Since then the wake sweep
-asks only blinds the app would list as disconnected, one `StatusRequest` each, and never sends
-the hub-wide form.
+asks only blinds the hub has not heard from for 24 hours, one `StatusRequest` each, and never
+sends the hub-wide form.
 
 Each report arrives as a `{"Status": …, "PeripheralList": [uid]}` notification, so a client
 holding the notification stream sees them without polling. In the capture the refresh was
@@ -554,7 +554,14 @@ code the hub has ever returned for a move; the integration retries a move that g
 
 The app's **"Disconnect"** label is time-based: `isDisconnectPeripheral:withHub:` compares
 now against the blind's last-heard time and flags it past **86400 s** (24 h). The
-integration's connection binary sensor applies the same threshold.
+integration's connection binary sensor applies the same threshold to `status`'s `Timestamp`.
+
+What the app shows is only as fresh as its copy of those times, and that copy lags the hub's.
+On 2026-10-12 the owner's phone listed all 13 blinds as disconnected and their computer only
+the three Den shades; `status` at the time had the Den shades last heard 21.4 h earlier and
+every other blind within 2 h, so by the hub's own times none was. How the app gets its copy is
+not known. The hub reports no time zone, and an app adding the local UTC offset (4 h, EDT)
+would explain the computer's list, but not the phone's.
 
 **Why reporting in matters: the hub's cache can be wrong.** In the same session the hub had
 reported every type 33 blind's `MiddleRailPosition` as 100 for the preceding hour; when the
@@ -567,8 +574,8 @@ Neither `status` nor the notification stream reveals either case on its own. The
 integration's move watchdog covers the second case: a `StatusRequest` 60 s after any move the
 blind has not reported, then a resend if it still has not moved, up to three sends in all. For
 the first, Request status and Refresh blinds ask on demand. The optional wake sweep asks only
-blinds the app would list as disconnected, so it no longer corrects a connected blind's stale
-cache. The report-in also **overwrites the target** with the
+blinds the hub has not heard from for 24 hours, so it no longer corrects a connected blind's
+stale cache. The report-in also **overwrites the target** with the
 blind's actual position, so a check that compares position with target after asking the blind
 to report in always passes; the watchdog keeps the target it read when the command was sent.
 
@@ -643,15 +650,16 @@ The principal integration gaps are:
 
 | Hub capability | Direct evidence | Integration today |
 |---|---|---|
-| Saved room scenes | Read, create, update, delete, and activate tested on this hub | No scene discovery, entity, or dedicated action; a caller can supply the confirmed `RoomID`/`SetToScene` body through `send_hub_command` |
-| Saved scene groups | Read, create, update, delete, and cross-room activation tested; one motor missed the group command | No scene-group model or dedicated action; a raw `SceneGroupID` control call is possible, without per-member completion checks |
+| Saved room scenes | Read, create, update, delete, and activate tested on this hub | Read from `GetAllPeripheral` and run (`SetToScene`) as a scene entity on the room's device, every blind then watched; never written |
+| Saved scene groups | Read, create, update, delete, and cross-room activation tested; one motor missed the group command | Run (`SceneGroupID`) as a scene entity on the hub's device, every member blind then watched; never written |
 | Hub schedules | Read, create, and delete observed in app traffic | Not modelled; Home Assistant automations remain the intended scheduler |
 | Names and room styling | `UpdateRoom`, `UpdatePeripheral`, and `UpdateDeviceInfo` observed in app traffic | Reads names and styling where useful, but does not offer these writes |
 | Device information | `GetDeviceInfo` observed in app traffic | Gets hub identity from `registration` and the tree instead |
 
 This table counts **dedicated integration support**, not every body a caller could send with
-the raw command action. Scene and scene-group activation would need member-level status
-checks before being treated as reliable actions.
+the raw command action. The integration reads scenes from `GetAllPeripheral`, which carries
+the same objects as `GetAllScene` and `GetAllSceneGroup`, and checks every blind after running
+one, since a single acknowledgement did not complete every member's move.
 
 An independent [hub-binary string listing](https://community.home-assistant.io/t/norman-tdbu-blind-control/705405?page=2)
 also names two paths not yet tested on firmware 6.1.25:
@@ -837,8 +845,8 @@ flexibility, and a schedule on the hub would fight them.
 
 ## Open questions and coverage workflow
 
-Known gaps between the hub and the integration include hub-stored scenes and schedules, and
-configuration writes. Gaps in the **protocol reference** include group activation reliability,
+Known gaps between the hub and the integration include hub-stored schedules and configuration
+writes, scenes included. Gaps in the **protocol reference** include group activation reliability,
 schedule updates, group renaming, the rest of pairing, control-field and scope combinations, and
 products absent from the reference hub.
 Norman's [ShadeAuto manual](https://normanusa.com/app/uploads/2024/01/ShadeAuto-Manual.pdf)
@@ -950,21 +958,23 @@ documented here must be catalogued and vice versa.
 | `PairingMode` | registration (`4`), status (`0` / `5`) | `5` | **used** (pairing-mode sensor): `5` in status while the hub's ten-minute pairing window is open, see [Pairing mode](#pairing-mode). |
 | `OTA`, `DeviceType`, `FirmwareId`, `FirmwareCode`, `TotalSegment`/`Segment`, `CleanPairing` | registration, status | `0`, `48` | not used. `OTA` was `1` in one registration reply while status said `0`. |
 | `StatusRequest`, `ReportBatteryLevel` | registration (`0`) | `0` | The hub's own report-in verbs, listed the same way a blind lists its command vocabulary. **Used** as `control` verbs (see [Waking a blind](#waking-a-blind)); the registration field itself is not read. |
-| `SceneGroupList`, rooms' `SceneList` | GetAllPeripheral | `[]` or saved scene objects | not used |
+| `SceneGroupList`, rooms' `SceneList` | GetAllPeripheral | `[]` or saved scene objects | **used**: one scene entity each (see [Saved scene](#saved-scene)) |
 | rooms' `Icon`, `Color`, `Sorting`; groups' `Sorting` | GetAllPeripheral | `"3"` | not used |
 | `RequestTimestamp` / `Timestamp` | every reply | seconds / milliseconds | not used |
 
 ### Saved scene
 
-These fields were observed in one room scene in `GetAllPeripheral` and `GetAllScene`.
+These fields were observed in room scenes in `GetAllPeripheral` and `GetAllScene`: a test
+scene on 2026-10-11, and on 2026-10-12 a scene the owner saved in the app (`SceneID "1"`,
+`Icon "life_8"`, two type 33 shades at bottom `"0"` and middle `"90"` and `"80"`).
 
 | Field | Where | Observed value | Used |
 |---|---|---|---|
-| `SceneID`, `SceneName` | room's `SceneList` | numeric string, user-chosen string | not used |
+| `SceneID`, `SceneName` | room's `SceneList` | numeric string, user-chosen string | **used**: `SetToScene`'s value, and the scene entity's name |
 | `Icon`, `Color`, `Sorting` | scene | strings; `Color` was empty | not used |
-| `PeripheralList` | scene | two target objects | not used |
-| `PeripheralUID`, `ModuleType`, `ModuleDetail` | each target | strings | not used |
-| `Position`, `BottomRailPosition`, `MiddleRailPosition` | each target | `"0"`, `"0"`, `"100"` | not used |
+| `PeripheralList` | scene | two target objects | **used**: the blinds the scene's watches cover |
+| `PeripheralUID`, `ModuleType`, `ModuleDetail` | each target | strings | `PeripheralUID` **used** |
+| `Position`, `BottomRailPosition`, `MiddleRailPosition` | each target | `"0"`, `"0"`, `"100"` | **used**: the position each blind is watched for, and resent if it never moves (`Position` for a Shutter) |
 
 ### Saved scene group
 
@@ -973,10 +983,10 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 
 | Field | Where | Observed value | Used |
 |---|---|---|---|
-| `SceneGroupID`, `SceneGroupName` | `SceneGroupList` item | UUID string, user-chosen string | not used |
+| `SceneGroupID`, `SceneGroupName` | `SceneGroupList` item | UUID string, user-chosen string | **used**: the group's control value, and its scene entity's name |
 | `Icon`, `Color`, `Sorting` | group | strings | not used |
-| `SceneList` | group | one or two room-scene references | not used |
-| `RoomID`, `SceneID`, optional `SceneName` | each reference | strings | not used |
+| `SceneList` | group | one or two room-scene references | **used**: whose blinds the group's watches cover |
+| `RoomID`, `SceneID`, optional `SceneName` | each reference | strings | `RoomID`, `SceneID` **used** |
 
 ### Per peripheral
 
@@ -1104,6 +1114,8 @@ button press ──► control (Switch / Favorite by room+group; jog or StatusRe
                   (Switch / Favorite are then watched, and resent up to twice if the blind never moved)
 room / hub slider ──► control (both positions, RoomID or no address; or one per blind) ──► status
                   (each blind is then watched, and sent its own move if it never moved)
+scene ──► control (SetToScene + RoomID, or SceneGroupID) ──► status (refresh)
+                  (each blind is then watched, and sent its stored position if it never moved)
 room / hub button ──► control (verb, RoomID or no address) ──► status (refresh)
                   (a preset is then watched blind by blind, and resent to a blind by room+group
                    if it never moved; Refresh blinds sends StatusRequest to each single-rail blind)
@@ -1129,14 +1141,14 @@ network segment with the hub. Do not go looking for it in a capture.
 The rail sliders (`number`) and the covers share one code path, so both send the same
 both-rails `control` call; a room's and the hub's sliders work each blind's move out the same
 way. Apart from `MotorStop`, the integration sends [control verbs](#control-verbs) only from its
-buttons (a blind's, a room's and the hub's) and `norman.room_command`, plus a `StatusRequest`
-from the move watchdog and the wake sweep, and the watchdog's resend of the command it watches.
-Anything else needs `send_hub_command`.
+buttons (a blind's, a room's and the hub's), its scenes and `norman.room_command`, plus a
+`StatusRequest` from the move watchdog and the wake sweep, and the watchdog's resend of the
+command it watches. Anything else needs `send_hub_command`.
 
 `status` is also re-read every time the stream is cycled or reconnected, and can be re-read
 on a timer (off by default; see the poll interval option). Neither catches a blind the hub has
 not heard from: the hub only notifies when it hears from a blind, a battery blind's radio
-sleeps (the Norman app shows such a blind as "Disconnect" after a day of silence), and until
+sleeps (after a day of silence the Norman app's rule counts it as disconnected), and until
 it wakes `status` returns the same stale cache however often it is read. The report-in verbs
 ([Waking a blind](#waking-a-blind)) end that on demand. What a re-read does catch is a
 notification that never arrived. If the notification stream cannot be established at all the

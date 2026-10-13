@@ -57,7 +57,15 @@ from .const import (
     SHUTTER_CLOSED,
     WAKE_DISABLED,
 )
-from .models import NormanDevices, NormanHubData, NormanPeripheralData
+from .models import (
+    NormanDevices,
+    NormanHubData,
+    NormanPeripheralData,
+    NormanScene,
+    NormanSceneGroup,
+    NormanSceneTarget,
+    scene_key,
+)
 
 _LOGGER = logging.getLogger(__name__)
 DEVICE_LIST_RETRY_INTERVAL = 60  # seconds after a failed configuration read
@@ -281,6 +289,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # of the move that recorded them (see async_note_move).
         self._moves: dict[int, tuple[int, tuple[int, int]]] = {}
         self._move_serial = 0
+        # The scenes and scene groups saved on the hub, from its device list (_parse_scenes).
+        # Kept from the last good read while the hub cannot read its configuration.
+        self.scenes: dict[str, NormanScene] = {}
+        self.scene_groups: dict[str, NormanSceneGroup] = {}
 
     @callback
     def async_start_wake_sweep(self) -> None:
@@ -304,12 +316,12 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         )
 
     async def async_wake_disconnected_blinds(self) -> None:
-        """Ask each blind the Norman app would list as "Disconnect" to report in.
+        """Ask each blind the hub has not heard from for ``UNRESPONSIVE_AFTER`` to report in.
 
         This is the wake sweep. The app offers a refresh only for a blind it lists as
         disconnected, never for a connected one, so the sweep does the same: one
-        ``StatusRequest`` per blind the hub has not heard from in ``UNRESPONSIVE_AFTER``,
-        and nothing at all while every blind is connected. It used to send every blind
+        ``StatusRequest`` per disconnected blind, and nothing at all while every blind is
+        connected. It used to send every blind
         the hub-wide ``ReportBatteryLevel`` and a ``StatusRequest`` each, and on a hub of
         type 48 roller shades that closed them every time it ran (issue #5).
         """
@@ -338,6 +350,11 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             if room_id is not None and device.room_id != room_id:
                 continue
             await self.api.async_request_status(device_id)
+
+    @property
+    def has_device_list(self) -> bool:
+        """Whether the hub's device list has been read, so its rooms and scenes are known."""
+        return bool(self._device_info)
 
     def commanded_rails(self, device_id: int) -> tuple[int, int] | None:
         """The rails this blind's move in flight was sent to, or None when there is none."""
@@ -595,6 +612,80 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 device_id,
             )
             self._async_start_watch(device_id, None, resend, "preset", targets_read=targets_read)
+
+    async def async_run_scene(self, scene: NormanScene) -> None:
+        """Run a scene saved in one of the hub's rooms, then watch each of its blinds.
+
+        One request runs the whole scene (``SetToScene``), and the hub sends each blind to
+        the position the scene stored for it. The hub acks it whether or not every blind
+        hears it, so each blind is then watched like a move of its own, aimed at that stored
+        position: one that never moves is sent the position on its own, not the scene again.
+        """
+        await self._async_run_saved(
+            self._scene_targets([scene]),
+            lambda: self.api.async_run_scene(scene.room_id, scene.scene_id),
+        )
+
+    async def async_run_scene_group(self, group: NormanSceneGroup) -> None:
+        """Run a group of room scenes, watching every blind its scenes send.
+
+        A group needs this more than a room scene: in its one test, a member blind's target
+        changed and the blind never moved (docs/NORMAN_API.md, "Run a saved scene"). A member
+        scene the hub no longer lists is run by the hub as it sees fit and not watched.
+        """
+        members = [self.scenes[key] for key in group.scene_keys if key in self.scenes]
+        await self._async_run_saved(
+            self._scene_targets(members),
+            lambda: self.api.async_run_scene_group(group.group_id),
+        )
+
+    def _scene_targets(self, scenes: Iterable[NormanScene]) -> dict[int, NormanSceneTarget]:
+        """Where these scenes send each blind that the hub still reports."""
+        devices = self.data or {}
+        return {
+            device_id: target
+            for scene in scenes
+            for device_id, target in scene.targets.items()
+            if device_id in devices
+        }
+
+    async def _async_run_saved(
+        self, targets: dict[int, NormanSceneTarget], send: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Send a saved scene, then watch every blind in it.
+
+        The scene replaces any move in flight for its blinds. Each blind's move is recorded
+        before the request goes, as a room move's are (``async_note_move``), so a command for
+        one of them right behind it keeps the scene's other rail. A Shutter is aimed at its
+        stored louvers, every other blind at its stored rails.
+        """
+        devices = self.data or {}
+        self.async_supersede(targets)
+        moves: dict[int, tuple[int, int]] = {}
+        louvers: dict[int, int] = {}
+        for device_id, target in targets.items():
+            device_type = devices[device_id].type
+            if device_type == COVER_TYPE_SHUTTER:
+                if target.position is not None:
+                    louvers[device_id] = target.position
+            elif target.bottom is not None:
+                middle = None if device_type == COVER_TYPE_SINGLE_RAIL else target.middle
+                moves[device_id] = rails_to_send(
+                    device_type, self.heading_rails(device_id), target.bottom, middle
+                )
+        serials = {
+            device_id: self.async_note_move(device_id, *rails) for device_id, rails in moves.items()
+        }
+        try:
+            await send()
+        except BaseException:
+            for device_id, serial in serials.items():
+                self.async_forget_move(device_id, serial)
+            raise
+        for device_id, rails in moves.items():
+            self.async_watch_move(device_id, *rails, serials[device_id])
+        for device_id, position in louvers.items():
+            self.async_watch_louvers(device_id, position)
 
     @callback
     def _async_start_watch(
@@ -950,6 +1041,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self._log_unknown_fields(self._device_info, status_data)
         self._update_hub_data(self._device_info, status_data)
         devices = self._process_data(self._device_info, status_data)
+        if self._device_info:
+            self.scenes, self.scene_groups = _parse_scenes(self._device_info)
         if not self._device_info:
             self._keep_registry_names(devices)
         self._warn_about_unknown_module_types(devices)
@@ -1255,6 +1348,65 @@ def _dicts(raw: Any) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
     return [item for item in raw if isinstance(item, dict)]
+
+
+def _parse_scenes(
+    device_info: dict[str, Any],
+) -> tuple[dict[str, NormanScene], dict[str, NormanSceneGroup]]:
+    """The scenes and scene groups saved on the hub, from ``GetAllPeripheral``.
+
+    Each room's ``SceneList`` holds its scenes, each sending some of the room's blinds to
+    stored positions, and ``SceneGroupList`` holds groups of room scenes. The hub stores
+    every value in them as a string, ids and positions included (docs/NORMAN_API.md). A
+    scene whose id is not a number is left out, since ``SetToScene`` takes the id as one,
+    and so is a group without an id.
+    """
+    results = device_info.get("results")
+    if not isinstance(results, dict):
+        return {}, {}
+    scenes: dict[str, NormanScene] = {}
+    for room in _dicts(results.get("RoomList")):
+        room_id = _parse_int(room.get("RoomID"))
+        if room_id is None:
+            continue
+        for raw in _dicts(room.get("SceneList")):
+            scene_id = _parse_int(raw.get("SceneID"))
+            if scene_id is None:
+                continue
+            targets: dict[int, NormanSceneTarget] = {}
+            for target in _dicts(raw.get("PeripheralList")):
+                device_id = _parse_uid(target.get("PeripheralUID"))
+                if device_id is None:
+                    continue
+                targets[device_id] = NormanSceneTarget(
+                    bottom=_parse_position(target.get("BottomRailPosition")),
+                    middle=_parse_position(target.get("MiddleRailPosition")),
+                    position=_parse_louvers(target.get("Position")),
+                )
+            scene = NormanScene(
+                room_id=room_id,
+                scene_id=scene_id,
+                name=str(raw.get("SceneName") or f"Scene {scene_id}"),
+                targets=targets,
+            )
+            scenes[scene.key] = scene
+    groups: dict[str, NormanSceneGroup] = {}
+    for raw in _dicts(results.get("SceneGroupList")):
+        group_id = raw.get("SceneGroupID")
+        if not isinstance(group_id, str) or not group_id:
+            continue
+        members = []
+        for item in _dicts(raw.get("SceneList")):
+            room_id = _parse_int(item.get("RoomID"))
+            scene_id = _parse_int(item.get("SceneID"))
+            if room_id is not None and scene_id is not None:
+                members.append(scene_key(room_id, scene_id))
+        groups[group_id] = NormanSceneGroup(
+            group_id=group_id,
+            name=str(raw.get("SceneGroupName") or "Scene group"),
+            scene_keys=members,
+        )
+    return scenes, groups
 
 
 def _parse_int(raw: Any) -> int | None:

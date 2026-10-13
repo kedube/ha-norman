@@ -246,8 +246,8 @@ class NormanOptionsFlow(OptionsFlow):
 
     Updates are pushed, and the listener re-reads every blind each time it cycles the
     stream, so the poll only shortens how long a missed notification goes unnoticed. The
-    wake sweep goes further: it asks each blind the app lists as disconnected to report in,
-    which refreshes the hub's own cache (positions, battery, last seen) for that blind
+    wake sweep goes further: it asks each blind the hub has not heard from for a day to report
+    in, which refreshes the hub's own cache (positions, battery, last seen) for that blind
     rather than re-reading it. The poll costs one request per interval; the sweep one per
     disconnected blind, and none while every blind is connected. The sidebar toggle adds or
     removes the "Norman Shades" panel (frontend.py).

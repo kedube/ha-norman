@@ -72,11 +72,11 @@ class NormanPeripheralData:
         return self.rf_firmware_version or self.firmware_version
 
     def disconnected(self, now: datetime) -> bool | None:
-        """Whether the Norman app would list this blind as "Disconnect"; None when undated.
+        """Whether the hub has not heard from this blind for ``UNRESPONSIVE_AFTER``.
 
-        The app's rule: the hub has not heard from the blind for ``UNRESPONSIVE_AFTER``.
-        The connection sensor shows it, and the wake sweep asks only these blinds to
-        report in.
+        None when undated. The threshold is the Norman app's for "Disconnect", applied to the
+        hub's own last-heard time. The connection sensor shows it, and the wake sweep asks
+        only these blinds to report in.
         """
         last_seen = parse_last_update(self.last_update)
         if last_seen is None:
@@ -97,6 +97,48 @@ class NormanHubData:
     wifi_rssi: int | None = None  # dBm
     ota_in_progress: bool | None = None
     pairing_mode: int | None = None
+
+
+@dataclass(frozen=True)
+class NormanSceneTarget:
+    """Where a saved scene sends one blind, as the hub stored it.
+
+    The hub stores every rail field for every blind, whatever its type: a Shutter's louvers
+    are ``position``, every other blind's rails are ``bottom`` and ``middle``.
+    """
+
+    bottom: int | None = None
+    middle: int | None = None
+    position: int | None = None
+
+
+def scene_key(room_id: int, scene_id: int) -> str:
+    """A key for a room scene that is unique on the hub: scene ids are numbered per room."""
+    return f"{room_id}_{scene_id}"
+
+
+@dataclass
+class NormanScene:
+    """A scene saved in one of the hub's rooms, as the Norman app makes them."""
+
+    room_id: int
+    scene_id: int
+    name: str
+    targets: dict[int, NormanSceneTarget]
+
+    @property
+    def key(self) -> str:
+        """This scene's ``scene_key``."""
+        return scene_key(self.room_id, self.scene_id)
+
+
+@dataclass
+class NormanSceneGroup:
+    """Room scenes the hub runs together, across rooms (the app's scene groups)."""
+
+    group_id: str
+    name: str
+    scene_keys: list[str]  # NormanScene.key of each member scene
 
 
 # Represents all peripherals keyed by their ID

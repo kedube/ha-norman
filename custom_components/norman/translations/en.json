@@ -55,7 +55,7 @@
         },
         "data_description": {
           "poll_interval": "How often to re-read every blind's position from the hub, in case a notification was missed. This re-reads what the hub has stored and asks the blinds nothing. 0 turns polling off; otherwise 10 to 300 seconds, as the integration already re-reads every 5 minutes.",
-          "wake_interval": "How often to ask each blind the Norman app would list as disconnected (not heard from for 24 hours) to report in: battery, position, last seen. Connected blinds are left alone, as the app leaves them. This refreshes the hub's own cache for those blinds, which the poll above only re-reads. 0 turns it off; otherwise 600 to 86400 seconds.",
+          "wake_interval": "How often to ask each blind the hub has not heard from for 24 hours (the Norman app's threshold for disconnected) to report in: battery, position, last seen. Connected blinds are left alone, as the app leaves them. This refreshes the hub's own cache for those blinds, which the poll above only re-reads. 0 turns it off; otherwise 600 to 86400 seconds.",
           "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
           "show_sidebar_panel": "Show Norman Shades, every blind by room, in the Home Assistant sidebar. With more than one hub, each gets its own entry. Turn off to remove it; Norman Shades can still be added to a dashboard as a card."
         }
@@ -306,6 +306,9 @@
     },
     "hub_button_failed": {
       "message": "Failed to send {command} to the hub: {error}"
+    },
+    "scene_failed": {
+      "message": "Failed to run the scene {name}: {error}"
     }
   }
 }

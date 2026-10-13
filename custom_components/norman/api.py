@@ -28,6 +28,8 @@ from .const import (
     HUB_CMD_PAIRING_MODE,
     HUB_CMD_REPORT_BATTERY,
     HUB_CMD_REQUEST_STATUS,
+    HUB_CMD_SCENE_GROUP,
+    HUB_CMD_SET_TO_SCENE,
     HUB_CMD_SHUTTER_POSITION,
     HUB_CMD_STOP,
     HUB_COMMAND_SETTING,
@@ -510,6 +512,29 @@ class NormanApiClient:
         Shutter from here.
         """
         await self._async_move(device_id, {HUB_CMD_SHUTTER_POSITION: position})
+
+    async def async_run_scene(self, room_id: int, scene_id: int) -> None:
+        """Run a scene saved in a room: ``{"RoomID": R, "SetToScene": S}``.
+
+        The hub moves each of the scene's blinds to the position it stored for it, in one
+        request (docs/NORMAN_API.md, "Run a saved scene"). As with a room move, ``Error 0``
+        means the hub accepted it, not that every blind moved; the coordinator watches each.
+        """
+        await self._async_while_busy(
+            lambda: self.async_send_room_control(room_id, {HUB_CMD_SET_TO_SCENE: scene_id}),
+            f"scene {scene_id} in room {room_id}",
+        )
+
+    async def async_run_scene_group(self, group_id: str) -> None:
+        """Run a group of room scenes: ``{"SceneGroupID": "<uuid>"}``, with no RoomID.
+
+        The group's id is the whole scope, so the room field is left out; the hub fans the
+        command out to every member scene's room itself.
+        """
+        await self._async_while_busy(
+            lambda: self.async_send_room_control(None, {HUB_CMD_SCENE_GROUP: group_id}),
+            f"scene group {group_id}",
+        )
 
     async def async_set_room_position(
         self, room_id: int | None, bottom_rail_position: int, middle_rail_position: int

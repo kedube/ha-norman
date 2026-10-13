@@ -881,7 +881,7 @@ def test_wake_interval_option(option: object, expected: timedelta | None) -> Non
 async def test_wake_sweep_asks_only_disconnected_blinds(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """Each tick sends one StatusRequest per blind the app would list as disconnected.
+    """Each tick sends one StatusRequest per blind the hub has not heard from for 24 hours.
 
     The living-room drape was last heard from in 2023, so it is asked. The bedroom shade
     reported in just now, so it is left alone, as the app leaves a connected blind; the
