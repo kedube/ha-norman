@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.85 — 2026-10-13
 
 - **Refresh blinds: a caveat, not a change.** On one hub of type 48 roller shades, Refresh
   blinds closed every shade ([#5](https://github.com/kedube/ha-norman/issues/5)), while a status
