@@ -5,6 +5,10 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Scenes in Norman Shades.** Added support for scene groups.
+
 ## 0.83 — 2026-10-13
 
 - **Scenes in Norman Shades.** A room's scenes from the Norman app follow its Privacy, View and
