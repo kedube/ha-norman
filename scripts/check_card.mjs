@@ -384,6 +384,82 @@ check("_build drops presets when hidden", countIn({ hide_room_presets:true }, "r
   check("this hub's scenes are kept", scoped._collectScenes().get("Den")?.length === 2);
 }
 
+// --- the hub's scene groups, after the whole-house presets ----------------------------------
+{
+  const groupHass = (extra = {}, states = {}) => ({
+    ...hass,
+    entities: {
+      ...hass.entities,
+      "scene.norman_hub_bedtime": { platform:"norman", device_id:"hub", translation_key:"scene_group", name:"Bedtime" },
+      "scene.norman_hub_away": { platform:"norman", device_id:"hub", translation_key:"scene_group", name:"Away" },
+      "scene.norman_hub_secret": { platform:"norman", device_id:"hub", translation_key:"scene_group", name:"Secret", hidden:true },
+      "scene.den_evening": { platform:"norman", device_id:"r2", translation_key:"room_scene", name:"Evening" },
+      ...extra,
+    },
+    devices: { ...hass.devices, r2: { name:"Den", area_id:"a2" } },
+    states: {
+      ...hass.states,
+      "scene.norman_hub_bedtime": { state:"unknown", attributes:{} },
+      "scene.norman_hub_away": { state:"unknown", attributes:{} },
+      "scene.den_evening": { state:"unknown", attributes:{} },
+      ...states,
+    },
+    callService: (d, s2, data) => calls.push([d, s2, data]),
+  });
+  const words = (chips) => chips.map((chip) => chip.children[1].textContent);
+  const headerOf = (c) => byClass(c.shadowRoot, "header")[0];
+
+  let c = rendered({}, groupHass());
+  const header = headerOf(c);
+  const order = header.children.map((child) => child.className);
+  check("scene groups follow the whole-house presets in the header",
+        order.indexOf("segmented home-scenes") === order.indexOf("segmented home-buttons") + 1,
+        JSON.stringify(order));
+  const [box] = byClass(header, "home-scenes");
+  check("the header lists the hub's scene groups by name, without hidden ones or room scenes",
+        box.hidden === false && JSON.stringify(words(box.children)) === JSON.stringify(["Away", "Bedtime"]),
+        JSON.stringify(words(box.children)));
+  check("a scene group's chip is named for the group", box.children[1].title === "Bedtime", box.children[1].title);
+  calls.length = 0;
+  box.children[1]._on.click();
+  check("a scene group's chip runs the group",
+        JSON.stringify(calls) === JSON.stringify([["scene", "turn_on", { entity_id:"scene.norman_hub_bedtime" }]]),
+        JSON.stringify(calls));
+  check("a scene group is not listed with a room",
+        !byClass(c.shadowRoot, "room-scenes").some((group) => words(group.children).includes("Bedtime")));
+
+  const none = byClass(rendered().shadowRoot, "home-scenes")[0];
+  check("a hub without scene groups shows none", none?.hidden === true && none.children.length === 0);
+  check("hiding the whole-house presets hides the scene groups too",
+        byClass(rendered({ hide_home_controls:true }, groupHass()).shadowRoot, "home-scenes").length === 0);
+
+  c = rendered({}, groupHass({}, { "scene.norman_hub_away": { state:"unavailable", attributes:{} } }));
+  const chipOf = (card, entityId) =>
+    byClass(card.shadowRoot, "home-scenes")[0].children.find((chip) => chip.dataset.entityId === entityId);
+  check("an unavailable scene group's chip is disabled", chipOf(c, "scene.norman_hub_away")?.disabled === true);
+  check("an available scene group's chip is not", chipOf(c, "scene.norman_hub_bedtime")?.disabled === false);
+
+  // A group added in the app appears without a reload, and one deleted goes.
+  c._hass = groupHass({ "scene.norman_hub_morning": { platform:"norman", device_id:"hub", translation_key:"scene_group", name:"Morning" } });
+  c._update();
+  check("a new scene group appears in the header",
+        JSON.stringify(words(byClass(c.shadowRoot, "home-scenes")[0].children)) === JSON.stringify(["Away", "Bedtime", "Morning"]));
+  const gone = groupHass();
+  delete gone.entities["scene.norman_hub_away"];
+  delete gone.entities["scene.norman_hub_bedtime"];
+  c._hass = gone; c._update();
+  check("the header's scene groups go when the hub has none left", byClass(c.shadowRoot, "home-scenes")[0].hidden === true);
+
+  // With a hub configured, only that hub's groups.
+  const scoped = new Card();
+  const two = groupHass();
+  two.devices = { ...two.devices, hub: { ...two.devices.hub, config_entries:["home"] } };
+  scoped._hass = two; scoped.setConfig({ type:"custom:norman-shades-card", config_entry_id:"cabin" }); scoped._hass = two;
+  check("another hub's scene groups are left out", scoped._collectSceneGroups().length === 0);
+  scoped.setConfig({ type:"custom:norman-shades-card", config_entry_id:"home" }); scoped._hass = two;
+  check("this hub's scene groups are kept", scoped._collectSceneGroups().length === 2);
+}
+
 // --- presets are labelled chips ---------------------------------------------------------
 {
   const c = rendered();

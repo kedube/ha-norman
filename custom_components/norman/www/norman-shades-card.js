@@ -64,10 +64,11 @@ const KEY_LOUVERS = "louvers";
 const KEY_BOTTOM_POSITION = "bottom_rail_position";
 const KEY_MIDDLE_POSITION = "middle_rail_position";
 const KEY_BATTERY = "battery_level";
-// A scene saved in one of the hub's rooms, on that room's device. A scene group carries
-// "scene_group" and sits on the hub's device: it has no room of its own, so the card leaves
-// it out.
+// A scene saved in one of the hub's rooms, on that room's device, listed with the room. A
+// scene group sits on the hub's device and acts on several rooms, so it goes in the header
+// with the whole-house presets instead.
 const KEY_ROOM_SCENE = "room_scene";
+const KEY_SCENE_GROUP = "scene_group";
 // Home Assistant's own icon for a scene.
 const SCENE_ICON = "mdi:palette";
 // Entities only the hub device carries, which is how the card tells the hub from the rest:
@@ -154,7 +155,7 @@ const STRINGS = {
     editor_hide_room_names: "Hide room headings",
     editor_hide_room_controls: "Hide room open / stop / close",
     editor_hide_room_presets: "Hide room presets and scenes",
-    editor_hide_home_controls: "Hide whole-house presets",
+    editor_hide_home_controls: "Hide whole-house presets and scene groups",
   },
   de: {
     card_name: "Norman-Rollos",
@@ -221,7 +222,7 @@ const STRINGS = {
     editor_hide_room_names: "Raumüberschriften ausblenden",
     editor_hide_room_controls: "Öffnen / Stopp / Schließen der Räume ausblenden",
     editor_hide_room_presets: "Voreinstellungen und Szenen der Räume ausblenden",
-    editor_hide_home_controls: "Voreinstellungen für das ganze Haus ausblenden",
+    editor_hide_home_controls: "Voreinstellungen und Szenengruppen für das ganze Haus ausblenden",
   },
   es: {
     card_name: "Persianas Norman",
@@ -288,7 +289,7 @@ const STRINGS = {
     editor_hide_room_names: "Ocultar los títulos de las habitaciones",
     editor_hide_room_controls: "Ocultar abrir / detener / cerrar de las habitaciones",
     editor_hide_room_presets: "Ocultar los preajustes y escenas de las habitaciones",
-    editor_hide_home_controls: "Ocultar los preajustes de toda la casa",
+    editor_hide_home_controls: "Ocultar los preajustes y grupos de escenas de toda la casa",
   },
   fr: {
     card_name: "Stores Norman",
@@ -355,7 +356,7 @@ const STRINGS = {
     editor_hide_room_names: "Masquer les titres des pièces",
     editor_hide_room_controls: "Masquer ouvrir / arrêter / fermer des pièces",
     editor_hide_room_presets: "Masquer les préréglages et scènes des pièces",
-    editor_hide_home_controls: "Masquer les préréglages de toute la maison",
+    editor_hide_home_controls: "Masquer les préréglages et groupes de scènes de toute la maison",
   },
   ja: {
     card_name: "Norman ブラインド",
@@ -422,7 +423,7 @@ const STRINGS = {
     editor_hide_room_names: "部屋の見出しを非表示",
     editor_hide_room_controls: "部屋の開く／停止／閉じるを非表示",
     editor_hide_room_presets: "部屋のプリセットとシーンを非表示",
-    editor_hide_home_controls: "家全体のプリセットを非表示",
+    editor_hide_home_controls: "家全体のプリセットとシーングループを非表示",
   },
   "zh-Hans": {
     card_name: "Norman 窗帘",
@@ -489,7 +490,7 @@ const STRINGS = {
     editor_hide_room_names: "隐藏房间标题",
     editor_hide_room_controls: "隐藏房间的打开 / 停止 / 关闭",
     editor_hide_room_presets: "隐藏房间预设和场景",
-    editor_hide_home_controls: "隐藏全屋预设",
+    editor_hide_home_controls: "隐藏全屋预设和场景组",
   },
   "zh-Hant": {
     card_name: "Norman 窗簾",
@@ -556,7 +557,7 @@ const STRINGS = {
     editor_hide_room_names: "隱藏房間標題",
     editor_hide_room_controls: "隱藏房間的開啟 / 停止 / 關閉",
     editor_hide_room_presets: "隱藏房間預設和場景",
-    editor_hide_home_controls: "隱藏全屋預設",
+    editor_hide_home_controls: "隱藏全屋預設和場景群組",
   },
 };
 
@@ -876,10 +877,17 @@ const STYLES = `
   .icon-btn.menu ha-icon { --mdc-icon-size: 24px; }
   .tray { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 14px; }
   .tray .segmented { display: flex; width: fit-content; max-width: 100%; }
-  /* A room's scenes, after its presets: as many as the app has, so they wrap. */
-  .room-scenes { flex-wrap: wrap; }
-  .room-scenes .chip { max-width: 100%; }
-  .room-scenes .chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* A room's scenes after its presets, and the hub's scene groups after the whole-house
+     presets: as many as the app has, so they wrap. The groups keep their words on a narrow
+     card, where the presets beside them shrink to icons, since one palette looks like
+     another. */
+  .room-scenes, .home-scenes { flex-wrap: wrap; max-width: 100%; }
+  .room-scenes .chip, .home-scenes .chip { max-width: 100%; }
+  .room-scenes .chip span, .home-scenes .chip span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .chip:disabled { opacity: 0.45; cursor: default; pointer-events: none; }
 
   /* ---- a blind: the window, then its name and state --------------------------------- */
@@ -1840,23 +1848,37 @@ class NormanShadesCard extends HTMLElement {
    */
   _collectScenes() {
     const scenes = new Map();
-    const hass = this._hass;
-    if (!hass) return scenes;
-
-    const devices = hass.devices || {};
-    const areas = hass.areas || {};
-    for (const [entityId, entry] of Object.entries(hass.entities || {})) {
-      if (entry.platform !== DOMAIN || entry.translation_key !== KEY_ROOM_SCENE) continue;
-      if (!entry.device_id || entry.hidden || entry.hidden_by || entry.disabled_by) continue;
-      if (!this._inScope(entry.device_id)) continue;
+    const devices = this._hass?.devices || {};
+    const areas = this._hass?.areas || {};
+    for (const { entityId, entry, name } of this._sceneEntities(KEY_ROOM_SCENE)) {
       const area = areas[entry.area_id || devices[entry.device_id]?.area_id];
       if (!area?.name) continue;
       if (!scenes.has(area.name)) scenes.set(area.name, []);
-      const name = entry.name || hass.states?.[entityId]?.attributes?.friendly_name || entityId;
       scenes.get(area.name).push({ entityId, name });
     }
-    for (const list of scenes.values()) list.sort((a, b) => a.name.localeCompare(b.name));
     return scenes;
+  }
+
+  /** The hub's scene groups, in name order: room scenes in several rooms, run together. */
+  _collectSceneGroups() {
+    return this._sceneEntities(KEY_SCENE_GROUP).map(({ entityId, name }) => ({ entityId, name }));
+  }
+
+  /**
+   * Norman scene entities with translation key `key` that belong on this card, in name order:
+   * not hidden or disabled in Home Assistant, and on this card's hub when it has one.
+   */
+  _sceneEntities(key) {
+    const hass = this._hass;
+    const found = [];
+    for (const [entityId, entry] of Object.entries(hass?.entities || {})) {
+      if (entry.platform !== DOMAIN || entry.translation_key !== key) continue;
+      if (!entry.device_id || entry.hidden || entry.hidden_by || entry.disabled_by) continue;
+      if (!this._inScope(entry.device_id)) continue;
+      const name = entry.name || hass.states?.[entityId]?.attributes?.friendly_name || entityId;
+      found.push({ entityId, entry, name });
+    }
+    return found.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
@@ -2053,7 +2075,14 @@ class NormanShadesCard extends HTMLElement {
     this._summary = el("div", "summary");
     titles.append(text, this._summary);
     header.appendChild(titles);
-    if (!this._config.hide_home_controls) header.appendChild(this._buildHomeControls());
+    this._homeScenes = null;
+    if (!this._config.hide_home_controls) {
+      header.appendChild(this._buildHomeControls());
+      // Filled with the hub's scene groups on every rebuild (_fillHomeScenes).
+      this._homeScenes = el("div", "segmented home-scenes");
+      this._homeScenes.hidden = true;
+      header.appendChild(this._homeScenes);
+    }
     card.appendChild(header);
 
     this._body = el("div", "body");
@@ -2082,6 +2111,7 @@ class NormanShadesCard extends HTMLElement {
 
     const rooms = this._roomsOf(this._collectBlinds());
     this._scenes = this._collectScenes();
+    this._sceneGroups = this._collectSceneGroups();
 
     // Rebuild only when the set of blinds (or a name), or a room's scenes, change; otherwise
     // patch values in place so a rail being dragged is never replaced under the user's finger.
@@ -2091,6 +2121,7 @@ class NormanShadesCard extends HTMLElement {
           `${room}:${list.map((b) => `${b.deviceId}=${b.name}/${b.product || ""}/${b.stack || ""}`).join(",")}` +
           `:${(this._scenes.get(room) || []).map((scene) => `${scene.entityId}=${scene.name}`).join(",")}`,
       )
+      .concat(this._sceneGroups.map((group) => `group ${group.entityId}=${group.name}`))
       .join("|");
     if (signature !== this._signature) {
       this._signature = signature;
@@ -2123,7 +2154,9 @@ class NormanShadesCard extends HTMLElement {
       ),
       // A scene's chip is greyed out while the scene is unavailable.
       ...rooms.flatMap(([room]) => (this._scenes?.get(room) || []).map((scene) => scene.entityId)),
+      ...(this._sceneGroups || []).map((group) => group.entityId),
     ].filter(Boolean);
+    this._fillHomeScenes();
 
     if (!rooms.length) {
       this._body.appendChild(el("div", "empty", this._t("empty")));
@@ -2229,6 +2262,26 @@ class NormanShadesCard extends HTMLElement {
       );
     }
     return controls;
+  }
+
+  /**
+   * The hub's scene groups, after the whole-house presets: one chip each, which runs the group
+   * -- room scenes in several rooms at once -- with every blind checked afterwards by the
+   * integration. Empty and hidden when the hub has none.
+   */
+  _fillHomeScenes() {
+    const box = this._homeScenes;
+    if (!box) return;
+    box.innerHTML = "";
+    for (const group of this._sceneGroups || []) {
+      const chip = this._buildChip(SCENE_ICON, group.name, group.name, () => {
+        this._hass.callService("scene", "turn_on", { entity_id: group.entityId });
+      });
+      chip.dataset.entityId = group.entityId;
+      (this._sceneChips ||= []).push(chip);
+      box.appendChild(chip);
+    }
+    box.hidden = !box.children.length;
   }
 
   /**

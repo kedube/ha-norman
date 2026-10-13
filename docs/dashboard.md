@@ -206,9 +206,9 @@ several rooms.
 
 ### The whole house
 
-The same three buttons sit in the header, where they move **every** blind on the hub. On a
-narrow screen they shrink to their icons. On a dashboard, `hide_home_controls: true` leaves the
-header plain.
+The same three buttons sit in the header, where they move **every** blind on the hub, followed by
+the hub's **scene groups**. On a narrow screen the three shrink to their icons. On a dashboard,
+`hide_home_controls: true` leaves the header plain.
 
 | Button | Does |
 |---|---|
@@ -227,6 +227,13 @@ window rather than the light-filtering fabric.
 
 All three work on single-rail blinds as well as two-rail ones — a capture of the app driving a
 single-rail shade shows it sending the same three verbs unchanged.
+
+**Scene groups** saved in the Norman app — room scenes in several rooms, run together — follow the
+three, one button each in name order; with none, there is nothing after the three. A button runs
+its group: one request to the hub, then every blind its scenes move is checked
+([Scenes](entities.md#scenes)). The buttons keep their names on a narrow screen and wrap instead,
+since one scene's icon looks like another's. Like a room's scenes, a group's button is greyed out
+while the group is unavailable, and groups hidden in Home Assistant are left out.
 
 There is no house-wide **stop**: the hub's stop is per blind, so it would have to fan out over
 every cover, and a stop that lags the blinds it is stopping is worse than none. Use a room's
@@ -268,7 +275,7 @@ hide_battery: false        # hide the battery readings
 hide_room_names: false     # one grid instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading
 hide_room_presets: false   # remove each room's ⋯ presets and scenes
-hide_home_controls: false  # remove the whole-house presets from the header
+hide_home_controls: false  # remove the whole-house presets and scene groups from the header
 rooms:                     # only these areas, in this order
   - Master Bedroom
   - Den

@@ -394,7 +394,8 @@ device can be deleted once the hub no longer has the room (see
 Scenes saved in the Norman app are Home Assistant
 [scenes](https://www.home-assistant.io/integrations/scene/), named as the app names them (one
 saved without a name is called "Scene" or "Scene group"). Norman Shades lists a room's scenes
-after its presets ([dashboard](dashboard.md#the-apps-room-buttons)).
+after its presets ([dashboard](dashboard.md#the-apps-room-buttons)), and the scene groups in its
+header after the whole-house presets ([dashboard](dashboard.md#the-whole-house)).
 
 | Saved on the hub | Device | Sends |
 |---|---|---|
