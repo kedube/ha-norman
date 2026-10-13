@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.82 — 2026-10-13
 
 - **Scenes saved in the Norman app are Home Assistant scenes.** A room scene goes on its room's
   device and a scene group on the hub's, named as in the app. Running one is a single request
