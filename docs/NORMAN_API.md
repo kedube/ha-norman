@@ -321,8 +321,8 @@ app's network library and then sent directly:
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
 | `CleanTopLimit` / `CleanBottomLimit` | 0 | Clear the stored limit (the app sends this right before setting a new one). |
 | `Calibration` | 0 | Run the motor's calibration. |
-| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`). The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification for it. Verified on real hardware: nothing moved and every try was answered within 5 s; on a hub of type 48 roller shades one request went unanswered. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
-| `ReportBatteryLevel` | 0 | Ask every blind on the hub (no scope field) or in a room (`RoomID`) to report in. Sent by the app's refresh, which it offers only for a disconnected blind. Closed every shade on a hub of type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)). Despite the name the answer carries position and last-seen too. **Used** (Refresh blinds button, `room_command: refresh`). |
+| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`). The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification for it. Verified on real hardware: nothing moved and every try was answered within 5 s; on one hub of type 48 roller shades, one of three lone requests was answered, and none moved anything. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
+| `ReportBatteryLevel` | 0 | Ask every blind on the hub (no scope field) or in a room (`RoomID`) to report in. Sent by the app's refresh, which it offers only for a disconnected blind. Closed every shade on one hub of type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)); moves nothing on cellular shades. Despite the name the answer carries position and last-seen too. **Used** (Refresh blinds button, `room_command: refresh`). |
 
 ```json
 {"PeripheralUID": 58850, "Timestamp": 1788828922, "TaskID": 43620, "MotorStop": 170}
@@ -529,17 +529,25 @@ corrected during a broad report-in. No physical motor movement was verified. Use
 `StatusRequest` to refresh a single blind; an accepted `ReportBatteryLevel` with a UID is not
 evidence that it was scoped to that blind.
 
-**Type 48 roller shades close on a hub-wide report-in (issue
-[#5](https://github.com/kedube/ha-norman/issues/5), 2026-10-12).** On a hub at firmware 6.1.25
+**On one hub, type 48 roller shades closed on a hub-wide report-in (issue
+[#5](https://github.com/kedube/ha-norman/issues/5), 2026-10-12 and 2026-10-13).** On a hub at
+firmware 6.1.25
 with three type 48 / detail 1 roller shades at firmware 2.4.1, the hub-wide `ReportBatteryLevel`
 followed by a `StatusRequest` to each shade closed the shades, with no move command sent. It
 happened twice: when the wake sweep ran (two of the three closed) and when Refresh blinds was
 pressed (all three, as reported in the issue). Each shade first answered its own `StatusRequest`
-within 2–4 s at its old position, then reported closed 37–55 s after the hub-wide request. A
-lone `StatusRequest` to one shade closed nothing, but that shade never answered it either, so
-whether a lone `StatusRequest` is safe on these shades is not known. Since then the wake sweep
-asks only blinds the hub has not heard from for 24 hours, one `StatusRequest` each, and never
-sends the hub-wide form.
+within 2–4 s at its old position, then reported closed 37–55 s after the hub-wide request.
+
+A lone `StatusRequest` closed nothing in three tries on that hub. On 2026-10-13 one shade answered
+it in 2.5 s and did not move. The other two tries, one to each of the other shades, went
+unanswered (the shade's `Timestamp` stayed put for over two minutes), and nothing closed either.
+So the hub-wide request is the likely trigger there, though it has never been sent on its own,
+without the status requests that follow it. What is different on that hub is not known. Its
+shades miss status requests that cellular shades have answered every time, so connectivity may
+play a part. Since then the wake sweep asks only blinds the hub has not heard from for 24 hours,
+one `StatusRequest` each, and never sends the hub-wide form. Refresh blinds still does, since it
+moves nothing on cellular shades; the README and [entities.md](entities.md#hub-buttons) carry
+the caveat.
 
 Each report arrives as a `{"Status": …, "PeripheralList": [uid]}` notification, so a client
 holding the notification stream sees them without polling. In the capture the refresh was

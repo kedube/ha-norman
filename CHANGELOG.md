@@ -5,6 +5,16 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Refresh blinds: a caveat, not a change.** On one hub of type 48 roller shades, Refresh
+  blinds closed every shade ([#5](https://github.com/kedube/ha-norman/issues/5)), while a status
+  request to one of those shades, answered in 2.5 seconds, closed nothing. Refresh blinds sends
+  the Norman hub's own report-in request, which moves nothing on cellular shades (verified on
+  real hardware), so it stays as it is. What is different on that hub isn't known. Its shades
+  also miss some status requests, so connectivity may play a part. If Refresh blinds moves your
+  shades, use **Request status** on each shade instead.
+
 ## 0.84 — 2026-10-13
 
 - **Scenes in Norman Shades.** Added support for scene groups.

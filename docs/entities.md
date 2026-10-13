@@ -288,8 +288,10 @@ while it lists a blind as disconnected. The hub then polls
 its blinds in turn and each one reports in over the next half minute (about 30 s for nine
 blinds), each as its own notification. Despite the verb's name the answer carries position
 and last-seen as well as battery. Nothing moves on cellular shades (verified on real hardware),
-but on a hub of type 48 roller shades a press closed every shade
-([#5](https://github.com/kedube/ha-norman/issues/5)). In testing the hub-wide sweep did **not**
+but on one hub of type 48 roller shades a press closed every shade
+([#5](https://github.com/kedube/ha-norman/issues/5)). What is different on that hub isn't known,
+and its shades also miss some status requests; if a press moves your shades, use **Request
+status** on each blind instead. In testing the hub-wide sweep did **not**
 reach the single-rail blinds — all four ignored it every time, while a per-blind
 status request had one answering in four seconds — so the button follows the sweep with a
 `StatusRequest` to each single-rail blind. The room-scoped form is `norman.room_command` with
@@ -319,7 +321,7 @@ The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's m
 cache was stale. Connected blinds are left alone, as the app leaves them, so a sweep sends
 nothing while every blind is connected. Until issue
 [#5](https://github.com/kedube/ha-norman/issues/5) it did what Refresh blinds does, which
-closed a hub's type 48 roller shades every time it ran. Off by default, and the form no longer
+closed one hub's type 48 roller shades every time it ran. Off by default, and the form no longer
 suggests a value. The floor is ten minutes, because a sweep can wake a sleeping blind's radio;
 an hour is a sensible value.
 
