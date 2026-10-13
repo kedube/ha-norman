@@ -106,10 +106,12 @@ entities. Once its type is mapped as something else, the Middle rail cover and t
 no longer has are deleted from the entity registry at startup, so they do not linger as "no
 longer provided" or show up in Norman Shades as a second fabric.
 
-Entity ids are derived from the blind's name in the Norman app, prefixed with its area on Home
-Assistant 2026.9 and newer (`cover.living_room_living_drape` for a blind called "Living Drape" in
-the hub's "Living Room"; older releases and existing installs keep `cover.living_drape`). A
-peripheral the hub reports status for but does not list by name gets `Norman <uid>`.
+Entity ids are derived from the blind's name in the Norman app and the entity's own name,
+prefixed with the blind's area on Home Assistant 2026.9 and newer. A two-rail blind called
+"Living Drape" in the hub's "Living Room" gets `cover.living_room_living_drape_bottom_rail` and
+`cover.living_room_living_drape_middle_rail`. Home Assistant keeps the id an entity was first
+given, so existing installs may have shorter ids such as `cover.living_drape`. A peripheral the
+hub reports status for but does not list by name gets `Norman <uid>`.
 
 | Property | Source | Notes |
 |---|---|---|
@@ -175,17 +177,19 @@ cover whenever the hub reports a change, including changes made with a remote or
 app. It also refreshes after every command it sends and every time the long-poll is
 reconnected.
 
-Optional polling backs that up: **Settings → Devices & services → Norman → Configure**.
-**0 (the default) disables polling**, so state follows the hub's notifications alone;
-10 to 3600 seconds re-reads every blind's position on that interval.
+The long-poll is reconnected every 5 minutes, so a notification that goes missing leaves a
+blind out of date for 5 minutes at most. Optional polling shortens that:
+**Settings → Devices & services → Norman → Configure**. **0 (the default) disables polling**;
+10 to 300 seconds re-reads every blind's position on that interval. See
+[options.md](options.md#poll-interval).
 
-Polling matters when a blind's radio sleeps. The hub only pushes when it hears from a blind,
-and a battery blind sleeps to save power -- the Norman app lists those under **Disconnect**,
-though a command still wakes them and works. A blind that moved while asleep therefore keeps
-its old position in Home Assistant, which makes `is_closed` answer about the past and quietly
-breaks automations that check state before acting ("close it if it isn't closed"). If you see
-that, turn polling on; the form suggests 60 seconds. The cost is one small local `status` call
-per interval. See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
+Polling does not help a blind whose radio sleeps. The hub only hears from a battery blind when
+it wakes -- the Norman app lists one that has been quiet for a day under **Disconnect**, though
+a command still wakes it and works -- and until then the hub's own copy of its position is out
+of date, so re-reading that copy changes nothing. A stale position makes `is_closed` answer
+about the past, which quietly breaks automations that check state before acting ("close it if
+it isn't closed"). **Request status** or the [wake sweep](#wake-sweep) has the blind report in.
+See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
 
 **Best privacy** and **Best view** are the app's own buttons, per blind: privacy puts the
 bottom rail at 0 and the middle rail at 100 (closed for privacy, sheer fabric still open), and
@@ -270,17 +274,19 @@ halted the one shade moving at the time, and an unscoped jog nudged every blind,
 motors in several rooms at once has not been tried. Stop sits with the hub's sliders, under
 Controls; the jogs are under Configuration with the presets.
 
-**Refresh blinds** sends `{"ReportBatteryLevel": 0}` with no scope field: the same request the
-Norman app's refresh button sends on its device & battery status screen. The hub then polls
+**Refresh blinds** sends `{"ReportBatteryLevel": 0}` with no scope field: the request the
+Norman app sent to refresh from its device & battery status screen, which offers a refresh only
+while it lists a blind as disconnected. The hub then polls
 its blinds in turn and each one reports in over the next half minute (about 30 s for nine
 blinds), each as its own notification. Despite the verb's name the answer carries position
-and last-seen as well as battery. Nothing moves. On the reference hub the hub-wide sweep did
+and last-seen as well as battery. Nothing moved on the reference hub, but on a hub of type 48
+roller shades a press closed every shade
+([#5](https://github.com/kedube/ha-norman/issues/5)). On the reference hub the hub-wide sweep did
 **not** reach the single-rail blinds — all four ignored it every time, while a per-blind
 status request had one answering in four seconds — so the button follows the sweep with a
 `StatusRequest` to each single-rail blind. The room-scoped form is `norman.room_command` with
 `refresh` ([docs/services.md](services.md)), which had a whole room reporting in within five
-seconds and does the same follow-up for the room's single-rail blinds. The **wake sweep** option
-(below) runs this on a timer.
+seconds and does the same follow-up for the room's single-rail blinds.
 
 **Start pairing** sends `{"PairingMode": 5}`, which opens the hub's pairing window for ten
 minutes; the **Pairing mode** sensor shows it. Under *Configuration*. What happens next — putting
@@ -297,12 +303,17 @@ still works — it just takes a little longer.
 ### Wake sweep
 
 **Settings → Devices & services → Norman → Configure** has a second interval next to the poll:
-the **wake sweep**. Every interval it does what Refresh blinds does — the hub-wide sweep plus a
-status request per single-rail blind — so the hub's own cache is refreshed rather than merely
-re-read. The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's middle
-rail at 100, and when the blinds reported in several read 0; nothing had moved, the cache was
-stale. Off by default. The floor is ten minutes, because a sweep wakes every battery blind's
-radio; an hour is a sensible value, and is what the form suggests.
+the **wake sweep**. Every interval it sends a status request to each blind whose
+**Connection** sensor is off — not heard from for 24 hours, the point at which the Norman app
+lists it as disconnected — so the hub's own cache for that blind is refreshed rather than
+merely re-read. The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's
+middle rail at 100, and when the blinds reported in several read 0; nothing had moved, the
+cache was stale. Connected blinds are left alone, as the app leaves them, so a sweep sends
+nothing while every blind is connected. Until issue
+[#5](https://github.com/kedube/ha-norman/issues/5) it did what Refresh blinds does, which
+closed a hub's type 48 roller shades every time it ran. Off by default, and the form no longer
+suggests a value. The floor is ten minutes, because a sweep can wake a sleeping blind's radio;
+an hour is a sensible value.
 
 ### Firmware version
 

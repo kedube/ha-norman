@@ -46,23 +46,23 @@
     "step": {
       "init": {
         "title": "Norman 選項",
-        "description": "更新由中樞推送。此輪詢是針對中樞從未通告的變化的保障，通常是無線休眠期間移動過的窗簾。",
+        "description": "更新由中樞推送；整合每次重新連線至中樞時（每 5 分鐘一次）也會重新讀取所有窗簾。",
         "data": {
           "poll_interval": "輪詢間隔",
           "wake_interval": "喚醒掃描間隔",
           "control_interval": "Command spacing",
-          "show_sidebar_panel": "在側邊欄顯示 Norman Shades"
+          "show_sidebar_panel": "在側邊欄顯示 Norman 窗簾"
         },
         "data_description": {
-          "poll_interval": "從中樞重新讀取每個窗簾位置的頻率。較低能更快發現過時位置，較高則負載更小。0 表示關閉輪詢，僅依賴中樞的通知。",
-          "wake_interval": "多久讓每個窗簾回報一次（電量、位置、最後回報），與 Norman 應用程式的重新整理相同。這會更新集線器本身的快取，而上面的輪詢只是重新讀取快取。0 為關閉；否則為 600 到 86400 秒。",
+          "poll_interval": "從中樞重新讀取每個窗簾位置的頻率，以防漏掉通知。它只重新讀取中樞已儲存的內容，不會詢問窗簾。0 為關閉；否則為 10 到 300 秒，因為整合本已每 5 分鐘重新讀取一次。",
+          "wake_interval": "多久讓 Norman 應用程式會顯示為已中斷連線（24 小時未回報）的每個窗簾回報一次（電量、位置、最後回報）。與應用程式一樣，已連線的窗簾不會被打擾。這會更新中樞本身對這些窗簾的快取，而上面的輪詢只是重新讀取快取。0 為關閉；否則為 600 到 86400 秒。",
           "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
-          "show_sidebar_panel": "在 Home Assistant 側邊欄顯示 Norman Shades，依房間列出所有窗簾。有多個中樞時，每個中樞各有一個項目。關閉即可移除該項目；Norman Shades 仍可作為卡片新增至儀表板。"
+          "show_sidebar_panel": "在 Home Assistant 側邊欄顯示 Norman 窗簾，依房間列出所有窗簾。有多個中樞時，每個中樞各有一個項目。關閉即可移除該項目；Norman 窗簾仍可作為卡片新增至儀表板。"
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "輸入 0 可關閉輪詢，或輸入 10 至 3600 秒之間的值。",
+      "poll_interval_out_of_range": "輸入 0 可關閉輪詢，或輸入 10 至 300 秒之間的值。",
       "wake_interval_out_of_range": "輸入 0 關閉喚醒掃描，或輸入 600 到 86400 秒之間的值。",
       "control_interval_out_of_range": "Enter a value between 0.3 and 5 seconds."
     }

@@ -2,11 +2,12 @@
 
 Beyond the standard [cover](https://www.home-assistant.io/integrations/cover/) actions
 (`cover.open_cover`, `cover.close_cover`, `cover.set_cover_position`, `cover.stop_cover`, and
-the tilt equivalents), the integration registers four actions of its own. The two nudge actions
+the tilt equivalents), the integration registers five actions of its own. The two nudge actions
 move a blind relative to where it is heading and target one or more `cover` entities from this
-integration; `get_hub_data` reads the hub's raw payloads for troubleshooting; `send_hub_command`
-sends the hub verbs that have no entity of their own. All four appear in the automation
-editor's action picker.
+integration; `room_command` runs a Norman app room button for a whole room or the whole house;
+`get_hub_data` reads the hub's raw payloads for troubleshooting; `send_hub_command` sends the
+hub verbs that have no entity of their own. All five appear in the automation editor's action
+picker.
 
 Several verbs that once needed `send_hub_command` now have entities — favorite position, jog up
 and down, and run to either limit are [buttons](entities.md#buttons), and stop is on the covers
@@ -27,7 +28,7 @@ result is clamped to 0–100.
 ```yaml
 action: norman.nudge_position
 target:
-  entity_id: cover.living_drape
+  entity_id: cover.living_room_living_drape_bottom_rail
 data:
   step: -10
 ```
@@ -46,7 +47,7 @@ Like `nudge_position`, the step is relative to the current tilt target and clamp
 ```yaml
 action: norman.nudge_tilt
 target:
-  entity_id: cover.living_drape
+  entity_id: cover.living_room_living_drape_bottom_rail
 data:
   step: 25
 ```
@@ -70,7 +71,7 @@ this action is for naming the room in a script.
 | `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that draws the blackout, which hangs below the middle rail, across the window, with the light-filtering sheer above it stacked fully open. |
 | `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. |
 | `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant's cover actions have no equivalent; the room's own **Favorite position** button sends the same request. |
-| `refresh` | `{"ReportBatteryLevel": 0, "RoomID": …}` | Asks every blind in the room to **report in** — battery, position and last-seen — the same request the app's refresh sends on its device & battery status screen. Nothing moves. On hardware all three blinds in a room answered within five seconds; hub-wide, every two-rail blind over about half a minute. The hub-wide sweep skipped the reference hub's single-rail blinds, so each single-rail blind in scope gets its own `StatusRequest` afterwards. The answers arrive as the hub's own notifications, so the entities follow a few seconds after the call returns. The **Request status** button does this for one blind and **Refresh blinds** on the hub for all of them (see [docs/entities.md](entities.md#hub-buttons)). |
+| `refresh` | `{"ReportBatteryLevel": 0, "RoomID": …}` | Asks every blind in the room to **report in** — battery, position and last-seen — the same request the app sent to refresh from its device & battery status screen, which offers a refresh only while it lists a blind as disconnected. Nothing moved on the reference hub; the hub-wide form closed every shade on a hub of type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)). On hardware all three blinds in a room answered within five seconds; hub-wide, every two-rail blind over about half a minute. The hub-wide sweep skipped the reference hub's single-rail blinds, so each single-rail blind in scope gets its own `StatusRequest` afterwards. The answers arrive as the hub's own notifications, so the entities follow a few seconds after the call returns. The **Request status** button does this for one blind and **Refresh blinds** on the hub for all of them (see [docs/entities.md](entities.md#hub-buttons)). |
 
 ```yaml
 action: norman.room_command
@@ -88,7 +89,7 @@ data:
   command: best_view      # every blind in the house, in one request
 ```
 
-All four commands work without a room — the first three are what the app's **All Rooms** screen sends, and `refresh` without a room is its refresh button.
+All four commands work without a room — the first three are what the app's **All Rooms** screen sends, and `refresh` without a room is the hub-wide report-in the app sent from its device & battery status screen.
 
 `Switch` sets both rails to fixed positions; it is not a relative move.
 

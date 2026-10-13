@@ -32,8 +32,6 @@ from custom_components.norman.const import (
     MIN_CONTROL_INTERVAL,
     MIN_WAKE_INTERVAL,
     POLL_DISABLED,
-    SUGGESTED_POLL_INTERVAL,
-    SUGGESTED_WAKE_INTERVAL,
     WAKE_DISABLED,
 )
 
@@ -372,7 +370,7 @@ async def _open_options(hass: HomeAssistant, entry: MockConfigEntry) -> dict:
     return await hass.config_entries.options.async_init(entry.entry_id)
 
 
-@pytest.mark.parametrize("value", [POLL_DISABLED, 10, 30, 3600])
+@pytest.mark.parametrize("value", [POLL_DISABLED, 10, 30, MAX_POLL_INTERVAL])
 async def test_options_flow_stores_the_poll_interval(hass: HomeAssistant, value: int) -> None:
     """0 (off) and every in-range value are accepted and stored as an int."""
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
@@ -417,7 +415,7 @@ async def test_options_flow_rejects_the_gap_between_off_and_the_floor(
     assert entry.options == {}
 
 
-@pytest.mark.parametrize("value", [-1, 5000])
+@pytest.mark.parametrize("value", [-1, MAX_POLL_INTERVAL + 1, 3600])
 async def test_options_flow_rejects_values_outside_the_selector(
     hass: HomeAssistant, value: int
 ) -> None:
@@ -472,8 +470,8 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
             "name": CONF_POLL_INTERVAL,
             "required": True,
             "default": DEFAULT_POLL_INTERVAL,
-            # An unconfigured entry is offered a working interval rather than the 0 default.
-            "description": {"suggested_value": SUGGESTED_POLL_INTERVAL},
+            # No suggestion: a suggested value is submitted with the form.
+            "description": {"suggested_value": POLL_DISABLED},
             "selector": {
                 "number": {
                     "min": float(POLL_DISABLED),
@@ -488,7 +486,8 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
             "name": CONF_WAKE_INTERVAL,
             "required": True,
             "default": DEFAULT_WAKE_INTERVAL,
-            "description": {"suggested_value": SUGGESTED_WAKE_INTERVAL},
+            # No suggestion: a suggested value is submitted with the form (issue #5).
+            "description": {"suggested_value": WAKE_DISABLED},
             "selector": {
                 "number": {
                     "min": float(WAKE_DISABLED),
@@ -550,7 +549,7 @@ async def test_options_flow_rejects_a_wake_interval_below_the_floor(
 ) -> None:
     """The gap between "off" and the floor is refused, with the error on the wake field.
 
-    The floor is ten minutes: a sweep wakes every battery blind's radio, so it should not
+    The floor is ten minutes: a sweep can wake a sleeping blind's radio, so it should not
     run more than a few times an hour.
     """
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
@@ -564,8 +563,10 @@ async def test_options_flow_rejects_a_wake_interval_below_the_floor(
     assert entry.options == {}
 
 
-async def test_options_form_suggests_both_intervals_when_unconfigured(hass: HomeAssistant) -> None:
-    """A fresh entry is seeded with the suggested poll and wake values, not the 0 defaults.
+async def test_options_form_suggests_neither_a_poll_nor_a_wake_sweep(
+    hass: HomeAssistant,
+) -> None:
+    """A fresh entry is offered both intervals at 0, off.
 
     Command spacing has no "off" value, so its suggestion is simply its default; the sidebar
     entry is on.
@@ -576,11 +577,51 @@ async def test_options_form_suggests_both_intervals_when_unconfigured(hass: Home
     schema = result["data_schema"].schema
     suggested = {str(k): k.description["suggested_value"] for k in schema}
     assert suggested == {
-        CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL,
-        CONF_WAKE_INTERVAL: SUGGESTED_WAKE_INTERVAL,
+        CONF_POLL_INTERVAL: POLL_DISABLED,
+        CONF_WAKE_INTERVAL: WAKE_DISABLED,
         CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
         CONF_SHOW_SIDEBAR_PANEL: True,
     }
+
+
+async def test_saving_the_untouched_form_leaves_polling_and_the_wake_sweep_off(
+    hass: HomeAssistant,
+) -> None:
+    """Submitting the form as first shown stores no poll and no wake sweep (issue #5).
+
+    The frontend submits a field's suggested value unless the user clears it. The form used
+    to suggest 3600 for the sweep and 60 for the poll, so opening Configure to change
+    anything else switched both on, and on a hub of type 48 roller shades the sweep closed
+    every shade.
+    """
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+    as_shown = {str(k): k.description["suggested_value"] for k in result["data_schema"].schema}
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={**as_shown, CONF_CONTROL_INTERVAL: 2.0}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_POLL_INTERVAL] == POLL_DISABLED
+    assert entry.options[CONF_WAKE_INTERVAL] == WAKE_DISABLED
+
+
+async def test_a_poll_saved_over_the_ceiling_is_shown_as_off(hass: HomeAssistant) -> None:
+    """Releases before the ceiling came down to 300 stored up to 3600.
+
+    The coordinator runs such a value as off, so the form shows 0 rather than a number its
+    own selector would refuse when the form is saved.
+    """
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_POLL_INTERVAL: 3600})
+    result = await _open_options(hass, entry)
+    key = next(k for k in result["data_schema"].schema if str(k) == CONF_POLL_INTERVAL)
+    assert key.description["suggested_value"] == POLL_DISABLED
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={CONF_POLL_INTERVAL: key.description["suggested_value"]}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_POLL_INTERVAL] == POLL_DISABLED
 
 
 async def test_options_flow_turns_the_sidebar_entry_off(hass: HomeAssistant) -> None:

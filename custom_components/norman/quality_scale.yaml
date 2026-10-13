@@ -7,8 +7,9 @@ rules:
   appropriate-polling:
     status: done
     comment: >-
-      Local push drives refreshes. An optional poll (off by default, configurable in the
-      options) backs it up for sleeping battery blinds, which the hub stops reporting on.
+      Local push drives refreshes, and every blind is re-read whenever the notification
+      stream is cycled (every 5 minutes). An optional poll (off by default, configurable in
+      the options) shortens the wait when a notification goes missing.
   brands: done
   common-modules: done
   config-flow-test-coverage: done

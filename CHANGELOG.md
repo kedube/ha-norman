@@ -5,6 +5,32 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **The wake sweep no longer closes roller shades.** It asked every blind on the hub to report
+  in, and on a hub of type 48 roller shades that closed every shade each time it ran
+  ([#5](https://github.com/kedube/ha-norman/issues/5)). It now asks only the blinds the Norman
+  app would list as disconnected (not heard from for 24 hours), as the app does, and sends
+  nothing while every blind is connected.
+- **Saving the options no longer turns on the wake sweep or polling.** The form filled in 3600
+  seconds for the wake sweep and 60 for the poll the first time it was opened, and saved them
+  along with whatever else was changed. Both now start at 0, off. An entry that already has
+  them keeps its values; if you never chose them, set both to 0 under **Configure**.
+- **The poll interval tops out at 300 seconds.** The integration already re-reads every blind
+  each time it reconnects to the hub, every 5 minutes, and that restarts the poll's timer, so a
+  longer interval never fired. A saved value over 300 now counts as off, which is what it
+  amounted to. The poll only shortens how long a missed notification goes unnoticed: it
+  re-reads what the hub has stored, so it cannot correct a sleeping blind's position;
+  **Request status** or the wake sweep can.
+- **Debug logs no longer carry the hub's identity.** The hub's ThingName and location are
+  blanked in logged requests and replies, as diagnostics already did, so a debug log can be
+  attached to a public issue.
+- **Norman Shades in your language.** The page, the dashboard card and its editor, and the
+  sidebar entry are translated into German, Spanish, French, Japanese, and Simplified and
+  Traditional Chinese. The page and card follow each user's profile language; the sidebar
+  entry's title follows the server's language. German now says "Rollo" throughout, as Home
+  Assistant does for shades, so **Refresh blinds** reads "Rollos aktualisieren".
+
 ## 0.78 — 2026-10-12
 
 - **No more time zone and location repairs.** The hub's location (which also gives it its time

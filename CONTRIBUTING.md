@@ -75,7 +75,7 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   - [`docs/dashboard.md`](docs/dashboard.md) — Norman Shades, and the card's options on a
     dashboard.
   - [`docs/entities.md`](docs/entities.md) — entities, devices, attributes, availability.
-  - [`docs/services.md`](docs/services.md) — all four actions, and the hub verbs `send_hub_command` can send.
+  - [`docs/services.md`](docs/services.md) — all five actions, and the hub verbs `send_hub_command` can send.
   - [`docs/NORMAN_API.md`](docs/NORMAN_API.md) — the hub protocol. Read it before changing
     `api.py` or `coordinator.py`.
 - `scripts/check_card.mjs` runs the card and its sidebar panel under Node against a realistic `hass`

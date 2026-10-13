@@ -15,6 +15,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
@@ -236,10 +237,11 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     """Norman data update coordinator.
 
     The hub pushes state changes over a long-poll (see ``listen_notifications``): every
-    notification, reconnect, and command triggers a refresh. A slow poll backs that up,
-    because a sleeping blind generates no notifications and its cached position would
-    otherwise go stale without ever being corrected. The interval is configurable in the
-    integration's options; the entry is reloaded when it changes.
+    notification, reconnect, and command triggers a refresh, and the stream is cycled every
+    NOTIF_MAX_DURATION, so a missed notification is caught within five minutes. An optional
+    poll (off by default) shortens that; it re-reads the same cache, so it cannot correct a
+    sleeping blind's position (const.py). The interval is configurable in the integration's
+    options; the entry is reloaded when it changes.
     """
 
     config_entry: NormanConfigEntry
@@ -292,13 +294,28 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
         async def _sweep(_now: datetime) -> None:
             try:
-                await self.async_refresh_blinds()
+                await self.async_wake_disconnected_blinds()
             except (NormanApiError, NormanConnectionError) as err:
                 _LOGGER.warning("Wake sweep failed: %s", err)
 
         self.config_entry.async_on_unload(
             async_track_time_interval(self.hass, _sweep, interval, name="norman-wake-sweep")
         )
+
+    async def async_wake_disconnected_blinds(self) -> None:
+        """Ask each blind the Norman app would list as "Disconnect" to report in.
+
+        This is the wake sweep. The app offers a refresh only for a blind it lists as
+        disconnected, never for a connected one, so the sweep does the same: one
+        ``StatusRequest`` per blind the hub has not heard from in ``UNRESPONSIVE_AFTER``,
+        and nothing at all while every blind is connected. It used to send every blind
+        the hub-wide ``ReportBatteryLevel`` and a ``StatusRequest`` each, and on a hub of
+        type 48 roller shades that closed them every time it ran (issue #5).
+        """
+        now = dt_util.utcnow()
+        for device_id, device in (self.data or {}).items():
+            if device.disconnected(now):
+                await self.api.async_request_status(device_id)
 
     async def async_refresh_blinds(self, room_id: int | None = None) -> None:
         """Have every blind (in a room, or on the hub) report in.
@@ -310,10 +327,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         answers arrive as notifications over the next half minute, each refreshing the data.
         """
         await self.api.async_request_battery_report(room_id)
-        # ``data`` is None until the first refresh completes. Setup refreshes before the wake
-        # sweep is scheduled, so this is unreachable today -- but the guard costs nothing and
-        # keeps a future reordering (or a caller added before the first refresh) from turning
-        # into an AttributeError out of a timer callback.
+        # ``data`` is None until the first refresh completes. Setup refreshes before any
+        # button or action can call this, so this is unreachable today -- but the guard costs
+        # nothing and keeps a future reordering (or a caller added before the first refresh)
+        # from turning into an AttributeError.
         for device_id, device in (self.data or {}).items():
             if device.type != COVER_TYPE_SINGLE_RAIL:
                 continue
@@ -815,12 +832,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     _LOGGER.debug("Notification listener still down: %s", err)
                 await asyncio.sleep(RECONNECT_INTERVAL)
             except Exception:  # noqa: BLE001 - the listener must outlive any single failure
-                # POLL_INTERVAL would keep state moving, but at a fraction of the push
-                # path's responsiveness. Letting an unexpected error escape the loop would
-                # leave the integration loaded and apparently healthy while every change made
-                # at a remote or in the app went unnoticed until the next poll -- a far worse
-                # failure than a logged exception and a retry. The refresh inside the try
-                # above reaches the device registry, so this is not merely theoretical.
+                # A poll, if one is set, would keep state moving, but at a fraction of the
+                # push path's responsiveness, and none is set by default. Letting an
+                # unexpected error escape the loop would leave the integration loaded and
+                # apparently healthy while every change made at a remote or in the app went
+                # unnoticed -- a far worse failure than a logged exception and a retry. The
+                # refresh inside the try above reaches the device registry, so this is not
+                # merely theoretical.
                 _LOGGER.exception(
                     "Unexpected error in the Norman notification listener; retrying in %s seconds",
                     RECONNECT_INTERVAL,

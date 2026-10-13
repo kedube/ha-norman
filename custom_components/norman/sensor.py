@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 import logging
 from typing import Any
 
@@ -21,40 +20,15 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.util import dt as dt_util
 
 from .coordinator import NormanConfigEntry, NormanCoordinator
 from .entity import NormanEntity, NormanHubEntity, async_add_entities_for_new_devices
-from .models import NormanHubData, NormanPeripheralData
+from .models import NormanHubData, NormanPeripheralData, parse_last_update
 
 _LOGGER = logging.getLogger(__name__)
 
 # Push-updated by the coordinator; nothing to throttle.
 PARALLEL_UPDATES = 0
-
-
-def parse_last_update(raw: Any) -> datetime | None:
-    """Turn the hub's ``Timestamp`` into an aware datetime.
-
-    The hub's exact format is not documented. Unix seconds (as a number or numeric
-    string) are the observed form; millisecond epochs and ISO 8601 strings are accepted
-    too so a firmware change does not silently blank the sensor. Anything else is None.
-    """
-    if raw is None or isinstance(raw, bool):
-        return None
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        parsed = dt_util.parse_datetime(str(raw)) if isinstance(raw, str) else None
-        return dt_util.as_utc(parsed) if parsed else None
-    if value <= 0:
-        return None
-    if value > 1e11:  # milliseconds since the epoch
-        value /= 1000
-    try:
-        return dt_util.utc_from_timestamp(value)
-    except (OverflowError, OSError, ValueError):
-        return None
 
 
 @dataclass(frozen=True, kw_only=True)

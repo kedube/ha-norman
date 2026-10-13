@@ -5,24 +5,41 @@ changing any of them reloads the entry.
 
 | Option | Default | Range | What it does |
 |---|---|---|---|
-| Poll interval | 0 (off) | 10–3600 s | Re-reads every blind's position from the hub on a timer. |
-| Wake sweep interval | 0 (off) | 600–86400 s | Has every blind report in, refreshing the hub's own cache. |
+| Poll interval | 0 (off) | 10–300 s | Re-reads every blind's position from the hub on a timer. |
+| Wake sweep interval | 0 (off) | 600–86400 s | Has each disconnected blind report in, refreshing the hub's own cache for it. |
 | Command spacing | 1.6 s | 0.3–5 s | Seconds to leave between commands sent to the hub. |
 | Show Norman Shades in the sidebar | on | on / off | Puts Norman Shades in Home Assistant's sidebar. |
 
 ## Poll interval
 
-Updates are normally pushed by the hub over its notification stream, so polling is off by
-default. It is a safety net for changes the hub never announces — most often a blind that moved
-while its radio was asleep. The poll re-reads the hub's **cache**; it does not ask the blinds
-anything, so a position the hub itself has wrong stays wrong until a wake sweep.
+Updates are pushed by the hub over its notification stream, and every time the integration
+reconnects to the stream (every 5 minutes) it re-reads every blind as well. So polling is off
+by default and rarely needed: all it adds is a shorter wait when a notification goes missing.
+It is also why the longest interval is 300 seconds: each of those re-reads restarts the poll's
+timer, so a longer one would never fire. Earlier releases accepted up to 3600; a saved value
+over 300 now counts as off, which is what it amounted to, and the form shows it as 0.
+
+The poll re-reads the hub's **cache**; it does not ask the blinds anything, so a position the
+hub itself has wrong (a sleeping blind's) stays wrong until the blind reports in. **Request
+status** or the wake sweep below has it report in. The cost of a poll is one small request to
+the hub per interval, with nothing sent to the blinds. The form used to fill in 60 the first
+time it was opened, so saving the form for any other reason turned polling on; it no longer
+suggests a value. If yours shows 60 and you never chose it, set it to 0.
 
 ## Wake sweep interval
 
-Has every blind report in — battery, position, last seen — the way the Norman app's refresh
-button does. Unlike the poll, this refreshes the hub's cache rather than re-reading it, so it
-is what corrects a position the hub has wrong. It wakes battery blinds, so the floor is ten
-minutes; a few times an hour is plenty.
+Asks each blind the Norman app would list as **disconnected** — not heard from for 24 hours,
+the same rule as the Connection sensor — to report in: battery, position, last seen. Unlike the
+poll, this refreshes the hub's cache rather than re-reading it. Connected blinds are left alone,
+as the app leaves them: it offers a refresh only for a disconnected blind. While every blind is
+connected, a sweep sends nothing.
+
+It used to ask every blind on the hub, connected or not, and on a hub of type 48 roller shades
+that closed every shade each time it ran
+([#5](https://github.com/kedube/ha-norman/issues/5)). The options form also used to fill in
+3600 the first time it was opened, so saving the form for any other reason switched the sweep
+on; it no longer suggests a value. Each sweep can wake a sleeping blind's radio, so the floor is
+ten minutes; once an hour is plenty.
 
 ## Command spacing
 

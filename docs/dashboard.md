@@ -19,6 +19,13 @@ Click **Norman Shades** in Home Assistant's sidebar (the address is <code>/norma
 It fills the page; on a phone it runs edge to edge, and its header carries the usual button for
 opening the sidebar. It is there for every user of your Home Assistant, like any dashboard.
 
+It speaks the integration's languages (English, German, Spanish, French, Japanese, and Simplified
+and Traditional Chinese), following each user's language in their Home Assistant profile; any
+other language gets English. The sidebar entry's own title follows the server's language
+instead, set under **Settings → System → General**, because Home Assistant shows a custom
+sidebar entry's title as registered. A change of server language reaches it after a restart or
+a reload of the integration.
+
 - **More than one hub?** Each gets its own sidebar entry, named after its integration entry
   (rename the entry to rename it) and showing only that hub's blinds.
 - **Don't want it in the sidebar?** Turn off **Show Norman Shades in the sidebar** in the

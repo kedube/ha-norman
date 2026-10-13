@@ -16,10 +16,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .const import UNRESPONSIVE_AFTER
 from .coordinator import NormanConfigEntry, NormanCoordinator
 from .entity import NormanEntity, NormanHubEntity, async_add_entities_for_new_devices
-from .sensor import parse_last_update
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,8 +83,9 @@ class NormanConnectionSensor(NormanEntity, BinarySensorEntity):
     The hub's per-blind ``Timestamp`` is when it last heard from the blind -- it moves
     when the blind reports in with nothing changed, not only on a state change. The Norman
     app lists a blind as "Disconnect" once that is more than 24 h old
-    (``UNRESPONSIVE_AFTER``); this sensor applies the same rule, so the two agree. A blind
-    that has never reported a timestamp is *unknown* rather than off.
+    (``UNRESPONSIVE_AFTER``); this sensor applies the same rule, through
+    ``NormanPeripheralData.disconnected``, so the two agree. A blind that has never
+    reported a timestamp is *unknown* rather than off.
 
     A quiet blind is not necessarily unreachable -- a battery blind's radio sleeps and a
     command still wakes it -- so this is deliberately a sensor and not the availability of
@@ -117,7 +116,5 @@ class NormanConnectionSensor(NormanEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         """True when the blind was heard from within the window; None when never dated."""
         data = self._data
-        last_seen = parse_last_update(data.last_update) if data else None
-        if last_seen is None:
-            return None
-        return dt_util.utcnow() - last_seen <= UNRESPONSIVE_AFTER
+        disconnected = data.disconnected(dt_util.utcnow()) if data else None
+        return None if disconnected is None else not disconnected

@@ -46,6 +46,11 @@ Every request body carries `"Timestamp": <unix seconds>`. Command-style requests
 `"TaskID": <int>`; the hub appears to echo it and the integration simply uses an incrementing
 counter modulo 10000. No response has ever been observed to depend on the value.
 
+A body is required, though not its contents. On 2026-10-12, `status` with no body at all
+answered `200 OK` with `Content-Length: 0`, while any JSON object (even `{}`, with or without a
+`Content-Type: application/json` header) got the full reply. So
+`curl -X POST -d '{}' http://<hub>:10123/NM/v1/status` is enough to check that a hub is up.
+
 The Norman app (`User-Agent: SmartShutter/0.8.32`) speaks exactly this protocol to the hub when
 it is on the same network; app traffic established many [control verbs](#control-verbs),
 while direct hub tests established additional scopes and the [discovery](#discovery-mdns)
@@ -129,8 +134,8 @@ Response (trimmed to the fields the integration reads):
               {
                 "PeripheralUID": 1001,
                 "PeripheralName": "Living Drape",
-                "ModuleType": 7,
-                "ModuleDetail": 2
+                "ModuleType": 33,
+                "ModuleDetail": 3
               }
             ]
           }
@@ -193,29 +198,31 @@ Response:
 | `TargetMiddleRailPosition` | where the middle rail is heading | `target_tilt` attribute |
 | `Position`, `TargetPosition` | a Shutter's louvers, 0–7, and where they are heading | the Shutter's `current_tilt_position` / `target_tilt`, and `louver_position` |
 | `BatteryVoltage` | a **percentage**, 0–100, despite the field name (see [Observed fields](#observed-fields)) | **Battery** sensor |
-| `RssiMean` | radio quality, unitless (0 or 34 seen) | opt-in **Signal strength** sensor |
+| `RssiMean` | radio quality, unitless (0 or 34 seen); type 48 roller shades do not report it | opt-in **Signal strength** sensor |
 | `FirmwareVersion` | blind firmware | device `sw_version` and the opt-in **Firmware version** sensor, except when `RfFirmwareVersion` is also present, which is shown instead (only single-rail blinds have been seen to report both) |
-| `Timestamp` | last update; epoch seconds (as a number, or a string on some payloads) | **Last seen** sensor |
+| `Timestamp` | when the hub last **heard from** the blind, not when it last changed (see [Waking a blind](#waking-a-blind)); epoch seconds, as a number or a string | **Last seen** and **Connection** sensors |
 
 Positions are coerced to integers and clamped to 0–100; an unusable value becomes `None`,
 which the entity reports as an unknown position. A peripheral that appears here but not in
-`GetAllPeripheral` still gets a full set of entities (covers, sliders, buttons, sensors), named `Norman <uid>`, with its cover type taken from `ModuleType`.
+`GetAllPeripheral` still gets a full set of entities (covers, sliders, buttons, sensors), named
+`Norman <uid>`, with its cover type taken from `ModuleType`.
 
 ### POST /NM/v1/control
 
 Moves a covering. The hub accepts either rail on its own — the Norman app's group screen sends
 `MiddleRailPosition` alone, and its per-blind screen a single-rail blind's
-`BottomRailPosition` alone — but the integration **always sends both**, filling the untouched
-rail with where it is heading: the last move sent from here while that move is in flight,
-otherwise the hub's target (falling back to its current position, then to 100). The move is
-recorded before it waits its turn to be sent, so two commands in a row — or at once, as a scene
-sends them — keep each other's rail instead of each sending the other back to where it was;
-the hub's target would still show the blind before both. That is what
-lets it carry a two-rail shade's other rail along in the same request (below). It works in both
-directions: moving the bottom rail sends the middle rail's current target back with it, and
-moving the middle rail — whether through the **Middle rail** cover, the middle-rail slider, or
-a tilt command — sends the bottom rail's back. A capture therefore always shows both fields,
-even when the user touched only one.
+`BottomRailPosition` alone — but the integration **always sends both**, which is what lets it
+carry a two-rail shade's other rail along in the same request (below).
+
+The rail the user did not touch is sent where it is already heading: the last move sent from
+here while that move is in flight, otherwise the hub's target, falling back to the rail's
+current position and then to 100. Each move is recorded before it waits its turn to be sent, so
+two commands in a row, or several at once as a scene sends them, keep each other's rail instead
+of sending it back to where it was; the hub's target would still show the blind as it was
+before both. This works in both directions: moving the bottom rail sends the middle rail's
+target back with it, and moving the middle rail — through the **Middle rail** cover, the
+middle-rail slider, or a tilt command — sends the bottom rail's back. A capture therefore always
+shows both fields, even when the user touched only one.
 
 A **Shutter** (`ModuleType` 1) has no rails. Its louvers are one field, `Position` 0–7 (7 shut,
 3 horizontal, 0 turned fully the other way), sent alone: `{"PeripheralUID": …, "Position": 3}`.
@@ -278,8 +285,10 @@ on the reference hub).
 That pair is how the `Switch` and `Favorite` verbs address a single blind. They are **not**
 addressed by `PeripheralUID`: sending `{"Switch": 1, "RoomID": 29550, "GroupID": 1}` moved only
 the group-1 blind in that room and left group 2 untouched. The app sends `PeripheralUID`
-alongside as well, but the room/group pair is what selects the target — which is why an earlier
-test of `{"Favorite": 0, "PeripheralUID": …}` alone appeared to do nothing.
+alongside as well, but the room/group pair is what selects the target. An earlier test of
+`{"Favorite": 0, "PeripheralUID": …}` alone appeared to do nothing; a later one found that it
+does move the blind (see [Room-wide and hub-wide control](#room-wide-and-hub-wide-control)),
+though the app never sends that form.
 
 The app also sends `RoomID` and `GroupID` with every move; the hub accepts moves without them,
 so the integration does not send them with one blind's move (a `RoomID` without
@@ -296,8 +305,10 @@ looks like a keep-alive or "is the hub there" probe; the integration has no need
 Everything other than a position move is a **verb field** on the same `control` call, one per
 request, alongside `PeripheralUID`, `Timestamp`, and `TaskID`. The value is `170` (0xAA) for
 verbs that make the motor do something now, and `0` for verbs that store or clear a setting.
-The hub echoes the verb back in its reply with `"Error": 0`; a rejected verb has not been
-observed. All of the following were captured from the Norman app:
+The hub echoes the verb back in its reply with `"Error": 0`. The only refusals seen are
+`PairingMode` while the hub was busy (see [Error conventions](#error-conventions)). All of the
+following were captured from the Norman app, except `StatusRequest`, which was built from the
+app's network library and then sent directly:
 
 | Verb | Value | What the app does with it |
 |---|---|---|
@@ -310,8 +321,8 @@ observed. All of the following were captured from the Norman app:
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
 | `CleanTopLimit` / `CleanBottomLimit` | 0 | Clear the stored limit (the app sends this right before setting a new one). |
 | `Calibration` | 0 | Run the motor's calibration. |
-| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`). Nothing moves; the blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification for it. Answered within 5 s on every try. **Used** (Request status button). See [Waking a blind](#waking-a-blind). |
-| `ReportBatteryLevel` | 0 | Ask every blind on the hub (no scope field) or in a room (`RoomID`) to report in. The app's refresh button. Despite the name the answer carries position and last-seen too. **Used** (Refresh blinds button, `room_command: refresh`). |
+| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`). The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification for it. On the reference hub nothing moved and every try was answered within 5 s; on a hub of type 48 roller shades one request went unanswered. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
+| `ReportBatteryLevel` | 0 | Ask every blind on the hub (no scope field) or in a room (`RoomID`) to report in. Sent by the app's refresh, which it offers only for a disconnected blind. Closed every shade on a hub of type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)). Despite the name the answer carries position and last-seen too. **Used** (Refresh blinds button, `room_command: refresh`). |
 
 ```json
 {"PeripheralUID": 58850, "Timestamp": 1788828922, "TaskID": 43620, "MotorStop": 170}
@@ -356,7 +367,7 @@ form has been captured from the app.
 | Saved scene `SetToScene` | Not tested | Confirmed with `RoomID` and numeric `SceneID` as the `SetToScene` value | Not tested |
 | Shutter `Position` (0–7) | Built by the app's library; no live Shutter test here | Not tested | Not tested |
 
-The current hub has cellular shades only (module types 32 and 33). The position result does
+The reference hub has cellular shades only (module types 32 and 33). The position result does
 not establish how a room or hub-wide command would affect a SmartDrape, PerfectSheer, or
 Shutter. An `Error: 0` reply and a changed target also do not guarantee every motor completes
 its move, as the Den test shows.
@@ -453,18 +464,21 @@ back to it), but the app never sends that form, and it is not what selects the t
 room/group pair is present.
 
 **Beware when testing this: the reply says nothing about movement.** The hub answers
-`Error: 0` immediately and echoes the field, and then `status` keeps reporting the *old*
-position — target included — for as long as the blind takes to travel. On a large shade that
-is around **30 seconds**. A test that watches for 15 or 20 seconds will conclude the command
-did nothing. Neither the reply nor the status read distinguishes "refused" from "moving"; only
-waiting long enough does. Per-blind open/close stays with the cover entities, since Home
-Assistant's own groups and areas already fan those out across both rails.
+`Error: 0` immediately and echoes the field. `status` shows the new *target* at once — for a
+command the blind never hears, too — but keeps reporting the *old position* for as long as the
+blind takes to travel. On a large shade that is around **30 seconds**, and up to a minute on a
+roller shade. A test that watches for 15 or 20 seconds will conclude the command did nothing.
+Neither the reply nor the target distinguishes "never heard it" from "moving"; only waiting for
+the position does.
+
+A cover's own open and close send a position move, not `Switch`; Best privacy and Best view
+have their own buttons.
 
 ### Waking a blind
 
 Captured on 2026-09-18 from the app's **device & battery status** screen (its
 `SSLowBatteryAndDisconnectViewController`, which lists blinds the hub has not heard from
-and offers a refresh button), then confirmed by reading the app's network library
+and offers a refresh for them), then confirmed by reading the app's network library
 (`DKIoTClient.framework`), which builds three requests for it:
 
 | App builder | Body (plus `Timestamp`, `TaskID`) | Scope |
@@ -475,7 +489,9 @@ and offers a refresh button), then confirmed by reading the app's network librar
 
 All three carry the value `0` — the same literal the library uses for `FindTop` and
 `Favorite`, while `MotorStop` gets `170` — and the hub echoes the verb back with `Error: 0`.
-The refresh button sends the hub-wide form; the other two were verified by sending them.
+The capture's refresh sent the hub-wide form; the other two were verified by sending them.
+The app offers that refresh only while it lists a blind as disconnected. A connected blind has
+no refresh, so the app never asks a healthy blind to report in.
 
 What happens next is visible in `status`: each blind's `Timestamp` is **when the hub last
 heard from it**, and it moves when a blind reports in with nothing changed, so it is a
@@ -488,7 +504,8 @@ liveness signal rather than a last-change time. Timings on the reference hub:
   another; seven of nine had reported within ~30 s, and the remaining two only on a later
   try. The four type 32 blinds (single-rail, and battery-powered like the rest) did not
   respond to the sweep at all — but a per-blind `StatusRequest` to one of them was answered
-  in 4 s, so the integration follows every sweep with one request per single-rail blind.
+  in 4 s, so Refresh blinds and the room refresh follow their request with one
+  `StatusRequest` per single-rail blind.
 
 Direct tests on 2026-10-11 found that `StatusRequest` does **not** appear to use the same scope
 rules as `ReportBatteryLevel`. With `PeripheralUID`, its one target reported within **10 s**
@@ -512,9 +529,21 @@ corrected during a broad report-in. No physical motor movement was verified. Use
 `StatusRequest` to refresh a single blind; an accepted `ReportBatteryLevel` with a UID is not
 evidence that it was scoped to that blind.
 
+**Type 48 roller shades close on a hub-wide report-in (issue
+[#5](https://github.com/kedube/ha-norman/issues/5), 2026-10-12).** On a hub at firmware 6.1.25
+with three type 48 / detail 1 roller shades at firmware 2.4.1, the hub-wide `ReportBatteryLevel`
+followed by a `StatusRequest` to each shade closed the shades, with no move command sent. It
+happened twice: when the wake sweep ran (two of the three closed) and when Refresh blinds was
+pressed (all three, by the owner's account). Each shade first answered its own `StatusRequest`
+within 2–4 s at its old position, then reported closed 37–55 s after the hub-wide request. A
+lone `StatusRequest` to one shade closed nothing, but that shade never answered it either, so
+whether a lone `StatusRequest` is safe on these shades is not known. Since then the wake sweep
+asks only blinds the app would list as disconnected, one `StatusRequest` each, and never sends
+the hub-wide form.
+
 Each report arrives as a `{"Status": …, "PeripheralList": [uid]}` notification, so a client
-holding the notification stream sees them without polling. The app taps the button several
-times in a row; nothing suggests that is needed.
+holding the notification stream sees them without polling. In the capture the refresh was
+tapped several times in a row; nothing suggests repeating it is needed.
 
 **Error 2.** Every position `control` sent during the sweep window that followed three
 refresh taps (21:59:02–21:59:42, twelve commands to eleven blinds) answered
@@ -534,10 +563,12 @@ does not go leaves the hub reporting the old position with the *new target* inde
 blind 8399 answered a move to middle 100 with `Error: 0` at 22:00:00 and `status` then
 showed `MiddleRailPosition: 0, TargetMiddleRailPosition: 100` until a room-wide
 `ReportBatteryLevel` at 22:12:10 had it report in, at which point the target snapped to 0.
-Neither `status` nor the notification stream reveals either case on their own. The
-integration's move watchdog (a `StatusRequest` 60 s after any move the blind has not
-reported, then a resend if it still has not moved, up to three sends) and its optional wake
-sweep exist for exactly these two. The report-in also **overwrites the target** with the
+Neither `status` nor the notification stream reveals either case on its own. The
+integration's move watchdog covers the second case: a `StatusRequest` 60 s after any move the
+blind has not reported, then a resend if it still has not moved, up to three sends in all. For
+the first, Request status and Refresh blinds ask on demand. The optional wake sweep asks only
+blinds the app would list as disconnected, so it no longer corrects a connected blind's stale
+cache. The report-in also **overwrites the target** with the
 blind's actual position, so a check that compares position with target after asking the blind
 to report in always passes; the watchdog keeps the target it read when the command was sent.
 
@@ -546,7 +577,7 @@ to report in always passes; the watchdog keeps the target it read when the comma
 `{"PairingMode": 5}` on `control`, with no scope field, opens the hub's pairing window. The
 hub echoes it with `Error: 0` and `status` reports `PairingMode: 5` from then on — for
 exactly ten minutes on 2026-09-18 (22:08:47 → 22:18:48), after which it reads `0` again.
-The same request was refused with `Error: 8` a few minutes earlier, while the hub was
+The same request was refused with `Error: 8` about ten minutes earlier, while the hub was
 sweeping its blinds after a refresh, and with `Error: 10` in an earlier capture. The app
 also sends `{"SearchForPeripheral": 0}` (answered `0`) around it; the rest of its pairing
 flow (`discoverPeripheralWithRoomId`, `remoteControlPair` in its library) has not been
@@ -564,11 +595,13 @@ Request: empty body.
 Response stream, as observed:
 
 ```text
-{"Error":0}{"PeripheralList":[{"PeripheralUID":1001, ...}]}{"PeripheralList":[...]}...
+{"Error":"Success."}{"Status":1788827049448,"PeripheralList":[58850]}{"Status":…,"PeripheralList":[58850,8399]}…
 ```
 
-- The first object is an acknowledgement without `PeripheralList`; the integration skips any
-  object that lacks that key.
+- The first object is an acknowledgement. The integration passes on only objects that carry
+  `PeripheralList` or `UpdateTime` and skips everything else.
+- `PeripheralList` holds blind **ids**, not objects, and `Status` is a millisecond timestamp
+  (see [Notification stream, as observed](#notification-stream-as-observed)).
 - The integration does **not** read positions out of the notification. It treats each one as
   a wake-up and calls `status`, which is authoritative and covers every peripheral.
 - Besides state changes the stream carries **structure changes** made in the app:
@@ -638,8 +671,8 @@ a capture before adding it to this list.
 ## Configuration endpoints
 
 These were captured from the Norman app or found by probing, and are documented for
-completeness; the integration does not call any of them. All take `ThingName`, `Timestamp`, and `TaskID` in the body and
-answer in the `{"status": {"code", "error"}, "results": {…}}` shape. The captured writes
+completeness; the integration does not call any of them. All take `ThingName`, `Timestamp`,
+and `TaskID` in the body and answer in the `{"status": {"code", "error"}, "results": {…}}` shape. The captured writes
 were followed by an `UpdateTime` notification (above), and the app re-read the matching list.
 
 | Endpoint | Body (besides the common fields) | Effect |
@@ -721,8 +754,8 @@ not restore it. Further configuration writes were stopped. A power cycle did **n
 1. `GetAllScene` now returns an empty `RoomList`, so the user's previously saved scene is no
 longer visible through that read. `registration` and `status` still show the same 13 blind IDs;
 all reported actual positions match the saved pretest baseline, and status still carries six
-distinct `RoomID` values. The configuration store may be damaged or inaccessible; the cause
-and the scene's persistence are not yet known.
+distinct `RoomID` values. The configuration store may have been damaged or inaccessible; the
+cause is not known.
 
 Only `GetDeviceInfo` and `GetAllPeripheral` failed, the two reads that carry the hub's own
 record (`CustomDeviceName`, `TimeZone`, `GeoLoc`); the scene, scene-group and schedule reads
@@ -730,13 +763,13 @@ did not. **Recovery:** the owner renamed the hub, every room and every blind in 
 app and changed their icons, rewriting each record. Both reads then returned `status.code: 0`
 again, with all 6 rooms and 13 blinds named as before and the hub under its new name; the
 saved scene did not come back. `TimeZone` and `GeoLoc` stayed absent from both replies, and
-the app offers no setting for either. After a later reboot the hub moved to a new DHCP
+the app offers no way to change either. After a later reboot the hub moved to a new DHCP
 address and reported a time zone for a while, then dropped it again; registration no longer
-carries `GeoLoc` either. Where the hub gets these two settings is not known: since the app
-cannot set them, an outside source such as a cloud lookup that fails intermittently is one
-possibility. In the app the time zone and location are a single setting, which cannot be changed once
-the hub is set up. Only the hub's own schedules use them, and nothing local can set them, so the
-integration only shows the time zone as a sensor (unknown while missing) and raises no repair.
+carries `GeoLoc` either. In the app the time zone and location are a single setting, chosen
+when the hub is set up and not changeable afterwards. Where the hub gets them later is not
+known; an outside source such as a cloud lookup that fails intermittently is one possibility.
+Only the hub's own schedules use them, and nothing local can set them, so the integration only
+shows the time zone as a sensor (unknown while missing) and raises no repair.
 
 #### Run a saved scene
 
@@ -818,17 +851,17 @@ shape cannot be established from hub reads, controlled tests, or available handl
 The 2026-10-11 read baseline on the reference hub confirmed firmware 6.1.25, 13 blinds in six
 rooms, and empty schedule, scene, and scene-group lists. A scene was then created. A
 disposable second scene and scene group were tested and removed. After the configuration
-read failure and power cycle, `GetAllScene` returns no rooms; the original scene needs a
-recovery check before treating it as present or permanently lost.
+read failure, rewriting every record from the app restored the reads, but the original scene
+was lost.
 
 | Question | Best evidence to collect |
 |---|---|
-| Which scene update caused `GetAllPeripheral` to fail? | A hub restart did not restore the read. Determine whether the configuration store can be recovered without further writes; then, on a separate test hub, run one full-object update at a time and check `GetAllPeripheral` immediately after each write and deletion. A successful update reply and changed name did not establish later read health. |
+| Which scene update caused `GetAllPeripheral` to fail? | A restart did not restore the read; rewriting every record from the app did. On a separate test hub, run one full-object update at a time and check `GetAllPeripheral` immediately after each write and deletion. A successful update reply and changed name did not establish later read health. |
 | When does a scene group drop a member's move? | Repeat controlled group activation with blinds staged in two rooms, collecting each member's actual position and report-in after the command. Compare the radio pacing and recovery behavior with separate room scene calls. One three-blind group call left a staged member unmoved. |
 | How does a schedule change after creation? | Read `GetAllSchedule` and inspect the candidate `UpdateSchedule` handler or a controlled enable/disable operation; compare stored state before and after. |
 | How does group renaming work? | Inspect candidate `UpdatePeripheralGroupName`, then verify its effect with `GetAllPeripheral` on a test group. |
 | What is the rest of pairing? | Record `registration`, `status`, and peripheral lists before and after a controlled pairing test; identify the `SearchForPeripheral` command's reply and notifications. Inspect handler code first where available. |
-| How do other products behave? | Collect redacted `registration`, `GetAllPeripheral`, `status`, and notifications from hubs with Shutter, Roman, PerfectSheer, MRS2, and SmartDrape products. Record `ModuleType`/`ModuleDetail`, firmware, and actual movement for each command. |
+| How do other products behave? | Collect redacted `registration`, `GetAllPeripheral`, `status`, and notifications from hubs with Shutter, Roman, PerfectSheer, MRS2, and SmartDrape products, and report-in behaviour from more type 48 rollers (issue #5). Record `ModuleType`/`ModuleDetail`, firmware, and actual movement for each command. |
 | Are there more local paths? | Compare path strings from a matching hub binary with this table, then probe additional plausible `Get*` names. Repeat on other hub firmware versions. A 404 for a guessed name is only negative evidence for that name and firmware. |
 
 ### Direct hub capability tests
@@ -887,9 +920,11 @@ change. Even a successful `/control` reply needs a later state check to establis
 
 ## Observed fields
 
-Everything below comes from captures of a real hub (`NienMadeHub`, firmware 6.1.25, 13 blinds
-of two types). Only the fields marked **used** are read by the integration; the rest are kept
-verbatim in the diagnostics capture and are candidates for future features.
+Most of what follows comes from the reference hub (`NienMadeHub`, firmware 6.1.25, 13 blinds
+of types 32 and 33). Rows that cite an issue come from other users' diagnostics, and rows marked
+"from the app" from the app's parsers. Only the fields marked **used** are read by the
+integration; the rest are kept verbatim in the diagnostics capture and are candidates for future
+features.
 
 This list is also **executable**: the `KNOWN_HUB_FIELDS`, `KNOWN_PERIPHERAL_FIELDS`,
 `KNOWN_SCENE_FIELDS`, `KNOWN_SCENE_TARGET_FIELDS`, `KNOWN_SCENE_GROUP_FIELDS`, and
@@ -961,9 +996,10 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 | `Position1`, `Position2`, `TargetPosition1`, `TargetPosition2` | status (from the app) | | not used. A split-panel pair the app's library can read and send; no product in ShadeAuto 0.8.33 shows controls for it. |
 | `Angle` | status (from the app) | | not used. Read by the app's library alongside the louvers; its meaning is unknown. |
 | `Mrs2Status` | status (type 49, from the app) | | not used; the MRS2 roller's counterpart of `MsdStatus`. |
+| `SpeedInformation`, `CalibrationState` | status, registration (type 48, issue #5) | `0`, `0` in status; `15`, `1` in registration | not used; meaning unknown. A type 48 status entry has these instead of `RssiMean`, `PacketReceiveRate` and `StallCurrent`. |
 | `PacketReceiveRate` | status | `0` | not used. Has been `0` on every blind in every capture, including blinds that are plainly reachable, so it is either unimplemented in this firmware or counts something the hub never populates. |
 | `StallCurrent` | status (type 33 only) | `4100`, `1240` | not used. Despite the name it reads as a **stall threshold, not a measurement**: the current draw at which the motor decides it has hit an obstruction (or a limit) and stops. It does not vary during travel -- it holds one value through a full open and close, in both directions, and at rest. It is not fixed per blind either: two blinds read `4100` in captures a day apart and `1240` afterwards, with no setting changed in the app, so the motor appears to adapt it. A **falling** value on one blind is therefore the interesting signal (a motor deciding it needs less force to call something a stall), not the absolute number. Both blinds that changed are in one room, and one of them (`58850`) is the blind a `Calibration` was run against the day before -- so calibration, or the limit-setting around it, is the likeliest cause. Unconfirmed: the other blind was not calibrated. Not exposed as an entity while its meaning rests on a single observation. |
-| `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. |
+| `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. Type 48 (issue #5) lists the shared verbs except `StopSensorSwitch`, plus `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust` (`259`) and `ReverseMotorDirection` like type 33, and `SetMiddleLimit`/`CleanMiddleLimit` and `SmartDialSwitch` like type 32; it has no `FindTop`, `RailSpacing` family or `CleanErrorCode`. |
 
 ### Cover types
 
@@ -975,7 +1011,7 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 | 32 / 3–5 | Cellular Shade (MCS) | app only | the app shows two sliders: a top-down/bottom-up shade | as 33 |
 | 33 / 3 | Cellular Shade (DMCS; Japanese "twin, up/down") | reference hub, 0.5.3.x, has `StallCurrent` | middle rail tracks 0–100 (50 when half); day/night cellular shades | primary cover (bottom rail, middle as tilt) + Middle rail cover; two position sliders |
 | 33 / 4–5 | Cellular Shade (DMCS) | app only | the app accepts them like 33/3 | as 33/3 |
-| 48 / 1 | Roller Shade (MRS1) | issue [#2](https://github.com/kedube/ha-norman/issues/2), 2.4.1 | only the bottom rail moves; the middle rail reads 0, but `Switch` still records a middle-rail target | single-rail cover, position only; one position slider |
+| 48 / 1 | Roller Shade (MRS1) | issues [#2](https://github.com/kedube/ha-norman/issues/2) and [#5](https://github.com/kedube/ha-norman/issues/5), 2.4.1 | only the bottom rail moves; the middle rail reads 0. In #2 `Switch` recorded a middle-rail target of 100; in #5 a room `Switch` left it at 0. A hub-wide report-in closed the shades in #5 ([Waking a blind](#waking-a-blind)) | single-rail cover, position only; one position slider |
 | 48 / 2 | Roman Shade (MRS1) | app only | one slider | as 48/1 |
 | 48 / 3 | PerfectSheer (MRS1) | app only | two sliders: the shade, and its vanes on the middle rail (0 closed, 100 open), drawn only while the shade is down | one `shade` cover, shade as position and vanes as tilt, independent; one position slider |
 | 49 / 1–3 | as 48 (MRS2), with `Mrs2Status` | app only | a second generation of the roller module | as 48 |
@@ -988,11 +1024,11 @@ sliders it shows each product all switch on them, and anything else it calls "Un
 ModuleDetail splits are the app's too: it names the roller family by detail (1 Roller Shade,
 2 Roman Shade, 3 PerfectSheer) and gives 32/3–5, 33, 48/3 and 80 two sliders.
 
-A single-rail product left on the two-rail default misreports presets as failed. `Switch`
-records a middle-rail target of 100 for Best privacy and Best view on every blind, and a blind
-with no middle rail keeps reporting 0 — so one that is already at the preset never matches its
-target, and the move watchdog asks it to report in, resends the preset twice, and gives up.
-That is how type 48 was found.
+A single-rail product left on the two-rail default misreports presets as failed. On the hubs
+in the reference captures and issue #2, `Switch` recorded a middle-rail target of 100 for Best
+privacy and Best view on every blind, and a blind with no middle rail keeps reporting 0 — so one
+that is already at the preset never matches its target, and the move watchdog asks it to report
+in, resends the preset twice, and gives up. That is how type 48 was found.
 
 ### Notification stream, as observed
 
@@ -1064,11 +1100,14 @@ notification stream ──(UpdateTime: room / peripheral / device)──► GetA
 periodic reconnect (300 s) / disconnect (15 s) ──► GetAllPeripheral + status
 cover / number action ──► control (both positions) ──► status (request_refresh)
 cover stop ──► control (MotorStop) ──► status (request_refresh)
-button press ──► control (Switch / Favorite by room+group, or jog by uid) ──► status (refresh)
-                  (Switch / Favorite are then watched, and resent once if the blind never moved)
+button press ──► control (Switch / Favorite by room+group; jog or StatusRequest by uid) ──► status (refresh)
+                  (Switch / Favorite are then watched, and resent up to twice if the blind never moved)
 room / hub slider ──► control (both positions, RoomID or no address; or one per blind) ──► status
                   (each blind is then watched, and sent its own move if it never moved)
 room / hub button ──► control (verb, RoomID or no address) ──► status (refresh)
+                  (Refresh blinds then sends StatusRequest to each single-rail blind in scope)
+move watchdog ──► control (StatusRequest by uid, 60 s after a silent move; then the move again)
+wake sweep (timer, off by default) ──► control (StatusRequest per disconnected blind)
 get_hub_data action ──► GetAllPeripheral + status (redacted, returned as the response)
 send_hub_command action ──► control (caller's fields) ──► status
 mDNS announcement ──► config flow ──► registration (identity) ──► offer, or refresh the address
@@ -1088,17 +1127,21 @@ network segment with the hub. Do not go looking for it in a capture.
 
 The rail sliders (`number`) and the covers share one code path, so both send the same
 both-rails `control` call; a room's and the hub's sliders work each blind's move out the same
-way. The buttons — a blind's, a room's and the hub's — are the only place the integration sends
-a [control verb](#control-verbs) other than `MotorStop` without the user reaching for
-`send_hub_command`.
+way. Apart from `MotorStop`, the integration sends [control verbs](#control-verbs) only from its
+buttons (a blind's, a room's and the hub's) and `norman.room_command`, plus a `StatusRequest`
+from the move watchdog and the wake sweep. Anything else needs `send_hub_command`.
 
-`status` can also be re-read on a timer (off by default; see the poll interval option), which
-catches changes the hub never pushed -- it only notifies when it hears from a blind, and a
-battery blind's radio sleeps (the Norman app shows such a blind as "Disconnect" after a day of
-silence). The report-in verbs ([Waking a blind](#waking-a-blind)) end that on demand. If the
-notification stream cannot be established at all the integration still works for commands, and
-each command's follow-up `status` call keeps the state fresh, but external changes (remote,
-app) will not be reflected until the stream comes back or the next poll, if one is set. The listener logs one error when the stream drops and one info line when it recovers.
+`status` is also re-read every time the stream is cycled or reconnected, and can be re-read
+on a timer (off by default; see the poll interval option). Neither catches a blind the hub has
+not heard from: the hub only notifies when it hears from a blind, a battery blind's radio
+sleeps (the Norman app shows such a blind as "Disconnect" after a day of silence), and until
+it wakes `status` returns the same stale cache however often it is read. The report-in verbs
+([Waking a blind](#waking-a-blind)) end that on demand. What a re-read does catch is a
+notification that never arrived. If the notification stream cannot be established at all the
+integration still works for commands, and each command's follow-up `status` call keeps the
+state fresh, but external changes (remote, app) will only show up on the listener's retries
+every `RECONNECT_INTERVAL` or the next poll, if one is set. The listener logs one error when
+the stream drops and one info line when it recovers.
 
 **`GetAllPeripheral` is cached; `status` is not.** A refresh re-reads `status` every time but
 only calls `GetAllPeripheral` when the cached device list has been invalidated, which happens
@@ -1144,7 +1187,7 @@ evidence that a blind heard anything; see [Error conventions](#error-conventions
 ## Capturing traffic
 
 `NormanApiClient.traffic` is a `TrafficRecorder`: every request/response pair and every
-notification-stream chunk is appended to a ring buffer (50 entries, bodies clipped to 16 KiB)
+notification-stream chunk is appended to a ring buffer (200 entries, bodies clipped to 16 KiB)
 before any parsing happens, and the last complete response per endpoint is kept whole in
 `latest_raw`. The diagnostics export publishes it as `hub_traffic`, redacted: the host, the config entry's
 unique id, and every key in `SENSITIVE_HUB_KEYS` (`ThingName`, `GeoLoc`, `Latitude`,
@@ -1152,11 +1195,15 @@ unique id, and every key in `SENSITIVE_HUB_KEYS` (`ThingName`, `GeoLoc`, `Latitu
 JSON bodies, and the host and `ThingName` are additionally replaced by value anywhere they
 appear in text. The export also carries a `frontend` block with the card's expected and
 registered versions. The `norman.get_hub_data` action returns live `GetAllPeripheral` and
-`status` payloads for the same purpose, with the same sensitive keys removed. When someone reports a new blind type, ask for either
-of these; the parsed model in `NormanPeripheralData` drops unknown fields and is not enough.
+`status` payloads for the same purpose, with the same sensitive keys removed. When someone
+reports a new blind type, ask for either of these; the parsed model in `NormanPeripheralData`
+drops unknown fields and is not enough.
 
-Debug logging (`custom_components.norman.api: debug`) prints every exchange with the body
-truncated to 500 characters.
+Debug logging (`custom_components.norman.api: debug`) prints every exchange with the same keys
+redacted (and the `ThingName` replaced by value in a reply that is not JSON), each reply
+re-serialized compactly and truncated to 500 characters. Notifications are logged by
+`custom_components.norman.coordinator`. Prefer a diagnostics export for a new blind type: the
+log keeps only the start of each reply.
 
 ## Security notes
 

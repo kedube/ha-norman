@@ -46,23 +46,23 @@
     "step": {
       "init": {
         "title": "Options Norman",
-        "description": "Les mises à jour sont envoyées par le hub. Cette interrogation sert de filet de sécurité pour les changements que le hub n'annonce jamais, le plus souvent un store qui a bougé pendant que sa radio était en veille.",
+        "description": "Les mises à jour sont envoyées par le hub, et chaque store est relu chaque fois que l'intégration se reconnecte au hub, soit toutes les 5 minutes.",
         "data": {
           "poll_interval": "Intervalle d'interrogation",
           "wake_interval": "Intervalle de réveil",
           "control_interval": "Command spacing",
-          "show_sidebar_panel": "Afficher Norman Shades dans la barre latérale"
+          "show_sidebar_panel": "Afficher Stores Norman dans la barre latérale"
         },
         "data_description": {
-          "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub. Plus bas détecte plus tôt une position obsolète ; plus haut sollicite moins le hub. 0 désactive l'interrogation, laissant les mises à jour aux seules notifications du hub.",
-          "wake_interval": "À quelle fréquence demander à chaque store de se signaler (batterie, position, dernier contact), comme le fait l'actualisation de l'app Norman. Cela rafraîchit le cache du hub lui-même, que l'interrogation ci-dessus ne fait que relire. 0 désactive ; sinon de 600 à 86400 secondes.",
+          "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub, au cas où une notification se serait perdue. Elle relit ce que le hub a en mémoire, sans rien demander aux stores. 0 désactive l'interrogation ; sinon de 10 à 300 secondes, puisque l'intégration relit déjà toutes les 5 minutes.",
+          "wake_interval": "À quelle fréquence demander de se signaler (batterie, position, dernier contact) à chaque store que l'app Norman afficherait comme déconnecté (sans nouvelles depuis 24 heures). Les stores connectés ne sont pas sollicités, comme dans l'app. Cela rafraîchit le cache du hub pour ces stores, que l'interrogation ci-dessus ne fait que relire. 0 désactive ; sinon de 600 à 86400 secondes.",
           "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
-          "show_sidebar_panel": "Affiche Norman Shades, tous les stores par pièce, dans la barre latérale de Home Assistant. Avec plusieurs hubs, chacun a sa propre entrée. Désactivez l'option pour la retirer ; Norman Shades peut toujours être ajouté à un tableau de bord sous forme de carte."
+          "show_sidebar_panel": "Affiche la page Stores Norman, avec tous les stores par pièce, dans la barre latérale de Home Assistant. Avec plusieurs hubs, chacun a sa propre entrée. Désactivez l'option pour la retirer ; la carte Stores Norman peut toujours être ajoutée à un tableau de bord."
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "Saisissez 0 pour désactiver l'interrogation, ou une valeur entre 10 et 3600 secondes.",
+      "poll_interval_out_of_range": "Saisissez 0 pour désactiver l'interrogation, ou une valeur entre 10 et 300 secondes.",
       "wake_interval_out_of_range": "Saisissez 0 pour désactiver, ou une valeur entre 600 et 86400 secondes.",
       "control_interval_out_of_range": "Enter a value between 0.3 and 5 seconds."
     }

@@ -28,6 +28,7 @@ from custom_components.norman.frontend import (
     PANEL_ELEMENT,
     PANEL_ICON,
     PANEL_TITLE,
+    PANEL_TITLES,
     PANEL_URL_PATH,
     WWW_URL_BASE,
     async_add_entry_panel,
@@ -87,6 +88,50 @@ async def test_one_hub_gets_a_plain_entry(hass: HomeAssistant) -> None:
     # Stamped like the card, so an upgrade never serves a cached old panel.
     assert custom["module_url"] == f"{WWW_URL_BASE}/norman-panel.js?v={VERSION}"
     assert _pinned(panel) == {}  # nothing pinned: the card shows the only hub
+
+
+@pytest.mark.parametrize(
+    ("language", "title"),
+    [
+        ("de", "Norman-Rollos"),
+        ("de-CH", "Norman-Rollos"),
+        ("ja", "Norman ブラインド"),
+        ("zh-Hant", "Norman 窗簾"),
+        ("zh-TW", "Norman 窗簾"),
+        ("zh-CN", "Norman 窗帘"),
+        ("pt-BR", "Norman Shades"),
+    ],
+)
+async def test_the_sidebar_title_follows_the_servers_language(
+    hass: HomeAssistant, language: str, title: str
+) -> None:
+    """Home Assistant shows a custom panel's title as registered, so the server's language
+    picks it; a language the integration does not ship falls back to English."""
+    hass.config.language = language
+    await async_add_entry_panel(hass, _entry(hass, "a"))
+    assert _sidebar(hass)[PANEL_URL_PATH].sidebar_title == title
+
+
+def test_every_language_has_a_sidebar_title_matching_the_card() -> None:
+    """One title per shipped translation, and each is the card's own name in that language,
+    so the sidebar entry and the card picker never disagree."""
+    component = pathlib.Path(__file__).parent.parent / "custom_components" / "norman"
+    shipped = sorted(path.stem for path in (component / "translations").glob("*.json"))
+    assert sorted(PANEL_TITLES) == shipped
+    card = (component / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    for title in PANEL_TITLES.values():
+        assert f'card_name: "{title}"' in card, title
+
+
+def test_the_sidebar_option_names_the_page_as_the_sidebar_does() -> None:
+    """The options form's sidebar toggle uses each language's sidebar title, so the setting
+    names the entry it adds."""
+    component = pathlib.Path(__file__).parent.parent / "custom_components" / "norman"
+    for language, title in PANEL_TITLES.items():
+        path = component / "translations" / f"{language}.json"
+        init = json.loads(path.read_text(encoding="utf-8"))["options"]["step"]["init"]
+        assert title in init["data"]["show_sidebar_panel"], language
+        assert title in init["data_description"]["show_sidebar_panel"], language
 
 
 def test_the_panel_does_not_sit_under_the_static_path() -> None:

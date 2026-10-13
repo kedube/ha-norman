@@ -38,41 +38,41 @@ REQUEST_TIMEOUT = 10
 
 # How often to re-read `status` even when the hub has pushed nothing.
 #
-# Off by default. The hub pushes state changes over the notification long-poll, which is
-# the primary update path and is enough for most installs; polling only earns its keep when
-# a battery blind's radio sleeps. The hub then stops hearing from it (the Norman app shows
-# "Disconnect") and sends no notification, so the cached position can go stale while the
-# blind is in fact reachable -- a command still wakes it and works. A stale position makes
-# `is_closed` answer about the past, which silently breaks automations that check state
-# before acting ("close it if it isn't closed"). Anyone seeing that can switch polling on;
-# `status` is the hub's lightweight, uncached call (docs/NORMAN_API.md), so the cost is one
-# small local request per interval.
+# Off by default, and rarely worth switching on. Every change to the hub's cache seen so far
+# came with a notification -- a blind reporting in, a command sent through the hub -- and
+# each one triggers a `status` read. The listener also re-reads `status` every time it
+# cycles the stream (NOTIF_MAX_DURATION, 300 s) or reconnects, so a missed notification is
+# out of date for five minutes at most even with no poll. A poll narrows that window and
+# nothing more: it re-reads the hub's cache and asks the blinds nothing, so a position the
+# hub itself has wrong (a sleeping blind's) stays wrong until the blind reports in, which
+# only a StatusRequest or the wake sweep below brings about. `status` is the hub's
+# lightweight, uncached call (docs/NORMAN_API.md), so the cost is one small local request
+# per interval, and nothing goes out over the radio.
 POLL_DISABLED = 0
 DEFAULT_POLL_INTERVAL = POLL_DISABLED
 # Bounds offered in the options flow, either side of POLL_DISABLED. The floor keeps a
-# misconfigured entry from hammering a hub that answers `status` synchronously; the ceiling
-# is the point past which a poll stops being a useful safety net. A value outside this range
-# (other than 0) falls back to the default.
+# misconfigured entry from hammering a hub that answers `status` synchronously. The ceiling
+# is the stream cycle: every refresh restarts the poll's timer, so an interval longer than
+# NOTIF_MAX_DURATION would never fire. A value outside this range (other than 0) falls back
+# to the default, off -- which is also what the 301-3600 s that older releases accepted
+# amounted to.
 MIN_POLL_INTERVAL = 10
-MAX_POLL_INTERVAL = 3600
-# What the options form offers when polling has never been configured, so that switching it
-# on is one click rather than a guess.
-SUGGESTED_POLL_INTERVAL = 60
+MAX_POLL_INTERVAL = 300
 CONF_POLL_INTERVAL = "poll_interval"
 
-# The wake sweep: have every blind report in on a timer, the way the Norman app's refresh
-# does (hub-wide ReportBatteryLevel, plus a StatusRequest to each single-rail blind, which
-# the hub-wide sweep skipped on the reference hub). The poll above only re-reads the hub's
-# *cache*, and the capture of 2026-09-18 showed that cache being wrong for a blind that had
-# gone quiet -- middle rails the hub reported at 100 read 0 once the blinds reported in. The
-# sweep refreshes the cache itself: positions, battery and last-seen become what the blind
-# says now. Off by default; the floor keeps a sweep from waking battery blinds more than a
-# few times an hour.
+# The wake sweep: on a timer, ask each blind the Norman app would list as "Disconnect"
+# (UNRESPONSIVE_AFTER) to report in, one StatusRequest each. The app offers a refresh only
+# for such a blind, never for a connected one, so the sweep leaves connected blinds alone;
+# asking every blind on the hub hourly closed a hub's type 48 roller shades each time (issue
+# #5). The poll above only re-reads the hub's *cache*; a blind that reports in refreshes the
+# cache itself, so its position, battery and last-seen become what it says now. Off by
+# default, and the options form does not suggest a value: saving the form for any other
+# reason used to switch it on at 3600. The floor keeps a sweep from waking a sleeping blind
+# more than a few times an hour.
 WAKE_DISABLED = 0
 DEFAULT_WAKE_INTERVAL = WAKE_DISABLED
 MIN_WAKE_INTERVAL = 600
 MAX_WAKE_INTERVAL = 86400
-SUGGESTED_WAKE_INTERVAL = 3600
 CONF_WAKE_INTERVAL = "wake_interval"
 
 # The move watchdog. The hub answers Error 0 for a command it never transmits, and nothing
@@ -280,6 +280,10 @@ KNOWN_PERIPHERAL_FIELDS = frozenset(
         "TargetPosition2",
         "Angle",
         "Mrs2Status",
+        # Roller shades (ModuleType 48, issue #5): two status codes seen as 0 in status and
+        # as 15 / 1 in the registration record. Not read; their meaning is unknown.
+        "SpeedInformation",
+        "CalibrationState",
         # the command vocabulary advertised by registration
         "RequestModuleInfo",
         "Switch",
@@ -355,15 +359,18 @@ HUB_SWITCH_OPEN = 1
 HUB_SWITCH_CLOSE = 0
 # The two "report in" verbs, captured from the app's device & battery status screen on
 # 2026-09-18 and confirmed against its network library (DKIoTClient.framework builds both
-# with the same value-0 literal it uses for FindTop and Favorite):
+# with the same value-0 literal it uses for FindTop and Favorite). The app offers that
+# refresh only while it lists a blind as disconnected; a connected blind has none.
 #   {"StatusRequest": 0, "PeripheralUID": X}  -- one blind; it answered within 5 s each time
-#   {"ReportBatteryLevel": 0}                  -- every blind on the hub (the app's refresh
-#                                                button); ~30 s for all to report, though
+#   {"ReportBatteryLevel": 0}                  -- every blind on the hub (the capture);
+#                                                ~30 s for all to report, though
 #                                                single-rail blinds ignored it
 #   {"ReportBatteryLevel": 0, "RoomID": R}     -- one room; all three blinds in 5 s
-# Neither moves anything. A blind that reports in updates its `Timestamp` in `status` and the
-# hub pushes a PeripheralList notification for it, which is how the coordinator learns of it.
-# See docs/NORMAN_API.md, "Waking a blind".
+# Neither moved anything on the reference hub. On a hub of type 48 roller shades, the
+# hub-wide form followed by a StatusRequest to each shade closed every shade (issue #5). A
+# blind that reports in updates its `Timestamp` in `status` and the hub pushes a
+# PeripheralList notification for it, which is how the coordinator learns of it. See
+# docs/NORMAN_API.md, "Waking a blind".
 HUB_CMD_REQUEST_STATUS = "StatusRequest"
 HUB_CMD_REPORT_BATTERY = "ReportBatteryLevel"
 

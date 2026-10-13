@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from unittest.mock import MagicMock, patch
 
 import aiohttp
@@ -18,7 +19,7 @@ from custom_components.norman.api import (
     NormanConnectionError,
 )
 
-from .const import HUB_HOST, HUB_THING_NAME, HUB_URL
+from .const import HUB_HOST, HUB_LATITUDE, HUB_SSID, HUB_THING_NAME, HUB_URL
 
 REGISTRATION = f"{HUB_URL}/NM/v1/registration"
 GET_ALL = f"{HUB_URL}/NM/v1/GetAllPeripheral"
@@ -315,6 +316,40 @@ async def test_listen_connection_failures(
     with pytest.raises(NormanConnectionError):
         async for _ in client.async_listen_notifications():
             pass
+
+
+# ---- debug log ------------------------------------------------------------------------
+
+
+async def test_debug_log_redacts_the_hubs_identity(
+    client: NormanApiClient,
+    aioclient_mock: AiohttpClientMocker,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The debug log blanks what diagnostics blank, in requests and replies, at any depth.
+
+    Debug logs get attached to public issues as often as diagnostics do; one on issue #5
+    carried the hub's ThingName in the clear. The traffic recorder keeps the original,
+    because diagnostics redact it on the way out.
+    """
+    caplog.set_level(logging.DEBUG, logger="custom_components.norman.api")
+    aioclient_mock.post(
+        REGISTRATION, json={"Error": 0, "ThingName": HUB_THING_NAME, "WiFiSSID": HUB_SSID}
+    )
+    aioclient_mock.post(
+        GET_ALL,
+        json={"status": {"code": 0}, "results": {"GeoLoc": HUB_LATITUDE, "RoomList": []}},
+    )
+    aioclient_mock.post(STATUS, status=500, text=f"internal error for {HUB_THING_NAME}")
+
+    await client.async_get_devices()  # registration, then a request carrying the ThingName
+    with pytest.raises(NormanApiError):
+        await client.async_get_status()  # not JSON: redacted by value instead
+
+    assert "**REDACTED**" in caplog.text
+    for secret in (HUB_THING_NAME, HUB_SSID, HUB_LATITUDE):
+        assert secret not in caplog.text
+    assert HUB_THING_NAME in client.traffic.as_dict()["exchanges"][0]["response"]
 
 
 # ---- traffic recorder ------------------------------------------------------------------

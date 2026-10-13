@@ -998,5 +998,91 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   sheer.dragValues = {};
 }
 
+// ---- languages ------------------------------------------------------------------------
+{
+  // The card's words live in STRINGS, one block per language the integration ships
+  // (custom_components/norman/translations). Read both from the source so a language added to
+  // one and not the other, or a key missing from one language, fails here.
+  const fs = await import("node:fs");
+  const block = /const STRINGS = (\{[\s\S]*?\n\});/.exec(cardSource)[1];
+  const STRINGS = new Function(`return ${block};`)();
+  const shipped = fs.readdirSync(new URL("../translations/", url))
+    .filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
+  check("the card speaks every language the integration ships",
+        JSON.stringify(Object.keys(STRINGS).sort()) === JSON.stringify(shipped),
+        `${Object.keys(STRINGS).sort()} vs ${shipped}`);
+  const english = Object.keys(STRINGS.en).sort();
+  for (const [language, words] of Object.entries(STRINGS)) {
+    const keys = Object.keys(words).sort();
+    const missing = english.filter((k) => !keys.includes(k));
+    const extra = keys.filter((k) => !english.includes(k));
+    check(`${language}: has every key, and no others`, !missing.length && !extra.length,
+          `missing ${missing.join(",")} extra ${extra.join(",")}`);
+    const placeholders = (text) => (text.match(/\{\w+\}/g) || []).sort().join();
+    const differ = english.filter((k) => keys.includes(k) && placeholders(words[k]) !== placeholders(STRINGS.en[k]));
+    check(`${language}: fills the same placeholders as English`, !differ.length, differ.join(","));
+  }
+
+  const inLanguage = (language) => ({ ...hass, locale: { language } });
+  const textOf = (c) => {
+    const seen = [];
+    findAll(c.shadowRoot, (el) => {
+      if (el._text) seen.push(String(el._text));
+      for (const k of ["title", "aria-label", "aria-valuetext"]) if (el.attrs?.[k]) seen.push(String(el.attrs[k]));
+      return false;
+    });
+    return seen.join(" | ");
+  };
+  for (const language of shipped) {
+    for (const cfg of [{}, { hide_picture:true }]) {
+      const text = textOf(rendered(cfg, inLanguage(language)));
+      check(`${language} ${cfg.hide_picture ? "list" : "grid"}: no unfilled placeholder, 'undefined' or 'NaN'`,
+            !/\{\w+\}|undefined|NaN/.test(text), text.split(" | ").filter((t) => /\{\w+\}|undefined|NaN/.test(t)).join(" ; "));
+    }
+  }
+  const de = textOf(rendered({}, inLanguage("de")));
+  check("German counts its blinds and batteries", de.includes("2 Rollos") && de.includes("1 Batterie schwach"), de.slice(0, 200));
+  check("German writes a space before %", de.includes("Batterie 84 %") && de.includes("90 % offen"), de.slice(0, 400));
+  check("German labels the presets", de.includes("Privatsphäre") && de.includes("Beste Aussicht – alle Räume"));
+  check("a regional tag uses its base language", textOf(rendered({}, inLanguage("de-CH"))).includes("2 Rollos"));
+  check("Japanese follows the app's words", textOf(rendered({}, inLanguage("ja"))).includes("プライバシー重視"));
+  check("zh-TW is Traditional Chinese", textOf(rendered({}, inLanguage("zh-TW"))).includes("2 個窗簾"));
+  check("zh-CN is Simplified Chinese", textOf(rendered({}, inLanguage("zh-CN"))).includes("2 个窗帘"));
+  check("an unsupported language falls back to English", textOf(rendered({}, inLanguage("pt-BR"))).includes("2 shades"));
+  check("a counted word follows the language's plural rule", (() => {
+    const c = rendered({}, inLanguage("fr"));
+    return c._t("some_open", { count: 1 }) === "1 ouvert" && c._t("some_open", { count: 2 }) === "2 ouverts";
+  })());
+
+  // Switching language in the profile arrives as a new hass; the card redraws in it.
+  const c = new Card();
+  c.setConfig({ type:"custom:norman-shades-card" });
+  c.hass = inLanguage("en");
+  const before = textOf(c);
+  c.hass = inLanguage("fr");
+  const after = textOf(c);
+  check("a change of language redraws the card", before.includes("2 shades") && after.includes("2 stores") && !after.includes("2 shades"),
+        after.slice(0, 160));
+
+  // The editor's labels, in its plain-input form (ha-form is not loaded here).
+  const Editor = els.get("norman-shades-card-editor");
+  const editor = new Editor();
+  editor.hass = inLanguage("es");
+  editor.setConfig({ type:"custom:norman-shades-card" });
+  const labels = findAll(editor.shadowRoot, (el) => el.tagName === "span").map((el) => el.textContent);
+  check("the editor's labels are translated", labels.includes("Ocultar los niveles de batería"), JSON.stringify(labels));
+
+  // The panel's one message, for when the card itself failed to load.
+  const Panel = els.get("norman-panel");
+  const p = new Panel();
+  p.hass = inLanguage("ja");
+  const error = console.error;
+  console.error = () => {};
+  p._fail(new Error("test"));
+  console.error = error;
+  const message = byClass(p.shadowRoot, "error")[0]?.textContent || "";
+  check("the panel's load failure is translated", message.startsWith("Norman ブラインドを読み込めませんでした"), message);
+}
+
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);
 process.exit(fail?1:0);

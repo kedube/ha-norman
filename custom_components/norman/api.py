@@ -39,6 +39,7 @@ from .const import (
     NOTIF_MAX_DURATION,
     READ_CHUNK_SIZE,
     REQUEST_TIMEOUT,
+    SENSITIVE_HUB_KEYS,
     TRAFFIC_BODY_LIMIT,
     TRAFFIC_LATEST_RAW_LIMIT,
     TRAFFIC_MAX_EXCHANGES,
@@ -52,6 +53,46 @@ ENDPOINT_GET_ALL_PERIPHERAL = "/NM/v1/GetAllPeripheral"
 ENDPOINT_STATUS = "/NM/v1/status"
 ENDPOINT_CONTROL = "/NM/v1/control"
 ENDPOINT_NOTIFICATION = "/NM/v1/notification"
+
+# How much of a hub reply the debug log keeps. The traffic recorder keeps far more
+# (TRAFFIC_BODY_LIMIT) for diagnostics; a log line only needs the start.
+LOG_BODY_LIMIT = 500
+REDACTED = "**REDACTED**"
+
+
+def _redact_for_log(value: Any) -> Any:
+    """Blank the hub's identifying fields (SENSITIVE_HUB_KEYS) at any depth.
+
+    Diagnostics redact the same keys. A debug log gets pasted into public bug reports just
+    as often, and it used to carry the hub's ThingName and location in the clear.
+    """
+    if isinstance(value, dict):
+        return {
+            key: REDACTED if key in SENSITIVE_HUB_KEYS else _redact_for_log(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_for_log(item) for item in value]
+    return value
+
+
+def _body_for_log(text: str | None, secrets: tuple[str, ...]) -> str | None:
+    """A hub reply for the debug log: identifying fields blanked, then truncated.
+
+    A JSON reply is redacted by key and re-serialized compactly, so more of it fits in the
+    limit. Anything else is redacted by value, for the ``secrets`` the client already knows.
+    """
+    if not text:
+        return text
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = None
+    if isinstance(data, dict | list):
+        text = json.dumps(_redact_for_log(data), ensure_ascii=False, separators=(",", ":"))
+    for secret in secrets:
+        text = text.replace(secret, REDACTED)
+    return text[:LOG_BODY_LIMIT]
 
 
 class NormanApiError(HomeAssistantError):
@@ -296,7 +337,7 @@ class NormanApiClient:
         """POST a JSON payload and return the decoded JSON object.
 
         Every exchange, successful or not, is recorded in ``self.traffic`` and logged at
-        debug level (bodies truncated) for troubleshooting.
+        debug level (identifying fields redacted, bodies truncated) for troubleshooting.
 
         Raises:
             NormanConnectionError: the hub could not be reached or timed out.
@@ -354,7 +395,7 @@ class NormanApiClient:
         error: str | None,
         started: float,
     ) -> None:
-        """Record an exchange and mirror it to the debug log."""
+        """Record an exchange and mirror it, redacted, to the debug log."""
         self.traffic.record(
             "request",
             endpoint,
@@ -364,12 +405,15 @@ class NormanApiClient:
             error=error,
             started=started,
         )
+        if not _LOGGER.isEnabledFor(logging.DEBUG):
+            return
+        secrets = (self._thing_name,) if self._thing_name else ()
         _LOGGER.debug(
             "POST %s %s -> %s %s%s",
             endpoint,
-            payload,
+            _redact_for_log(payload),
             status,
-            text[:500] if text else text,
+            _body_for_log(text, secrets),
             f" ({error})" if error else "",
         )
 
@@ -536,11 +580,14 @@ class NormanApiClient:
     async def async_request_battery_report(self, room_id: int | None = None) -> None:
         """Ask every blind in a room, or on the hub, to report in.
 
-        ``{"ReportBatteryLevel": 0}`` is what the app's refresh button sends (captured
-        2026-09-18). The hub polls its blinds one after another; the whole hub took about
-        30 s, one room about 5 s, though the reference hub's single-rail blinds ignored the
-        hub-wide form. Despite the name the reply carries position and
-        last-seen as well as battery. ``room_id`` of ``None`` addresses the whole hub.
+        ``{"ReportBatteryLevel": 0}`` is what the app sent to refresh from its device &
+        battery status screen (captured 2026-09-18), which offers a refresh only while it
+        lists a blind as disconnected. The hub polls its blinds one after another; the
+        whole hub took about 30 s, one room about 5 s, though the reference hub's
+        single-rail blinds ignored the hub-wide form. Despite the name the reply carries
+        position and last-seen as well as battery. ``room_id`` of ``None`` addresses the
+        whole hub. On a hub of type 48 roller shades this, with the status requests that
+        follow it, closed every shade (issue #5).
         """
         await self.async_send_room_control(room_id, {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING})
 

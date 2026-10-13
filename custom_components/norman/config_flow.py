@@ -50,8 +50,6 @@ from .const import (
     MIN_POLL_INTERVAL,
     MIN_WAKE_INTERVAL,
     POLL_DISABLED,
-    SUGGESTED_POLL_INTERVAL,
-    SUGGESTED_WAKE_INTERVAL,
     WAKE_DISABLED,
     default_title,
     is_default_title,
@@ -71,7 +69,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 # validators. A plain function anywhere in here (say a vol.All(..., _check) wrapper) fails
 # that conversion while the form is being built, which surfaces as a bare 500 and a dialog
 # that never opens. So the range is expressed by the selector alone, and the one rule it
-# cannot express -- "0, or 10 to 3600", with a gap -- is enforced in the step handler.
+# cannot express -- "0, or 10 to 300", with a gap -- is enforced in the step handler.
 OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): NumberSelector(
@@ -246,11 +244,13 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
 class NormanOptionsFlow(OptionsFlow):
     """Let the user tune the two safety nets, the command spacing, and the sidebar entry.
 
-    Updates are pushed, so the poll only sets how quickly a change the hub never announced
-    is noticed. The wake sweep goes further: it has every blind report in, which refreshes
-    the hub's own cache (positions, battery, last seen) rather than re-reading it. Each
-    costs one request per interval; the sweep also wakes every battery blind's radio. The
-    sidebar toggle adds or removes the "Norman Shades" panel (frontend.py).
+    Updates are pushed, and the listener re-reads every blind each time it cycles the
+    stream, so the poll only shortens how long a missed notification goes unnoticed. The
+    wake sweep goes further: it asks each blind the app lists as disconnected to report in,
+    which refreshes the hub's own cache (positions, battery, last seen) for that blind
+    rather than re-reading it. The poll costs one request per interval; the sweep one per
+    disconnected blind, and none while every blind is connected. The sidebar toggle adds or
+    removes the "Norman Shades" panel (frontend.py).
     """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -258,7 +258,7 @@ class NormanOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # The selector bounds the value to 0-3600; the gap between "off" and the floor
+            # The selector bounds the value to 0-300; the gap between "off" and the floor
             # is checked here because a schema-level validator would not survive being
             # serialized for the frontend (see OPTIONS_SCHEMA).
             seconds = int(user_input[CONF_POLL_INTERVAL])
@@ -282,20 +282,28 @@ class NormanOptionsFlow(OptionsFlow):
                     }
                 )
 
-        # An entry that has never been configured shows the suggested values rather than the
-        # 0 defaults, so turning either on is one click instead of a guess at a sensible
-        # number. Leaving a field at 0 still stores 0. Options saved before the sidebar
-        # toggle existed lack its key, so the form falls back to its default: on.
+        # An entry that has never been configured is offered the defaults, both intervals
+        # off. A suggested value is submitted with the form, so suggesting anything else
+        # switches it on for whoever saves the form to change something else: suggesting
+        # 3600 did that to the wake sweep (issue #5), and 60 to the poll. Options saved
+        # before the sidebar toggle existed lack its key, so the form falls back to its
+        # default: on.
         suggested = (
             user_input
             or self.config_entry.options
             or {
-                CONF_POLL_INTERVAL: SUGGESTED_POLL_INTERVAL,
-                CONF_WAKE_INTERVAL: SUGGESTED_WAKE_INTERVAL,
+                CONF_POLL_INTERVAL: POLL_DISABLED,
+                CONF_WAKE_INTERVAL: WAKE_DISABLED,
                 CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
                 CONF_SHOW_SIDEBAR_PANEL: DEFAULT_SHOW_SIDEBAR_PANEL,
             }
         )
+        # Releases before the ceiling came down to 300 stored up to 3600. The coordinator
+        # runs those as off (const.py), so the form shows them as off too, rather than a
+        # number its own selector would refuse when the form is saved.
+        poll = suggested.get(CONF_POLL_INTERVAL)
+        if isinstance(poll, int | float) and poll > MAX_POLL_INTERVAL:
+            suggested = {**suggested, CONF_POLL_INTERVAL: POLL_DISABLED}
 
         return self.async_show_form(
             step_id="init",

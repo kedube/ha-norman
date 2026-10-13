@@ -70,18 +70,519 @@ const HUB_KEYS = new Set([
   "start_pairing",
 ]);
 
+// The card's own words, in the integration's languages (custom_components/norman/translations).
+// Home Assistant gives a custom card no translation catalogue, so they live here. The rail,
+// preset and battery words match the entity names in those files, and the Japanese and Chinese
+// follow the Norman app, as the entity names do. `{name}` is filled in by translate(); a key
+// ending `_one` / `_other` is chosen by count. A language missing a key falls back to English.
+const STRINGS = {
+  en: {
+    card_name: "Norman Shades",
+    card_description: "Norman blinds grouped by room, each drawn as a window you drag to move.",
+    heading_fallback: "Shades",
+    unassigned: "Unassigned",
+    empty: "No Norman blinds found. Set up the Norman integration, or check that its cover entities are not hidden.",
+    open_sidebar: "Open the sidebar",
+    preset_privacy: "Privacy",
+    preset_privacy_title: "Best privacy",
+    preset_view: "View",
+    preset_view_title: "Best view",
+    preset_favorite: "Favorite",
+    preset_favorite_title: "Favorite",
+    preset_every_room: "{preset} — every room",
+    preset_in_room: "{preset} — {room}",
+    room_presets: "Presets for {room}",
+    room_open: "Open every blind in {room}",
+    room_stop: "Stop every blind in {room}",
+    room_close: "Close every blind in {room}",
+    blind_details: "{name} details",
+    stop: "Stop",
+    stop_blind: "Stop {name}",
+    bottom_rail: "Bottom rail",
+    middle_rail: "Middle rail",
+    bottom_short: "Bottom",
+    middle_short: "Middle",
+    louvers: "Louvers",
+    position: "Position",
+    rail_position: "{rail} position",
+    blind_rail: "{name} {rail}",
+    blind_louvers: "{name} louvers",
+    blind_left_half: "{name} left half",
+    blind_right_half: "{name} right half",
+    percent: "{value}%",
+    percent_open: "{value}% open",
+    unavailable: "Unavailable",
+    position_unknown: "Position unknown",
+    open: "Open",
+    closed: "Closed",
+    privacy: "Privacy",
+    opening: "Opening · {value}%",
+    closing: "Closing · {value}%",
+    opening_rail: "Opening · {rail} {value}%",
+    closing_rail: "Closing · {rail} {value}%",
+    two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    shades_one: "{count} shade",
+    shades_other: "{count} shades",
+    all_closed: "all closed",
+    one_open: "open",
+    all_open: "all open",
+    some_open_one: "{count} open",
+    some_open_other: "{count} open",
+    moving: "{count} moving",
+    low_battery_one: "{count} low battery",
+    low_battery_other: "{count} low batteries",
+    battery: "Battery {value}",
+    battery_unknown: "Battery level unknown",
+    editor_title: "Title (leave empty to use the hub's name)",
+    editor_hub: "Hub (only needed with more than one)",
+    editor_hide_picture: "List layout (sliders instead of windows)",
+    editor_hide_battery: "Hide battery levels",
+    editor_hide_room_names: "Hide room headings",
+    editor_hide_room_controls: "Hide room open / stop / close",
+    editor_hide_room_presets: "Hide room presets",
+    editor_hide_home_controls: "Hide whole-house presets",
+  },
+  de: {
+    card_name: "Norman-Rollos",
+    card_description: "Norman-Rollos nach Raum gruppiert, jedes als Fenster gezeichnet, das du zum Bewegen ziehst.",
+    heading_fallback: "Rollos",
+    unassigned: "Nicht zugeordnet",
+    empty: "Keine Norman-Rollos gefunden. Richte die Norman-Integration ein oder prüfe, ob ihre Abdeckungs-Entitäten ausgeblendet sind.",
+    open_sidebar: "Seitenleiste öffnen",
+    preset_privacy: "Privatsphäre",
+    preset_privacy_title: "Beste Privatsphäre",
+    preset_view: "Aussicht",
+    preset_view_title: "Beste Aussicht",
+    preset_favorite: "Favorit",
+    preset_favorite_title: "Favoritenposition",
+    preset_every_room: "{preset} – alle Räume",
+    preset_in_room: "{preset} – {room}",
+    room_presets: "Voreinstellungen für {room}",
+    room_open: "Alle Rollos in {room} öffnen",
+    room_stop: "Alle Rollos in {room} stoppen",
+    room_close: "Alle Rollos in {room} schließen",
+    blind_details: "Details zu {name}",
+    stop: "Stopp",
+    stop_blind: "{name} stoppen",
+    bottom_rail: "Untere Schiene",
+    middle_rail: "Mittlere Schiene",
+    bottom_short: "Unten",
+    middle_short: "Mitte",
+    louvers: "Lamellen",
+    position: "Position",
+    rail_position: "Position: {rail}",
+    blind_rail: "{name}, {rail}",
+    blind_louvers: "{name}, Lamellen",
+    blind_left_half: "{name}, linke Hälfte",
+    blind_right_half: "{name}, rechte Hälfte",
+    percent: "{value} %",
+    percent_open: "{value} % offen",
+    unavailable: "Nicht verfügbar",
+    position_unknown: "Position unbekannt",
+    open: "Offen",
+    closed: "Geschlossen",
+    privacy: "Privatsphäre",
+    opening: "Öffnet · {value} %",
+    closing: "Schließt · {value} %",
+    opening_rail: "Öffnet · {rail} {value} %",
+    closing_rail: "Schließt · {rail} {value} %",
+    two_rails: "{middle_rail} {middle} % · {bottom_rail} {bottom} %",
+    shades_one: "{count} Rollo",
+    shades_other: "{count} Rollos",
+    all_closed: "alle geschlossen",
+    one_open: "offen",
+    all_open: "alle offen",
+    some_open_one: "{count} offen",
+    some_open_other: "{count} offen",
+    moving: "{count} in Bewegung",
+    low_battery_one: "{count} Batterie schwach",
+    low_battery_other: "{count} Batterien schwach",
+    battery: "Batterie {value}",
+    battery_unknown: "Batteriestand unbekannt",
+    editor_title: "Titel (leer lassen, um den Namen des Hubs zu verwenden)",
+    editor_hub: "Hub (nur bei mehr als einem nötig)",
+    editor_hide_picture: "Listenansicht (Schieberegler statt Fenster)",
+    editor_hide_battery: "Batteriestände ausblenden",
+    editor_hide_room_names: "Raumüberschriften ausblenden",
+    editor_hide_room_controls: "Öffnen / Stopp / Schließen der Räume ausblenden",
+    editor_hide_room_presets: "Voreinstellungen der Räume ausblenden",
+    editor_hide_home_controls: "Voreinstellungen für das ganze Haus ausblenden",
+  },
+  es: {
+    card_name: "Persianas Norman",
+    card_description: "Persianas Norman agrupadas por habitación, cada una dibujada como una ventana que arrastras para moverla.",
+    heading_fallback: "Persianas",
+    unassigned: "Sin asignar",
+    empty: "No se encontraron persianas Norman. Configura la integración Norman o comprueba que sus entidades de cubierta no estén ocultas.",
+    open_sidebar: "Abrir la barra lateral",
+    preset_privacy: "Privacidad",
+    preset_privacy_title: "Máxima privacidad",
+    preset_view: "Vista",
+    preset_view_title: "Mejor vista",
+    preset_favorite: "Favorita",
+    preset_favorite_title: "Posición favorita",
+    preset_every_room: "{preset} — todas las habitaciones",
+    preset_in_room: "{preset} — {room}",
+    room_presets: "Preajustes de {room}",
+    room_open: "Abrir todas las persianas de {room}",
+    room_stop: "Detener todas las persianas de {room}",
+    room_close: "Cerrar todas las persianas de {room}",
+    blind_details: "Detalles de {name}",
+    stop: "Detener",
+    stop_blind: "Detener {name}",
+    bottom_rail: "Riel inferior",
+    middle_rail: "Riel intermedio",
+    bottom_short: "Inferior",
+    middle_short: "Intermedio",
+    louvers: "Lamas",
+    position: "Posición",
+    rail_position: "Posición: {rail}",
+    blind_rail: "{name}, {rail}",
+    blind_louvers: "{name}, lamas",
+    blind_left_half: "{name}, mitad izquierda",
+    blind_right_half: "{name}, mitad derecha",
+    percent: "{value}%",
+    percent_open: "abierta al {value}%",
+    unavailable: "No disponible",
+    position_unknown: "Posición desconocida",
+    open: "Abierta",
+    closed: "Cerrada",
+    privacy: "Privacidad",
+    opening: "Abriendo · {value}%",
+    closing: "Cerrando · {value}%",
+    opening_rail: "Abriendo · {rail} {value}%",
+    closing_rail: "Cerrando · {rail} {value}%",
+    two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    shades_one: "{count} persiana",
+    shades_other: "{count} persianas",
+    all_closed: "todas cerradas",
+    one_open: "abierta",
+    all_open: "todas abiertas",
+    some_open_one: "{count} abierta",
+    some_open_other: "{count} abiertas",
+    moving: "{count} en movimiento",
+    low_battery_one: "{count} con batería baja",
+    low_battery_other: "{count} con batería baja",
+    battery: "Batería {value}",
+    battery_unknown: "Nivel de batería desconocido",
+    editor_title: "Título (déjalo vacío para usar el nombre del hub)",
+    editor_hub: "Hub (solo si hay más de uno)",
+    editor_hide_picture: "Vista de lista (controles deslizantes en lugar de ventanas)",
+    editor_hide_battery: "Ocultar los niveles de batería",
+    editor_hide_room_names: "Ocultar los títulos de las habitaciones",
+    editor_hide_room_controls: "Ocultar abrir / detener / cerrar de las habitaciones",
+    editor_hide_room_presets: "Ocultar los preajustes de las habitaciones",
+    editor_hide_home_controls: "Ocultar los preajustes de toda la casa",
+  },
+  fr: {
+    card_name: "Stores Norman",
+    card_description: "Les stores Norman regroupés par pièce, chacun dessiné comme une fenêtre que l'on fait glisser pour le déplacer.",
+    heading_fallback: "Stores",
+    unassigned: "Non attribué",
+    empty: "Aucun store Norman trouvé. Configurez l'intégration Norman ou vérifiez que ses entités de volet ne sont pas masquées.",
+    open_sidebar: "Ouvrir la barre latérale",
+    preset_privacy: "Intimité",
+    preset_privacy_title: "Intimité maximale",
+    preset_view: "Vue",
+    preset_view_title: "Meilleure vue",
+    preset_favorite: "Favori",
+    preset_favorite_title: "Position favorite",
+    preset_every_room: "{preset} — toutes les pièces",
+    preset_in_room: "{preset} — {room}",
+    room_presets: "Préréglages pour {room}",
+    room_open: "Ouvrir tous les stores de {room}",
+    room_stop: "Arrêter tous les stores de {room}",
+    room_close: "Fermer tous les stores de {room}",
+    blind_details: "Détails de {name}",
+    stop: "Arrêt",
+    stop_blind: "Arrêter {name}",
+    bottom_rail: "Rail inférieur",
+    middle_rail: "Rail intermédiaire",
+    bottom_short: "Bas",
+    middle_short: "Milieu",
+    louvers: "Lames",
+    position: "Position",
+    rail_position: "Position : {rail}",
+    blind_rail: "{name}, {rail}",
+    blind_louvers: "{name}, lames",
+    blind_left_half: "{name}, moitié gauche",
+    blind_right_half: "{name}, moitié droite",
+    percent: "{value} %",
+    percent_open: "ouvert à {value} %",
+    unavailable: "Indisponible",
+    position_unknown: "Position inconnue",
+    open: "Ouvert",
+    closed: "Fermé",
+    privacy: "Intimité",
+    opening: "Ouverture · {value} %",
+    closing: "Fermeture · {value} %",
+    opening_rail: "Ouverture · {rail} {value} %",
+    closing_rail: "Fermeture · {rail} {value} %",
+    two_rails: "{middle_rail} {middle} % · {bottom_rail} {bottom} %",
+    shades_one: "{count} store",
+    shades_other: "{count} stores",
+    all_closed: "tous fermés",
+    one_open: "ouvert",
+    all_open: "tous ouverts",
+    some_open_one: "{count} ouvert",
+    some_open_other: "{count} ouverts",
+    moving: "{count} en mouvement",
+    low_battery_one: "{count} batterie faible",
+    low_battery_other: "{count} batteries faibles",
+    battery: "Batterie {value}",
+    battery_unknown: "Niveau de batterie inconnu",
+    editor_title: "Titre (laisser vide pour utiliser le nom du hub)",
+    editor_hub: "Hub (seulement s'il y en a plusieurs)",
+    editor_hide_picture: "Affichage en liste (curseurs au lieu de fenêtres)",
+    editor_hide_battery: "Masquer les niveaux de batterie",
+    editor_hide_room_names: "Masquer les titres des pièces",
+    editor_hide_room_controls: "Masquer ouvrir / arrêter / fermer des pièces",
+    editor_hide_room_presets: "Masquer les préréglages des pièces",
+    editor_hide_home_controls: "Masquer les préréglages de toute la maison",
+  },
+  ja: {
+    card_name: "Norman ブラインド",
+    card_description: "Norman のブラインドを部屋ごとにまとめ、それぞれを窓として表示します。ドラッグして動かせます。",
+    heading_fallback: "ブラインド",
+    unassigned: "未割り当て",
+    empty: "Norman のブラインドが見つかりません。Norman インテグレーションを設定するか、カバーエンティティが非表示になっていないか確認してください。",
+    open_sidebar: "サイドバーを開く",
+    preset_privacy: "プライバシー",
+    preset_privacy_title: "プライバシー重視",
+    preset_view: "眺望",
+    preset_view_title: "眺望重視",
+    preset_favorite: "お気に入り",
+    preset_favorite_title: "お気に入り位置",
+    preset_every_room: "{preset} — すべての部屋",
+    preset_in_room: "{preset} — {room}",
+    room_presets: "{room}のプリセット",
+    room_open: "{room}のブラインドをすべて開く",
+    room_stop: "{room}のブラインドをすべて停止",
+    room_close: "{room}のブラインドをすべて閉じる",
+    blind_details: "{name}の詳細",
+    stop: "停止",
+    stop_blind: "{name}を停止",
+    bottom_rail: "ボトムレール",
+    middle_rail: "ミッドレール",
+    bottom_short: "ボトム",
+    middle_short: "ミッド",
+    louvers: "ルーバー",
+    position: "位置",
+    rail_position: "{rail}の位置",
+    blind_rail: "{name} {rail}",
+    blind_louvers: "{name} ルーバー",
+    blind_left_half: "{name} 左半分",
+    blind_right_half: "{name} 右半分",
+    percent: "{value}%",
+    percent_open: "開度 {value}%",
+    unavailable: "利用不可",
+    position_unknown: "位置不明",
+    open: "全開",
+    closed: "全閉",
+    privacy: "プライバシー",
+    opening: "開いています · {value}%",
+    closing: "閉じています · {value}%",
+    opening_rail: "開いています · {rail} {value}%",
+    closing_rail: "閉じています · {rail} {value}%",
+    two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    shades_one: "ブラインド {count} 台",
+    shades_other: "ブラインド {count} 台",
+    all_closed: "すべて閉じています",
+    one_open: "開いています",
+    all_open: "すべて開いています",
+    some_open_one: "{count} 台が開いています",
+    some_open_other: "{count} 台が開いています",
+    moving: "{count} 台が動作中",
+    low_battery_one: "{count} 台がバッテリー残量低下",
+    low_battery_other: "{count} 台がバッテリー残量低下",
+    battery: "バッテリー {value}",
+    battery_unknown: "バッテリー残量不明",
+    editor_title: "タイトル（空欄の場合はハブの名前を使用）",
+    editor_hub: "ハブ（複数ある場合のみ）",
+    editor_hide_picture: "リスト表示（窓の代わりにスライダー）",
+    editor_hide_battery: "バッテリー残量を非表示",
+    editor_hide_room_names: "部屋の見出しを非表示",
+    editor_hide_room_controls: "部屋の開く／停止／閉じるを非表示",
+    editor_hide_room_presets: "部屋のプリセットを非表示",
+    editor_hide_home_controls: "家全体のプリセットを非表示",
+  },
+  "zh-Hans": {
+    card_name: "Norman 窗帘",
+    card_description: "按房间分组的 Norman 窗帘，每个都画成一扇窗户，拖动即可移动。",
+    heading_fallback: "窗帘",
+    unassigned: "未分配",
+    empty: "未找到 Norman 窗帘。请设置 Norman 集成，或检查其窗帘实体是否被隐藏。",
+    open_sidebar: "打开侧边栏",
+    preset_privacy: "隐私",
+    preset_privacy_title: "最佳隐私",
+    preset_view: "视野",
+    preset_view_title: "最佳视野",
+    preset_favorite: "最爱",
+    preset_favorite_title: "我的最爱位置",
+    preset_every_room: "{preset} — 所有房间",
+    preset_in_room: "{preset} — {room}",
+    room_presets: "{room}的预设",
+    room_open: "打开{room}的所有窗帘",
+    room_stop: "停止{room}的所有窗帘",
+    room_close: "关闭{room}的所有窗帘",
+    blind_details: "{name}详情",
+    stop: "停止",
+    stop_blind: "停止{name}",
+    bottom_rail: "下梁",
+    middle_rail: "中梁",
+    bottom_short: "下梁",
+    middle_short: "中梁",
+    louvers: "叶片",
+    position: "位置",
+    rail_position: "{rail}位置",
+    blind_rail: "{name} {rail}",
+    blind_louvers: "{name} 叶片",
+    blind_left_half: "{name} 左半边",
+    blind_right_half: "{name} 右半边",
+    percent: "{value}%",
+    percent_open: "已打开 {value}%",
+    unavailable: "不可用",
+    position_unknown: "位置未知",
+    open: "已打开",
+    closed: "已关闭",
+    privacy: "隐私",
+    opening: "正在打开 · {value}%",
+    closing: "正在关闭 · {value}%",
+    opening_rail: "正在打开 · {rail} {value}%",
+    closing_rail: "正在关闭 · {rail} {value}%",
+    two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    shades_one: "{count} 个窗帘",
+    shades_other: "{count} 个窗帘",
+    all_closed: "全部关闭",
+    one_open: "已打开",
+    all_open: "全部打开",
+    some_open_one: "{count} 个已打开",
+    some_open_other: "{count} 个已打开",
+    moving: "{count} 个正在移动",
+    low_battery_one: "{count} 个电量低",
+    low_battery_other: "{count} 个电量低",
+    battery: "电量 {value}",
+    battery_unknown: "电量未知",
+    editor_title: "标题（留空则使用网关名称）",
+    editor_hub: "网关（仅在有多个时需要）",
+    editor_hide_picture: "列表布局（用滑块代替窗户）",
+    editor_hide_battery: "隐藏电量",
+    editor_hide_room_names: "隐藏房间标题",
+    editor_hide_room_controls: "隐藏房间的打开 / 停止 / 关闭",
+    editor_hide_room_presets: "隐藏房间预设",
+    editor_hide_home_controls: "隐藏全屋预设",
+  },
+  "zh-Hant": {
+    card_name: "Norman 窗簾",
+    card_description: "依房間分組的 Norman 窗簾，每個都畫成一扇窗戶，拖曳即可移動。",
+    heading_fallback: "窗簾",
+    unassigned: "未指派",
+    empty: "找不到 Norman 窗簾。請設定 Norman 整合，或檢查其窗簾實體是否已隱藏。",
+    open_sidebar: "開啟側邊欄",
+    preset_privacy: "隱私",
+    preset_privacy_title: "最佳隱私",
+    preset_view: "視野",
+    preset_view_title: "最佳視野",
+    preset_favorite: "最愛",
+    preset_favorite_title: "我的最愛位置",
+    preset_every_room: "{preset} — 所有房間",
+    preset_in_room: "{preset} — {room}",
+    room_presets: "{room}的預設",
+    room_open: "開啟{room}的所有窗簾",
+    room_stop: "停止{room}的所有窗簾",
+    room_close: "關閉{room}的所有窗簾",
+    blind_details: "{name}詳細資訊",
+    stop: "停止",
+    stop_blind: "停止{name}",
+    bottom_rail: "下樑",
+    middle_rail: "中樑",
+    bottom_short: "下樑",
+    middle_short: "中樑",
+    louvers: "葉片",
+    position: "位置",
+    rail_position: "{rail}位置",
+    blind_rail: "{name} {rail}",
+    blind_louvers: "{name} 葉片",
+    blind_left_half: "{name} 左半邊",
+    blind_right_half: "{name} 右半邊",
+    percent: "{value}%",
+    percent_open: "已開啟 {value}%",
+    unavailable: "無法使用",
+    position_unknown: "位置未知",
+    open: "已開啟",
+    closed: "已關閉",
+    privacy: "隱私",
+    opening: "正在開啟 · {value}%",
+    closing: "正在關閉 · {value}%",
+    opening_rail: "正在開啟 · {rail} {value}%",
+    closing_rail: "正在關閉 · {rail} {value}%",
+    two_rails: "{middle_rail} {middle}% · {bottom_rail} {bottom}%",
+    shades_one: "{count} 個窗簾",
+    shades_other: "{count} 個窗簾",
+    all_closed: "全部關閉",
+    one_open: "已開啟",
+    all_open: "全部開啟",
+    some_open_one: "{count} 個已開啟",
+    some_open_other: "{count} 個已開啟",
+    moving: "{count} 個正在移動",
+    low_battery_one: "{count} 個電量低",
+    low_battery_other: "{count} 個電量低",
+    battery: "電量 {value}",
+    battery_unknown: "電量未知",
+    editor_title: "標題（留空則使用集線器名稱）",
+    editor_hub: "集線器（僅在有多個時需要）",
+    editor_hide_picture: "清單版面（以滑桿取代窗戶）",
+    editor_hide_battery: "隱藏電量",
+    editor_hide_room_names: "隱藏房間標題",
+    editor_hide_room_controls: "隱藏房間的開啟 / 停止 / 關閉",
+    editor_hide_room_presets: "隱藏房間預設",
+    editor_hide_home_controls: "隱藏全屋預設",
+  },
+};
+
+/**
+ * Which of STRINGS to use: the user's language in Home Assistant (their profile setting),
+ * else the page's, else English. A regional variant uses its base language ("de-CH" is "de",
+ * "en-GB" is "en"), and Chinese picks its script from the tag ("zh-TW" and "zh-HK" are
+ * Traditional, anything else Simplified).
+ */
+const languageOf = (hass) => {
+  const wanted = String(
+    hass?.locale?.language || hass?.language || globalThis.document?.documentElement?.lang || "en",
+  );
+  if (STRINGS[wanted]) return wanted;
+  const [base, ...rest] = wanted.split(/[-_]/);
+  if (base.toLowerCase() === "zh") {
+    return rest.some((part) => /^(hant|tw|hk|mo)$/i.test(part)) ? "zh-Hant" : "zh-Hans";
+  }
+  return STRINGS[base.toLowerCase()] ? base.toLowerCase() : "en";
+};
+
+/** A string in `language`, with its `{placeholders}` filled from `vars`. */
+const translate = (language, key, vars = {}) => {
+  const strings = STRINGS[language] || STRINGS.en;
+  let text = strings[key] ?? STRINGS.en[key];
+  if (text === undefined) {
+    // A counted key: the language's plural category for the count, "one" or "other".
+    const category = new Intl.PluralRules(language).select(Number(vars.count)) === "one" ? "one" : "other";
+    text = strings[`${key}_${category}`] ?? STRINGS.en[`${key}_${category}`] ?? key;
+  }
+  return text.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ""));
+};
+
 // The Norman app's three presets. The short label is what is printed; the title is the full
-// name, used for the tooltip and for assistive technology.
+// name, used for the tooltip and for assistive technology. Both are keys into STRINGS.
 const PRESETS = [
-  { command: "best_privacy", icon: "mdi:blinds-horizontal", label: "Privacy", title: "Best privacy" },
-  { command: "best_view", icon: "mdi:weather-sunny", label: "View", title: "Best view" },
-  { command: "favorite", icon: "mdi:star", label: "Favorite", title: "Favorite" },
+  { command: "best_privacy", icon: "mdi:blinds-horizontal", label: "preset_privacy", title: "preset_privacy_title" },
+  { command: "best_view", icon: "mdi:weather-sunny", label: "preset_view", title: "preset_view_title" },
+  { command: "favorite", icon: "mdi:star", label: "preset_favorite", title: "preset_favorite_title" },
 ];
 
+// A room's open / stop / close: the icon, the cover service, and the tooltip's STRINGS key.
 const ROOM_ACTIONS = [
-  ["mdi:arrow-up", "open_cover", "Open"],
-  ["mdi:stop", "stop_cover", "Stop"],
-  ["mdi:arrow-down", "close_cover", "Close"],
+  ["mdi:arrow-up", "open_cover", "room_open"],
+  ["mdi:stop", "stop_cover", "room_stop"],
+  ["mdi:arrow-down", "close_cover", "room_close"],
 ];
 
 const clamp = (value, low = 0, high = 100) => Math.max(low, Math.min(high, value));
@@ -180,9 +681,6 @@ const skyOf = (sun) => {
   if (elevation > -6) return "dusk";
   return "night";
 };
-
-// "Middle rail" -> "Middle": the status line has room for a word, not a label.
-const shortLabel = (rail) => rail.label.split(" ")[0];
 
 const STYLES = `
   :host {
@@ -1148,12 +1646,30 @@ class NormanShadesCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    // Every word on the card is built in the user's language, so a change of language (from
+    // their profile) redraws it rather than patching values into the old words.
+    const language = languageOf(hass);
+    if (this._rendered && language !== this._language) {
+      this._signature = undefined;
+      this._rendered = false;
+    }
+    this._language = language;
     if (!this._rendered) {
       this._render();
       this._rendered = true;
     } else {
       this._update();
     }
+  }
+
+  /** A string in the user's language (see STRINGS). */
+  _t(key, vars) {
+    return translate(languageOf(this._hass), key, vars);
+  }
+
+  /** A percentage as the user's language writes it: "84%", or "84 %" in German and French. */
+  _pct(value) {
+    return this._t("percent", { value: Math.round(value) });
   }
 
   // The sidebar panel passes Home Assistant's `narrow` on (phones: the sidebar is hidden).
@@ -1215,7 +1731,7 @@ class NormanShadesCard extends HTMLElement {
         blinds.set(deviceId, {
           deviceId,
           name: device.name_by_user || device.name || fallbackName,
-          room: area.name || this._config.default_room || "Unassigned",
+          room: area.name || this._config.default_room || this._t("unassigned"),
           product: productOf(device),
           stack: null,
           bottomCover: null,
@@ -1293,7 +1809,7 @@ class NormanShadesCard extends HTMLElement {
    */
   _headingText() {
     const configured = this._config.title;
-    return configured !== undefined ? configured : (this._hubName() ?? "Shades");
+    return configured !== undefined ? configured : (this._hubName() ?? this._t("heading_fallback"));
   }
 
   /**
@@ -1358,25 +1874,27 @@ class NormanShadesCard extends HTMLElement {
       return [
         {
           key: "louvers",
-          label: "Louvers",
+          label: this._t("louvers"),
+          short: this._t("louvers"),
           coverId: blind.bottomCover,
           numberId: null,
           louvers: true,
         },
       ];
     }
+    // `short` is the word the status line has room for: "Middle" for "Middle rail". A label
+    // set in the card's config is shortened to its first word, as before.
+    const rail = (key, configured) => ({
+      key,
+      label: configured || this._t(`${key}_rail`),
+      short: configured ? configured.split(" ")[0] : this._t(`${key}_short`),
+    });
     const rails = [
-      {
-        key: "bottom",
-        label: this._config.bottom_label || "Bottom rail",
-        coverId: blind.bottomCover,
-        numberId: blind.bottomNumber,
-      },
+      { ...rail("bottom", this._config.bottom_label), coverId: blind.bottomCover, numberId: blind.bottomNumber },
     ];
     if (blind.middleCover || blind.middleNumber) {
       rails.push({
-        key: "middle",
-        label: this._config.middle_label || "Middle rail",
+        ...rail("middle", this._config.middle_label),
         coverId: blind.middleCover,
         numberId: blind.middleNumber,
       });
@@ -1434,7 +1952,7 @@ class NormanShadesCard extends HTMLElement {
     const header = el("div", "header");
     // Shown only in the sidebar panel where Home Assistant hides its sidebar (_wantsMenuButton).
     // It fires the same event as Home Assistant's own menu button, which opens the sidebar.
-    this._menuButton = this._iconButton("mdi:menu", "Open the sidebar", () =>
+    this._menuButton = this._iconButton("mdi:menu", this._t("open_sidebar"), () =>
       this.dispatchEvent(new CustomEvent("hass-toggle-menu", { bubbles: true, composed: true })),
     );
     this._menuButton.classList.add("menu");
@@ -1516,14 +2034,7 @@ class NormanShadesCard extends HTMLElement {
     ].filter(Boolean);
 
     if (!rooms.length) {
-      this._body.appendChild(
-        el(
-          "div",
-          "empty",
-          "No Norman blinds found. Set up the Norman integration, or check that its cover " +
-            "entities are not hidden.",
-        ),
-      );
+      this._body.appendChild(el("div", "empty", this._t("empty")));
       return;
     }
 
@@ -1559,7 +2070,7 @@ class NormanShadesCard extends HTMLElement {
       const tray = el("div", "tray");
       tray.hidden = true;
       tray.appendChild(this._buildRoomPresets(roomName));
-      const more = this._iconButton("mdi:dots-horizontal", `Presets for ${roomName}`, () => {
+      const more = this._iconButton("mdi:dots-horizontal", this._t("room_presets", { room: roomName }), () => {
         tray.hidden = !tray.hidden;
         more.classList.toggle("open", !tray.hidden);
         more.setAttribute("aria-expanded", String(!tray.hidden));
@@ -1584,7 +2095,7 @@ class NormanShadesCard extends HTMLElement {
     const controls = el("div", "icon-group room-buttons");
     for (const [icon, service, label] of ROOM_ACTIONS) {
       controls.appendChild(
-        this._iconButton(icon, `${label} every blind in ${roomName}`, () => {
+        this._iconButton(icon, this._t(label, { room: roomName }), () => {
           // Every rail in the room: the bottom rails, plus the middle rails of two-rail
           // blinds. One service call with a list, not one call per entity.
           const entityId = [];
@@ -1617,7 +2128,7 @@ class NormanShadesCard extends HTMLElement {
     const controls = el("div", "segmented home-buttons");
     for (const preset of PRESETS) {
       controls.appendChild(
-        this._buildChip(preset, `${preset.title} — every room`, () => {
+        this._buildChip(preset, this._t("preset_every_room", { preset: this._t(preset.title) }), () => {
           // No `room`: the action omits RoomID, which the hub reads as every blind.
           this._roomCommand({ command: preset.command });
         }),
@@ -1637,7 +2148,7 @@ class NormanShadesCard extends HTMLElement {
     const presets = el("div", "segmented room-presets");
     for (const preset of PRESETS) {
       presets.appendChild(
-        this._buildChip(preset, `${preset.title} — ${roomName}`, () => {
+        this._buildChip(preset, this._t("preset_in_room", { preset: this._t(preset.title), room: roomName }), () => {
           this._roomCommand({ room: roomName, command: preset.command });
         }),
       );
@@ -1658,7 +2169,7 @@ class NormanShadesCard extends HTMLElement {
   _buildChip(preset, title, onClick) {
     const chip = el("button", "chip");
     chip.type = "button";
-    chip.append(haIcon(preset.icon), el("span", null, preset.label));
+    chip.append(haIcon(preset.icon), el("span", null, this._t(preset.label)));
     chip.title = title;
     chip.setAttribute("aria-label", title);
     chip.addEventListener("click", () => {
@@ -1692,7 +2203,7 @@ class NormanShadesCard extends HTMLElement {
     const meta = el("div", "meta");
     const name = el("button", "name", blind.name);
     name.type = "button";
-    name.title = `${blind.name} details`;
+    name.title = this._t("blind_details", { name: blind.name });
     name.addEventListener("click", () => this._showMore(blind.bottomCover));
 
     const bottom = el("div", "meta-bottom");
@@ -1713,9 +2224,9 @@ class NormanShadesCard extends HTMLElement {
     const stop = el("button", "stop");
     stop.type = "button";
     stop.hidden = true;
-    stop.title = `Stop ${blind.name}`;
+    stop.title = this._t("stop_blind", { name: blind.name });
     stop.setAttribute("aria-label", stop.title);
-    stop.append(haIcon("mdi:stop"), el("span", null, "Stop"));
+    stop.append(haIcon("mdi:stop"), el("span", null, this._t("stop")));
     stop.addEventListener("click", () => this._stop(rails));
     // On the window's corner in the grid -- outside the window itself, so a press on it is
     // never taken for the start of a drag.
@@ -1801,7 +2312,7 @@ class NormanShadesCard extends HTMLElement {
       zone.setAttribute("aria-orientation", "vertical");
       zone.setAttribute("aria-valuemin", "0");
       zone.setAttribute("aria-valuemax", "100");
-      zone.setAttribute("aria-label", twoRail ? `${blind.name} ${rail.label.toLowerCase()}` : blind.name);
+      zone.setAttribute("aria-label", twoRail ? this._t("blind_rail", { name: blind.name, rail: rail.label }) : blind.name);
       return zone;
     });
     const bubble = el("div", "bubble");
@@ -1868,7 +2379,7 @@ class NormanShadesCard extends HTMLElement {
     zone.setAttribute("aria-orientation", "vertical");
     zone.setAttribute("aria-valuemin", "0");
     zone.setAttribute("aria-valuemax", "100");
-    zone.setAttribute("aria-label", `${blind.name} louvers`);
+    zone.setAttribute("aria-label", this._t("blind_louvers", { name: blind.name }));
     const marker = el("div", "marker");
     const bubble = el("div", "bubble");
 
@@ -1929,7 +2440,7 @@ class NormanShadesCard extends HTMLElement {
       zone.setAttribute("aria-orientation", "horizontal");
       zone.setAttribute("aria-valuemin", "0");
       zone.setAttribute("aria-valuemax", "100");
-      zone.setAttribute("aria-label", sides.length > 1 ? `${blind.name} ${side} half` : blind.name);
+      zone.setAttribute("aria-label", sides.length > 1 ? this._t(`blind_${side}_half`, { name: blind.name }) : blind.name);
       return { side, sheer, vanes, lead, zone, marker: el("div", "marker") };
     });
     const bubble = el("div", "bubble");
@@ -2384,13 +2895,13 @@ class NormanShadesCard extends HTMLElement {
     const { bubble } = shade;
     if (shade.drape) {
       const part = shade.parts.find((each) => each.side === shade.activeSide) || shade.parts[0];
-      bubble.textContent = `${Math.round(value)}%`;
+      bubble.textContent = this._pct(value);
       bubble.style.top = "42%";
       bubble.style.left = `${round3(this._drapeEdge(part, this._drapeReach(shade, this._shadeValue(shade, index))))}%`;
       bubble.classList.add("on");
       return;
     }
-    bubble.textContent = `${Math.round(value)}%`;
+    bubble.textContent = this._pct(value);
     bubble.style.top = shade.louvers
       ? "50%"
       : `${round3(this._railTop(shade, index, this._shadeValue(shade, index)))}%`;
@@ -2405,20 +2916,20 @@ class NormanShadesCard extends HTMLElement {
   /** The list layout's control for one rail: a plain range input, in 10% steps. */
   _buildSlider(rails, rail) {
     const row = el("label", "slider");
-    const label = el("span", "slider-label", rail.louvers ? "Louvers" : rails.length > 1 ? shortLabel(rail) : "Position");
+    const label = el("span", "slider-label", rail.louvers || rails.length > 1 ? rail.short : this._t("position"));
     const input = el("input");
     input.type = "range";
     input.min = "0";
     input.max = "100";
     input.step = String(stepOf(rail));
-    input.setAttribute("aria-label", `${rail.label} position`);
+    input.setAttribute("aria-label", this._t("rail_position", { rail: rail.label }));
     const value = el("span", "slider-value");
     const slider = { rail, row, input, value, holding: false };
     input.addEventListener("pointerdown", () => {
       slider.holding = true;
     });
     input.addEventListener("input", () => {
-      value.textContent = `${clampToStep(input.value, stepOf(rail))}%`;
+      value.textContent = this._pct(clampToStep(input.value, stepOf(rail)));
       input.style.setProperty?.("--n-fill", `${input.value}%`);
     });
     input.addEventListener("change", () => {
@@ -2536,9 +3047,9 @@ class NormanShadesCard extends HTMLElement {
         const kind = batteryClass(level);
         cell.batteryEl.className = `battery ${kind}`;
         cell.batteryEl.firstChild.setAttribute("icon", batteryIcon(level));
-        const shown = level === null ? "—" : `${Math.round(level)}%`;
+        const shown = level === null ? "—" : this._pct(level);
         cell.batteryEl.lastChild.textContent = shown;
-        cell.batteryEl.title = level === null ? "Battery level unknown" : `Battery ${shown}`;
+        cell.batteryEl.title = level === null ? this._t("battery_unknown") : this._t("battery", { value: shown });
         cell.batteryEl.setAttribute("aria-label", cell.batteryEl.title);
         if (kind === "low" || kind === "critical") lowBattery += 1;
       }
@@ -2565,7 +3076,7 @@ class NormanShadesCard extends HTMLElement {
         if (showMarker) part.marker.style.left = `${round3(this._drapeEdge(part, reach))}%`;
         part.lead.classList.toggle("moving", state.moving);
         part.zone.setAttribute("aria-valuenow", String(value));
-        part.zone.setAttribute("aria-valuetext", `${value}% open`);
+        part.zone.setAttribute("aria-valuetext", this._t("percent_open", { value }));
         part.zone.setAttribute("aria-disabled", String(unavailable));
       }
       return;
@@ -2582,7 +3093,7 @@ class NormanShadesCard extends HTMLElement {
       const zone = shade.zones[index];
       const value = Math.round(this._shadeValue(shade, index) ?? 0);
       zone.setAttribute("aria-valuenow", String(value));
-      zone.setAttribute("aria-valuetext", `${value}% open`);
+      zone.setAttribute("aria-valuetext", this._t("percent_open", { value }));
       zone.setAttribute("aria-disabled", String(unavailable));
     });
   }
@@ -2594,7 +3105,7 @@ class NormanShadesCard extends HTMLElement {
     const shown = this._railValue(rail);
     input.value = String(clampToStep(shown ?? 0, stepOf(rail)));
     input.style.setProperty?.("--n-fill", `${shown ?? 0}%`);
-    value.textContent = shown === null ? "—" : `${Math.round(shown)}%`;
+    value.textContent = shown === null ? "—" : this._pct(shown);
   }
 
   /**
@@ -2603,38 +3114,40 @@ class NormanShadesCard extends HTMLElement {
    * which way, and where it has got to.
    */
   _statusOf(rails, states, unavailable) {
-    if (unavailable) return "Unavailable";
+    if (unavailable) return this._t("unavailable");
     const travelling = states.findIndex((state) => state.moving);
     if (travelling >= 0) {
       const { current, shown } = states[travelling];
-      const verb = shown > current ? "Opening" : "Closing";
-      const which = rails.length > 1 ? `${shortLabel(rails[travelling])}\u00a0` : "";
-      return `${verb} · ${which}${Math.round(current)}%`;
+      const verb = shown > current ? "opening" : "closing";
+      const value = Math.round(current);
+      return rails.length > 1
+        ? this._t(`${verb}_rail`, { rail: rails[travelling].short, value })
+        : this._t(verb, { value });
     }
     const [bottom, middle] = states.map((state) => (state.shown === null ? null : Math.round(state.shown)));
-    if (bottom === null) return "Position unknown";
+    if (bottom === null) return this._t("position_unknown");
     if (rails.length < 2 || middle === null) {
-      if (bottom >= 100) return "Open";
-      if (bottom <= 0) return "Closed";
-      return `${bottom}% open`;
+      if (bottom >= 100) return this._t("open");
+      if (bottom <= 0) return this._t("closed");
+      return this._t("percent_open", { value: bottom });
     }
-    if (bottom >= 100 && middle >= 100) return "Open";
-    if (bottom <= 0 && middle <= 0) return "Closed";
-    if (bottom <= 0 && middle >= 100) return "Privacy";
-    return `${shortLabel(rails[1])}\u00a0${middle}%\u00a0· ${shortLabel(rails[0])}\u00a0${bottom}%`;
+    if (bottom >= 100 && middle >= 100) return this._t("open");
+    if (bottom <= 0 && middle <= 0) return this._t("closed");
+    if (bottom <= 0 && middle >= 100) return this._t("privacy");
+    return this._t("two_rails", { middle_rail: rails[1].short, middle, bottom_rail: rails[0].short, bottom });
   }
 
   _patchSummary(total, open, moving, lowBattery) {
     const summary = this._summary;
     if (!summary) return;
-    const parts = [[`${total} ${total === 1 ? "shade" : "shades"}`, ""]];
+    const parts = [[this._t("shades", { count: total }), ""]];
     if (total) {
-      if (open === 0) parts.push(["all closed", ""]);
-      else if (open === total) parts.push([total === 1 ? "open" : "all open", ""]);
-      else parts.push([`${open} open`, ""]);
+      if (open === 0) parts.push([this._t("all_closed"), ""]);
+      else if (open === total) parts.push([this._t(total === 1 ? "one_open" : "all_open"), ""]);
+      else parts.push([this._t("some_open", { count: open }), ""]);
     }
-    if (moving) parts.push([`${moving} moving`, "live"]);
-    if (lowBattery) parts.push([`${lowBattery} low ${lowBattery === 1 ? "battery" : "batteries"}`, "warn"]);
+    if (moving) parts.push([this._t("moving", { count: moving }), "live"]);
+    if (lowBattery) parts.push([this._t("low_battery", { count: lowBattery }), "warn"]);
 
     const key = parts.map((part) => part.join(":")).join("|");
     if (summary.dataset.key === key) return;
@@ -2659,14 +3172,14 @@ class NormanShadesCard extends HTMLElement {
  * like every other card's; plain inputs otherwise.
  */
 const EDITOR_FIELDS = [
-  { key: "title", label: "Title (leave empty to use the hub's name)", type: "text" },
-  { key: "config_entry_id", label: "Hub (only needed with more than one)", type: "entry" },
-  { key: "hide_picture", label: "List layout (sliders instead of windows)", type: "boolean" },
-  { key: "hide_battery", label: "Hide battery levels", type: "boolean" },
-  { key: "hide_room_names", label: "Hide room headings", type: "boolean" },
-  { key: "hide_room_controls", label: "Hide room open / stop / close", type: "boolean" },
-  { key: "hide_room_presets", label: "Hide room presets", type: "boolean" },
-  { key: "hide_home_controls", label: "Hide whole-house presets", type: "boolean" },
+  { key: "title", label: "editor_title", type: "text" },
+  { key: "config_entry_id", label: "editor_hub", type: "entry" },
+  { key: "hide_picture", label: "editor_hide_picture", type: "boolean" },
+  { key: "hide_battery", label: "editor_hide_battery", type: "boolean" },
+  { key: "hide_room_names", label: "editor_hide_room_names", type: "boolean" },
+  { key: "hide_room_controls", label: "editor_hide_room_controls", type: "boolean" },
+  { key: "hide_room_presets", label: "editor_hide_room_presets", type: "boolean" },
+  { key: "hide_home_controls", label: "editor_hide_home_controls", type: "boolean" },
 ];
 
 class NormanShadesCardEditor extends HTMLElement {
@@ -2676,8 +3189,16 @@ class NormanShadesCardEditor extends HTMLElement {
   }
 
   set hass(hass) {
+    const language = languageOf(hass);
+    const changed = this._config !== undefined && language !== languageOf(this._hass);
     this._hass = hass;
-    if (this._form) this._form.hass = hass;
+    // The labels are in the user's language, which is only known once hass arrives.
+    if (changed) this._render();
+    else if (this._form) this._form.hass = hass;
+  }
+
+  _label(field) {
+    return translate(languageOf(this._hass), field.label);
   }
 
   _changed(config) {
@@ -2705,7 +3226,7 @@ class NormanShadesCardEditor extends HTMLElement {
         text: { text: {} },
       };
       form.schema = EDITOR_FIELDS.map(({ key, type }) => ({ name: key, selector: selectors[type] }));
-      const labels = Object.fromEntries(EDITOR_FIELDS.map(({ key, label }) => [key, label]));
+      const labels = Object.fromEntries(EDITOR_FIELDS.map((field) => [field.key, this._label(field)]));
       form.computeLabel = (field) => labels[field.name] || field.name;
       form.addEventListener("value-changed", (event) => this._changed(event.detail.value));
       this._form = form;
@@ -2721,7 +3242,7 @@ class NormanShadesCardEditor extends HTMLElement {
       const row = document.createElement("label");
       row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 0;";
       const text = document.createElement("span");
-      text.textContent = field.label;
+      text.textContent = this._label(field);
       text.style.flex = "1";
       const input = document.createElement("input");
       input.type = field.type === "boolean" ? "checkbox" : "text";
@@ -2745,13 +3266,15 @@ if (!customElements.get("norman-shades-card-editor")) {
   customElements.define("norman-shades-card-editor", NormanShadesCardEditor);
 }
 
-// Register in the dashboard's "Add card" picker.
+// Register in the dashboard's "Add card" picker. There is no hass yet, so the page's language
+// (Home Assistant sets it to the user's) picks the words.
 window.customCards = window.customCards || [];
 if (!window.customCards.some((card) => card.type === "norman-shades-card")) {
+  const language = languageOf(null);
   window.customCards.push({
     type: "norman-shades-card",
-    name: "Norman Shades",
-    description: "Norman blinds grouped by room, each drawn as a window you drag to move.",
+    name: translate(language, "card_name"),
+    description: translate(language, "card_description"),
     preview: true,
     documentationURL: "https://github.com/kedube/ha-norman/blob/main/docs/dashboard.md",
   });

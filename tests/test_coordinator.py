@@ -33,6 +33,7 @@ from custom_components.norman.const import (
     MIN_CONTROL_INTERVAL,
     MIN_POLL_INTERVAL,
     MIN_WAKE_INTERVAL,
+    NOTIF_MAX_DURATION,
     POLL_DISABLED,
     WAKE_DISABLED,
 )
@@ -733,18 +734,15 @@ async def test_hub_outage_makes_entities_unavailable_until_it_recovers(
     assert hass.states.get(cover_entity_id(hass, UID_LIVING)).state == "open"
 
 
-async def test_polling_refreshes_a_position_the_hub_never_pushed(
+async def test_polling_catches_a_missed_notification(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,
     fake_hub: FakeHub,
 ) -> None:
-    """A blind whose radio slept still gets its real position picked up.
+    """A change in the hub's cache whose notification never arrived is picked up.
 
-    The hub only pushes a notification when it hears from a blind. A battery blind's radio
-    sleeps -- the Norman app shows it as "Disconnect" -- so a position changed at a remote
-    (or simply never confirmed) generates no notification at all. Without a poll the cached
-    position stays as it was indefinitely, and `is_closed` answers about the past, which
-    silently breaks automations that check state before acting.
+    The poll re-reads the same cache as a notification would, so this is all it can catch;
+    without it the change waits for the next cycle of the stream (see the next test).
     """
     hass.config_entries.async_update_entry(init_integration, options={CONF_POLL_INTERVAL: 60})
     await hass.async_block_till_done()
@@ -762,6 +760,36 @@ async def test_polling_refreshes_a_position_the_hub_never_pushed(
     assert hass.states.get(entity_id).state == "closed"
 
 
+async def test_cycling_the_stream_catches_a_missed_notification(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """With polling off, a missed notification is caught when the stream is cycled.
+
+    The listener cycles the stream every NOTIF_MAX_DURATION (300 s) and re-reads `status`
+    each time, which is why polling is off by default and an interval over 300 s adds
+    nothing.
+    """
+    assert init_integration.runtime_data.update_interval is None, "off by default"
+    entity_id = cover_entity_id(hass, UID_LIVING)
+
+    # The blind closes without the hub saying so: no notification is queued.
+    fake_hub.set_position(UID_LIVING, bottom=0)
+    assert hass.states.get(entity_id).state == "open", "still the stale cached position"
+
+    await notifications.put(None)  # the stream is cycled
+    await settle(hass)
+
+    assert hass.states.get(entity_id).state == "closed"
+
+
+def test_the_longest_poll_is_one_stream_cycle() -> None:
+    """Every refresh restarts the poll's timer, so a poll longer than a cycle never fires."""
+    assert MAX_POLL_INTERVAL == NOTIF_MAX_DURATION
+
+
 @pytest.mark.parametrize(
     ("option", "expected"),
     [
@@ -771,6 +799,7 @@ async def test_polling_refreshes_a_position_the_hub_never_pushed(
         (MAX_POLL_INTERVAL, timedelta(seconds=MAX_POLL_INTERVAL)),
         (POLL_DISABLED, None),  # 0 means push only
         (5, None),  # below the floor: falls back to the default (off)
+        (3600, None),  # saved by a release before the ceiling came down: never fired anyway
         (99999, None),  # above the ceiling
         (-1, None),  # negative
         ("banana", None),  # not a number
@@ -849,16 +878,18 @@ def test_wake_interval_option(option: object, expected: timedelta | None) -> Non
     assert _wake_interval(entry) == expected
 
 
-async def test_wake_sweep_has_every_blind_report_in_on_the_timer(
+async def test_wake_sweep_asks_only_disconnected_blinds(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """Each tick sends the hub-wide report verb, then a status request per single-rail blind.
+    """Each tick sends one StatusRequest per blind the app would list as disconnected.
 
-    The hub-wide ReportBatteryLevel sweep reached only the two-rail blinds on hardware; the
-    four single-rail ones ignored it every time, while a per-blind StatusRequest had one
-    answering in four seconds. So the sweep is followed by one request per single-rail
-    blind. Two-rail blinds get nothing extra: the sweep already covers them.
+    The living-room drape was last heard from in 2023, so it is asked. The bedroom shade
+    reported in just now, so it is left alone, as the app leaves a connected blind; the
+    status-only blind has never been dated, so it is unknown rather than disconnected.
+    Nothing goes hub-wide: the hub-wide ReportBatteryLevel closed a hub's type 48 roller shades
+    every time the sweep ran (issue #5).
     """
+    fake_hub.peripheral_status(UID_BEDROOM)["Timestamp"] = int(dt_util.utcnow().timestamp())
     hass.config_entries.async_update_entry(init_integration, options={CONF_WAKE_INTERVAL: 3600})
     await hass.async_block_till_done()
     before = len(fake_hub.control_calls)
@@ -867,10 +898,26 @@ async def test_wake_sweep_has_every_blind_report_in_on_the_timer(
     await settle(hass)
 
     calls = fake_hub.control_calls[before:]
-    assert [c.get("ReportBatteryLevel") for c in calls[:1]] == [0]
-    assert "RoomID" not in calls[0]
-    status_requests = [c["PeripheralUID"] for c in calls if "StatusRequest" in c]
-    assert status_requests == [UID_BEDROOM], "only the single-rail blind gets a status request"
+    assert [c.get("PeripheralUID") for c in calls] == [UID_LIVING]
+    assert calls[0]["StatusRequest"] == 0
+    assert not [c for c in calls if "ReportBatteryLevel" in c]
+
+
+async def test_wake_sweep_sends_nothing_while_every_blind_is_connected(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A hub whose blinds have all reported in within 24 h gets no sweep traffic at all."""
+    now = int(dt_util.utcnow().timestamp())
+    for uid in (UID_LIVING, UID_BEDROOM, UID_STATUS_ONLY):
+        fake_hub.peripheral_status(uid)["Timestamp"] = now
+    hass.config_entries.async_update_entry(init_integration, options={CONF_WAKE_INTERVAL: 3600})
+    await hass.async_block_till_done()
+    before = len(fake_hub.control_calls)
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3601))
+    await settle(hass)
+
+    assert fake_hub.control_calls[before:] == []
 
 
 async def test_wake_sweep_is_off_by_default(
@@ -880,7 +927,7 @@ async def test_wake_sweep_is_off_by_default(
     before = len(fake_hub.control_calls)
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(days=2))
     await settle(hass)
-    assert not [c for c in fake_hub.control_calls[before:] if "ReportBatteryLevel" in c]
+    assert fake_hub.control_calls[before:] == []
 
 
 @pytest.mark.parametrize(
@@ -966,9 +1013,8 @@ async def test_refresh_blinds_survives_an_empty_coordinator(
 ) -> None:
     """The sweep must not raise before the first refresh has populated ``data``.
 
-    Setup refreshes before the wake sweep is scheduled, so this is unreachable today; the
-    guard keeps a future reordering from turning into an AttributeError out of a timer
-    callback, where it would only ever be seen as a log line.
+    Setup refreshes before any button or action can call it, so this is unreachable today;
+    the guard keeps a future reordering from turning into an AttributeError.
     """
     mock_config_entry.add_to_hass(hass)
     coordinator = NormanCoordinator(

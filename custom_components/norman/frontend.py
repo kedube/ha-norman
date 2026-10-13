@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import re
 
 from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
@@ -46,6 +47,19 @@ PANEL_FILENAME = "norman-panel.js"
 PANEL_ELEMENT = "norman-panel"
 PANEL_URL_PATH = "norman-shades"
 PANEL_TITLE = "Norman Shades"
+# The sidebar entry's title in each of the integration's languages: the card's own name for
+# itself (card_name in www/norman-shades-card.js). Home Assistant shows a custom panel's title
+# exactly as registered, with no per-user translation, so the server's language picks one;
+# the card inside the panel follows each user's own language.
+PANEL_TITLES = {
+    "en": PANEL_TITLE,
+    "de": "Norman-Rollos",
+    "es": "Persianas Norman",
+    "fr": "Stores Norman",
+    "ja": "Norman ブラインド",
+    "zh-Hans": "Norman 窗帘",
+    "zh-Hant": "Norman 窗簾",
+}
 PANEL_ICON = "mdi:blinds-horizontal"
 # Entries that are set up (entry id -> entry), and the panels registered (url -> spec).
 _PANEL_ENTRIES_KEY = f"{DOMAIN}_panel_entries"
@@ -211,15 +225,32 @@ async def _async_sync_panels_safely(hass: HomeAssistant) -> None:
         _LOGGER.exception("Norman could not update its sidebar panel")
 
 
-def _wanted_panels(entries: list[ConfigEntry]) -> dict[str, _PanelSpec]:
+def panel_title(language: str | None) -> str:
+    """The sidebar title in ``language``, matched the way the card matches it, else English.
+
+    A regional variant uses its base language ("de-CH" is "de"), and Chinese picks its script
+    from the tag ("zh-TW" and "zh-HK" are Traditional, anything else Simplified).
+    """
+    wanted = language or "en"
+    if wanted in PANEL_TITLES:
+        return PANEL_TITLES[wanted]
+    base, *rest = re.split(r"[-_]", wanted)
+    if base.lower() == "zh":
+        traditional = any(part.lower() in {"hant", "tw", "hk", "mo"} for part in rest)
+        return PANEL_TITLES["zh-Hant" if traditional else "zh-Hans"]
+    return PANEL_TITLES.get(base.lower(), PANEL_TITLE)
+
+
+def _wanted_panels(entries: list[ConfigEntry], language: str | None) -> dict[str, _PanelSpec]:
     """The sidebar panels these set-up entries call for: url path -> (title, config items).
 
-    One hub gets plain "Norman Shades" at /norman-shades and a card with no hub pinned, which
-    shows the same blinds as a card added to a dashboard. With several hubs each panel is
-    titled after its entry and pins its hub, since the card otherwise shows every hub's blinds
-    together and its whole-house buttons would not know which hub to send to.
+    One hub gets plain "Norman Shades" (in the server's language) at /norman-shades and a card
+    with no hub pinned, which shows the same blinds as a card added to a dashboard. With several
+    hubs each panel is titled after its entry and pins its hub, since the card otherwise shows
+    every hub's blinds together and its whole-house buttons would not know which hub to send to.
     """
     several = len(entries) > 1
+    default = panel_title(language)
     wanted: dict[str, _PanelSpec] = {}
     titles: set[str] = set()
     showing = [
@@ -229,7 +260,7 @@ def _wanted_panels(entries: list[ConfigEntry]) -> dict[str, _PanelSpec]:
     ]
     for number, entry in enumerate(showing, start=1):
         url_path = PANEL_URL_PATH if number == 1 else f"{PANEL_URL_PATH}-{number}"
-        title = (entry.title or PANEL_TITLE) if several else PANEL_TITLE
+        title = (entry.title or default) if several else default
         if title in titles:
             title = f"{title} {number}"
         titles.add(title)
@@ -248,7 +279,7 @@ async def _async_sync_panels(hass: HomeAssistant) -> None:
         active.values(),
         key=lambda entry: order.index(entry.entry_id) if entry.entry_id in order else len(order),
     )
-    wanted = _wanted_panels(entries)
+    wanted = _wanted_panels(entries, hass.config.language)
     registered: dict[str, _PanelSpec] = hass.data.setdefault(_PANELS_KEY, {})
     for url_path, spec in list(registered.items()):
         if wanted.get(url_path) == spec:

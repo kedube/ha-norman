@@ -47,7 +47,7 @@ to move it. It finds your blinds by itself and needs no configuration.*
 | [docs/dashboard.md](docs/dashboard.md) | **Norman Shades**: what it shows, putting it on a dashboard, and building your own |
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
 | [docs/options.md](docs/options.md) | Polling, wake sweeps, command spacing, and the sidebar entry |
-| [docs/services.md](docs/services.md) | All four actions, and the hub verbs `send_hub_command` can send |
+| [docs/services.md](docs/services.md) | All five actions, and the hub verbs `send_hub_command` can send |
 | [docs/NORMAN_API.md](docs/NORMAN_API.md) | The hub's local API, for contributors |
 
 ## Installation
@@ -56,7 +56,7 @@ to move it. It finds your blinds by itself and needs no configuration.*
 >
 > - A Norman Hub on the same network as Home Assistant, reachable on TCP port 10123.
 > - Home Assistant 2026.3 or newer (`hacs.json` declares this minimum; it is what the
->   bundled brand icon needs). The test suite runs against 2026.9.
+>   bundled brand icon needs). CI tests against the latest Home Assistant release.
 
 ### Method 1: HACS custom repository
 
@@ -79,15 +79,16 @@ After restart, add the integration from Home Assistant:
 
 ## Upgrading
 
-Every push to `main` publishes a release, so updates appear within a day or two of a change.
+Every push to `main` that passes CI publishes a release, so updates appear within a day or two
+of a change.
 The [changelog](CHANGELOG.md) lists what each version did, and the
 [Releases page](https://github.com/kedube/ha-norman/releases) carries the same notes.
 
 **Through HACS.** HACS checks for new releases on its own schedule and surfaces Norman as an
 update when one is available — as an update entity, and in the HACS panel itself.
 
-1. Open **HACS → Norman → Update**, or use Norman's update entity from
-   **Settings → Devices & services → Updates**.
+1. Open **HACS → Norman → Update**, or install it from the update listed at the top of
+   **Settings**.
 2. **Restart Home Assistant.** A downloaded update does nothing until the restart, because a
    custom integration's files are only read at startup.
 3. Confirm the new version under **Settings → Devices & services → Norman**, or on the hub
@@ -114,7 +115,7 @@ restart Home Assistant.
   updates the display name but keeps the entity id it generated on first registration, so
   dashboards and automations keep working. A name you set yourself always wins.
 - **Migrations run once, automatically.** Entries created before 0.11 are re-keyed to the
-  hub's own identity, and the battery sensor's unique id was migrated in 0.15. Both happen
+  hub's own identity, and the battery sensor's unique id was migrated in 0.12. Both happen
   silently the first time the new version loads.
 - **Downgrading is safe** as far as the integration is concerned; entities added by a newer
   version simply become unavailable and can be deleted.
@@ -132,16 +133,16 @@ entry's switch are described in [docs/options.md](docs/options.md).
 **Discovered.** The hub announces itself on the local network, so once the integration is
 installed a **Norman Hub (address)** card appears under **Settings → Devices & services →
 Discovered**. Click **Add**, confirm, and Home Assistant contacts the hub, reads its identity,
-and creates one cover entity per blind, named as in the Norman app; the entry itself takes the
-hub's name from the app. Discovery needs Home
+and creates a device for every blind, with its covers, sliders, buttons and sensors, named as in
+the Norman app; the entry itself takes the hub's name from the app. Discovery needs Home
 Assistant and the hub on the same network segment (mDNS does not cross routers or most VLANs).
 
 **By address.** If nothing is discovered:
 
 1. Add the integration (see [Installation](#installation)).
 2. Enter the hub's **IP address or hostname** (no port, no `http://`). Look in your router's
-   client list for a device named after the hub (its hostname is `Dexatek`), or check the Norman
-   app's hub settings.
+   client list for a device named after the hub (its hostname is `Dexatek`). The Norman app
+   does not show the hub's address: it signs in to your account and finds the hub itself.
 3. Submit.
 
 The hub identifies itself by a stable name, so re-adding the same hub by a different address
@@ -194,10 +195,10 @@ jog down and **request status** (ask a quiet blind to report in); diagnostic sen
 version**; and a **connection** sensor that turns off after a day of silence, the app's own
 "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
 and (disabled) **Wi-Fi signal** sensors; **all blinds** rail sliders and best privacy, best
-view, favorite, stop and jog buttons (one request for the whole house); **refresh blinds**,
-**start pairing** and a **pairing mode** sensor. **Each room** gets a device in its area with
-the same for the room: a slider per rail, stop, the presets, jog and refresh, each one request
-to the hub. Full detail, including availability rules, is in [docs/entities.md](docs/entities.md).
+view, favorite, stop and jog buttons, which reach the whole house in one request where they
+can; **refresh blinds**, **start pairing** and a **pairing mode** sensor. **Each room** gets a
+device in its area with the same for the room: a slider per rail, stop, the presets, jog and
+refresh. Full detail, including availability rules, is in [docs/entities.md](docs/entities.md).
 
 <img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, connection, last seen and Request status; Activity with the rails' recent moves." width="820">
 
@@ -222,8 +223,9 @@ Alongside the standard cover actions, the integration provides five of its own:
 - `norman.nudge_tilt` — tilt by `step` (positive opens: a two-rail blind's middle rail, or
   a SmartDrape's, PerfectSheer's or Shutter's vanes and louvers).
 - `norman.room_command` — run a Norman app room button (`best_privacy`, `best_view`,
-  `favorite`) against every blind in a room, in one request to the hub. For any other position,
-  use the room's sliders ([a whole room to any position](docs/services.md#a-whole-room-to-any-position)).
+  `favorite`) against every blind in a room, in one request to the hub, or `refresh` to have
+  the room's blinds report in. For any other position, use the room's sliders
+  ([a whole room to any position](docs/services.md#a-whole-room-to-any-position)).
 - `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports.
 - `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for
   one blind, for the verbs that have no entity of their own (limits, calibration, run-to-limit).
@@ -232,6 +234,9 @@ The nudges are relative to where the blind is **heading**, so repeated presses a
 clamp to 0–100. See [docs/services.md](docs/services.md).
 
 ### Automation ideas
+
+The entity ids below are for a blind named "Living Drape" in the area "Living Room"; yours
+depend on your blinds' names and areas, and are shown on each device page.
 
 Close the drapes at sunset, keeping whatever tilt they have:
 
@@ -242,7 +247,7 @@ triggers:
 actions:
   - action: cover.close_cover
     target:
-      entity_id: cover.living_drape
+      entity_id: cover.living_room_living_drape_bottom_rail
 ```
 
 A dashboard button that nudges the tilt a little at a time:
@@ -254,23 +259,23 @@ tap_action:
   action: perform-action
   perform_action: norman.nudge_tilt
   target:
-    entity_id: cover.living_drape
+    entity_id: cover.living_room_living_drape_bottom_rail
   data:
     step: -10
 ```
 
-Notify if a blind stops responding:
+Notify when a blind ignores a command. The integration fires `norman_command_failed` once
+a move has gone unanswered after three sends; a cover itself stays available, because a quiet
+blind usually still works:
 
 ```yaml
 triggers:
-  - trigger: state
-    entity_id: cover.living_drape
-    to: unavailable
-    for: "00:10:00"
+  - trigger: event
+    event_type: norman_command_failed
 actions:
   - action: notify.notify
     data:
-      message: The living room drape has been unreachable for 10 minutes.
+      message: "{{ trigger.event.data.name }} did not move after {{ trigger.event.data.attempts }} tries."
 ```
 
 ## How it works
@@ -279,15 +284,16 @@ actions:
   integration never contacts Norman's servers and opens no listening ports.
 - **Push updates.** The integration holds a long-poll connection open to the hub, which
   notifies it whenever a blind's state changes. **Request status** (per blind) and **Refresh
-  blinds** (hub) wake a quiet blind on demand; optional polling and wake sweeps do the same on
-  a timer ([docs/options.md](docs/options.md)).
+  blinds** (hub) wake a quiet blind on demand; an optional wake sweep does the same on a timer
+  for blinds the Norman app would list as disconnected ([docs/options.md](docs/options.md)).
 - **Commands are paced.** The hub has one radio and drops commands sent faster than it can
   transmit them, so they are queued and spaced ([docs/options.md](docs/options.md#command-spacing)).
 - **Ignored commands are chased.** A blind silent a minute after a command is asked to report
   in and resent, up to three sends, then logged as a warning ([more](docs/entities.md#data-updates)).
 - **Reconnects.** The long-poll is recycled every 5 minutes (old connections go quiet), and
-  re-established 15 seconds after any drop. Every reconnect re-reads the list of blinds, so a
-  blind paired after setup shows up without a restart.
+  re-established 15 seconds after any drop. Every reconnect re-reads the list of blinds and
+  their state, so a blind paired after setup shows up without a restart, and a missed
+  notification is caught within 5 minutes.
 - **Renames follow the app.** The hub also announces edits made in the Norman app; renaming a
   blind, a room, or the hub there updates the matching device name in Home Assistant within a
   second. A name you set in Home Assistant yourself is kept.
@@ -306,7 +312,10 @@ The protocol itself is described in [docs/NORMAN_API.md](docs/NORMAN_API.md).
 
 English, Japanese, Chinese (Traditional and Simplified), German, French, and Spanish. The
 Japanese and Chinese wording follows the Norman app's own, so entity names match what the app
-shows. Error messages are translated as well.
+shows. Error messages are translated as well, and so is **Norman Shades**: the sidebar page and
+the dashboard card follow each user's language in their Home Assistant profile, and the sidebar
+entry's own title follows the server's language (Home Assistant cannot translate a custom
+sidebar entry per user). Any other language gets English.
 
 ## Supported devices
 
@@ -322,8 +331,9 @@ shows. Error messages are translated as well.
 | Shutter | 1 | One `shutter` cover, **Louvers**: how open the louvers are as tilt, in five steps; open and close turn them. |
 | Anything else | other | Treated as two-rail, and a warning asks you to report the type. |
 
-**Tested on:** cellular shades (32/2 and 33/3) in day-to-day use, and a Roller Shade and a
-SmartDrape by their owner ([#2](https://github.com/kedube/ha-norman/issues/2)). The other rows
+**Tested on:** cellular shades (32/2 and 33/3) in day-to-day use, a Roller Shade and a
+SmartDrape by their owner ([#2](https://github.com/kedube/ha-norman/issues/2)), and three
+Roller Shades in [#5](https://github.com/kedube/ha-norman/issues/5). The other rows
 follow the Norman app itself (ShadeAuto 0.8.33): the controls it shows for each product and the
 values it sends. Nobody has reported them from a hub yet, so if you have one, a
 `norman.get_hub_data` response in an issue confirms it — as it does for anything that logs the
@@ -333,15 +343,22 @@ unknown-type warning or behaves differently from its row.
 
 - **No authentication on the hub.** That is the vendor protocol, not a choice of this
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
-- **Four of the six `ModuleType` codes come from the Norman app alone** (1, 49, and the
-  PerfectSheer and top-down/bottom-up details); see [Supported devices](#supported-devices).
+- **Several products are known only from the Norman app**: the Shutter (`ModuleType` 1), the
+  MRS2 rollers (49), and the Roman Shade, PerfectSheer and top-down/bottom-up cellular details
+  (48/2, 48/3, 32/3–5). See [Supported devices](#supported-devices).
+- **Refresh blinds can close type 48 roller shades.** On one hub of Roller Shades, the hub's
+  **Refresh blinds** button closed every shade
+  ([#5](https://github.com/kedube/ha-norman/issues/5)). Avoid it on those shades until that is
+  understood.
 - **No speed, direction, or limit-setting entities.** The limit-setting and calibration verbs
   were captured from the Norman app and can be sent with `send_hub_command` (see
   [docs/services.md](docs/services.md#hub-verbs)); they have no entity because they change how
   a blind travels. Motor speed and direction reversing live in the app's Engineering Settings
-  screen and have not been captured, so their syntax is unknown.
+  screen; the hub lists both verbs, but neither has been captured from the app, so how to use
+  them is unconfirmed.
 - **Blinds move slowly, and nothing reports that they are moving.** A large shade can take
-  ~30 seconds to travel, during which the hub keeps reporting the old position; only the target
+  ~30 seconds to travel, and a roller shade up to a minute, during which the hub keeps
+  reporting the old position; only the target
   changes immediately. Automations that check a position right after commanding one will read
   the previous value.
 - **Commanding many blinds at once takes time.** The hub's radio drops commands sent too
@@ -361,8 +378,9 @@ unknown-type warning or behaves differently from its row.
 **Setup fails with "Failed to connect to the Norman Hub".**
 Home Assistant could not reach the address on port 10123 within 10 seconds. Check the address
 in your router, make sure Home Assistant and the hub are on the same network (or that the route
-and firewall allow the connection), and try `curl -X POST http://<hub-ip>:10123/NM/v1/status`
-from a machine on the same network; a JSON reply means the hub is reachable.
+and firewall allow the connection), and try `curl -X POST -d '{}' http://<hub-ip>:10123/NM/v1/status`
+from a machine on the same network; a JSON reply means the hub is reachable. Keep the `-d '{}'`:
+without a body the hub answers with an empty reply even when it is working.
 
 **A blind or feature the integration does not support.**
 Turn on [debug logging](#debug-logging) and leave it for a day. Any field your hub sends that
@@ -385,9 +403,9 @@ reachable but this persists, restart the hub.
 
 **A change made with the remote or the app takes a long time to show up.**
 The push channel is down and the integration is running on command-time refreshes only. Look
-for `Notification listener disconnected` in the log. It reconnects every 15 seconds; if the
-message keeps repeating at debug level, the hub is refusing the long-poll — a hub restart
-usually clears it.
+for `Notification listener disconnected` in the log. It retries every 15 seconds; if
+`Notification listener still down` keeps repeating at debug level, the hub is refusing the
+long-poll — a hub restart usually clears it.
 
 **A blind I just paired does not appear.**
 It appears on the next reconnect of the push channel (at most 5 minutes). Reloading the
@@ -424,14 +442,15 @@ services → Norman → ⋮ → Download diagnostics**. It contains:
 - **`hub_traffic`**: a capture of the communication with the hub, taken below the parsing
   layer. `latest_raw` holds the last complete response from each endpoint (so the full device
   list and status are always there, including fields the integration does not understand), and
-  `exchanges` holds the most recent 50 requests, responses, and notification-stream chunks with
+  `exchanges` holds the most recent 200 requests, responses, and notification-stream chunks with
   timestamps, HTTP status, duration, and any error.
 
 The hub's address, identity (`ThingName`), location (`GeoLoc`), Wi-Fi network name, time zone,
 custom hub name, and network id are redacted everywhere, including inside the raw bodies; real
-hubs do send all of these. Everything else is blind state. Because the raw capture may contain fields nobody has
-seen yet, skim it before posting; then attach it to the issue. Reproduce the problem shortly
-before downloading, since the capture is the last 50 exchanges and is not kept across restarts.
+hubs do send all of these. Everything else is blind state. Because the raw capture may contain
+fields nobody has seen yet, skim it before posting; then attach it to the issue. Reproduce the
+problem shortly before downloading, since the capture is the last 200 exchanges and is not kept
+across restarts.
 
 ### Capturing a specific problem
 
@@ -458,8 +477,10 @@ logger:
     custom_components.norman: debug
 ```
 
-Debug output includes every notification the hub sends and the reasons for each reconnect. It
-contains blind ids and positions but no credentials (the hub has none). Turn it back off after
+Debug output includes every request and reply, every notification the hub sends, and the
+reasons for each reconnect. The hub's identity, location and Wi-Fi network name are redacted, as
+in diagnostics, but the log does contain the hub's local IP address and your blind and room
+names, ids and positions; there are no credentials (the hub has none). Turn it back off after
 capturing what you need; it is verbose while blinds are moving.
 
 ## Development

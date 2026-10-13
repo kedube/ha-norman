@@ -26,6 +26,31 @@ const cardReady = customElements.get("norman-shades-card")
       },
     );
 
+// The one thing the panel says itself: that the card would not load. It cannot borrow the
+// card's words for that, so it keeps its own, in the integration's languages.
+const LOAD_FAILED = {
+  en: "Norman Shades couldn't load. Reload the page; if it keeps happening, check the browser console.",
+  de: "Norman-Rollos konnten nicht geladen werden. Lade die Seite neu; wenn das wieder passiert, sieh in der Browserkonsole nach.",
+  es: "No se pudo cargar Persianas Norman. Recarga la página; si sigue ocurriendo, revisa la consola del navegador.",
+  fr: "Impossible de charger Stores Norman. Rechargez la page ; si le problème persiste, consultez la console du navigateur.",
+  ja: "Norman ブラインドを読み込めませんでした。ページを再読み込みしてください。繰り返し発生する場合は、ブラウザのコンソールを確認してください。",
+  "zh-Hans": "无法加载 Norman 窗帘。请重新加载页面；如果问题持续，请查看浏览器控制台。",
+  "zh-Hant": "無法載入 Norman 窗簾。請重新載入頁面；若問題持續發生，請檢查瀏覽器主控台。",
+};
+
+// The user's language, as the card picks it (norman-shades-card.js, languageOf).
+const languageOf = (hass) => {
+  const wanted = String(
+    hass?.locale?.language || hass?.language || globalThis.document?.documentElement?.lang || "en",
+  );
+  if (LOAD_FAILED[wanted]) return wanted;
+  const [base, ...rest] = wanted.split(/[-_]/);
+  if (base.toLowerCase() === "zh") {
+    return rest.some((part) => /^(hant|tw|hk|mo)$/i.test(part)) ? "zh-Hant" : "zh-Hans";
+  }
+  return LOAD_FAILED[base.toLowerCase()] ? base.toLowerCase() : "en";
+};
+
 const STYLES = `
   :host {
     display: block;
@@ -112,8 +137,7 @@ class NormanPanel extends HTMLElement {
   _fail(err) {
     const message = document.createElement("div");
     message.className = "error";
-    message.textContent =
-      "Norman Shades couldn't load. Reload the page; if it keeps happening, check the browser console.";
+    message.textContent = LOAD_FAILED[languageOf(this._hass)];
     this._page.append(message);
     // eslint-disable-next-line no-console
     console.error("norman: the sidebar panel could not load the card", err);

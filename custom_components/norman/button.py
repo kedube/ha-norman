@@ -131,10 +131,12 @@ class NormanHubButtonDescription(ButtonEntityDescription):
     moves_blinds: bool = False
 
 
-# The hub's own buttons. Refresh blinds is the app's refresh on its device & battery status
-# screen: the hub polls its blinds in turn (~30 s for the reference hub's nine two-rail
+# The hub's own buttons. Refresh blinds sends the hub-wide report-in the app sent from its
+# device & battery status screen, which offers it only while a blind is listed as
+# disconnected: the hub polls its blinds in turn (~30 s for the reference hub's nine two-rail
 # ones), and the coordinator follows up with a status request to each single-rail blind,
-# which the hub-wide sweep skipped on the reference hub. Room scope is `norman.room_command`
+# which the hub-wide sweep skipped on the reference hub. On a hub of type 48 roller shades a
+# press closed every shade (issue #5). Room scope is `norman.room_command`
 # with `refresh`. Start pairing opens the hub's ten-minute pairing window (the Pairing mode
 # sensor shows it); the rest of pairing happens at the blind and in the app.
 HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
