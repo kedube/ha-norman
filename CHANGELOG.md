@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.81 — 2026-10-13
 
 - **Room-wide and hub-wide presets are checked blind by blind.** Best privacy, Best view and
   Favorite for a room or the whole house (the buttons, and `norman.room_command`) go out as
