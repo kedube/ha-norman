@@ -230,6 +230,12 @@
       },
       "room_refresh": {
         "name": "Actualiser les stores"
+      },
+      "report_battery_levels": {
+        "name": "Signaler les niveaux de batterie (peut fermer les stores)"
+      },
+      "room_report_battery_levels": {
+        "name": "Signaler les niveaux de batterie (peut fermer les stores)"
       }
     },
     "sensor": {

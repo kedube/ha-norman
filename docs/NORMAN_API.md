@@ -321,8 +321,8 @@ app's network library and then sent directly:
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
 | `CleanTopLimit` / `CleanBottomLimit` | 0 | Clear the stored limit (the app sends this right before setting a new one). |
 | `Calibration` | 0 | Run the motor's calibration. |
-| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`). The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification for it. Verified on real hardware: nothing moved and every try was answered within 5 s; on one hub of type 48 roller shades, one of three lone requests was answered, and none moved anything. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
-| `ReportBatteryLevel` | 0 | Ask every blind on the hub (no scope field) or in a room (`RoomID`) to report in. Sent by the app's refresh, which it offers only for a disconnected blind. Closed every shade on one hub of type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)); moves nothing on cellular shades. Despite the name the answer carries position and last-seen too. **Used** (Refresh blinds button, `room_command: refresh`). |
+| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`) or sweep the whole hub (unscoped). `RoomID` did not confine the sweep to one room. The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification. A live unscoped test reached all 13 blinds within two minutes without movement. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
+| `ReportBatteryLevel` | 0 | The app's battery-report request for a room (`RoomID`) or hub (unscoped). It has closed type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)) and type 33 cellular shades. `PeripheralUID` did not constrain it in one direct test. **Used** only by the explicitly named room and hub battery-report buttons. |
 
 ```json
 {"PeripheralUID": 58850, "Timestamp": 1788828922, "TaskID": 43620, "MotorStop": 170}
@@ -363,7 +363,7 @@ form has been captured from the app.
 | `Switch` / `Favorite` | Captured from the app and confirmed | Confirmed | Confirmed |
 | `MotorStop` | Captured from the app | Stopped both moving Office shades | Stopped one moving Office shade; simultaneous motors in multiple rooms not tested |
 | `MotorFineTuneToUp` / `MotorFineTuneToDown` | Captured from the app | Small position changes on both Office shades | Small position changes in Office and Den; all 13 blinds reported in |
-| `StatusRequest` / `ReportBatteryLevel` | `StatusRequest` confirmed; `ReportBatteryLevel` with only `PeripheralUID` appears to cause a broader sweep | `ReportBatteryLevel` confirmed; `StatusRequest` with room or room/group fields appears to cause a broader sweep | `ReportBatteryLevel` confirmed; unscoped `StatusRequest` was acknowledged and six of 13 blinds reported within 30 s |
+| `StatusRequest` / `ReportBatteryLevel` | `StatusRequest` confirmed; `ReportBatteryLevel` with only `PeripheralUID` appears to cause a broader sweep | `ReportBatteryLevel` confirmed; `StatusRequest` with room or room/group fields causes a broader sweep | Both confirmed; an unscoped `StatusRequest` reached all 13 blinds within two minutes |
 | Saved scene `SetToScene` | Not tested | Confirmed with `RoomID` and numeric `SceneID` as the `SetToScene` value | Not tested |
 | Shutter `Position` (0–7) | Built by the app's library; no live Shutter test here | Not tested | Not tested |
 
@@ -504,8 +504,8 @@ liveness signal rather than a last-change time. Measured timings:
   another; seven of nine had reported within ~30 s, and the remaining two only on a later
   try. The four type 32 blinds (single-rail, and battery-powered like the rest) did not
   respond to the sweep at all — but a per-blind `StatusRequest` to one of them was answered
-  in 4 s, so Refresh blinds and the room refresh follow their request with one
-  `StatusRequest` per single-rail blind.
+  in 4 s, so earlier versions of Refresh blinds and the room refresh followed their
+  battery request with one `StatusRequest` per single-rail blind.
 
 Direct tests on 2026-10-11 found that `StatusRequest` does **not** appear to use the same scope
 rules as `ReportBatteryLevel`. With `PeripheralUID`, its one target reported within **10 s**
@@ -516,10 +516,10 @@ nine outside it by 60 s. An unscoped request was acknowledged and six of 13 blin
 within 30 s. Every request returned `Error: 0`; no positions changed.
 
 These results suggest that omitting `PeripheralUID` may turn `StatusRequest` into a hub-wide
-report-in sweep, even when room/group fields are present. They do not prove which specific
-request caused each report: in no-command 60 s comparisons, two to four blinds outside the
-selected room reported, while neither blind in that room did. The existing
-`ReportBatteryLevel` room form is the confirmed way to refresh a room.
+report-in sweep, even when room/group fields are present. The 2026-10-14 isolated test below
+confirmed this on one hub. The older tests did not prove which specific request caused each
+report: in no-command 60 s comparisons, two to four blinds outside the selected room
+reported, while neither blind in that room did.
 
 The converse scope also behaves unexpectedly. In a quiet no-command minute on 2026-10-11,
 none of 13 blinds reported. Sending `ReportBatteryLevel: 0` with one `PeripheralUID` returned
@@ -541,13 +541,19 @@ within 2–4 s at its old position, then reported closed 37–55 s after the hub
 A lone `StatusRequest` closed nothing in three tries on that hub. On 2026-10-13 one shade answered
 it in 2.5 s and did not move. The other two tries, one to each of the other shades, went
 unanswered (the shade's `Timestamp` stayed put for over two minutes), and nothing closed either.
-So the hub-wide request is the likely trigger there, though it has never been sent on its own,
-without the status requests that follow it. What is different on that hub is not known. Its
-shades miss status requests that cellular shades have answered every time, so connectivity may
-play a part. Since then the wake sweep asks only blinds the hub has not heard from for 24 hours,
-one `StatusRequest` each, and never sends the hub-wide form. Refresh blinds still does, since it
-moves nothing on cellular shades; the README and [entities.md](entities.md#hub-buttons) carry
-the caveat.
+So the hub-wide request was the likely trigger there. Later, a separate hub of type 33 cellular
+shades closed nine two-rail blinds after `ReportBatteryLevel`; the only individual
+`StatusRequest`s in that trace targeted four other blinds. The app also closed shades when the
+battery report was used. The wake sweep and Refresh blinds now use `StatusRequest`; the battery
+report has its own explicitly named buttons on room and hub devices.
+
+**Isolated `StatusRequest` tests on 2026-10-14.** On a 6.1.25 hub with thirteen shades, a
+no-command baseline produced no reports in 60 s. One unscoped `StatusRequest` brought reports
+from 1 shade by 10 s, 6 by 30 s, 12 by 60 s, and all 13 by 120 s. No position or target
+changed, and no physical movement was observed. A second 60 s baseline was quiet. One
+`StatusRequest` with the Office `RoomID` brought reports from both Office shades and all
+eleven outside the room by 120 s, again without movement. Thus a single command can refresh
+the hub on this hardware, but a room refresh must address its blinds individually.
 
 Each report arrives as a `{"Status": …, "PeripheralList": [uid]}` notification, so a client
 holding the notification stream sees them without polling. In the capture the refresh was
@@ -1128,9 +1134,11 @@ room / hub slider ──► control (both positions, RoomID or no address; or on
                   (each blind is then watched, and sent its own move if it never moved)
 scene ──► control (SetToScene + RoomID, or SceneGroupID) ──► status (refresh)
                   (each blind is then watched, and sent its stored position if it never moved)
-room / hub button ──► control (verb, RoomID or no address) ──► status (refresh)
-                  (a preset is then watched blind by blind, and resent to a blind by room+group
-                   if it never moved; Refresh blinds sends StatusRequest to each single-rail blind)
+room / hub preset ──► control (verb, RoomID or no address) ──► status (refresh)
+                  (each blind is watched, and a missed preset is resent by room+group)
+room refresh ──► control (StatusRequest by uid, once per blind in room)
+hub refresh ──► control (unscoped StatusRequest)
+room / hub battery report ──► control (ReportBatteryLevel, RoomID or no address)
 move watchdog ──► control (StatusRequest by uid, 60 s after a silent move; then the move again)
 wake sweep (timer, off by default) ──► control (StatusRequest per disconnected blind)
 get_hub_data action ──► GetAllPeripheral + status (redacted, returned as the response)

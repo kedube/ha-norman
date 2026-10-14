@@ -206,6 +206,7 @@ async def test_hub_gets_its_buttons(hass: HomeAssistant, init_integration: MockC
         "all_jog_up",
         "all_jog_down",
         "refresh_blinds",
+        "report_battery_levels",
         "start_pairing",
     ]
     # Stop is a control, beside the hub's sliders; the jogs are moves, with the presets.
@@ -217,6 +218,12 @@ async def test_hub_gets_its_buttons(hass: HomeAssistant, init_integration: MockC
     assert entry.disabled_by is None
     state = hass.states.get(entry.entity_id)
     assert state.attributes["friendly_name"] == "ShadeAuto Hub Refresh blinds"
+
+    battery_report = _hub_button(hass, init_integration, "report_battery_levels")
+    assert battery_report.entity_category is EntityCategory.DIAGNOSTIC
+    assert (
+        "may close shades" in hass.states.get(battery_report.entity_id).attributes["friendly_name"]
+    )
 
     pairing = _hub_button(hass, init_integration, "start_pairing")
     assert pairing.entity_category is EntityCategory.CONFIG
@@ -248,17 +255,10 @@ async def test_start_pairing_opens_the_window_and_re_reads_status(
     assert len(fake_hub.calls_to("/status")) == status_calls + 1
 
 
-async def test_refresh_blinds_sweeps_the_hub_then_pokes_each_single_rail_blind(
+async def test_refresh_blinds_requests_status_from_the_whole_hub(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """One press is `{"ReportBatteryLevel": 0}` with no scope field, then one StatusRequest
-    per single-rail blind.
-
-    Captured from the app's refresh button on 2026-09-18. On hardware the hub-wide sweep
-    never reached the single-rail blinds, while a per-blind status request did, so the
-    button follows up with one for each of them. The two-rail blinds answer the sweep on
-    their own, one notification at a time over the next half minute.
-    """
+    """The safe hub refresh is one unscoped StatusRequest, with no battery report."""
     before = len(fake_hub.control_calls)
     await hass.services.async_call(
         BUTTON_DOMAIN,
@@ -269,10 +269,9 @@ async def test_refresh_blinds_sweeps_the_hub_then_pokes_each_single_rail_blind(
     await hass.async_block_till_done()
 
     calls = fake_hub.control_calls[before:]
-    assert set(calls[0]) == {"Timestamp", "TaskID", "ReportBatteryLevel"}
-    assert calls[0]["ReportBatteryLevel"] == HUB_COMMAND_SETTING
-    assert [c["PeripheralUID"] for c in calls[1:]] == [UID_BEDROOM]
-    assert calls[1]["StatusRequest"] == HUB_COMMAND_SETTING
+    assert len(calls) == 1
+    assert set(calls[0]) == {"Timestamp", "TaskID", "StatusRequest"}
+    assert calls[0]["StatusRequest"] == HUB_COMMAND_SETTING
 
 
 async def test_refresh_blinds_failure_names_the_hub(
@@ -287,6 +286,23 @@ async def test_refresh_blinds_failure_names_the_hub(
             {ATTR_ENTITY_ID: _hub_button(hass, init_integration, "refresh_blinds").entity_id},
             blocking=True,
         )
+
+
+async def test_battery_report_is_a_separate_hub_command(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The app's battery report is available explicitly and never sent by Refresh blinds."""
+    before = len(fake_hub.control_calls)
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _hub_button(hass, init_integration, "report_battery_levels").entity_id},
+        blocking=True,
+    )
+    calls = fake_hub.control_calls[before:]
+    assert len(calls) == 1
+    assert set(calls[0]) == {"Timestamp", "TaskID", "ReportBatteryLevel"}
+    assert calls[0]["ReportBatteryLevel"] == 0
 
 
 @pytest.mark.parametrize(

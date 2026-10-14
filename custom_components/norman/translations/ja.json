@@ -230,6 +230,12 @@
       },
       "room_refresh": {
         "name": "ブラインドを更新"
+      },
+      "report_battery_levels": {
+        "name": "電池残量を報告（シェードが閉じる場合があります）"
+      },
+      "room_report_battery_levels": {
+        "name": "電池残量を報告（シェードが閉じる場合があります）"
       }
     },
     "sensor": {

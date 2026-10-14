@@ -32,6 +32,8 @@ from .const import (
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     EVENT_COMMAND_FAILED,
+    HUB_CMD_REQUEST_STATUS,
+    HUB_COMMAND_SETTING,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
     KNOWN_SCENE_FIELDS,
@@ -331,25 +333,30 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 await self.api.async_request_status(device_id)
 
     async def async_refresh_blinds(self, room_id: int | None = None) -> None:
-        """Have every blind (in a room, or on the hub) report in.
+        """Ask every blind on the hub, or each blind in a room, for fresh status.
 
-        The hub-wide ``ReportBatteryLevel`` sweep reached only the two-rail blinds: in
-        testing the four single-rail blinds ignored it every time, while a
-        per-blind ``StatusRequest`` had one answering in four seconds. So the sweep is
-        followed by a status request to each single-rail blind in scope. Nothing moves; the
-        answers arrive as notifications over the next half minute, each refreshing the data.
+        An unscoped ``StatusRequest`` reached all thirteen blinds on a hub in a live test,
+        with the last answer arriving within two minutes. A ``RoomID`` did not constrain
+        that verb, so room refresh uses one addressed request per blind. Their answers
+        arrive later as hub notifications.
+        """
+        if room_id is None:
+            await self.api.async_send_room_control(
+                None, {HUB_CMD_REQUEST_STATUS: HUB_COMMAND_SETTING}
+            )
+            return
+
+        for device_id, device in (self.data or {}).items():
+            if device.room_id == room_id:
+                await self.api.async_request_status(device_id)
+
+    async def async_report_battery_levels(self, room_id: int | None = None) -> None:
+        """Send the Norman app's report command to a room or the hub.
+
+        This is deliberately separate from status refresh: ``ReportBatteryLevel`` has
+        closed roller and two-rail cellular shades on real hardware.
         """
         await self.api.async_request_battery_report(room_id)
-        # ``data`` is None until the first refresh completes. Setup refreshes before any
-        # button or action can call this, so this is unreachable today -- but the guard costs
-        # nothing and keeps a future reordering (or a caller added before the first refresh)
-        # from turning into an AttributeError.
-        for device_id, device in (self.data or {}).items():
-            if device.type != COVER_TYPE_SINGLE_RAIL:
-                continue
-            if room_id is not None and device.room_id != room_id:
-                continue
-            await self.api.async_request_status(device_id)
 
     @property
     def has_device_list(self) -> bool:

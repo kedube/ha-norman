@@ -137,7 +137,7 @@ async def _async_send_room_fields(
     coordinator = entry.runtime_data
     try:
         if command == "refresh":
-            # The sweep plus a per-blind status request to each single-rail blind in scope.
+            # A safe status request for the whole hub, or one per blind in the room.
             await coordinator.async_refresh_blinds(room_id)
         else:
             # A preset: one request, then every blind it reached is watched.

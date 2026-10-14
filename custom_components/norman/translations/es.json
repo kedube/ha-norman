@@ -230,6 +230,12 @@
       },
       "room_refresh": {
         "name": "Actualizar persianas"
+      },
+      "report_battery_levels": {
+        "name": "Informar niveles de batería (puede cerrar persianas)"
+      },
+      "room_report_battery_levels": {
+        "name": "Informar niveles de batería (puede cerrar persianas)"
       }
     },
     "sensor": {

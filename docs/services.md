@@ -54,9 +54,9 @@ data:
 
 ## `norman.room_command`
 
-Run one of the Norman app's own **room** buttons against every blind in a room. The hub
-accepts `RoomID` in place of `PeripheralUID` for these verbs, so this is a single request no
-matter how many blinds the room holds — the same request the app sends. Each room's device has
+Run a room command against every blind in a room. The three presets use one hub request with
+`RoomID`; `refresh` sends one status request per blind because `RoomID` does not constrain
+`StatusRequest`. Each room's device has
 the same four as buttons ([Rooms and the whole house](entities.md#rooms-and-the-whole-house));
 this action is for naming the room in a script. After a preset, every blind it reached is
 checked, and one that never moves is sent the preset on its own
@@ -73,7 +73,7 @@ checked, and one that never moves is sent the preset on its own
 | `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that draws the blackout, which hangs below the middle rail, across the window, with the light-filtering sheer above it stacked fully open. |
 | `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. |
 | `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant's cover actions have no equivalent; the room's own **Favorite position** button sends the same request. |
-| `refresh` | `{"ReportBatteryLevel": 0, "RoomID": …}` | Asks every blind in the room to **report in** — battery, position and last-seen — the same request the app sent to refresh from its device & battery status screen, which offers a refresh only while it lists a blind as disconnected. Nothing moves on cellular shades (verified on real hardware); on one hub of type 48 roller shades the hub-wide form closed every shade ([#5](https://github.com/kedube/ha-norman/issues/5)), and if it moves yours, use **Request status** on each blind instead. On hardware all three blinds in a room answered within five seconds; hub-wide, every two-rail blind over about half a minute. The hub-wide sweep skipped single-rail blinds in testing, so each single-rail blind in scope gets its own `StatusRequest` afterwards. The answers arrive as the hub's own notifications, so the entities follow a few seconds after the call returns. The **Request status** button does this for one blind and **Refresh blinds** on the hub for all of them (see [docs/entities.md](entities.md#hub-buttons)). |
+| `refresh` | One `{"PeripheralUID": X, "StatusRequest": 0}` per blind; without `room`, one unscoped `{"StatusRequest": 0}` | Asks blinds to report battery, position and last-seen without moving them in live tests. Room requests are paced through the hub's command queue. An unscoped request reached all 13 blinds on one hub within two minutes. Answers arrive as notifications after the action returns. The Norman app's separate `ReportBatteryLevel` command can close shades; it is available as an explicitly named button on room and hub devices. |
 
 ```yaml
 action: norman.room_command
@@ -236,8 +236,8 @@ clears a setting. These were captured from the Norman app, so they are known to 
 
 `Switch` and `Favorite` are confirmed at blind, room, and hub scope. For one blind the app
 uses `RoomID` + `GroupID`; the Best privacy, Best view, and Favorite buttons already send
-those forms. `ReportBatteryLevel` refreshes a room or the whole hub, while `StatusRequest`
-refreshes one blind. This action always fills in `PeripheralUID`, so use
+those forms. `StatusRequest` refreshes one blind with `PeripheralUID`, or a whole hub without
+it; a `RoomID` did not constrain it in live tests. This action always fills in `PeripheralUID`, so use
 [`norman.room_command`](#normanroom_command) for room or hub presets and refresh. Arbitrary
 room and hub positions are confirmed in the raw API but have no integration action yet. The
 rest of the vocabulary (`MotorSpeedAdjust`, `ReverseMotorDirection`, and others; see

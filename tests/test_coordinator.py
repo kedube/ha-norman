@@ -1024,5 +1024,5 @@ async def test_refresh_blinds_survives_an_empty_coordinator(
 
     await coordinator.async_refresh_blinds()
 
-    # The hub-wide sweep still went out; only the per-blind follow-ups had nothing to walk.
-    assert [c for c in fake_hub.control_calls if "ReportBatteryLevel" in c]
+    # Hub refresh does not need a populated coordinator to send its single request.
+    assert [c for c in fake_hub.control_calls if "StatusRequest" in c]

@@ -359,20 +359,13 @@ HUB_CMD_FAVORITE = "Favorite"
 HUB_CMD_SWITCH = "Switch"
 HUB_SWITCH_OPEN = 1
 HUB_SWITCH_CLOSE = 0
-# The two "report in" verbs, captured from the app's device & battery status screen on
-# 2026-09-18 and confirmed against its network library (DKIoTClient.framework builds both
-# with the same value-0 literal it uses for FindTop and Favorite). The app offers that
-# refresh only while it lists a blind as disconnected; a connected blind has none.
-#   {"StatusRequest": 0, "PeripheralUID": X}  -- one blind; it answered within 5 s each time
-#   {"ReportBatteryLevel": 0}                  -- every blind on the hub (the capture);
-#                                                ~30 s for all to report, though
-#                                                single-rail blinds ignored it
-#   {"ReportBatteryLevel": 0, "RoomID": R}     -- one room; all three blinds in 5 s
-# Neither moves a cellular shade (verified on real hardware). On a hub of type 48 roller
-# shades, the hub-wide form followed by a StatusRequest to each shade closed every shade
-# (issue #5). A blind that reports in updates its `Timestamp` in `status` and the hub pushes a
-# PeripheralList notification for it, which is how the coordinator learns of it. See
-# docs/NORMAN_API.md, "Waking a blind".
+# The hub's report-in verbs. With PeripheralUID, StatusRequest asks one blind; without
+# an address, it reached all thirteen blinds on one hub within two minutes without moving
+# any. RoomID did not constrain StatusRequest, so room refresh addresses each blind in
+# turn. ReportBatteryLevel is the Norman app's separate battery report: hub and room forms
+# are known, but a PeripheralUID did not constrain it in a direct test. It has closed both
+# roller and two-rail cellular shades; it must never be used by status refresh. A blind
+# that reports in advances its Timestamp and generates a PeripheralList notification.
 HUB_CMD_REQUEST_STATUS = "StatusRequest"
 HUB_CMD_REPORT_BATTERY = "ReportBatteryLevel"
 # Running a scene saved on the hub (docs/NORMAN_API.md, "Run a saved scene"). A room scene is

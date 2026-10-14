@@ -283,6 +283,7 @@ async def test_a_room_gets_every_button(
             expected = {
                 "room_stop": None,
                 "room_refresh": EntityCategory.DIAGNOSTIC,
+                "room_report_battery_levels": EntityCategory.DIAGNOSTIC,
             }.get(description.key, EntityCategory.CONFIG)
             assert entity.entity_category is expected, description.key
             assert entity.disabled_by is None, description.key
@@ -561,18 +562,35 @@ async def test_room_buttons_send_the_verb_with_the_room(
     assert len(fake_hub.calls_to("/status")) == status_calls + reads
 
 
-async def test_room_refresh_sweeps_the_room_then_pokes_its_single_rail_blinds(
-    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+async def test_room_refresh_requests_each_blind_without_a_room_wide_command(
+    hass: HomeAssistant, two_in_living_room: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """norman.room_command's refresh, as a button: the room sweep, then each single-rail blind."""
+    """A room refresh addresses each shade separately; RoomID does not scope StatusRequest."""
     before = len(fake_hub.control_calls)
     await _press(
-        hass, _scope_entity(hass, init_integration, BUTTON_DOMAIN, BEDROOM, "room_refresh")
+        hass, _scope_entity(hass, two_in_living_room, BUTTON_DOMAIN, LIVING_ROOM, "room_refresh")
     )
 
-    sweep, *pokes = fake_hub.control_calls[before:]
-    assert sweep["ReportBatteryLevel"] == 0 and sweep["RoomID"] == BEDROOM
-    assert [poke["PeripheralUID"] for poke in pokes] == [UID_BEDROOM]
+    calls = fake_hub.control_calls[before:]
+    assert [call["PeripheralUID"] for call in calls] == [UID_LIVING, UID_SECOND]
+    assert all(call["StatusRequest"] == 0 for call in calls)
+    assert all("RoomID" not in call and "ReportBatteryLevel" not in call for call in calls)
+
+
+async def test_room_battery_report_sends_only_the_app_room_command(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The separate battery report keeps the room scope and sends no status requests."""
+    before = len(fake_hub.control_calls)
+    await _press(
+        hass,
+        _scope_entity(hass, init_integration, BUTTON_DOMAIN, BEDROOM, "room_report_battery_levels"),
+    )
+    calls = fake_hub.control_calls[before:]
+    assert len(calls) == 1
+    assert set(calls[0]) == {"Timestamp", "TaskID", "RoomID", "ReportBatteryLevel"}
+    assert calls[0]["RoomID"] == BEDROOM
+    assert calls[0]["ReportBatteryLevel"] == 0
 
 
 async def test_a_room_stop_ends_the_moves_in_that_room_only(

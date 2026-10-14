@@ -348,12 +348,12 @@ unknown-type warning or behaves differently from its row.
 - **Several products are known only from the Norman app**: the Shutter (`ModuleType` 1), the
   MRS2 rollers (49), and the Roman Shade, PerfectSheer and top-down/bottom-up cellular details
   (48/2, 48/3, 32/3–5). See [Supported devices](#supported-devices).
-- **Refresh blinds closed every shade on one hub of roller shades.** On one hub of three type 48
-  Roller Shades, the hub's **Refresh blinds** button closed every shade
-  ([#5](https://github.com/kedube/ha-norman/issues/5)). It sends the Norman hub's own report-in
-  request, which moves nothing on cellular shades (verified on real hardware). What is different
-  on that hub isn't known; its shades also miss some status requests, so connectivity may play a
-  part. If a press moves your shades, use **Request status** on each shade instead.
+- **The Norman app's battery report can close shades.** Its `ReportBatteryLevel` command closed
+  roller shades in [#5](https://github.com/kedube/ha-norman/issues/5) and nine two-rail cellular
+  shades on another hub. **Refresh blinds** now uses `StatusRequest` instead. A separate
+  **Report battery levels (may close shades)** button on the hub and each room preserves the
+  app command for deliberate use. A request addressed to one shade reached others in testing,
+  so there is no per-shade battery-report button.
 - **No speed, direction, or limit-setting entities.** The limit-setting and calibration verbs
   were captured from the Norman app and can be sent with `send_hub_command` (see
   [docs/services.md](docs/services.md#hub-verbs)); they have no entity because they change how

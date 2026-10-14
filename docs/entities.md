@@ -3,15 +3,15 @@
 Per blind the integration creates a **cover** (two for two-rail blinds), a **position slider**
 per rail, six **buttons**, four **diagnostic sensors**, and a **connection** sensor, all on one
 **device**. The hub gets a device of its own carrying four diagnostic sensors, a pairing-mode
-sensor, a slider per rail for every blind at once, and eight buttons. Each of the hub's
-**rooms** gets a device too, with a slider per rail and seven buttons that act on the whole room
+sensor, a slider per rail for every blind at once, and nine buttons. Each of the hub's
+**rooms** gets a device too, with a slider per rail and eight buttons that act on the whole room
 ([Rooms and the whole house](#rooms-and-the-whole-house)).
 
 | | Per blind | Per room | On the hub |
 |---|---|---|---|
 | Cover | Bottom rail (Louvers on a Shutter); Middle rail on two-rail blinds | — | — |
 | Number | Bottom rail position (not on a Shutter); Middle rail position on two-rail blinds | Bottom rail position, Middle rail position, when a blind in the room has that rail | All blinds bottom rail position, All blinds middle rail position |
-| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | Stop, Best privacy, Best view, Favorite position, Jog up, Jog down, Refresh blinds | All blinds best privacy, All blinds best view, All blinds favorite position, All blinds stop, All blinds jog up, All blinds jog down, Refresh blinds, Start pairing |
+| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | Stop, Best privacy, Best view, Favorite position, Jog up, Jog down, Refresh blinds, Report battery levels (may close shades) | All blinds best privacy, All blinds best view, All blinds favorite position, All blinds stop, All blinds jog up, All blinds jog down, Refresh blinds, Report battery levels (may close shades), Start pairing |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | — | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
 | Binary sensor | Connection | — | Pairing mode |
 
@@ -282,21 +282,20 @@ halted the one shade moving at the time, and an unscoped jog nudged every blind,
 motors in several rooms at once has not been tried. Stop sits with the hub's sliders, under
 Controls; the jogs are under Configuration with the presets.
 
-**Refresh blinds** sends `{"ReportBatteryLevel": 0}` with no scope field: the request the
-Norman app sent to refresh from its device & battery status screen, which offers a refresh only
-while it lists a blind as disconnected. The hub then polls
-its blinds in turn and each one reports in over the next half minute (about 30 s for nine
-blinds), each as its own notification. Despite the verb's name the answer carries position
-and last-seen as well as battery. Nothing moves on cellular shades (verified on real hardware),
-but on one hub of type 48 roller shades a press closed every shade
-([#5](https://github.com/kedube/ha-norman/issues/5)). What is different on that hub isn't known,
-and its shades also miss some status requests; if a press moves your shades, use **Request
-status** on each blind instead. In testing the hub-wide sweep did **not**
-reach the single-rail blinds — all four ignored it every time, while a per-blind
-status request had one answering in four seconds — so the button follows the sweep with a
-`StatusRequest` to each single-rail blind. The room-scoped form is `norman.room_command` with
-`refresh` ([docs/services.md](services.md)), which had a whole room reporting in within five
-seconds and does the same follow-up for the room's single-rail blinds.
+**Refresh blinds** sends one unscoped `{"StatusRequest": 0}` on the hub. In a live test all 13
+blinds reported in within two minutes without moving: one by 10 seconds, six by 30 seconds,
+12 by 60 seconds, and all 13 by 120 seconds. A room's **Refresh blinds** sends one addressed
+`StatusRequest` per blind in that room, because a `RoomID` on this verb also woke blinds
+outside the room. `norman.room_command` with `refresh` sends the same requests
+([docs/services.md](services.md)). Each reply arrives later as a hub notification, updating
+position, battery and last-seen.
+
+**Report battery levels (may close shades)** sends the Norman app's separate
+`{"ReportBatteryLevel": 0}` request, with `RoomID` for a room or no scope on the hub. It closed
+type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)) and nine type 33
+cellular shades in direct tests. The app also closes shades when this action is used. A
+`ReportBatteryLevel` request with one `PeripheralUID` caused eight blinds to report in a
+previous test, so the integration offers this action only on room and hub devices.
 
 **Start pairing** sends `{"PairingMode": 5}`, which opens the hub's pairing window for ten
 minutes; the **Pairing mode** sensor shows it. Under *Configuration*. What happens next — putting
@@ -305,10 +304,8 @@ modelled here; the button exists so the window can be opened from an automation 
 when someone is at the blind. The hub refuses it (Error 8 has been seen) while it is busy, for
 instance during a refresh sweep.
 
-Moves sent while that sweep is running have been answered with the hub's `Error 2`
-(observed only in that window so far); the integration retries a move a few times, five
-seconds apart, before failing it, so a press of Refresh blinds followed by a cover command
-still works — it just takes a little longer.
+Moves sent while the battery-report sweep is running have been answered with the hub's
+`Error 2`; the integration retries a move a few times, five seconds apart, before failing it.
 
 ### Wake sweep
 
@@ -320,7 +317,7 @@ The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's m
 100, and when the blinds reported in several read 0; nothing had moved, the
 cache was stale. Connected blinds are left alone, as the app leaves them, so a sweep sends
 nothing while every blind is connected. Until issue
-[#5](https://github.com/kedube/ha-norman/issues/5) it did what Refresh blinds does, which
+[#5](https://github.com/kedube/ha-norman/issues/5) it sent `ReportBatteryLevel`, which
 closed one hub's type 48 roller shades every time it ran. Off by default, and the form no longer
 suggests a value. The floor is ten minutes, because a sweep can wake a sleeping blind's radio;
 an hour is a sensible value.
@@ -348,7 +345,8 @@ blinds, and the hub's device carries the same controls for the whole house.
 | Stop | always | All blinds stop | `MotorStop: 170` |
 | Best privacy, Best view, Favorite position | always, under Configuration | All blinds best privacy, best view, favorite position | `Switch: 0`, `Switch: 1`, `Favorite: 0` |
 | Jog up, Jog down | always, under Configuration | All blinds jog up, jog down | `MotorFineTuneToUp` / `…Down: 170` |
-| Refresh blinds | always, under Diagnostic | Refresh blinds | `ReportBatteryLevel: 0`, then a status request to each single-rail blind |
+| Refresh blinds | always, under Diagnostic | Refresh blinds | hub: one unscoped `StatusRequest: 0`; room: one addressed `StatusRequest` per blind |
+| Report battery levels (may close shades) | always, under Diagnostic | the same | `ReportBatteryLevel: 0`, with `RoomID` for a room |
 
 A room's entities are named after the room ("Office Bottom rail position", "Office Stop").
 There is deliberately **no room cover**: "close the office blinds", or a `cover` action aimed

@@ -230,6 +230,12 @@
       },
       "room_refresh": {
         "name": "Refresh blinds"
+      },
+      "report_battery_levels": {
+        "name": "Report battery levels (may close shades)"
+      },
+      "room_report_battery_levels": {
+        "name": "Report battery levels (may close shades)"
       }
     },
     "sensor": {

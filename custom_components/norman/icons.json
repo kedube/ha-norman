@@ -63,6 +63,12 @@
       },
       "room_refresh": {
         "default": "mdi:refresh"
+      },
+      "report_battery_levels": {
+        "default": "mdi:battery"
+      },
+      "room_report_battery_levels": {
+        "default": "mdi:battery"
       }
     },
     "binary_sensor": {

@@ -611,8 +611,8 @@ class NormanApiClient:
         whole hub took about 30 s, one room about 5 s, though single-rail blinds ignored
         the hub-wide form in testing. Despite the name the reply carries
         position and last-seen as well as battery. ``room_id`` of ``None`` addresses the
-        whole hub. On a hub of type 48 roller shades this, with the status requests that
-        follow it, closed every shade (issue #5).
+        whole hub. This command has closed type 48 roller shades and type 33 cellular
+        shades in live tests, so it is separate from status refresh.
         """
         await self.async_send_room_control(room_id, {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING})
 
@@ -704,7 +704,9 @@ class NormanApiClient:
         The hub accepts ``RoomID`` in place of ``PeripheralUID`` for ``Switch``,
         ``Favorite``, both position fields together, ``MotorStop``, and the fine-tune
         verbs (docs/NORMAN_API.md, "Room-wide and hub-wide control"). The Norman app
-        sends the presets; the other room and hub forms were confirmed by direct tests.
+        sends the presets and battery-report commands; the other room and hub forms were
+        confirmed by direct tests. An unscoped ``StatusRequest`` also reached all blinds
+        in one live test, while ``RoomID`` did not constrain that verb.
 
         ``room_id`` of ``None`` omits the field entirely, which addresses **every blind on
         the hub** -- an empty scope means "everything", not "nothing", so never pass None

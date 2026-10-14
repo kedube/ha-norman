@@ -131,14 +131,9 @@ class NormanHubButtonDescription(ButtonEntityDescription):
     moves_blinds: bool = False
 
 
-# The hub's own buttons. Refresh blinds sends the hub-wide report-in the app sent from its
-# device & battery status screen, which offers it only while a blind is listed as
-# disconnected: the hub polls its blinds in turn (~30 s for nine two-rail blinds when
-# tested), and the coordinator follows up with a status request to each single-rail blind,
-# which the hub-wide sweep skipped in testing. On a hub of type 48 roller shades a
-# press closed every shade (issue #5). Room scope is `norman.room_command`
-# with `refresh`. Start pairing opens the hub's ten-minute pairing window (the Pairing mode
-# sensor shows it); the rest of pairing happens at the blind and in the app.
+# Refresh blinds uses StatusRequest, which did not move shades in live tests. The app's separate
+# ReportBatteryLevel request has closed shades on real hardware, so it has its own button
+# with that effect named explicitly. Start pairing opens the hub's ten-minute window.
 HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
     # The app's All Rooms header offers the same three buttons for the whole house, and the
     # hub takes them with no scope field at all (docs/NORMAN_API.md, "Room-wide and hub-wide
@@ -214,6 +209,13 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         press_fn=lambda coordinator: coordinator.async_refresh_blinds(),
     ),
     NormanHubButtonDescription(
+        key="report_battery_levels",
+        translation_key="report_battery_levels",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        moves_blinds=True,
+        press_fn=lambda coordinator: coordinator.async_report_battery_levels(),
+    ),
+    NormanHubButtonDescription(
         key="start_pairing",
         translation_key="start_pairing",
         entity_category=EntityCategory.CONFIG,
@@ -224,19 +226,20 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
 
 @dataclass(frozen=True, kw_only=True)
 class NormanRoomButtonDescription(ButtonEntityDescription):
-    """A button on a room's device: one request for every blind in the room."""
+    """A button on a room's device that acts on its blinds."""
 
     press_fn: Callable[[NormanCoordinator, int | None], Awaitable[Any]]
     # Whether the action moves or stops the room's blinds, and so replaces their moves.
     moves_blinds: bool = True
 
 
-# The room's own buttons: one request with the room's RoomID, however many blinds it holds.
-# The three presets are the app's room screen (captured); stop and the jogs were confirmed
+# The room's own buttons. Most send one request with the room's RoomID; Refresh blinds
+# instead addresses each blind. The three presets are the app's room screen (captured);
+# stop and the jogs were confirmed
 # by direct tests on 2026-10-10 -- a room stop halted both moving office shades, a room jog
 # nudged both -- and the hub accepts them on any blind, though only cellular shades have been
 # tried. Laid out as a blind's device page is: Stop with the room's sliders, the moves under
-# Configuration, and Refresh blinds with the diagnostics.
+# Configuration, and the two report-in actions with the diagnostics.
 ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
     NormanRoomButtonDescription(
         key="room_stop",
@@ -285,14 +288,20 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
             room_id, {HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER}
         ),
     ),
-    # The room form of the hub's Refresh blinds, which norman.room_command's `refresh` sends:
-    # the room sweep plus a status request to each single-rail blind in the room.
+    # RoomID does not scope StatusRequest, so this sends one request per blind in the room.
     NormanRoomButtonDescription(
         key="room_refresh",
         translation_key="room_refresh",
         entity_category=EntityCategory.DIAGNOSTIC,
         moves_blinds=False,
         press_fn=lambda coordinator, room_id: coordinator.async_refresh_blinds(room_id),
+    ),
+    NormanRoomButtonDescription(
+        key="room_report_battery_levels",
+        translation_key="room_report_battery_levels",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        moves_blinds=True,
+        press_fn=lambda coordinator, room_id: coordinator.async_report_battery_levels(room_id),
     ),
 )
 
@@ -384,7 +393,7 @@ class NormanRoomButton(NormanScopeEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Run the action for the room, then re-read the hub.
 
-        The hub carries the command to each blind itself. The presets are then watched
+        The hub carries room-scoped commands to each blind itself. The presets are then watched
         blind by blind, as a blind's own preset is (coordinator.async_send_room_preset);
         stop and the jogs have no target to chase. Every action that moves or stops the
         blinds replaces any move in flight in the room, whose watch would otherwise take
