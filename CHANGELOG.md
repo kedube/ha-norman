@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.86 — 2026-10-14
 
 - **Refresh blinds now uses `StatusRequest`.** A single unscoped request brought fresh reports
   from all 13 shades on a live hub within two minutes without moving them. A room refresh sends
