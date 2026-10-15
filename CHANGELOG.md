@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.87 — 2026-10-15
 
 - **Room command descriptions corrected.** The action's help text said `best_privacy` leaves
   the middle rail where it is and `best_view` opens only the bottom rail. `best_privacy` closes
