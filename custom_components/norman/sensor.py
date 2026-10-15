@@ -51,8 +51,8 @@ SENSORS: tuple[NormanSensorDescription, ...] = (
     NormanSensorDescription(
         key="signal_strength",
         translation_key="signal_strength",
-        # RssiMean is a unitless quality index (0 or 34 seen), not dBm, so no device class;
-        # its icon is in icons.json.
+        # RssiMean is unitless and fixed by blind type (34 single-rail, 0 two-rail), not a
+        # dBm reading, so no device class; its icon is in icons.json.
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,

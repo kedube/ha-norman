@@ -189,7 +189,7 @@ Response:
       "TargetBottomRailPosition": 40,
       "TargetMiddleRailPosition": 60,
       "BatteryVoltage": 73,
-      "RssiMean": 34,
+      "RssiMean": 0,
       "FirmwareVersion": "0.5.3.8",
       "Timestamp": 1700000000
     }
@@ -205,7 +205,7 @@ Response:
 | `TargetMiddleRailPosition` | where the middle rail is heading | `target_tilt` attribute |
 | `Position`, `TargetPosition` | a Shutter's louvers, 0–7, and where they are heading | the Shutter's `current_tilt_position` / `target_tilt`, and `louver_position` |
 | `BatteryVoltage` | a **percentage**, 0–100, despite the field name (see [Observed fields](#observed-fields)) | **Battery** sensor |
-| `RssiMean` | radio quality, unitless (0 or 34 seen); type 48 roller shades do not report it | opt-in **Signal strength** sensor |
+| `RssiMean` | unitless, and fixed by blind type rather than measured: 34 on single-rail blinds, 0 on two-rail (see [Observed fields](#observed-fields)); type 48 roller shades do not report it | opt-in **Signal strength** sensor |
 | `FirmwareVersion` | blind firmware | device `sw_version` and the opt-in **Firmware version** sensor, except when `RfFirmwareVersion` is also present, which is shown instead (only single-rail blinds have been seen to report both) |
 | `Timestamp` | when the hub last **heard from** the blind, not when it last changed (see [Waking a blind](#waking-a-blind)); epoch seconds, as a number or a string | **Last seen** and **Connection** sensors |
 
@@ -1080,7 +1080,7 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 | `ModuleType` / `ModuleDetail` | both | `33`/`3`, `32`/`2`, `48`/`1`, `80`/`1` | **used** (cover type; see below) |
 | `BottomRailPosition`, `MiddleRailPosition`, `Target…` | status | 0–100 | **used** |
 | `BatteryVoltage` | status | `5` … `100` | **used** as a **percentage** (battery sensor) |
-| `RssiMean` | status | `0`, `34` | **used** (signal-strength sensor, unitless) |
+| `RssiMean` | status | `34` (type 32), `0` (type 33) | **used** (signal-strength sensor, unitless). Despite the name it does not measure the radio link. **Verified on real hardware** (2026-10-15): every single-rail (type 32) blind reads `34` and every two-rail (type 33) blind reads `0`, and no other value has been seen. The hub has no other per-blind signal reading: `GetRssi` and `GetSignal` return 404, and `PacketReceiveRate` is always `0`. |
 | `FirmwareVersion` | status | `0.5.3.8`, `4.1.0.4` | **used**; on type 33 it is the version the app shows |
 | `RfFirmwareVersion` | status (type 32 only) | `0.3.20` | **used**: this is the version the Norman app shows for single-rail blinds (Den_1: app 0.3.20, `FirmwareVersion` 4.1.0.4), so it takes precedence for the device's version |
 | `Timestamp` | status | epoch seconds | **used** (last-seen sensor, connection sensor). When the hub last **heard from** the blind: it moves when a blind reports in with nothing changed, not only on a state change. |

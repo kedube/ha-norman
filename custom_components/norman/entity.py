@@ -114,8 +114,8 @@ class NormanEntity(CoordinatorEntity[NormanCoordinator]):
 
         A blind that is out of radio range or has a flat battery is not distinguishable
         from a healthy one here: the hub keeps listing it in ``status`` with its last known
-        position, and the fields that might reveal the difference do not. ``RssiMean`` reads
-        0 on healthy two-rail blinds, and ``Timestamp`` is when the hub last *heard* from the
+        position, and the fields that might reveal the difference do not. ``RssiMean`` is fixed
+        by blind type, not measured, and ``Timestamp`` is when the hub last *heard* from the
         blind -- a battery blind's radio sleeps between commands, so a healthy blind nobody
         has touched goes quiet too, and a command still wakes it. Marking a blind
         unavailable on either would blank working entities, which is worse than a stale

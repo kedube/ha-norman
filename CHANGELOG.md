@@ -5,6 +5,12 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **The docs say what Signal strength shows.** The hub's `RssiMean` is fixed by blind type
+  (34 on every single-rail blind, 0 on every two-rail blind), not a measurement of the radio
+  link, so the sensor cannot show a blind at the edge of range. The sensor is unchanged.
+
 ## 0.89 — 2026-10-15
 
 - **Covers read opening and closing** while the hub has a target their rail has not reached, for

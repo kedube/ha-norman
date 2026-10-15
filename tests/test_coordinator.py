@@ -79,7 +79,7 @@ def test_process_data_merges_devices_and_status() -> None:
     assert (living.bottom_rail_position, living.middle_rail_position) == (40, 60)
     assert (living.target_bottom_rail_position, living.target_middle_rail_position) == (40, 60)
     assert living.battery_level == 73
-    assert living.signal_strength == 34
+    assert living.signal_strength == 0  # two-rail blinds send 0
     assert living.firmware_version == "0.5.3.8"
     assert living.rf_firmware_version is None
     assert living.last_update == 1700000000
@@ -89,6 +89,7 @@ def test_process_data_merges_devices_and_status() -> None:
     assert bedroom.name == "Bedroom Shade"
     assert bedroom.type == COVER_TYPE_SINGLE_RAIL
     assert bedroom.bottom_rail_position == 0
+    assert bedroom.signal_strength == 34  # single-rail blinds send 34
     assert bedroom.rf_firmware_version == "0.3.20"
 
 
