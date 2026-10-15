@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.90 — 2026-10-15
 
 - **The docs say what Signal strength shows.** The hub's `RssiMean` is fixed by blind type
   (34 on every single-rail blind, 0 on every two-rail blind), not a measurement of the radio
