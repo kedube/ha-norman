@@ -47,6 +47,7 @@ from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
+from custom_components.norman.api import NormanApiError
 from custom_components.norman.const import (
     DOMAIN,
     EVENT_COMMAND_FAILED,
@@ -522,7 +523,7 @@ async def test_command_failures_raise_home_assistant_error(
         fake_hub.control_response = control_response
     fake_hub.control_exc = control_exc
 
-    with pytest.raises(HomeAssistantError, match=f"Failed to set position.*Living Drape.*{match}"):
+    with pytest.raises(HomeAssistantError, match=f"Failed to move Living Drape.*{match}"):
         await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
 
 
@@ -544,6 +545,37 @@ async def test_a_busy_hub_is_retried_before_the_move_fails(
     assert {m["BottomRailPosition"] for m in moves} == {10}
 
 
+async def test_a_stop_while_a_busy_hub_is_waited_out_drops_the_retry(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A move the hub refused as busy is not tried again once the blind has been stopped.
+
+    The hub never carried the refused move out, so trying it again after the stop would
+    start a blind the stop was meant to keep still.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    orig = fake_hub._control
+    fake_hub.control_responses = [{"Error": 2}]
+
+    async def _stopped_while_busy(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if "BottomRailPosition" in body:
+            # The stop takes the blind over while the move waits to be tried again.
+            coordinator.async_supersede([UID_LIVING])
+        return await orig(method, url, data)
+
+    with (
+        patch.object(fake_hub, "_control", _stopped_while_busy),
+        patch("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+
+    assert len(_moves(fake_hub, UID_LIVING)) == 1
+    assert UID_LIVING not in coordinator._move_watchers
+
+
 async def test_a_hub_that_stays_busy_fails_with_the_code(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
@@ -551,7 +583,7 @@ async def test_a_hub_that_stays_busy_fails_with_the_code(
     fake_hub.control_response = {"Error": 2}
     with (
         patch("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0),
-        pytest.raises(HomeAssistantError, match="Failed to set position.*error code: 2"),
+        pytest.raises(HomeAssistantError, match="Failed to move Living Drape.*error code: 2"),
     ):
         await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
 
@@ -609,7 +641,7 @@ async def test_move_watchdog_chases_a_blind_that_never_moved(
 ) -> None:
     """A blind that stays silent is asked where it is, then sent the move again.
 
-    Captured 2026-09-18: blind 8399 answered a move to middle 100 with Error 0 and then
+    Captured 2026-09-18: a blind answered a move to middle 100 with Error 0 and then
     sat at middle 0 with target 100 for twelve minutes, until a report-in cleared it. So a
     blind that has not reported moving after the travel time is asked to report in, and if
     it still has not moved the move goes again -- up to MOVE_ATTEMPTS sends in all.
@@ -781,6 +813,144 @@ async def test_stop_cancels_the_move_watchdog(
     await settle(hass)
     assert UID_LIVING not in coordinator._move_watchers
     assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+
+
+async def test_a_stop_while_the_move_waits_its_turn_is_not_undone(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A move still queued when the blind is stopped goes out, then the stop, and no watch.
+
+    Watched, the stopped blind would read as a move that never arrived, and the move would
+    be sent again after the stop.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    api = coordinator.api
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        # Another command is being sent, so the move waits its turn.
+        await api._control_lock.acquire()
+        move = hass.async_create_task(coordinator.async_move_blind(UID_LIVING, 10, None))
+        stop = hass.async_create_task(_call(hass, COVER_DOMAIN, SERVICE_STOP_COVER))
+        for _ in range(25):
+            if coordinator.commanded_rails(UID_LIVING) is None:
+                break
+            await asyncio.sleep(0)
+        api._control_lock.release()
+        await move
+        assert UID_LIVING not in coordinator._move_watchers
+        await stop
+        await settle(hass)
+
+    sent = [c for c in fake_hub.control_calls if c.get("PeripheralUID") == UID_LIVING]
+    assert ["BottomRailPosition" in c for c in sent] == [True, False]
+    assert sent[1][HUB_CMD_STOP] == HUB_COMMAND_TRIGGER
+
+
+async def test_a_newer_move_ends_the_watch_of_the_one_before_it_at_once(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A move queued behind a watched one ends that watch when it is made, not when sent.
+
+    Left running, the older watch would read the blind heading for the newer move as its
+    own never arriving and send it again -- and the newer one may never be watched, here
+    because a third move took the blind over before it was sent and was then refused.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    api = coordinator.api
+    await coordinator.async_move_blind(UID_LIVING, 10, None)
+    assert UID_LIVING in coordinator._move_watchers
+
+    await api._control_lock.acquire()
+    try:
+        second = hass.async_create_task(coordinator.async_move_blind(UID_LIVING, 30, None))
+        third = hass.async_create_task(coordinator.async_move_blind(UID_LIVING, 50, None))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert UID_LIVING not in coordinator._move_watchers
+        fake_hub.control_responses = [{"Error": 0}, {"Error": 5}]
+    finally:
+        api._control_lock.release()
+    await second
+    with pytest.raises(NormanApiError):
+        await third
+
+    assert UID_LIVING not in coordinator._move_watchers
+    assert _rails_sent(fake_hub) == [(10, 60), (30, 60), (50, 60)]
+
+
+async def test_a_command_cancelled_mid_refresh_leaves_the_hub_available(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A command whose caller is cancelled during its refresh (an automation restarted)
+    does not mark the hub's update failed."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await settle(hass)
+    coordinator._debounced_refresh.async_cancel()
+    answer = asyncio.Event()
+    asked = asyncio.Event()
+    orig = fake_hub._status
+
+    async def _slow_status(method, url, data):  # noqa: ANN001
+        asked.set()
+        await answer.wait()
+        return await orig(method, url, data)
+
+    with patch.object(fake_hub, "_status", _slow_status):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        call = asyncio.create_task(
+            _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
+        )
+        await asyncio.wait_for(asked.wait(), 5)
+        call.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await call
+        assert coordinator.last_update_success
+        answer.set()
+        await settle(hass)
+    coordinator.async_supersede()
+
+
+async def test_cancelling_a_watch_mid_read_leaves_the_hub_available(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A watch replaced while it re-reads the hub does not mark the hub's update failed.
+
+    Failed, every entity of the hub would read unavailable until the next good read, and
+    Home Assistant would drop commands to them meanwhile.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    answer = asyncio.Event()
+    orig = fake_hub._status
+
+    async def _slow_status(method, url, data):  # noqa: ANN001
+        await answer.wait()
+        return await orig(method, url, data)
+
+    with patch.object(fake_hub, "_status", _slow_status):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        coordinator.async_watch_preset(UID_LIVING, coordinator.api.async_request_status)
+        for _ in range(5):
+            await asyncio.sleep(0)
+        # A stop takes the blind over while the watch's read is still out.
+        coordinator.async_supersede([UID_LIVING])
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert coordinator.last_update_success
+        answer.set()
+        await settle(hass)
+
+    await hass.services.async_call(
+        COVER_DOMAIN,
+        SERVICE_SET_COVER_POSITION,
+        {ATTR_ENTITY_ID: cover_entity_id(hass, UID_BEDROOM), ATTR_POSITION: 55},
+        blocking=True,
+    )
+    assert _moves(fake_hub, UID_BEDROOM)
+    coordinator.async_supersede()
 
 
 def _slider(hass: HomeAssistant, uid: int, rail: str) -> str:

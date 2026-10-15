@@ -82,7 +82,7 @@ CONF_WAKE_INTERVAL = "wake_interval"
 # notification that follows is stamped the same millisecond, so it is the hub announcing its
 # own stored target (diagnostics, 2026-09-21). A blind that ignores a move leaves the hub
 # reporting the old position with the new target -- indefinitely, until the blind next
-# reports in (blind 8399 sat at middle 0 / target 100 for twelve minutes on 2026-09-18). The
+# reports in (one blind sat at middle 0 / target 100 for twelve minutes on 2026-09-18). The
 # only proof of delivery is the blind reporting a new position, which it does when it stops
 # moving, 10-45 s later. So each command is followed by a background watch that ends as soon
 # as the blind reports progress; if it stays silent for MOVE_TIMEOUT it is asked to report in,
@@ -494,25 +494,30 @@ SERVICE_ROOM_COMMAND = "room_command"
 ATTR_ROOM = "room"
 ATTR_COMMAND = "command"
 
-# The room-wide commands the Norman app's room screen offers, and the control fields each
-# sends. Captured from the app (docs/NORMAN_API.md, "Room-wide and hub-wide control"):
+# The three presets the Norman app's room screen offers, and the control fields each sends.
+# Captured from the app (docs/NORMAN_API.md, "Room-wide and hub-wide control"):
 # Switch sets BOTH rails to a fixed pair: 0 -> bottom 0 / middle 100, 1 -> both 100. That is
 # what makes "best privacy" meaningful on a day/night shade -- the middle rail goes fully up,
 # stacking away the light-filtering sheer that hangs above it, and the bottom rail fully down,
 # drawing the blackout below it across the window. Verified on hardware.
-ROOM_COMMANDS: dict[str, dict[str, int]] = {
+ROOM_PRESETS: dict[str, dict[str, int]] = {
     "best_privacy": {"Switch": 0},
     "best_view": {"Switch": 1},
     "favorite": {"Favorite": HUB_COMMAND_SETTING},
-    # Asks every blind in the room to report in (battery, position, last seen). Nothing
-    # moves. Verified room-wide and hub-wide on 2026-09-18.
-    "refresh": {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING},
 }
 
-# All four verbs work with no RoomID at all, addressing every blind on the hub. This is what
-# the app's "All Rooms" screen sends, captured from it: the bare verb with no scope field.
-# None of the three is conditioned on rail count: a per-blind capture of a single-rail shade
-# shows the app sending Switch 0, Switch 1 and Favorite to it unchanged.
+# norman.room_command's commands: the presets, and refresh. Refresh has no fields of its own:
+# services.py hands it to coordinator.async_refresh_blinds, which sends StatusRequest -- one
+# unscoped request for the hub, or one per blind in a room. Never ReportBatteryLevel, which
+# has closed shades on real hardware and is sent only by the Report battery levels buttons.
+ROOM_COMMAND_REFRESH = "refresh"
+ROOM_COMMANDS: tuple[str, ...] = (*ROOM_PRESETS, ROOM_COMMAND_REFRESH)
+
+# All four commands work with no room, addressing every blind on the hub. For the three
+# presets that is the bare verb with no scope field, which is what the app's "All Rooms"
+# screen sends, captured from it; refresh without a room is one unscoped StatusRequest.
+# None of the three presets is conditioned on rail count: a per-blind capture of a
+# single-rail shade shows the app sending Switch 0, Switch 1 and Favorite to it unchanged.
 HUB_WIDE_COMMANDS: frozenset[str] = frozenset(ROOM_COMMANDS)
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_PERIPHERAL_UID = "peripheral_uid"

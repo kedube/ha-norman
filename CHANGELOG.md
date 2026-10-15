@@ -5,6 +5,72 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Room command descriptions corrected.** The action's help text said `best_privacy` leaves
+  the middle rail where it is and `best_view` opens only the bottom rail. `best_privacy` closes
+  the bottom rail and fully opens the middle rail, and `best_view` fully opens both. The help
+  text also now says that a room `refresh` sends a status request to each blind. Behaviour is
+  unchanged.
+- **A stop is no longer undone by a move still waiting to be sent.** A room or hub slider that
+  moves blinds one at a time skips the blinds a stop or a newer command reaches first. A move,
+  preset or scene overtaken while it waited is no longer watched, so it is not sent again after
+  the stop. Nor is a move or scene the hub refused as busy tried again once a stop or a newer
+  command has taken its blinds over.
+- **Stopping a blind no longer makes every Norman entity unavailable for a moment.** A stop that
+  landed while a move's check was reading the hub marked the hub's update failed, and Home
+  Assistant dropped commands to its entities until the next read.
+- **Diagnostics no longer expose the hub's location, name, time zone or address.** The traffic
+  log clips long replies, and a clipped device list (any hub with more than a few blinds) kept
+  those fields; connection errors kept the hub's address.
+- **The notification stream reconnects when the hub stops answering.** A hub that accepted the
+  connection but never answered left the integration waiting, with no updates, until restart.
+- **Actions need no `config_entry_id` when one hub is set up.** An ignored or disabled entry,
+  or a second hub that is not set up, made every action ask for one, and the dashboard card's
+  presets failed.
+- **Changing the hub's address reloads it once, not twice.** Home Assistant also flagged the
+  double reload, and stops accepting it in 2026.12.
+- **A reply with a byte that is not UTF-8 is read** instead of failing setup.
+- **A blind or room deleted in Home Assistant comes back** if the hub reports it again, without a
+  reload. A room that holds only scenes takes the hub's name for it, and is not deleted while
+  its scenes exist.
+- **Presets read the hub once instead of twice**, and saved scenes are parsed only when the
+  hub's device list is read.
+- **Dashboard card.** Tiles follow a renamed, disabled or enabled entity without a page reload.
+  List-layout sliders keep following the hub after a tap or a scroll, and arrow keys on them
+  send one move. Hidden entities are left off the card. The visual editor keeps the focus while
+  a title is typed. Arrow-key moves on both rails of a blind are both sent. Rooms with no area
+  get no presets, which always failed, and an unpinned card with two hubs sends each preset to
+  the right hub. The card no longer scans every entity in Home Assistant on each state change.
+- **Refresh from Norman Shades.** Each blind has a **⟳** beside its battery that asks it to
+  report in, each room's **⋯** has **Refresh**, and the header has a **⟳** for the whole house.
+  Nothing moves, and the battery report that can close shades is not offered. `hide_refresh:
+  true` removes them.
+- **Norman Shades fixes.** A blind going unavailable mid-drag on a list slider no longer sends
+  the half-dragged position. Arrow keys followed by a drag on the same rail send one move, not
+  two, and keys pressed during a drag no longer discard it. A dashboard edit redraws the card at
+  once instead of leaving it blank. Presets are not sent to a hub that is not set up, and a
+  device another integration also has is matched to the right hub. Redraws write only what
+  changed, about three times cheaper on a large card.
+- **`norman.send_hub_command` takes the blind over.** A move still being checked was sent again
+  on top of a verb sent by hand, such as a limit setting or a calibration, and reported as
+  failed. A status request still leaves the check running.
+- **A wake sweep stops when its hub unloads.** One running across a reload kept sending through
+  the old connection, unpaced against the new one.
+- **The device list is not re-read on every retry while the notification stream is down.** It
+  is read once when the stream drops and again when it returns; status is still read each time.
+- **A command cancelled part-way, by an automation restarting, no longer makes every Norman
+  entity unavailable** until the next read of the hub.
+- **The entry's title follows a hub renamed in the Norman app straight away**, not only at the
+  next restart, where it stayed on the old name. A new title no longer reloads the hub.
+- **`norman.get_hub_data` returns a device list the hub failed to read**, as it was sent,
+  instead of an error.
+- **Removing the last hub takes the Norman Shades card off the dashboard resources.**
+- **Messages are translated throughout.** Errors no longer carry English phrases such as "set
+  position (value: 30)", or button keys, inside a translated sentence; setup and update failures,
+  and adding a hub that is already being set up, have messages of their own. The Room field of
+  `norman.room_command` now says that leaving it empty addresses the whole hub.
+
 ## 0.86 — 2026-10-14
 
 - **Refresh blinds now uses `StatusRequest`.** A single unscoped request brought fresh reports

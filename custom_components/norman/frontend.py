@@ -111,6 +111,9 @@ def panel_module_url(hass: HomeAssistant) -> str:
 async def async_register_card(hass: HomeAssistant) -> None:
     """Serve the integration's www/ assets and register the card (idempotent)."""
     if hass.data.get(_REGISTERED_KEY):
+        # Served already; the resource itself may have gone with the last hub removed
+        # (async_remove_card_resource), and a hub added again needs it back.
+        await _async_register_lovelace_resource(hass)
         return
     hass.data[_REGISTERED_KEY] = True
 
@@ -204,6 +207,29 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         _LOGGER.info("Registered the Norman shades card at %s", resource_url)
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Norman could not auto-register the card resource")
+
+
+async def async_remove_card_resource(hass: HomeAssistant) -> None:
+    """Take the card off the Lovelace resource list (storage mode), once no hub is left.
+
+    Its URL is served only while the integration is set up; left on the list, every
+    dashboard would go on asking for a module that is no longer there. A resource list
+    kept in YAML is the user's to edit.
+    """
+    lovelace = hass.data.get("lovelace")
+    resources = getattr(lovelace, "resources", None)
+    if resources is None or getattr(resources, "store", None) is None:
+        return
+    try:
+        if not resources.loaded:
+            await resources.async_load()
+            resources.loaded = True
+        for item in list(resources.async_items()):
+            if isinstance(item, dict) and str(item.get("url", "")).startswith(CARD_URL_PATH):
+                await resources.async_delete_item(item["id"])
+                _LOGGER.info("Removed the Norman shades card resource %s", item["url"])
+    except Exception:  # noqa: BLE001 - removal is best-effort
+        _LOGGER.exception("Norman could not remove the card resource")
 
 
 async def async_add_entry_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:

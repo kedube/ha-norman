@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import json
+import re
 from typing import Any
 
-from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.components.diagnostics import REDACTED, async_redact_data
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 
+from .api import redact_hub_text
 from .const import SENSITIVE_HUB_KEYS
 from .coordinator import NormanConfigEntry
 from .frontend import async_get_frontend_diagnostics
@@ -21,11 +23,18 @@ from .frontend import async_get_frontend_diagnostics
 TO_REDACT = {CONF_HOST, "unique_id", *SENSITIVE_HUB_KEYS}
 
 
+# An IPv4 address: a failed connection's error can name the address a host name resolved to,
+# which is not among the values the entry knows.
+_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+
+
 def redact_raw_body(body: str, secrets: list[str]) -> str:
-    """Redact a raw hub response: by key when it is JSON, by value otherwise.
+    """Redact a raw hub response by key, then by value.
 
     Raw bodies are kept as text so unknown fields survive; parsing them here only to apply
-    the key-based redaction keeps that property while still blanking sensitive keys.
+    the key-based redaction keeps that property while still blanking sensitive keys. Text
+    that does not parse -- a body clipped by the recorder, a piece of the stream -- is
+    redacted key by key where the keys can still be found (``redact_hub_text``).
     """
     try:
         data = json.loads(body)
@@ -33,9 +42,15 @@ def redact_raw_body(body: str, secrets: list[str]) -> str:
         data = None
     if isinstance(data, dict | list):
         body = json.dumps(async_redact_data(data, TO_REDACT), separators=(",", ":"))
+    else:
+        body = redact_hub_text(body)
+    return _without_secrets(body, secrets)
+
+
+def _without_secrets(text: str, secrets: list[str]) -> str:
     for secret in secrets:
-        body = body.replace(secret, "**REDACTED**")
-    return body
+        text = text.replace(secret, REDACTED)
+    return text
 
 
 async def async_get_config_entry_diagnostics(
@@ -53,6 +68,9 @@ async def async_get_config_entry_diagnostics(
     for exchange in traffic["exchanges"]:
         if exchange.get("response"):
             exchange["response"] = redact_raw_body(exchange["response"], secrets)
+        if exchange.get("error"):
+            # A connection error names the hub's address.
+            exchange["error"] = _IPV4.sub(REDACTED, _without_secrets(exchange["error"], secrets))
     traffic = async_redact_data(traffic, TO_REDACT)
 
     return {

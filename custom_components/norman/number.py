@@ -217,9 +217,7 @@ class NormanNumber(NormanRailMixin, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Move this rail, leaving the other one where it is heading."""
         bottom, middle = self.entity_description.position_fn(int(value))
-        await self._async_set_position(
-            bottom=bottom, middle=middle, action="set position", value=int(value)
-        )
+        await self._async_set_position(bottom=bottom, middle=middle, action="move")
 
 
 class NormanScopeNumber(NormanScopeEntity, NumberEntity):
@@ -269,11 +267,7 @@ class NormanScopeNumber(NormanScopeEntity, NumberEntity):
         except (NormanApiError, NormanConnectionError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
-                translation_key="command_failed",
-                translation_placeholders={
-                    "action": f"set position (value: {position})",
-                    "name": self._scope_name,
-                    "error": str(err),
-                },
+                translation_key="move_failed",
+                translation_placeholders={"name": self._scope_name, "error": str(err)},
             ) from err
         await self.coordinator.async_request_refresh()

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import aiohttp
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.setup import async_setup_component
@@ -66,11 +66,36 @@ async def test_get_hub_data_requires_entry_id_with_several_hubs(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
     """With more than one hub the id must be given."""
-    MockConfigEntry(domain=DOMAIN, data={"host": "192.168.1.99"}, unique_id="Other").add_to_hass(
-        hass
-    )
+    other = MockConfigEntry(domain=DOMAIN, data={"host": "192.168.1.99"}, unique_id="Other")
+    other.add_to_hass(hass)
+    other.mock_state(hass, ConfigEntryState.LOADED)
     with pytest.raises(ServiceValidationError, match="2 Norman hubs"):
         await _get_hub_data(hass)
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        {"source": SOURCE_IGNORE},
+        {"disabled_by": ConfigEntryDisabler.USER},
+        {},
+    ],
+    ids=["ignored", "disabled", "not-set-up"],
+)
+async def test_get_hub_data_needs_no_id_with_one_hub_set_up(
+    hass: HomeAssistant, init_integration: MockConfigEntry, other: dict
+) -> None:
+    """A discovered hub ignored, one disabled, or one not set up leaves one hub to address.
+
+    The sidebar panel and the card send no hub then either.
+    """
+    MockConfigEntry(
+        domain=DOMAIN, data={"host": "192.168.1.99"}, unique_id="Other", **other
+    ).add_to_hass(hass)
+
+    response = await _get_hub_data(hass)
+
+    assert response["devices"]
 
 
 async def test_get_hub_data_requires_a_loaded_entry(
@@ -99,6 +124,22 @@ async def test_get_hub_data_reports_hub_failures(
         await _get_hub_data(hass)
 
 
+async def test_get_hub_data_returns_a_failed_device_list_as_sent(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A device list the hub could not read is returned as it came, not raised.
+
+    The hub's configuration reader can fail while status still answers, which is when a
+    report needs the raw reply.
+    """
+    fake_hub.devices = {"status": {"code": 1, "error": "Request process fail."}}
+
+    response = await _get_hub_data(hass)
+
+    assert response["devices"] == {"status": {"code": 1, "error": "Request process fail."}}
+    assert response["status"]["Peripherals"]
+
+
 async def test_send_hub_command_posts_fields_and_returns_reply(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
@@ -121,6 +162,35 @@ async def test_send_hub_command_posts_fields_and_returns_reply(
     assert response["reply"]["MotorStop"] == 1
     # A refresh follows so any resulting movement shows up
     assert len(fake_hub.calls_to("/status")) == status_calls + 1
+
+
+@pytest.mark.parametrize(
+    ("fields", "watched"),
+    [({"Favorite": 0}, False), ({"StatusRequest": 0}, True)],
+    ids=["verb", "status-request"],
+)
+async def test_send_hub_command_takes_the_blind_over(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fields: dict, watched: bool
+) -> None:
+    """A verb sent by hand ends the move watch; a status request leaves it running.
+
+    Left running, the watch would read the blind heading elsewhere as its move never
+    arriving, and send that move again on top of the verb.
+    """
+    coordinator = init_integration.runtime_data
+    await coordinator.async_move_blind(UID_LIVING, 10, None)
+    assert UID_LIVING in coordinator._move_watchers
+
+    await hass.services.async_call(
+        DOMAIN,
+        "send_hub_command",
+        {"peripheral_uid": str(UID_LIVING), "fields": fields},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert (UID_LIVING in coordinator._move_watchers) is watched
+    coordinator.async_supersede()
 
 
 async def test_send_hub_command_reports_rejection(
@@ -178,9 +248,9 @@ async def test_room_command_sends_the_room_wide_verb(
     # Addressing the room replaces the per-blind id; sending both would be ambiguous.
     assert "PeripheralUID" not in call
     assert {"Timestamp", "TaskID"} <= set(call)
-    # The targets the room's watches aim at, then the re-read every command gets.
+    # One read, for the targets the room's watches aim at; it serves as the refresh too.
     await hass.async_block_till_done()
-    assert len(fake_hub.calls_to("/status")) == status_calls + 2
+    assert len(fake_hub.calls_to("/status")) == status_calls + 1
 
 
 async def test_room_command_maps_each_button_to_its_verb(

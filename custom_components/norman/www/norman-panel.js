@@ -108,7 +108,8 @@ class NormanPanel extends HTMLElement {
     const before = JSON.stringify(this._cardConfig());
     this._panel = panel;
     if (!this._card || JSON.stringify(this._cardConfig()) === before) return;
-    // A new config clears the card; handing it hass again draws it straight away.
+    // The card redraws for a new config itself once it has hass; it is handed hass here in
+    // case it has none yet.
     this._card.setConfig(this._cardConfig());
     if (this._hass) this._card.hass = this._hass;
   }

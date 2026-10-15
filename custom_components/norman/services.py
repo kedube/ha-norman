@@ -23,8 +23,11 @@ from .const import (
     ATTR_PERIPHERAL_UID,
     ATTR_ROOM,
     DOMAIN,
+    HUB_CMD_REQUEST_STATUS,
     HUB_WIDE_COMMANDS,
+    ROOM_COMMAND_REFRESH,
     ROOM_COMMANDS,
+    ROOM_PRESETS,
     SENSITIVE_HUB_KEYS,
     SERVICE_GET_HUB_DATA,
     SERVICE_ROOM_COMMAND,
@@ -52,8 +55,16 @@ SEND_HUB_COMMAND_SCHEMA = vol.Schema(
 
 
 def _resolve_entry(hass: HomeAssistant, call: ServiceCall) -> NormanConfigEntry:
-    """Find the entry the call targets; with a single hub the id can be omitted."""
-    entries = hass.config_entries.async_entries(DOMAIN)
+    """Find the entry the call targets; with a single hub the id can be omitted.
+
+    A hub that is ignored or disabled never counts. Nor does one that is not set up while
+    another is: the sidebar panel and the card leave the hub out then too, as there is
+    only one to address.
+    """
+    entries = hass.config_entries.async_entries(
+        DOMAIN, include_ignore=False, include_disabled=False
+    )
+    loaded = [entry for entry in entries if entry.state is ConfigEntryState.LOADED]
     if entry_id := call.data.get(ATTR_CONFIG_ENTRY_ID):
         entry = hass.config_entries.async_get_entry(entry_id)
         if entry is None or entry.domain != DOMAIN:
@@ -62,13 +73,19 @@ def _resolve_entry(hass: HomeAssistant, call: ServiceCall) -> NormanConfigEntry:
                 translation_key="unknown_entry",
                 translation_placeholders={"entry_id": str(entry_id)},
             )
-    elif len(entries) == 1:
+    elif len(loaded) == 1:
+        entry = loaded[0]
+    elif not loaded and len(entries) == 1:
+        # Reported below: the one hub is not set up.
         entry = entries[0]
     else:
         raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="multiple_hubs",
-            translation_placeholders={"count": str(len(entries)), "field": ATTR_CONFIG_ENTRY_ID},
+            translation_placeholders={
+                "count": str(len(loaded) or len(entries)),
+                "field": ATTR_CONFIG_ENTRY_ID,
+            },
         )
     if entry.state is not ConfigEntryState.LOADED:
         raise ServiceValidationError(
@@ -90,8 +107,9 @@ async def _async_get_hub_data(call: ServiceCall) -> ServiceResponse:
     entry = _resolve_entry(call.hass, call)
     api = entry.runtime_data.api
     try:
-        devices: dict[str, Any] = await api.async_get_devices()
-        status: dict[str, Any] = await api.async_get_status()
+        # Unvalidated: a reply carrying an error is what a report about a failing hub needs.
+        devices: dict[str, Any] = await api.async_get_devices(validate=False)
+        status: dict[str, Any] = await api.async_get_status(validate=False)
     except (NormanConnectionError, NormanApiError) as err:
         raise HomeAssistantError(
             translation_domain=DOMAIN,
@@ -113,11 +131,20 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
     ``GroupID`` (see docs/NORMAN_API.md). Pass those fields yourself to reproduce the app's
     payload; they are merged in as given. ``norman.room_command`` already does this for the
     three commands that need it.
+
+    Anything but a status request takes the blind over, as the buttons do: a move still in
+    flight would otherwise be watched, read as never arriving, and sent again on top of a
+    limit setting or a calibration. A ``RoomID`` with no ``GroupID`` takes the room over.
     """
     entry = _resolve_entry(call.hass, call)
-    api = entry.runtime_data.api
+    coordinator = entry.runtime_data
+    api = coordinator.api
     uid: int = call.data[ATTR_PERIPHERAL_UID]
     fields: dict[str, Any] = dict(call.data[ATTR_FIELDS])
+    if set(fields) - {HUB_CMD_REQUEST_STATUS}:
+        coordinator.async_supersede([uid])
+        if isinstance(room_id := fields.get("RoomID"), int) and "GroupID" not in fields:
+            coordinator.async_supersede_room(room_id)
     try:
         reply = await api.async_send_control(uid, fields)
     except (NormanConnectionError, NormanApiError) as err:
@@ -131,24 +158,32 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
 
 
 async def _async_send_room_fields(
-    entry: NormanConfigEntry, room_id: int | None, command: str, scope: str
+    entry: NormanConfigEntry, room_id: int | None, command: str, room: str | None
 ) -> None:
-    """Send one room command, to a room or (``room_id`` None) to every blind on the hub."""
+    """Send one room command, to the room named ``room`` or (both None) to the whole hub."""
     coordinator = entry.runtime_data
     try:
-        if command == "refresh":
+        if command == ROOM_COMMAND_REFRESH:
             # A safe status request for the whole hub, or one per blind in the room.
             await coordinator.async_refresh_blinds(room_id)
         else:
-            # A preset: one request, then every blind it reached is watched.
-            await coordinator.async_send_room_preset(room_id, ROOM_COMMANDS[command])
+            # A preset: one request, then every blind it reached is watched. The watches
+            # read the hub for their targets at once, which serves as the refresh too.
+            await coordinator.async_send_room_preset(room_id, ROOM_PRESETS[command])
     except (NormanConnectionError, NormanApiError) as err:
+        if room is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="hub_button_failed",
+                translation_placeholders={"command": command, "error": str(err)},
+            ) from err
         raise HomeAssistantError(
             translation_domain=DOMAIN,
             translation_key="room_command_failed",
-            translation_placeholders={"room": scope, "command": command, "error": str(err)},
+            translation_placeholders={"room": room, "command": command, "error": str(err)},
         ) from err
-    await coordinator.async_request_refresh()
+    if command == ROOM_COMMAND_REFRESH:
+        await coordinator.async_request_refresh()
 
 
 async def _async_room_command(call: ServiceCall) -> None:
@@ -163,6 +198,9 @@ async def _async_room_command(call: ServiceCall) -> None:
     Omit ``room`` to address every blind on the hub: the hub accepts all three verbs with no
     ``RoomID`` at all, which is what the app's own "All Rooms" screen sends. All three reach
     every blind whatever its rail count.
+
+    ``refresh`` asks for fresh status instead: one ``StatusRequest`` per blind in a room, or
+    one unscoped request for the whole hub, since ``RoomID`` does not confine that verb.
     """
     entry = _resolve_entry(call.hass, call)
     coordinator = entry.runtime_data
@@ -179,7 +217,7 @@ async def _async_room_command(call: ServiceCall) -> None:
                     "commands": ", ".join(sorted(HUB_WIDE_COMMANDS)),
                 },
             )
-        await _async_send_room_fields(entry, None, command, "the whole hub")
+        await _async_send_room_fields(entry, None, command, None)
         return
 
     wanted = str(wanted)

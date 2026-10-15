@@ -148,7 +148,10 @@ def test_exception_translation_keys_exist() -> None:
     for source in COMPONENT.glob("*.py"):
         text = source.read_text(encoding="utf-8")
         for block in re.findall(
-            r"(?:HomeAssistantError|ServiceValidationError)\((.*?)\)\s*(?:from|$)", text, re.S
+            r"(?:HomeAssistantError|ServiceValidationError|ConfigEntryNotReady|UpdateFailed)"
+            r"\((.*?)\)\s*(?:from|$)",
+            text,
+            re.S,
         ):
             raised |= set(re.findall(r'translation_key="([a-z_]+)"', block))
     assert raised, "no translated exceptions found -- the regex needs updating"
@@ -312,6 +315,13 @@ def test_card_matches_the_translation_keys_the_entities_use() -> None:
     assert {"bottom_rail", "middle_rail"} <= matched, (
         "the card must match both rail covers by translation key"
     )
+    # The buttons it presses (a blind's Request status) are matched the same way.
+    buttons = set(re.findall(r'^const BUTTON_\w+ = "(\w+)";', card, re.M))
+    assert buttons, "no BUTTON_* constants found in the card"
+    assert buttons <= set(strings["entity"]["button"]), sorted(
+        buttons - set(strings["entity"]["button"])
+    )
+    assert not {key for key in buttons if "report_battery" in key}, "never the battery report"
 
 
 def test_card_finds_the_hub_by_keys_only_the_hub_has() -> None:

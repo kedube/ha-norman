@@ -35,6 +35,7 @@
     },
     "abort": {
       "already_configured": "Dieser Norman Hub ist bereits konfiguriert",
+      "already_in_progress": "Dieser Norman Hub wird bereits eingerichtet",
       "cannot_connect": "Verbindung zum Norman Hub fehlgeschlagen",
       "invalid_response": "Ungültige Antwort vom Norman Hub erhalten",
       "reconfigure_successful": "Die Hub-Adresse wurde aktualisiert",
@@ -90,15 +91,15 @@
     },
     "room_command": {
       "name": "Raumbefehl",
-      "description": "Führt eine der Raumschaltflächen der Norman-App für alle Rollos eines Raums aus, in einer einzigen Anfrage an den Hub.",
+      "description": "Führt eine der Raumschaltflächen der Norman-App für alle Rollos eines Raums aus. best_privacy, best_view und favorite gehen in einer einzigen Anfrage an den Hub; refresh in einem Raum sendet jedem Rollo eine eigene Statusanfrage.",
       "fields": {
         "room": {
           "name": "Raum",
-          "description": "Der Name des Raums, wie der Hub ihn kennt (der Raumname in der Norman-App)."
+          "description": "Der Name des Raums, wie der Hub ihn kennt (der Raumname in der Norman-App). Leer lassen, um alle Rollos am Hub anzusprechen."
         },
         "command": {
           "name": "Befehl",
-          "description": "best_privacy schließt die untere Schiene und lässt die mittlere Schiene, wo sie ist; best_view öffnet die untere Schiene; favorite fährt den Raum auf die gespeicherte Favoritenposition; refresh fordert jedes Rollo im Raum auf, sich zu melden (nichts bewegt sich)."
+          "description": "best_privacy schließt die untere Schiene und öffnet die mittlere Schiene ganz; best_view öffnet beide Schienen ganz; favorite fährt den Raum auf die gespeicherte Favoritenposition; refresh fordert jedes Rollo im Raum auf, sich zu melden (nichts bewegt sich)."
         },
         "config_entry_id": {
           "name": "Hub",
@@ -282,8 +283,14 @@
     }
   },
   "exceptions": {
-    "command_failed": {
-      "message": "{action} für {name} fehlgeschlagen: {error}"
+    "open_failed": {
+      "message": "{name} konnte nicht geöffnet werden: {error}"
+    },
+    "close_failed": {
+      "message": "{name} konnte nicht geschlossen werden: {error}"
+    },
+    "move_failed": {
+      "message": "{name} konnte nicht bewegt werden: {error}"
     },
     "stop_failed": {
       "message": "{name} konnte nicht gestoppt werden: {error}"
@@ -293,6 +300,9 @@
     },
     "hub_read_failed": {
       "message": "Norman Hub {hub} konnte nicht gelesen werden: {error}"
+    },
+    "connect_failed": {
+      "message": "Verbindung zum Norman Hub {hub} fehlgeschlagen: {error}"
     },
     "hub_command_rejected": {
       "message": "Norman Hub {hub} hat den Befehl für {uid} abgelehnt: {error}"

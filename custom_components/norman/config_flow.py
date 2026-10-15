@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.config_entries import (
     SOURCE_RECONFIGURE,
     ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
@@ -144,6 +145,22 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
             return thing_name or host
         return None
 
+    def _abort_if_hub_configured(self, host: str) -> None:
+        """Abort for a hub already set up, storing the address it answered at.
+
+        A loaded hub reloads itself when its address changes (its update listener), so it
+        is not reloaded here as well; one waiting to retry setup has no listener, and is.
+        """
+        entry = (
+            self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, self.unique_id)
+            if self.unique_id is not None
+            else None
+        )
+        self._abort_if_unique_id_configured(
+            updates={CONF_HOST: host},
+            reload_on_update=entry is None or entry.state is not ConfigEntryState.LOADED,
+        )
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
@@ -157,7 +174,7 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
                 # even if it is re-added by a different address; the stored host is
                 # refreshed in that case instead of creating a duplicate.
                 await self.async_set_unique_id(unique_id)
-                self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+                self._abort_if_hub_configured(host)
                 return self.async_create_entry(
                     title=default_title(host),
                     data={CONF_HOST: host},
@@ -184,7 +201,7 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason=errors.get("base", "unknown"))
 
         await self.async_set_unique_id(unique_id)
-        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        self._abort_if_hub_configured(host)
 
         self._discovered_host = host
         self.context["title_placeholders"] = {"host": host}
@@ -225,8 +242,15 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_mismatch(reason="wrong_hub")
                 # A title the integration gave follows the address; one chosen in Home
-                # Assistant, or taken from the hub's name, stays.
-                return self.async_update_reload_and_abort(
+                # Assistant, or taken from the hub's name, stays. A loaded hub reloads
+                # itself when either changes (its update listener); one waiting to retry
+                # setup has no listener, so it is reloaded from here.
+                update = (
+                    self.async_update_and_abort
+                    if entry.state is ConfigEntryState.LOADED
+                    else self.async_update_reload_and_abort
+                )
+                return update(
                     entry,
                     data_updates={CONF_HOST: host},
                     title=default_title(host) if is_default_title(entry.title) else UNDEFINED,

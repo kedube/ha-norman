@@ -35,6 +35,7 @@
     },
     "abort": {
       "already_configured": "Este Norman Hub ya está configurado",
+      "already_in_progress": "Este Norman Hub ya se está configurando",
       "cannot_connect": "No se pudo conectar con el Norman Hub",
       "invalid_response": "Se recibió una respuesta no válida del Norman Hub",
       "reconfigure_successful": "La dirección del hub se ha actualizado",
@@ -90,15 +91,15 @@
     },
     "room_command": {
       "name": "Comando de habitación",
-      "description": "Ejecuta uno de los botones de habitación de la aplicación Norman en todas las persianas de una habitación, en una sola petición al concentrador.",
+      "description": "Ejecuta uno de los botones de habitación de la aplicación Norman en todas las persianas de una habitación. best_privacy, best_view y favorite van en una sola petición al concentrador; refresh en una habitación envía una petición de estado a cada persiana.",
       "fields": {
         "room": {
           "name": "Habitación",
-          "description": "El nombre de la habitación tal como lo conoce el concentrador (el nombre en la aplicación Norman)."
+          "description": "El nombre de la habitación tal como lo conoce el concentrador (el nombre en la aplicación Norman). Déjalo vacío para dirigirte a todas las persianas del concentrador."
         },
         "command": {
           "name": "Comando",
-          "description": "best_privacy cierra el riel inferior y deja el riel central donde está; best_view abre el riel inferior; favorite lleva la habitación a su posición favorita guardada; refresh pide a cada persiana de la habitación que informe (nada se mueve)."
+          "description": "best_privacy cierra el riel inferior y abre del todo el riel central; best_view abre del todo ambos rieles; favorite lleva la habitación a su posición favorita guardada; refresh pide a cada persiana de la habitación que informe (nada se mueve)."
         },
         "config_entry_id": {
           "name": "Concentrador",
@@ -282,8 +283,14 @@
     }
   },
   "exceptions": {
-    "command_failed": {
-      "message": "Error al {action} en {name}: {error}"
+    "open_failed": {
+      "message": "No se pudo abrir {name}: {error}"
+    },
+    "close_failed": {
+      "message": "No se pudo cerrar {name}: {error}"
+    },
+    "move_failed": {
+      "message": "No se pudo mover {name}: {error}"
     },
     "stop_failed": {
       "message": "No se pudo detener {name}: {error}"
@@ -293,6 +300,9 @@
     },
     "hub_read_failed": {
       "message": "No se pudo leer del Norman Hub {hub}: {error}"
+    },
+    "connect_failed": {
+      "message": "No se pudo conectar con el Norman Hub {hub}: {error}"
     },
     "hub_command_rejected": {
       "message": "El Norman Hub {hub} rechazó el comando para {uid}: {error}"

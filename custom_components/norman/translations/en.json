@@ -35,6 +35,7 @@
     },
     "abort": {
       "already_configured": "This Norman Hub is already configured",
+      "already_in_progress": "This Norman Hub is already being set up",
       "cannot_connect": "Failed to connect to the Norman Hub",
       "invalid_response": "Invalid response received from the Norman Hub",
       "reconfigure_successful": "The hub address has been updated",
@@ -90,15 +91,15 @@
     },
     "room_command": {
       "name": "Room command",
-      "description": "Run one of the Norman app's room buttons against every blind in a room, in a single request to the hub.",
+      "description": "Run one of the Norman app's room buttons against every blind in a room. best_privacy, best_view and favorite go in a single request to the hub; refresh in a room sends a status request to each blind.",
       "fields": {
         "room": {
           "name": "Room",
-          "description": "The room's name as the hub knows it (the Norman app's room name)."
+          "description": "The room's name as the hub knows it (the Norman app's room name). Leave empty to address every blind on the hub."
         },
         "command": {
           "name": "Command",
-          "description": "best_privacy closes the bottom rail and leaves the middle rail where it is; best_view opens the bottom rail; favorite sends the room to its stored favorite; refresh asks every blind in the room to report in (nothing moves)."
+          "description": "best_privacy closes the bottom rail and fully opens the middle rail; best_view fully opens both rails; favorite sends the room to its stored favorite; refresh asks every blind in the room to report in (nothing moves)."
         },
         "config_entry_id": {
           "name": "Hub",
@@ -282,8 +283,14 @@
     }
   },
   "exceptions": {
-    "command_failed": {
-      "message": "Failed to {action} for {name}: {error}"
+    "open_failed": {
+      "message": "Failed to open {name}: {error}"
+    },
+    "close_failed": {
+      "message": "Failed to close {name}: {error}"
+    },
+    "move_failed": {
+      "message": "Failed to move {name}: {error}"
     },
     "stop_failed": {
       "message": "Failed to stop {name}: {error}"
@@ -293,6 +300,9 @@
     },
     "hub_read_failed": {
       "message": "Could not read from Norman hub {hub}: {error}"
+    },
+    "connect_failed": {
+      "message": "Failed to connect to Norman hub {hub}: {error}"
     },
     "hub_command_rejected": {
       "message": "Norman hub {hub} rejected the command for {uid}: {error}"

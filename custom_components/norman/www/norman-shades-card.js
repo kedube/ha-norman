@@ -14,7 +14,7 @@
  * (via the hass object's `entities` map) and groups them by the area Home Assistant has each
  * device in, which the integration seeds from the hub's own room names. Nothing has to be
  * listed in the card configuration. With more than one hub, `config_entry_id` limits the card
- * to one of them and sends its presets to that hub.
+ * to one of them and sends its presets and refreshes to that hub.
  *
  * The integration also shows this card full screen as a sidebar panel (norman-panel.js).
  * There it carries a `panel` attribute and a `narrow` property from Home Assistant: on phones
@@ -71,6 +71,18 @@ const KEY_ROOM_SCENE = "room_scene";
 const KEY_SCENE_GROUP = "scene_group";
 // Home Assistant's own icon for a scene.
 const SCENE_ICON = "mdi:palette";
+// A blind's Request status button, found by its translation key like the KEY_* entities: it
+// asks the blind to report in, and nothing moves. The hub's and rooms' Report battery levels
+// buttons can close shades, so the card offers none of them.
+const BUTTON_REQUEST_STATUS = "request_status";
+const REFRESH_ICON = "mdi:refresh";
+// A refresh control's icon turns once when pressed, to say the request went. The answers come
+// later -- a blind's within seconds, a whole hub's over a couple of minutes -- and the card
+// redraws as they arrive.
+const REFRESH_SPIN_MS = 1000;
+// A second press of the same refresh control within this long is ignored: each press queues
+// status requests at the hub's pace, and repeats only push the answers back.
+const REFRESH_HOLD_MS = 5000;
 // Entities only the hub device carries, which is how the card tells the hub from the rest:
 // each of the hub's rooms is a Norman device without a cover as well. Several, because the
 // frontend registry leaves out disabled entities and any one of these can be disabled.
@@ -109,6 +121,11 @@ const STRINGS = {
     room_open: "Open every blind in {room}",
     room_stop: "Stop every blind in {room}",
     room_close: "Close every blind in {room}",
+    room_refresh: "Refresh every blind in {room}",
+    room_more: "More for {room}",
+    home_refresh: "Refresh every blind",
+    refresh: "Refresh",
+    refresh_blind: "Refresh {name}",
     blind_details: "{name} details",
     stop: "Stop",
     stop_blind: "Stop {name}",
@@ -156,6 +173,7 @@ const STRINGS = {
     editor_hide_room_controls: "Hide room open / stop / close",
     editor_hide_room_presets: "Hide room presets and scenes",
     editor_hide_home_controls: "Hide whole-house presets and scene groups",
+    editor_hide_refresh: "Hide refresh buttons",
   },
   de: {
     card_name: "Norman-Rollos",
@@ -176,6 +194,11 @@ const STRINGS = {
     room_open: "Alle Rollos in {room} öffnen",
     room_stop: "Alle Rollos in {room} stoppen",
     room_close: "Alle Rollos in {room} schließen",
+    room_refresh: "Alle Rollos in {room} aktualisieren",
+    room_more: "Mehr für {room}",
+    home_refresh: "Alle Rollos aktualisieren",
+    refresh: "Aktualisieren",
+    refresh_blind: "{name} aktualisieren",
     blind_details: "Details zu {name}",
     stop: "Stopp",
     stop_blind: "{name} stoppen",
@@ -223,6 +246,7 @@ const STRINGS = {
     editor_hide_room_controls: "Öffnen / Stopp / Schließen der Räume ausblenden",
     editor_hide_room_presets: "Voreinstellungen und Szenen der Räume ausblenden",
     editor_hide_home_controls: "Voreinstellungen und Szenengruppen für das ganze Haus ausblenden",
+    editor_hide_refresh: "Schaltflächen zum Aktualisieren ausblenden",
   },
   es: {
     card_name: "Persianas Norman",
@@ -243,6 +267,11 @@ const STRINGS = {
     room_open: "Abrir todas las persianas de {room}",
     room_stop: "Detener todas las persianas de {room}",
     room_close: "Cerrar todas las persianas de {room}",
+    room_refresh: "Actualizar todas las persianas de {room}",
+    room_more: "Más opciones de {room}",
+    home_refresh: "Actualizar todas las persianas",
+    refresh: "Actualizar",
+    refresh_blind: "Actualizar {name}",
     blind_details: "Detalles de {name}",
     stop: "Detener",
     stop_blind: "Detener {name}",
@@ -290,6 +319,7 @@ const STRINGS = {
     editor_hide_room_controls: "Ocultar abrir / detener / cerrar de las habitaciones",
     editor_hide_room_presets: "Ocultar los preajustes y escenas de las habitaciones",
     editor_hide_home_controls: "Ocultar los preajustes y grupos de escenas de toda la casa",
+    editor_hide_refresh: "Ocultar los botones de actualizar",
   },
   fr: {
     card_name: "Stores Norman",
@@ -310,6 +340,11 @@ const STRINGS = {
     room_open: "Ouvrir tous les stores de {room}",
     room_stop: "Arrêter tous les stores de {room}",
     room_close: "Fermer tous les stores de {room}",
+    room_refresh: "Actualiser tous les stores de {room}",
+    room_more: "Plus d'options pour {room}",
+    home_refresh: "Actualiser tous les stores",
+    refresh: "Actualiser",
+    refresh_blind: "Actualiser {name}",
     blind_details: "Détails de {name}",
     stop: "Arrêt",
     stop_blind: "Arrêter {name}",
@@ -357,6 +392,7 @@ const STRINGS = {
     editor_hide_room_controls: "Masquer ouvrir / arrêter / fermer des pièces",
     editor_hide_room_presets: "Masquer les préréglages et scènes des pièces",
     editor_hide_home_controls: "Masquer les préréglages et groupes de scènes de toute la maison",
+    editor_hide_refresh: "Masquer les boutons d'actualisation",
   },
   ja: {
     card_name: "Norman ブラインド",
@@ -377,6 +413,11 @@ const STRINGS = {
     room_open: "{room}のブラインドをすべて開く",
     room_stop: "{room}のブラインドをすべて停止",
     room_close: "{room}のブラインドをすべて閉じる",
+    room_refresh: "{room}のブラインドをすべて更新",
+    room_more: "{room}のその他の操作",
+    home_refresh: "すべてのブラインドを更新",
+    refresh: "更新",
+    refresh_blind: "{name}を更新",
     blind_details: "{name}の詳細",
     stop: "停止",
     stop_blind: "{name}を停止",
@@ -424,6 +465,7 @@ const STRINGS = {
     editor_hide_room_controls: "部屋の開く／停止／閉じるを非表示",
     editor_hide_room_presets: "部屋のプリセットとシーンを非表示",
     editor_hide_home_controls: "家全体のプリセットとシーングループを非表示",
+    editor_hide_refresh: "更新ボタンを非表示",
   },
   "zh-Hans": {
     card_name: "Norman 窗帘",
@@ -444,6 +486,11 @@ const STRINGS = {
     room_open: "打开{room}的所有窗帘",
     room_stop: "停止{room}的所有窗帘",
     room_close: "关闭{room}的所有窗帘",
+    room_refresh: "刷新{room}的所有窗帘",
+    room_more: "{room}的更多操作",
+    home_refresh: "刷新所有窗帘",
+    refresh: "刷新",
+    refresh_blind: "刷新{name}",
     blind_details: "{name}详情",
     stop: "停止",
     stop_blind: "停止{name}",
@@ -491,6 +538,7 @@ const STRINGS = {
     editor_hide_room_controls: "隐藏房间的打开 / 停止 / 关闭",
     editor_hide_room_presets: "隐藏房间预设和场景",
     editor_hide_home_controls: "隐藏全屋预设和场景组",
+    editor_hide_refresh: "隐藏刷新按钮",
   },
   "zh-Hant": {
     card_name: "Norman 窗簾",
@@ -511,6 +559,11 @@ const STRINGS = {
     room_open: "開啟{room}的所有窗簾",
     room_stop: "停止{room}的所有窗簾",
     room_close: "關閉{room}的所有窗簾",
+    room_refresh: "重新整理{room}的所有窗簾",
+    room_more: "{room}的更多操作",
+    home_refresh: "重新整理所有窗簾",
+    refresh: "重新整理",
+    refresh_blind: "重新整理{name}",
     blind_details: "{name}詳細資訊",
     stop: "停止",
     stop_blind: "停止{name}",
@@ -558,6 +611,7 @@ const STRINGS = {
     editor_hide_room_controls: "隱藏房間的開啟 / 停止 / 關閉",
     editor_hide_room_presets: "隱藏房間預設和場景",
     editor_hide_home_controls: "隱藏全屋預設和場景群組",
+    editor_hide_refresh: "隱藏重新整理按鈕",
   },
 };
 
@@ -608,6 +662,10 @@ const ROOM_ACTIONS = [
 
 const clamp = (value, low = 0, high = 100) => Math.max(low, Math.min(high, value));
 const clampToStep = (value, step = STEP) => Math.round(clamp(Number(value) || 0) / step) * step;
+// The config entries a device belongs to. Newer Home Assistant versions name one
+// (`config_entry_id`); older ones list them (`config_entries`).
+const entriesOf = (device) =>
+  device?.config_entry_id ? [device.config_entry_id] : device?.config_entries || [];
 // A Shutter's louvers open in five steps (closed, a quarter ... fully open), so they move in 25s.
 const LOUVER_STEP = 25;
 const LOUVER_COUNT = 9;
@@ -669,6 +727,16 @@ const el = (tag, className, text) => {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+};
+
+// Write a node's text or an attribute only when it changes. The card patches every tile on
+// each change to one of its entities, and a write of the same text still costs the browser a
+// fresh layout of the tile.
+const setText = (node, text) => {
+  if (node.textContent !== text) node.textContent = text;
+};
+const setAttr = (node, name, value) => {
+  if (node.getAttribute(name) !== value) node.setAttribute(name, value);
 };
 
 const haIcon = (name) => {
@@ -821,7 +889,7 @@ const STYLES = `
   }
   .chip:hover ha-icon, .chip.sent ha-icon, .chip.sent { color: var(--n-accent); }
   .chip:active { transform: scale(0.97); }
-  .chip:focus-visible, .icon-btn:focus-visible, .name:focus-visible, .stop:focus-visible {
+  .chip:focus-visible, .icon-btn:focus-visible, .name:focus-visible, .stop:focus-visible, .refresh:focus-visible {
     outline: 2px solid var(--n-accent);
     outline-offset: 1px;
   }
@@ -931,6 +999,32 @@ const STYLES = `
   .battery span:empty { display: none; }
   .battery.low { color: var(--warning-color, #e39700); }
   .battery.critical { color: var(--error-color, #db4437); }
+  /* Refresh: beside the battery on every blind, in each room's tray and in the header. A press
+     turns its icon once (REFRESH_SPIN_MS in the script is the same second). */
+  .refresh {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 20px;
+    height: 18px;
+    margin-right: -3px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--n-muted);
+    cursor: pointer;
+  }
+  /* A finger gets a wider target than the icon, without the row growing. */
+  .refresh::after { content: ""; position: absolute; inset: -6px -4px; }
+  .refresh ha-icon { --mdc-icon-size: 15px; }
+  .refresh:hover { color: var(--n-accent); }
+  .refresh:disabled { opacity: 0.45; cursor: default; }
+  .spin ha-icon { color: var(--n-accent); animation: n-spin 1s var(--n-ease); }
+  @keyframes n-spin { to { transform: rotate(360deg); } }
+  .home-refresh { border-radius: 12px; background: rgba(var(--n-fg-rgb), 0.06); }
+  .home-refresh .icon-btn { width: 36px; height: 36px; border-radius: 12px; }
   .meta-bottom { display: flex; align-items: flex-start; gap: 6px; min-height: 18px; }
   .status {
     flex: 1;
@@ -1658,6 +1752,11 @@ class NormanShadesCard extends HTMLElement {
     this._sent = new Map();
     // Redraws the card when the next move window closes (see _patch).
     this._settleTimer = null;
+    // What the card has read from Home Assistant's registries, by name (see _fromRegistry).
+    this._registryCache = new Map();
+    // When each refresh control last sent, by control, so the hold outlasts a rebuild (see
+    // _bindRefresh).
+    this._refreshedAt = new Map();
     this._cells = [];
     // The header's text node and summary line (see _render).
     this._headerText = null;
@@ -1672,6 +1771,9 @@ class NormanShadesCard extends HTMLElement {
     this._rendered = false;
     this._signature = undefined;
     if (this.shadowRoot) this.shadowRoot.innerHTML = "";
+    // A dashboard hands a card a changed config with setConfig alone (hui-card), and hass only
+    // with the next state change in the house. A card that already has hass draws itself now.
+    if (this._hass) this.hass = this._hass;
   }
 
   getCardSize() {
@@ -1744,20 +1846,64 @@ class NormanShadesCard extends HTMLElement {
   _inScope(deviceId) {
     const entryId = this._config.config_entry_id;
     if (!entryId) return true;
-    const device = (this._hass?.devices || {})[deviceId];
-    return Boolean(device?.config_entries?.includes(entryId));
+    return entriesOf((this._hass?.devices || {})[deviceId]).includes(entryId);
+  }
+
+  /**
+   * The hub a device is on: its config entry, or null when the device registry does not say.
+   * A device another integration has added itself to lists that integration's entry as well
+   * (one that tracks a blind's battery, say); its primary entry is the one that created it,
+   * which for a Norman device is its hub's.
+   */
+  _entryOf(deviceId) {
+    const device = this._hass?.devices?.[deviceId];
+    return device?.config_entry_id ?? device?.primary_config_entry ?? entriesOf(device)[0] ?? null;
+  }
+
+  /**
+   * `compute()`, kept under `name` until Home Assistant's registries, the language or the
+   * card's config change.
+   *
+   * Home Assistant sets `hass` on every state change in the house, but replaces its entity,
+   * device and area registries (`entities`, `devices`, `areas`) only when one of them changes.
+   * So what the card reads from those alone is worked out once per change, not by scanning
+   * every entity in the house on every update. Nothing read from `hass.states` belongs here:
+   * the callers read that afresh each time.
+   */
+  _fromRegistry(name, compute) {
+    const hass = this._hass;
+    const key = [hass?.entities, hass?.devices, hass?.areas, languageOf(hass), this._config];
+    const kept = this._registryCache.get(name);
+    if (kept && kept.key.every((part, index) => part === key[index])) return kept.value;
+    const value = compute();
+    this._registryCache.set(name, { key, value });
+    return value;
   }
 
   /**
    * Every Norman blind visible to this dashboard, assembled from its entities.
    *
-   * A blind is identified by its device id, so the bottom rail, middle rail, sliders and
-   * battery sensor are grouped even though their entity ids are independent.
+   * A blind is identified by its device id, so the bottom rail, middle rail, sliders, battery
+   * sensor and Request status button are grouped even though their entity ids are independent.
+   *
+   * Everything but a drape's `stack` comes from the registries and is kept between updates
+   * (_fromRegistry). The stack is the drape cover's state, so it is read on every call.
    */
   _collectBlinds() {
-    const hass = this._hass;
-    if (!hass) return [];
+    if (!this._hass) return [];
+    const states = this._hass.states || {};
+    // A drape is drawn gathering to the side it stacks to, which its cover reports. The kept
+    // blinds are shared between calls, so a drape gets a copy rather than being changed.
+    return this._fromRegistry("blinds", () => this._registryBlinds()).map((blind) => {
+      if (blind.product !== "drape") return blind;
+      const stack = states[blind.bottomCover]?.attributes?.stack;
+      return { ...blind, stack: STACK_SIDES[stack] ? stack : "left" };
+    });
+  }
 
+  /** The blinds as the registries have them, with no `stack` yet (see _collectBlinds). */
+  _registryBlinds() {
+    const hass = this._hass;
     const registry = hass.entities || {};
     const devices = hass.devices || {};
     const areas = hass.areas || {};
@@ -1770,6 +1916,9 @@ class NormanShadesCard extends HTMLElement {
         blinds.set(deviceId, {
           deviceId,
           name: device.name_by_user || device.name || fallbackName,
+          // The area's name, or null for a blind in none, grouped under `default_room` or
+          // "Unassigned" instead.
+          area: area.name || null,
           room: area.name || this._config.default_room || this._t("unassigned"),
           product: productOf(device),
           stack: null,
@@ -1779,6 +1928,8 @@ class NormanShadesCard extends HTMLElement {
           bottomNumber: null,
           middleNumber: null,
           battery: null,
+          // The blind's Request status button, or null when it has none on the card.
+          refresh: null,
         });
       }
       return blinds.get(deviceId);
@@ -1786,7 +1937,9 @@ class NormanShadesCard extends HTMLElement {
 
     for (const [entityId, entry] of Object.entries(registry)) {
       if (entry.platform !== DOMAIN || !entry.device_id) continue;
-      if (entry.hidden_by || entry.disabled_by) continue;
+      // The frontend's registry marks a hidden entity `hidden: true` and leaves disabled ones
+      // out; `hidden_by` and `disabled_by` are the backend's names for the same.
+      if (entry.hidden || entry.hidden_by || entry.disabled_by) continue;
       if (!this._inScope(entry.device_id)) continue;
 
       const [domain] = entityId.split(".");
@@ -1820,14 +1973,9 @@ class NormanShadesCard extends HTMLElement {
         // sensor whose entity id happens to end in "_battery" is claimed as the battery
         // even when its translation key says otherwise.
         blind.battery = entityId;
+      } else if (domain === "button" && key === BUTTON_REQUEST_STATUS) {
+        blind.refresh = entityId;
       }
-    }
-
-    // A drape is drawn gathering to the side it stacks to, which its cover reports.
-    for (const blind of blinds.values()) {
-      if (blind.product !== "drape") continue;
-      const stack = hass.states?.[blind.bottomCover]?.attributes?.stack;
-      blind.stack = STACK_SIDES[stack] ? stack : "left";
     }
 
     // A device with no cover is the hub or one of its rooms, not a blind.
@@ -1867,18 +2015,29 @@ class NormanShadesCard extends HTMLElement {
   /**
    * Norman scene entities with translation key `key` that belong on this card, in name order:
    * not hidden or disabled in Home Assistant, and on this card's hub when it has one.
+   *
+   * Which scenes they are is kept between updates (_fromRegistry); a scene the registry leaves
+   * unnamed is named from its state, so the names are read on every call.
    */
   _sceneEntities(key) {
     const hass = this._hass;
-    const found = [];
-    for (const [entityId, entry] of Object.entries(hass?.entities || {})) {
-      if (entry.platform !== DOMAIN || entry.translation_key !== key) continue;
-      if (!entry.device_id || entry.hidden || entry.hidden_by || entry.disabled_by) continue;
-      if (!this._inScope(entry.device_id)) continue;
-      const name = entry.name || hass.states?.[entityId]?.attributes?.friendly_name || entityId;
-      found.push({ entityId, entry, name });
-    }
-    return found.sort((a, b) => a.name.localeCompare(b.name));
+    const entries = this._fromRegistry(`scenes ${key}`, () => {
+      const found = [];
+      for (const [entityId, entry] of Object.entries(hass?.entities || {})) {
+        if (entry.platform !== DOMAIN || entry.translation_key !== key) continue;
+        if (!entry.device_id || entry.hidden || entry.hidden_by || entry.disabled_by) continue;
+        if (!this._inScope(entry.device_id)) continue;
+        found.push({ entityId, entry });
+      }
+      return found;
+    });
+    return entries
+      .map(({ entityId, entry }) => ({
+        entityId,
+        entry,
+        name: entry.name || hass.states?.[entityId]?.attributes?.friendly_name || entityId,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
@@ -1911,18 +2070,20 @@ class NormanShadesCard extends HTMLElement {
     const hass = this._hass;
     if (!hass) return null;
 
-    const registry = hass.entities || {};
-    const devices = hass.devices || {};
+    return this._fromRegistry("hub name", () => {
+      const registry = hass.entities || {};
+      const devices = hass.devices || {};
 
-    for (const entry of Object.values(registry)) {
-      if (entry.platform !== DOMAIN || !entry.device_id) continue;
-      if (!HUB_KEYS.has(entry.translation_key)) continue;
-      if (!this._inScope(entry.device_id)) continue;
-      const device = devices[entry.device_id];
-      const name = device && (device.name_by_user || device.name);
-      if (name) return name;
-    }
-    return null;
+      for (const entry of Object.values(registry)) {
+        if (entry.platform !== DOMAIN || !entry.device_id) continue;
+        if (!HUB_KEYS.has(entry.translation_key)) continue;
+        if (!this._inScope(entry.device_id)) continue;
+        const device = devices[entry.device_id];
+        const name = device && (device.name_by_user || device.name);
+        if (name) return name;
+      }
+      return null;
+    });
   }
 
   /** Blinds grouped by room: in the configured `rooms` order if one is given, else A-Z. */
@@ -1995,7 +2156,7 @@ class NormanShadesCard extends HTMLElement {
    * The hub stores a new target whether or not the blind hears the command, and keeps both
    * values until the blind next reports in. So a target the blind has not been heard
    * reaching within MOVE_WINDOW_MS is no longer a move under way, but neither value can be
-   * trusted: blind 8399 sat at "100, heading for 0" for two hours on 2026-10-12, and had
+   * trusted: a blind sat at "100, heading for 0" for two hours on 2026-10-12, and had
    * closed. The rail's cover changes state whenever the hub reports a new position or target
    * for it, so its last_updated is when the move began, unless this card has written the
    * rail since. With neither (a state without timestamps), the move is taken as under way.
@@ -2077,6 +2238,7 @@ class NormanShadesCard extends HTMLElement {
     header.appendChild(titles);
     this._homeScenes = null;
     if (!this._config.hide_home_controls) {
+      if (!this._config.hide_refresh) header.appendChild(this._buildHomeRefresh());
       header.appendChild(this._buildHomeControls());
       // Filled with the hub's scene groups on every rebuild (_fillHomeScenes).
       this._homeScenes = el("div", "segmented home-scenes");
@@ -2087,6 +2249,8 @@ class NormanShadesCard extends HTMLElement {
 
     this._body = el("div", "body");
     card.appendChild(this._body);
+    // A new body has no rooms in it yet, so _update builds them whatever it last built.
+    this._signature = undefined;
 
     this.shadowRoot.innerHTML = "";
     this.shadowRoot.appendChild(card);
@@ -2113,12 +2277,17 @@ class NormanShadesCard extends HTMLElement {
     this._scenes = this._collectScenes();
     this._sceneGroups = this._collectSceneGroups();
 
-    // Rebuild only when the set of blinds (or a name), or a room's scenes, change; otherwise
-    // patch values in place so a rail being dragged is never replaced under the user's finger.
+    // Rebuild only when the set of blinds, a name, a blind's entities, or a room's scenes
+    // change; otherwise patch values in place so a rail being dragged is never replaced under
+    // the user's finger. The entity ids are in it because each tile is bound to them: an id
+    // changed by "Recreate entity IDs", or an entity disabled or enabled, has to rebind it.
+    const blindKey = (b) =>
+      [b.deviceId, b.name, b.area, b.product, b.stack, b.louvers, b.bottomCover, b.middleCover,
+        b.bottomNumber, b.middleNumber, b.battery, b.refresh].join("/");
     const signature = rooms
       .map(
         ([room, list]) =>
-          `${room}:${list.map((b) => `${b.deviceId}=${b.name}/${b.product || ""}/${b.stack || ""}`).join(",")}` +
+          `${room}:${list.map(blindKey).join(",")}` +
           `:${(this._scenes.get(room) || []).map((scene) => `${scene.entityId}=${scene.name}`).join(",")}`,
       )
       .concat(this._sceneGroups.map((group) => `group ${group.entityId}=${group.name}`))
@@ -2150,6 +2319,8 @@ class NormanShadesCard extends HTMLElement {
           blind.bottomNumber,
           blind.middleNumber,
           blind.battery,
+          // Its refresh button is greyed out while the Request status button is unavailable.
+          blind.refresh,
         ]),
       ),
       // A scene's chip is greyed out while the scene is unavailable.
@@ -2181,7 +2352,16 @@ class NormanShadesCard extends HTMLElement {
 
   /**
    * A room's heading: its name and count, open/stop/close for the whole room, and a button
-   * that folds out the app's three presets for the room, followed by the room's scenes.
+   * that folds out the app's three presets for the room, followed by the room's scenes and
+   * its refresh.
+   *
+   * A preset names its room to the hub, so blinds in no area -- grouped under "Unassigned" or
+   * `default_room`, the card's name rather than a room of the hub's -- get no presets. Their
+   * open/stop/close go through the covers, so they keep those, and their refresh presses each
+   * blind's own button.
+   *
+   * hide_room_presets takes the presets and scenes out of the tray, and hide_refresh the
+   * refresh; the tray and its button are there while anything is left in it.
    */
   _buildRoomHead(room, roomName, blinds) {
     const head = el("div", "room-head");
@@ -2191,22 +2371,24 @@ class NormanShadesCard extends HTMLElement {
     if (!this._config.hide_room_controls) {
       head.appendChild(this._buildRoomControls(roomName, blinds));
     }
-    if (!this._config.hide_room_presets) {
-      const tray = el("div", "tray");
-      tray.hidden = true;
-      tray.appendChild(this._buildRoomPresets(roomName));
-      const scenes = this._buildRoomScenes(roomName);
-      if (scenes) tray.appendChild(scenes);
-      const more = this._iconButton("mdi:dots-horizontal", this._t("room_presets", { room: roomName }), () => {
-        tray.hidden = !tray.hidden;
-        more.classList.toggle("open", !tray.hidden);
-        more.setAttribute("aria-expanded", String(!tray.hidden));
-      });
-      more.className = "icon-btn more";
-      more.setAttribute("aria-expanded", "false");
-      head.appendChild(more);
-      room.appendChild(tray);
-    }
+    const runs = !this._config.hide_room_presets;
+    const presets = runs && blinds.some((blind) => blind.area) ? this._buildRoomPresets(roomName, blinds) : null;
+    const scenes = runs ? this._buildRoomScenes(roomName) : null;
+    const refresh = this._config.hide_refresh ? null : this._buildRoomRefresh(roomName, blinds);
+    if (!presets && !scenes && !refresh) return;
+    const tray = el("div", "tray");
+    tray.hidden = true;
+    for (const part of [presets, scenes, refresh]) if (part) tray.appendChild(part);
+    const label = presets || scenes ? "room_presets" : "room_more";
+    const more = this._iconButton("mdi:dots-horizontal", this._t(label, { room: roomName }), () => {
+      tray.hidden = !tray.hidden;
+      more.classList.toggle("open", !tray.hidden);
+      more.setAttribute("aria-expanded", String(!tray.hidden));
+    });
+    more.className = "icon-btn more";
+    more.setAttribute("aria-expanded", "false");
+    head.appendChild(more);
+    room.appendChild(tray);
   }
 
   /**
@@ -2243,9 +2425,9 @@ class NormanShadesCard extends HTMLElement {
    * The app's three buttons for the whole house, via the hub's own scope-less verb.
    *
    * Omitting RoomID is what makes the hub treat a command as house-wide, so this is one
-   * request however many blinds there are -- the same three the app's "All Rooms" screen
-   * sends. They carry the app's names rather than open/close arrows because they are not
-   * open and close: "Best privacy" leaves a two-rail blind's middle rail fully OPEN.
+   * request per hub however many blinds there are -- the same three the app's "All Rooms"
+   * screen sends. They carry the app's names rather than open/close arrows because they are
+   * not open and close: "Best privacy" leaves a two-rail blind's middle rail fully OPEN.
    *
    * There is no house-wide Stop button. The hub accepted an unscoped MotorStop and stopped
    * one moving blind in a direct test, but stopping simultaneous motors across rooms has
@@ -2256,12 +2438,28 @@ class NormanShadesCard extends HTMLElement {
     for (const preset of PRESETS) {
       controls.appendChild(
         this._buildChip(preset.icon, this._t(preset.label), this._t("preset_every_room", { preset: this._t(preset.title) }), () => {
-          // No `room`: the action omits RoomID, which the hub reads as every blind.
-          this._roomCommand({ command: preset.command });
+          // No `room`: the action omits RoomID, which the hub reads as every blind. Sent to
+          // each hub with a blind on the card.
+          this._roomCommand({ command: preset.command }, this._cells.map((cell) => cell.blind));
         }),
       );
     }
     return controls;
+  }
+
+  /**
+   * The whole house's refresh, beside its presets: norman.room_command's refresh with no room,
+   * which asks every blind on the hub to report in with one request -- to each hub with a
+   * blind on the card. Nothing moves.
+   */
+  _buildHomeRefresh() {
+    const group = el("div", "icon-group home-refresh");
+    const button = this._iconButton(REFRESH_ICON, this._t("home_refresh"));
+    this._bindRefresh(button, "home", () => {
+      this._roomCommand({ command: "refresh" }, this._cells.map((cell) => cell.blind));
+    });
+    group.appendChild(button);
+    return group;
   }
 
   /**
@@ -2289,14 +2487,15 @@ class NormanShadesCard extends HTMLElement {
    *
    * The action matches on the HUB's room name while the card groups by Home Assistant area.
    * The integration seeds areas from those names, so they agree until an area is renamed --
-   * and then the action names the rooms the hub does know.
+   * and then the action names the rooms the hub does know. They go to the hub the room's
+   * `blinds` are on.
    */
-  _buildRoomPresets(roomName) {
+  _buildRoomPresets(roomName, blinds = []) {
     const presets = el("div", "segmented room-presets");
     for (const preset of PRESETS) {
       presets.appendChild(
         this._buildChip(preset.icon, this._t(preset.label), this._t("preset_in_room", { preset: this._t(preset.title), room: roomName }), () => {
-          this._roomCommand({ room: roomName, command: preset.command });
+          this._roomCommand({ room: roomName, command: preset.command }, blinds);
         }),
       );
     }
@@ -2325,17 +2524,75 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /**
-   * norman.room_command, sent to this card's hub when it has one (`config_entry_id`). With
-   * no hub configured the action picks the only one, as it always has.
+   * The room's refresh, after its presets and scenes: each of its blinds asked to report in,
+   * and nothing moved. It presses their Request status buttons in one call -- the one status
+   * request per blind the hub's own room refresh sends, but for exactly the blinds shown here,
+   * so it needs neither a room of the hub's by the area's name nor a hub to route to. Null
+   * when none of them has one.
    */
-  _roomCommand(data) {
-    const entryId = this._config.config_entry_id;
-    this._hass.callService(DOMAIN, "room_command", entryId ? { ...data, config_entry_id: entryId } : data);
+  _buildRoomRefresh(roomName, blinds) {
+    if (!blinds.some((blind) => blind.refresh)) return null;
+    const box = el("div", "segmented room-refresh");
+    const chip = this._buildChip(REFRESH_ICON, this._t("refresh"), this._t("room_refresh", { room: roomName }));
+    this._bindRefresh(chip, `room ${roomName}`, () => this._requestStatus(blinds));
+    box.appendChild(chip);
+    return box;
+  }
+
+  /**
+   * norman.room_command, sent to this card's hub when it has one (`config_entry_id`). A card
+   * with none shows every hub's blinds, and with two hubs the action cannot pick one itself,
+   * so the card sends one call to each hub `blinds` are on, read from their devices. An
+   * unavailable blind does not count: it may be on a hub that is not set up, which the action
+   * refuses. With no hub to go on the action picks the only one, as it always has.
+   */
+  _roomCommand(data, blinds = []) {
+    const pinned = this._config.config_entry_id;
+    const hubs = pinned
+      ? [pinned]
+      : [
+          ...new Set(
+            blinds
+              .filter((blind) => !this._isUnavailable(blind))
+              .map((blind) => this._entryOf(blind.deviceId))
+              .filter(Boolean),
+          ),
+        ];
+    if (!hubs.length) {
+      this._hass.callService(DOMAIN, "room_command", data);
+      return;
+    }
+    for (const entryId of hubs) {
+      this._hass.callService(DOMAIN, "room_command", { ...data, config_entry_id: entryId });
+    }
+  }
+
+  /** Press the Request status button of each of `blinds` that has one, in one call. */
+  _requestStatus(blinds) {
+    const buttons = blinds.map((blind) => blind.refresh).filter(Boolean);
+    if (!buttons.length) return;
+    this._hass.callService("button", "press", { entity_id: buttons.length === 1 ? buttons[0] : buttons });
+  }
+
+  /**
+   * Make `button` a refresh control: a press runs `send`, and its icon turns once to say the
+   * request went. A second press of the same control (`key`) within REFRESH_HOLD_MS is
+   * ignored, rebuilt or not, so repeats do not queue more requests at the hub.
+   */
+  _bindRefresh(button, key, send) {
+    button.addEventListener("click", () => {
+      const now = Date.now();
+      if (now - (this._refreshedAt.get(key) ?? -Infinity) < REFRESH_HOLD_MS) return;
+      this._refreshedAt.set(key, now);
+      send();
+      button.classList.add("spin");
+      setTimeout(() => button.classList.remove("spin"), REFRESH_SPIN_MS);
+    });
   }
 
   /**
    * A preset or a scene: an icon and a word, since "blinds-horizontal" alone does not say
-   * "privacy".
+   * "privacy". Without `onClick` the chip is left for the caller to bind (a refresh).
    */
   _buildChip(icon, text, title, onClick) {
     const chip = el("button", "chip");
@@ -2343,6 +2600,7 @@ class NormanShadesCard extends HTMLElement {
     chip.append(haIcon(icon), el("span", null, text));
     chip.title = title;
     chip.setAttribute("aria-label", title);
+    if (!onClick) return chip;
     chip.addEventListener("click", () => {
       onClick();
       // The blinds take many seconds to answer, so the button acknowledges the press.
@@ -2358,7 +2616,7 @@ class NormanShadesCard extends HTMLElement {
     button.title = label;
     button.setAttribute("aria-label", label);
     button.appendChild(haIcon(icon));
-    button.addEventListener("click", onClick);
+    if (onClick) button.addEventListener("click", onClick);
     return button;
   }
 
@@ -2392,6 +2650,15 @@ class NormanShadesCard extends HTMLElement {
       bottom.appendChild(batteryEl);
     }
 
+    // Beside the battery: the blind's Request status, which has it report in without moving.
+    let refreshEl = null;
+    if (blind.refresh && !this._config.hide_refresh) {
+      refreshEl = this._iconButton(REFRESH_ICON, this._t("refresh_blind", { name: blind.name }));
+      refreshEl.className = "refresh";
+      this._bindRefresh(refreshEl, blind.refresh, () => this._requestStatus([blind]));
+      bottom.appendChild(refreshEl);
+    }
+
     const stop = el("button", "stop");
     stop.type = "button";
     stop.hidden = true;
@@ -2406,10 +2673,10 @@ class NormanShadesCard extends HTMLElement {
     tile.appendChild(meta);
 
     // In the list layout the rails are sliders, top rail first as on the blind.
-    const sliders = list ? [...rails].reverse().map((rail) => this._buildSlider(rails, rail)) : [];
+    const sliders = list ? [...rails].reverse().map((rail) => this._buildSlider(blind, rails, rail)) : [];
     for (const slider of sliders) tile.appendChild(slider.row);
 
-    this._cells.push({ blind, rails, tile, shade, batteryEl, status, stop, sliders });
+    this._cells.push({ blind, rails, tile, shade, batteryEl, refreshEl, status, stop, sliders });
     return tile;
   }
 
@@ -2699,7 +2966,11 @@ class NormanShadesCard extends HTMLElement {
         side: shade.drape ? this._drapeSideAt(shade, event, rect) : null,
         started: false,
         step: null,
+        // A move the arrow keys were gathering on the dragged rail, taken over by the drag.
+        keys: null,
       };
+      // Arrow keys are ignored until the press ends (_onKey): the drag owns the blind's drawing.
+      shade.pressing = true;
       shade.activeSide = press.side;
       element.setPointerCapture?.(event.pointerId);
       event.preventDefault();
@@ -2715,6 +2986,17 @@ class NormanShadesCard extends HTMLElement {
       if (!press.started) {
         if (Math.abs(delta) < DRAG_SLOP) return;
         press.started = true;
+        // A move the arrow keys are still gathering cannot be left to its timer, which would go
+        // off mid-drag. On the dragged rail the drag takes it over: it starts where the keys
+        // left the rail, and its release is the one write. On the other rail it is sent now.
+        if (shade.keyMove?.index === press.index) {
+          press.keys = shade.keyMove;
+          clearTimeout(shade.keyTimer);
+          shade.keyTimer = null;
+          shade.keyMove = null;
+        } else {
+          this._sendKeys(shade);
+        }
         press.start = this._shadeValue(shade, press.index) ?? 0;
         press.travel = shade.drape
           ? (press.rect.width * this._drapeTravelPct(shade)) / 100
@@ -2735,8 +3017,9 @@ class NormanShadesCard extends HTMLElement {
 
     const finish = (event, commit) => {
       if (!press || event.pointerId !== press.id) return;
-      const { index, started } = press;
+      const { index, started, keys } = press;
       press = null;
+      shade.pressing = false;
       element.releasePointerCapture?.(event.pointerId);
       element.classList.remove("dragging");
       for (const rail of railElsAt(index)) rail.classList.remove("held");
@@ -2745,11 +3028,18 @@ class NormanShadesCard extends HTMLElement {
       if (!started) return;
       const value = shade.dragValues[index];
       shade.dragValues = {};
-      if (commit) this._move(shade.rails, index, clampToStep(value, stepOf(shade.rails[index])));
+      // A rail with no value is never written: clampToStep would make it 0 and close the blind.
+      if (commit && value !== undefined) {
+        this._move(shade.rails, index, clampToStep(value, stepOf(shade.rails[index])));
+      } else if (keys) {
+        // The drag was called off, but the keys' move it took over still stands.
+        this._move(shade.rails, keys.index, keys.value);
+      }
       this._patch();
     };
     element.addEventListener("pointerup", (event) => finish(event, true));
-    // A cancelled pointer (the browser took the gesture) puts the rail back.
+    // A cancelled pointer (the browser took the gesture) puts the rail back where the hub, or
+    // the arrow keys before the drag, had it.
     element.addEventListener("pointercancel", (event) => finish(event, false));
     element.addEventListener("pointerleave", (event) => {
       if (!press && event.pointerType === "mouse") setHot(-1);
@@ -2770,35 +3060,52 @@ class NormanShadesCard extends HTMLElement {
   /**
    * Arrow keys move a rail a step; the write goes out once the keys stop. On a drape the
    * left and right arrows move its edge that way, so the one towards its stack opens it.
+   *
+   * A blind gathers one rail's keys at a time: keys on its other rail first send the move
+   * gathered so far, which would otherwise be dropped with the timer and the drawing it shares.
+   * While a pointer is pressed on the blind its arrow keys only keep the page from scrolling:
+   * the drag draws the blind, and its release sends it.
    */
   _onKey(shade, index, event, side) {
     if (shade.disabled) return;
-    const now = this._shadeValue(shade, index) ?? 0;
     const step = stepOf(shade.rails[index]);
-    if (shade.drape) shade.activeSide = side || shade.parts[0].side;
-    const across = shade.drape && shade.activeSide !== "right" ? -1 : 1;
+    const activeSide = shade.drape ? side || shade.parts[0].side : null;
+    const across = shade.drape && activeSide !== "right" ? -1 : 1;
+    // How far each key moves the rail; Home and End go all the way, to closed and to open.
     const moves = {
-      ArrowUp: now + step,
-      ArrowRight: now + across * step,
-      ArrowDown: now - step,
-      ArrowLeft: now - across * step,
-      PageUp: now + 3 * step,
-      PageDown: now - 3 * step,
-      Home: 0,
+      ArrowUp: step,
+      ArrowRight: across * step,
+      ArrowDown: -step,
+      ArrowLeft: -across * step,
+      PageUp: 3 * step,
+      PageDown: -3 * step,
+      Home: -100,
       End: 100,
     };
     if (!(event.key in moves)) return;
     event.preventDefault();
-    const value = clampToStep(moves[event.key], step);
+    if (shade.pressing) return;
+    if (shade.drape) shade.activeSide = activeSide;
+    if (shade.keyMove && shade.keyMove.index !== index) this._sendKeys(shade);
+    const value = clampToStep((this._shadeValue(shade, index) ?? 0) + moves[event.key], step);
     this._dragTo(shade, index, value);
     this._showBubble(shade, index, value);
     clearTimeout(shade.keyTimer);
-    shade.keyTimer = setTimeout(() => {
-      shade.dragValues = {};
-      this._hideBubble(shade);
-      this._move(shade.rails, index, value);
-      this._patch();
-    }, KEY_COMMIT_MS);
+    shade.keyMove = { index, value };
+    shade.keyTimer = setTimeout(() => this._sendKeys(shade), KEY_COMMIT_MS);
+  }
+
+  /** Send the move the arrow keys have gathered on a blind, if there is one (see _onKey). */
+  _sendKeys(shade) {
+    const move = shade.keyMove;
+    clearTimeout(shade.keyTimer);
+    shade.keyTimer = null;
+    shade.keyMove = null;
+    if (!move) return;
+    shade.dragValues = {};
+    this._hideBubble(shade);
+    this._move(shade.rails, move.index, move.value);
+    this._patch();
   }
 
   /**
@@ -3084,8 +3391,8 @@ class NormanShadesCard extends HTMLElement {
     shade.bubble.classList.remove("on");
   }
 
-  /** The list layout's control for one rail: a plain range input, in 10% steps. */
-  _buildSlider(rails, rail) {
+  /** The list layout's control for one rail of `blind`: a plain range input, in 10% steps. */
+  _buildSlider(blind, rails, rail) {
     const row = el("label", "slider");
     const label = el("span", "slider-label", rail.louvers || rails.length > 1 ? rail.short : this._t("position"));
     const input = el("input");
@@ -3095,18 +3402,63 @@ class NormanShadesCard extends HTMLElement {
     input.step = String(stepOf(rail));
     input.setAttribute("aria-label", this._t("rail_position", { rail: rail.label }));
     const value = el("span", "slider-value");
-    const slider = { rail, row, input, value, holding: false };
+    // `holding` while a pointer is down on it and `keyTimer` while arrow keys are gathering a
+    // move: _patchSlider leaves the slider alone for both. `keys` when a key moved it last, and
+    // `keyMove` the position the keys have gathered until it is sent.
+    const slider = { rail, row, input, value, holding: false, keys: false, keyTimer: null, keyMove: null };
+    // A blind that has gone unavailable takes no write, and its slider goes back to the hub's value.
+    const send = (position) => {
+      clearTimeout(slider.keyTimer);
+      slider.keyTimer = null;
+      slider.keyMove = null;
+      if (!this._isUnavailable(blind)) this._move(rails, rails.indexOf(rail), position);
+      this._patch();
+    };
     input.addEventListener("pointerdown", () => {
       slider.holding = true;
+      slider.keys = false;
+      slider.pressedAt = input.value;
+      // A move the keys are still gathering waits on the press, which sends it or its own.
+      clearTimeout(slider.keyTimer);
+      slider.keyTimer = null;
+    });
+    // A press can end without a `change`: a tap on the thumb, a drag back to where it began,
+    // or a touch the browser takes for a scroll (pointercancel). So the hold ends however the
+    // press does. A press that moved the slider has a `change` coming, which sends it in place
+    // of any move the keys gathered. Any other press -- and any on a blind gone unavailable,
+    // whose `change` sends nothing -- sends the keys' move if there is one, or else catches the
+    // slider up with the hub at once.
+    const release = (cancelled) => {
+      if (!slider.holding) return;
+      slider.holding = false;
+      const unavailable = this._isUnavailable(blind);
+      if (!cancelled && !unavailable && input.value !== slider.pressedAt) return;
+      if (slider.keyMove !== null) send(slider.keyMove);
+      else this._patchSlider(slider, unavailable);
+    };
+    input.addEventListener("pointerup", () => release(false));
+    input.addEventListener("pointercancel", () => release(true));
+    input.addEventListener("lostpointercapture", () => release(false));
+    input.addEventListener("blur", () => release(false));
+    // A range input fires `change` on every arrow key, so keyed changes are gathered into one
+    // write as on the picture (KEY_COMMIT_MS); a pointer's is sent on release.
+    input.addEventListener("keydown", () => {
+      slider.keys = true;
     });
     input.addEventListener("input", () => {
       value.textContent = this._pct(clampToStep(input.value, stepOf(rail)));
       input.style.setProperty?.("--n-fill", `${input.value}%`);
     });
     input.addEventListener("change", () => {
+      const position = clampToStep(input.value, stepOf(rail));
       slider.holding = false;
-      this._move(rails, rails.indexOf(rail), clampToStep(input.value, stepOf(rail)));
-      this._patch();
+      if (!slider.keys) {
+        send(position);
+        return;
+      }
+      clearTimeout(slider.keyTimer);
+      slider.keyMove = position;
+      slider.keyTimer = setTimeout(() => send(position), KEY_COMMIT_MS);
     });
     row.append(label, input, value);
     return slider;
@@ -3174,9 +3526,13 @@ class NormanShadesCard extends HTMLElement {
 
   _patch() {
     if (!this._cells || !this._hass) return;
+    const isOff = (entityId) => {
+      const state = this._hass.states[entityId];
+      return !state || state.state === "unavailable";
+    };
     for (const chip of this._sceneChips || []) {
-      const state = this._hass.states[chip.dataset.entityId];
-      chip.disabled = !state || state.state === "unavailable";
+      const off = isOff(chip.dataset.entityId);
+      if (chip.disabled !== off) chip.disabled = off;
     }
     let open = 0;
     let moving = 0;
@@ -3214,24 +3570,31 @@ class NormanShadesCard extends HTMLElement {
       if (shade) this._patchShade(shade, states, unavailable);
       for (const slider of cell.sliders) this._patchSlider(slider, unavailable);
 
-      const status = this._statusOf(rails, states, unavailable);
-      cell.status.textContent = status;
+      setText(cell.status, this._statusOf(rails, states, unavailable));
       const isMoving = states.some((state) => state.moving);
       cell.status.classList.toggle("moving", isMoving);
       cell.status.classList.toggle("rest", !isMoving && !unavailable);
       // A Shutter's louvers turn in a moment and take no stop.
-      cell.stop.hidden = !isMoving || Boolean(blind.louvers);
+      const noStop = !isMoving || Boolean(blind.louvers);
+      if (cell.stop.hidden !== noStop) cell.stop.hidden = noStop;
 
       if (cell.batteryEl) {
+        const battery = cell.batteryEl;
         const level = this._numberOf(blind.battery);
         const kind = batteryClass(level);
-        cell.batteryEl.className = `battery ${kind}`;
-        cell.batteryEl.firstChild.setAttribute("icon", batteryIcon(level));
+        if (battery.className !== `battery ${kind}`) battery.className = `battery ${kind}`;
+        setAttr(battery.firstChild, "icon", batteryIcon(level));
         const shown = level === null ? "—" : this._pct(level);
-        cell.batteryEl.lastChild.textContent = shown;
-        cell.batteryEl.title = level === null ? this._t("battery_unknown") : this._t("battery", { value: shown });
-        cell.batteryEl.setAttribute("aria-label", cell.batteryEl.title);
+        setText(battery.lastChild, shown);
+        const title = level === null ? this._t("battery_unknown") : this._t("battery", { value: shown });
+        if (battery.title !== title) battery.title = title;
+        setAttr(battery, "aria-label", title);
         if (kind === "low" || kind === "critical") lowBattery += 1;
+      }
+      if (cell.refreshEl) {
+        // Greyed out while the blind's Request status button is unavailable, as it is with the blind.
+        const off = isOff(blind.refresh);
+        if (cell.refreshEl.disabled !== off) cell.refreshEl.disabled = off;
       }
 
       if ((states[0].shown ?? 0) > 0) open += 1;
@@ -3262,9 +3625,9 @@ class NormanShadesCard extends HTMLElement {
         part.marker.classList.toggle("on", showMarker);
         if (showMarker) part.marker.style.left = `${round3(this._drapeEdge(part, reach))}%`;
         part.lead.classList.toggle("moving", state.moving);
-        part.zone.setAttribute("aria-valuenow", String(value));
-        part.zone.setAttribute("aria-valuetext", this._t("percent_open", { value }));
-        part.zone.setAttribute("aria-disabled", String(unavailable));
+        setAttr(part.zone, "aria-valuenow", String(value));
+        setAttr(part.zone, "aria-valuetext", this._t("percent_open", { value }));
+        setAttr(part.zone, "aria-disabled", String(unavailable));
       }
       return;
     }
@@ -3279,20 +3642,26 @@ class NormanShadesCard extends HTMLElement {
       shade.railEls[index].classList.toggle("moving", state.moving);
       const zone = shade.zones[index];
       const value = Math.round(this._shadeValue(shade, index) ?? 0);
-      zone.setAttribute("aria-valuenow", String(value));
-      zone.setAttribute("aria-valuetext", this._t("percent_open", { value }));
-      zone.setAttribute("aria-disabled", String(unavailable));
+      setAttr(zone, "aria-valuenow", String(value));
+      setAttr(zone, "aria-valuetext", this._t("percent_open", { value }));
+      setAttr(zone, "aria-disabled", String(unavailable));
     });
   }
 
   _patchSlider(slider, unavailable) {
     const { rail, input, value } = slider;
-    input.disabled = unavailable;
+    // Nothing changes under a pointer that holds the slider -- not even `disabled`, as Chromium
+    // fires `change` on a held range input it disables, which would send the half-dragged value.
+    // The press's end patches it (_buildSlider).
     if (slider.holding) return;
+    if (input.disabled !== unavailable) input.disabled = unavailable;
+    if (slider.keyTimer) return;
     const shown = this._railValue(rail);
-    input.value = String(clampToStep(shown ?? 0, stepOf(rail)));
-    input.style.setProperty?.("--n-fill", `${shown ?? 0}%`);
-    value.textContent = shown === null ? "—" : this._pct(shown);
+    const position = String(clampToStep(shown ?? 0, stepOf(rail)));
+    if (input.value !== position) input.value = position;
+    const fill = `${shown ?? 0}%`;
+    if (input.style.getPropertyValue?.("--n-fill") !== fill) input.style.setProperty?.("--n-fill", fill);
+    setText(value, shown === null ? "—" : this._pct(shown));
   }
 
   /**
@@ -3369,12 +3738,17 @@ const EDITOR_FIELDS = [
   { key: "hide_room_controls", label: "editor_hide_room_controls", type: "boolean" },
   { key: "hide_room_presets", label: "editor_hide_room_presets", type: "boolean" },
   { key: "hide_home_controls", label: "editor_hide_home_controls", type: "boolean" },
+  { key: "hide_refresh", label: "editor_hide_refresh", type: "boolean" },
 ];
 
 class NormanShadesCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
-    this._render();
+    // Home Assistant hands the editor its config back after every change it reports, and the
+    // title field reports one per keystroke. Rebuilding the form would take the focus out of
+    // the field being typed in, so a form already drawn is only given the new values.
+    if (this._form) this._form.data = this._config;
+    else this._render();
   }
 
   set hass(hass) {

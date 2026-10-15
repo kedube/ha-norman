@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import NoReturn
 
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity, EntityDescription
@@ -19,7 +21,6 @@ from .coordinator import (
     NormanCoordinator,
     hub_identifier,
     room_identifier,
-    rooms_of,
 )
 from .models import NormanDevices, NormanPeripheralData
 
@@ -145,31 +146,19 @@ class NormanRailMixin(NormanEntity):
         return self.coordinator.heading_rails(self._device_id)[1]
 
     async def _async_set_position(
-        self,
-        bottom: int | None,
-        middle: int | None,
-        action: str,
-        value: int | None = None,
+        self, bottom: int | None, middle: int | None, action: str
     ) -> None:
         """Send both rail positions to the hub; ``None`` keeps a rail where it is heading.
 
         A two-rail blind's rail kept where it is heading is carried along when the other
         would pass it, so the dashboard card can move either rail from anywhere -- fully open
         included (``rails_to_send`` in the coordinator, which ``async_move_blind`` applies).
+        ``action`` -- "open", "close" or "move" -- names the error a failure raises.
         """
         try:
             await self.coordinator.async_move_blind(self._device_id, bottom, middle)
         except (NormanApiError, NormanConnectionError) as err:
-            detail = f" (value: {value})" if value is not None else ""
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="command_failed",
-                translation_placeholders={
-                    "action": f"{action}{detail}",
-                    "name": self._device_name,
-                    "error": str(err),
-                },
-            ) from err
+            raise_command_failed(action, self._device_name, err)
         await self.coordinator.async_request_refresh()
 
     async def _async_stop_motor(self) -> None:
@@ -184,6 +173,28 @@ class NormanRailMixin(NormanEntity):
                 translation_placeholders={"name": self._device_name, "error": str(err)},
             ) from err
         await self.coordinator.async_request_refresh()
+
+
+def raise_command_failed(action: str, name: str, err: Exception) -> NoReturn:
+    """Raise the error for a blind that did not take an "open", "close" or "move"."""
+    placeholders = {"name": name, "error": str(err)}
+    if action == "open":
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="open_failed",
+            translation_placeholders=placeholders,
+        ) from err
+    if action == "close":
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="close_failed",
+            translation_placeholders=placeholders,
+        ) from err
+    raise HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="move_failed",
+        translation_placeholders=placeholders,
+    ) from err
 
 
 class NormanHubEntity(CoordinatorEntity[NormanCoordinator]):
@@ -232,18 +243,15 @@ class NormanScopeEntity(CoordinatorEntity[NormanCoordinator]):
         if room_id is None:
             self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, hub_identifier(entry))})
             return
-        name = rooms_of(coordinator.data).get(room_id, f"Room {room_id}")
         # While the hub's device list is unreadable a room has only its placeholder name.
         # Suggesting that would create an area called "Room <id>", so the room gets none.
-        named = any(
-            data.room_id == room_id and data.room_name for data in coordinator.data.values()
-        )
+        name = coordinator.room_name(room_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, room_identifier(entry, room_id))},
-            name=name,
+            name=name or f"Room {room_id}",
             manufacturer=MANUFACTURER,
             model="Room",
-            suggested_area=name if named else None,
+            suggested_area=name,
             **_via_hub(coordinator, entry),
         )
 
@@ -257,7 +265,7 @@ class NormanScopeEntity(CoordinatorEntity[NormanCoordinator]):
         """The room's name, or the hub's, for error messages."""
         if self._room_id is None:
             return self.coordinator.hub.custom_name or self.coordinator.config_entry.title
-        return rooms_of(self.coordinator.data).get(self._room_id, f"Room {self._room_id}")
+        return self.coordinator.room_name(self._room_id) or f"Room {self._room_id}"
 
     @property
     def available(self) -> bool:
@@ -294,8 +302,19 @@ def async_add_scope_entities[D: EntityDescription](
         if new:
             async_add_entities(new)
 
+    @callback
+    def _async_forget(identifiers: set[str]) -> None:
+        known.difference_update(
+            {
+                (room_id, key)
+                for room_id, key in known
+                if room_id is not None and room_identifier(entry, room_id) in identifiers
+            }
+        )
+
     _async_add_new()
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new))
+    async_on_device_removed(entry, _async_forget)
 
 
 @callback
@@ -320,8 +339,41 @@ def async_add_entities_for_new_devices(
         known_ids.update(new_ids)
         async_add_entities(entity for device_id in sorted(new_ids) for entity in factory(device_id))
 
+    @callback
+    def _async_forget(identifiers: set[str]) -> None:
+        known_ids.difference_update({uid for uid in known_ids if str(uid) in identifiers})
+
     _async_add_new()
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new))
+    async_on_device_removed(entry, _async_forget)
+
+
+@callback
+def async_on_device_removed(entry: NormanConfigEntry, forget: Callable[[set[str]], None]) -> None:
+    """Call ``forget`` with a device's identifiers once it no longer belongs to the hub.
+
+    A blind's or a room's device can be deleted once the hub stops reporting it, which
+    removes its entities. The platforms remember what they have added, so without this a
+    blind paired again, or a room that holds a blind again, would get no entities until
+    the entry was reloaded. The listener is detached when the entry unloads.
+    """
+    hass = entry.runtime_data.hass
+
+    @callback
+    def _async_device_changed(event: Event[dr.EventDeviceRegistryUpdatedData]) -> None:
+        if event.data["action"] != "remove":
+            return
+        device = event.data["device"]
+        # A device belongs to one entry (config_entry_id); before Home Assistant 2026.10 it
+        # listed them (config_entries).
+        if entry.entry_id not in (device.get("config_entry_id"), *device.get("config_entries", ())):
+            return
+        if names := {name for domain, name in device["identifiers"] if domain == DOMAIN}:
+            forget(names)
+
+    entry.async_on_unload(
+        hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, _async_device_changed)
+    )
 
 
 @callback

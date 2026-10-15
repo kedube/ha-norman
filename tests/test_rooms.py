@@ -507,9 +507,7 @@ async def test_a_room_move_that_fails_names_the_room_and_is_not_kept(
     """A room request the hub refused is not where the blinds are heading."""
     coordinator: NormanCoordinator = two_in_living_room.runtime_data
     fake_hub.control_response = {"Error": 9}
-    with pytest.raises(
-        HomeAssistantError, match=r"Failed to set position \(value: 20\) for Living Room"
-    ):
+    with pytest.raises(HomeAssistantError, match="Failed to move Living Room"):
         await _set(hass, _room_slider(hass, two_in_living_room, LIVING_ROOM, "bottom"), 20)
     assert coordinator.commanded_rails(UID_LIVING) is None
     assert coordinator.commanded_rails(UID_SECOND) is None
@@ -524,6 +522,38 @@ async def test_a_busy_hub_is_retried_for_a_room_move(
         await _set(hass, _room_slider(hass, two_in_living_room, LIVING_ROOM, "bottom"), 20)
 
     assert [move.get("RoomID") for move in _moves(fake_hub)] == [LIVING_ROOM, LIVING_ROOM]
+
+
+async def test_a_room_move_refused_as_busy_is_not_retried_over_a_newer_command(
+    hass: HomeAssistant, two_in_living_room: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """One blind taken over while the hub is waited out: the room request is not sent again.
+
+    It would reach that blind too and undo its newer command. The other blind keeps its
+    watch, which sends it the move on its own if it never goes.
+    """
+    coordinator: NormanCoordinator = two_in_living_room.runtime_data
+    orig = fake_hub._control
+    fake_hub.control_responses = [{"Error": 2}]
+
+    async def _one_taken_over(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if "RoomID" in body:
+            coordinator.async_supersede([UID_SECOND])
+        return await orig(method, url, data)
+
+    with (
+        patch.object(fake_hub, "_control", _one_taken_over),
+        patch("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _set(hass, _room_slider(hass, two_in_living_room, LIVING_ROOM, "bottom"), 20)
+
+    assert [move.get("RoomID") for move in _moves(fake_hub)] == [LIVING_ROOM]
+    assert UID_LIVING in coordinator._move_watchers
+    assert UID_SECOND not in coordinator._move_watchers
+    coordinator.async_supersede()
 
 
 # --- room buttons ---------------------------------------------------------------------------
@@ -547,9 +577,9 @@ async def test_room_buttons_send_the_verb_with_the_room(
     key: str,
     expected: dict[str, int],
 ) -> None:
-    """One request with the room's RoomID and nothing narrower, then a status re-read.
+    """One request with the room's RoomID and nothing narrower, then one status re-read.
 
-    A preset reads the hub once more, for the targets its blinds' watches aim at.
+    For a preset, that read is the one its blinds' watches take their targets from.
     """
     status_calls = len(fake_hub.calls_to("/status"))
     await _press(hass, _scope_entity(hass, init_integration, BUTTON_DOMAIN, LIVING_ROOM, key))
@@ -558,8 +588,7 @@ async def test_room_buttons_send_the_verb_with_the_room(
     assert set(call) == {"Timestamp", "TaskID", "RoomID", *expected}
     assert call["RoomID"] == LIVING_ROOM
     assert {k: call[k] for k in expected} == expected
-    reads = 1 if "MotorStop" in expected or key.startswith("room_jog") else 2
-    assert len(fake_hub.calls_to("/status")) == status_calls + reads
+    assert len(fake_hub.calls_to("/status")) == status_calls + 1
 
 
 async def test_room_refresh_requests_each_blind_without_a_room_wide_command(
@@ -611,6 +640,102 @@ async def test_a_room_stop_ends_the_moves_in_that_room_only(
     assert UID_BEDROOM in coordinator._move_watchers
 
 
+async def _until(condition: Any) -> None:
+    """Let queued tasks run until ``condition()`` holds."""
+    for _ in range(50):
+        if condition():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("condition never held")
+
+
+def _set_soon(hass: HomeAssistant, entity_id: str, value: int) -> asyncio.Task[Any]:
+    """Start a slider move without waiting for it to be sent."""
+    return asyncio.create_task(
+        hass.services.async_call(
+            NUMBER_DOMAIN,
+            SERVICE_SET_VALUE,
+            {ATTR_ENTITY_ID: entity_id, ATTR_VALUE: value},
+            blocking=True,
+        )
+    )
+
+
+async def test_a_room_stop_skips_the_blinds_a_room_move_has_not_reached(
+    hass: HomeAssistant, two_in_living_room: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A room moved blind by blind, stopped before the second blind's turn, leaves it be.
+
+    The move already waiting goes out ahead of the stop, but nothing after it does, and
+    nothing is watched: the stopped blinds would read as moves that never arrived.
+    """
+    coordinator: NormanCoordinator = two_in_living_room.runtime_data
+    fake_hub.set_position(UID_SECOND, middle=80)
+    await coordinator.async_refresh()
+    api = coordinator.api
+
+    await api._control_lock.acquire()
+    try:
+        move = _set_soon(hass, _room_slider(hass, two_in_living_room, LIVING_ROOM, "bottom"), 20)
+        await _until(lambda: coordinator.commanded_rails(UID_SECOND) is not None)
+        stop = asyncio.create_task(
+            hass.services.async_call(
+                BUTTON_DOMAIN,
+                SERVICE_PRESS,
+                {
+                    ATTR_ENTITY_ID: _scope_entity(
+                        hass, two_in_living_room, BUTTON_DOMAIN, LIVING_ROOM, "room_stop"
+                    )
+                },
+                blocking=True,
+            )
+        )
+        await _until(lambda: coordinator.commanded_rails(UID_SECOND) is None)
+    finally:
+        api._control_lock.release()
+    await move
+    await stop
+    await hass.async_block_till_done()
+
+    assert [move.get("PeripheralUID") for move in _moves(fake_hub)] == [UID_LIVING]
+    assert "MotorStop" in fake_hub.control_calls[-1]
+    assert not {UID_LIVING, UID_SECOND} & set(coordinator._move_watchers)
+
+
+async def test_a_newer_room_move_is_not_overtaken_by_an_older_one(
+    hass: HomeAssistant, two_in_living_room: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A room move queued behind an older one sent blind by blind is not undone by it.
+
+    The older move goes to each blind in turn; the newer one, raising both bottom rails past
+    their middle rails, takes both to 90/90 in one room request.
+    """
+    coordinator: NormanCoordinator = two_in_living_room.runtime_data
+    fake_hub.set_position(UID_SECOND, middle=80)
+    await coordinator.async_refresh()
+    slider = _room_slider(hass, two_in_living_room, LIVING_ROOM, "bottom")
+    api = coordinator.api
+
+    await api._control_lock.acquire()
+    try:
+        older = _set_soon(hass, slider, 20)
+        await _until(lambda: coordinator.commanded_rails(UID_SECOND) == (20, 80))
+        newer = _set_soon(hass, slider, 90)
+        await _until(lambda: coordinator.commanded_rails(UID_SECOND) == (90, 90))
+    finally:
+        api._control_lock.release()
+    await older
+    await newer
+    await hass.async_block_till_done()
+
+    assert _moves(fake_hub) == [
+        {"PeripheralUID": UID_LIVING, "BottomRailPosition": 20, "MiddleRailPosition": 60},
+        {"RoomID": LIVING_ROOM, "BottomRailPosition": 90, "MiddleRailPosition": 90},
+    ]
+    assert coordinator.commanded_rails(UID_SECOND) == (90, 90)
+    coordinator.async_supersede()
+
+
 async def test_a_room_preset_is_watched_blind_by_blind(
     hass: HomeAssistant,
     two_in_living_room: MockConfigEntry,
@@ -619,7 +744,7 @@ async def test_a_room_preset_is_watched_blind_by_blind(
 ) -> None:
     """Every blind a room preset reached is watched; only one that never moved is resent.
 
-    On 2026-10-12 blind 8399 closed for Best Privacy, but its report never reached the hub,
+    On 2026-10-12 a blind closed for Best Privacy, but its report never reached the hub,
     which showed it open and heading for closed for two hours, until it was asked to report
     in. Here the Living Sheer does the same, and the Living Drape misses the preset outright.
     """
@@ -708,7 +833,7 @@ async def test_a_room_button_failure_names_the_room(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
     fake_hub.control_response = {"Error": 9}
-    with pytest.raises(HomeAssistantError, match="Failed to send room_stop to Living Room"):
+    with pytest.raises(HomeAssistantError, match="Failed to send Stop to Living Room"):
         await _press(
             hass, _scope_entity(hass, init_integration, BUTTON_DOMAIN, LIVING_ROOM, "room_stop")
         )
@@ -790,3 +915,117 @@ async def test_an_emptied_room_is_unavailable_and_can_be_deleted(
     assert await async_remove_config_entry_device(hass, init_integration, bedroom)
     living = _room_device(hass, init_integration, LIVING_ROOM)
     assert not await async_remove_config_entry_device(hass, init_integration, living)
+
+
+async def test_a_deleted_blind_and_room_come_back_when_the_hub_reports_them_again(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """A blind and its room deleted here once the hub dropped them return with it."""
+    entry = init_integration
+    room = copy.deepcopy(fake_hub.devices["results"]["RoomList"][1])
+    status = [p for p in fake_hub.status["Peripherals"] if p.get("PeripheralUID") == UID_BEDROOM]
+    fake_hub.devices["results"]["RoomList"].pop(1)
+    fake_hub.status["Peripherals"] = [
+        p for p in fake_hub.status["Peripherals"] if p.get("PeripheralUID") != UID_BEDROOM
+    ]
+    await notifications.put({"UpdateTime": {"room": 1}, "Timestamp": 1})
+    await settle(hass)
+
+    from custom_components.norman import async_remove_config_entry_device
+
+    devices = dr.async_get(hass)
+    for device in (_device(hass, entry, str(UID_BEDROOM)), _room_device(hass, entry, BEDROOM)):
+        # What deleting a device in Home Assistant does once the integration agrees.
+        assert await async_remove_config_entry_device(hass, entry, device)
+        devices.async_remove_device(device.id)
+    await hass.async_block_till_done()
+    entities = er.async_get(hass)
+    assert entities.async_get_entity_id("cover", DOMAIN, str(UID_BEDROOM)) is None
+
+    fake_hub.devices["results"]["RoomList"].append(room)
+    fake_hub.status["Peripherals"].extend(status)
+    await notifications.put({"UpdateTime": {"room": 2}, "Timestamp": 2})
+    await settle(hass)
+
+    assert entities.async_get_entity_id("cover", DOMAIN, str(UID_BEDROOM))
+    assert _scope_entity(hass, entry, BUTTON_DOMAIN, BEDROOM, "room_stop")
+
+
+async def test_a_busy_room_request_is_not_retried_over_a_blind_it_reaches_but_does_not_move(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """A room middle-rail move reaches the room's single-rail shade too, without moving it.
+
+    Stopped while the hub is waited out, that shade would be sent back to the room's bottom
+    rail by the retry, so the retry is dropped.
+    """
+    single = 1005
+    _pair(
+        fake_hub,
+        0,
+        {
+            "PeripheralUID": str(single),
+            "PeripheralName": "Living Single",
+            "ModuleType": "32",
+            "ModuleDetail": "2",
+        },
+        {
+            "PeripheralUID": single,
+            "ModuleType": 32,
+            "ModuleDetail": 2,
+            "BottomRailPosition": 40,
+            "MiddleRailPosition": 0,
+            "TargetBottomRailPosition": 40,
+            "TargetMiddleRailPosition": 0,
+            "Timestamp": 1700000000,
+        },
+    )
+    async with loaded(hass, mock_config_entry) as entry:
+        coordinator: NormanCoordinator = entry.runtime_data
+        orig = fake_hub._control
+        fake_hub.control_responses = [{"Error": 2}]
+
+        async def _single_stopped(method, url, data):  # noqa: ANN001
+            body = json.loads(data) if isinstance(data, str | bytes) else data
+            if "RoomID" in body:
+                coordinator.async_supersede([single])
+            return await orig(method, url, data)
+
+        with (
+            patch.object(fake_hub, "_control", _single_stopped),
+            patch("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0),
+        ):
+            fake_hub.mock.clear_requests()
+            fake_hub._register()
+            await _set(hass, _room_slider(hass, entry, LIVING_ROOM, "middle"), 80)
+
+        assert [move.get("RoomID") for move in _moves(fake_hub)] == [LIVING_ROOM]
+        coordinator.async_supersede()
+
+
+async def test_a_device_removed_under_the_older_device_model_is_forgotten_too(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Before a device named one entry, a removed one listed its entries instead."""
+    from custom_components.norman.entity import async_on_device_removed
+
+    forgotten: list[set[str]] = []
+    async_on_device_removed(init_integration, forgotten.append)
+    for entries in ([init_integration.entry_id], ["another"]):
+        hass.bus.async_fire(
+            dr.EVENT_DEVICE_REGISTRY_UPDATED,
+            {
+                "action": "remove",
+                "device_id": "gone",
+                "device": {"config_entries": entries, "identifiers": [[DOMAIN, "1002"]]},
+            },
+        )
+    await hass.async_block_till_done()
+
+    assert forgotten == [{"1002"}]

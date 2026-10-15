@@ -78,6 +78,11 @@
           "on": "mdi:link-plus"
         }
       }
+    },
+    "sensor": {
+      "signal_strength": {
+        "default": "mdi:signal"
+      }
     }
   },
   "services": {

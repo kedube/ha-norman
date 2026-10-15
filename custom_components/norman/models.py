@@ -125,6 +125,8 @@ class NormanScene:
     scene_id: int
     name: str
     targets: dict[int, NormanSceneTarget]
+    # The hub's name for the room, which names its device when the room holds no blind.
+    room_name: str = ""
 
     @property
     def key(self) -> str:

@@ -166,8 +166,10 @@ and automations are unaffected.
 ### Removing the integration
 
 Open **Settings → Devices & services → Norman → ⋮ → Delete**. The hub keeps no record of Home
-Assistant, so nothing needs to be cleaned up on the hub side. If you installed through HACS,
-remove the download there too.
+Assistant, so nothing needs to be cleaned up on the hub side. Deleting the last hub also takes
+the Norman Shades card off the dashboard resources; remove any Norman Shades cards from your
+dashboards yourself, and if your resources are kept in YAML, delete the card's entry there. If
+you installed through HACS, remove the download there too.
 
 ## What it provides
 
@@ -196,10 +198,11 @@ version**; and a **connection** sensor that turns off after a day of silence, th
 "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
 and (disabled) **Wi-Fi signal** sensors; **all blinds** rail sliders and best privacy, best
 view, favorite, stop and jog buttons, which reach the whole house in one request where they
-can; **refresh blinds**, **start pairing** and a **pairing mode** sensor. **Each room** gets a
-device in its area with the same for the room: a slider per rail, stop, the presets, jog and
-refresh. Scenes saved in the Norman app are Home Assistant **scenes**, a room's on the room's
-device and scene groups on the hub's. Full detail, including availability rules, is in
+can; **refresh blinds**, **report battery levels (may close shades)**, **start pairing** and a
+**pairing mode** sensor. **Each room** gets a device in its area with the same for the room: a
+slider per rail, stop, the presets, jog, refresh and report battery levels. Scenes saved in
+the Norman app are Home Assistant **scenes**, a room's on the room's device and scene groups
+on the hub's. Full detail, including availability rules, is in
 [docs/entities.md](docs/entities.md).
 
 <img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, connection, last seen and Request status; Activity with the rails' recent moves." width="820">
@@ -209,9 +212,10 @@ Configuration, and the model, firmware and serial number come from the hub.*
 
 ### Norman Shades
 
-Every blind, by room, drawn as a window you drag by each rail's pull tab. **Norman Shades** is in
-Home Assistant's sidebar as soon as the integration is set up, one entry per hub, with nothing to
-install or configure. It can also go on any dashboard as a card.
+Every blind, by room, drawn as a window you drag by each rail's pull tab, with a **⟳** to have a
+blind, a room or the whole house report in. **Norman Shades** is in Home Assistant's sidebar as
+soon as the integration is set up, one entry per hub, with nothing to install or configure. It
+can also go on any dashboard as a card.
 
 It is [pictured at the top of this page](#unofficial-norman-smart-blinds-for-home-assistant). Full detail,
 options, and how to build the same thing from Home Assistant's own cards are in
@@ -372,8 +376,6 @@ unknown-type warning or behaves differently from its row.
 - **Hub schedules are not exposed.** The hub stores its own sunrise/sunset and clock schedules;
   the integration neither shows nor edits them, since Home Assistant automations do the same
   job with more flexibility. Delete hub schedules that would fight your automations.
-- **Entity unique ids are per hub only.** The blind's id from the hub is used as-is, so two hubs
-  that happen to reuse an id would collide. This has not been observed in practice.
 - **Opening/closing state** is not reported; the cover shows `open`/`closed` from its position
   and exposes the target as an attribute instead.
 

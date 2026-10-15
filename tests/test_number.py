@@ -106,7 +106,7 @@ async def test_slider_failure_names_the_blind(
     fake_hub.control_response = {"Error": 5}
     with pytest.raises(HomeAssistantError, match="Living Drape") as excinfo:
         await _set(hass, number_entity_id(hass, UID_LIVING, "bottom_rail_position"), 50)
-    assert excinfo.value.translation_key == "command_failed"
+    assert excinfo.value.translation_key == "move_failed"
 
 
 async def test_slider_and_cover_agree(

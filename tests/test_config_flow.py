@@ -6,7 +6,7 @@ from ipaddress import ip_address
 from unittest.mock import patch
 
 import aiohttp
-from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF
+from homeassistant.config_entries import SOURCE_USER, SOURCE_ZEROCONF, ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
@@ -648,3 +648,35 @@ async def test_options_saved_before_the_sidebar_toggle_show_it_on(hass: HomeAssi
     schema = result["data_schema"].schema
     key = next(k for k in schema if str(k) == CONF_SHOW_SIDEBAR_PANEL)
     assert key.default() is True
+
+
+@pytest.mark.parametrize(
+    ("state", "reloads"),
+    [(ConfigEntryState.SETUP_RETRY, 1), (ConfigEntryState.LOADED, 0)],
+    ids=["retrying", "loaded"],
+)
+async def test_a_known_hub_found_at_a_new_address_is_reloaded_once(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    mock_config_entry: MockConfigEntry,
+    state: ConfigEntryState,
+    reloads: int,
+) -> None:
+    """The flow reloads a hub waiting to retry setup; a loaded one reloads itself.
+
+    A loaded hub's update listener reloads it when its address changes, so the flow
+    reloading it too set it up twice.
+    """
+    mock_config_entry.add_to_hass(hass)
+    mock_config_entry.mock_state(hass, state)
+    aioclient_mock.post(
+        "http://192.168.1.99:10123/NM/v1/registration",
+        json={"Error": 0, "ThingName": HUB_THING_NAME},
+    )
+
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload:
+        result = await _start_zeroconf_flow(hass, "192.168.1.99")
+
+    assert result["reason"] == "already_configured"
+    assert mock_config_entry.data[CONF_HOST] == "192.168.1.99"
+    assert reload.call_count == reloads

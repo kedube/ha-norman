@@ -213,6 +213,39 @@ async def test_the_entry_title_follows_a_hub_rename(
         assert entry.title == "Annisquam Shades"
 
 
+async def test_the_entry_title_follows_a_hub_renamed_while_running(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications,
+) -> None:
+    """A rename in the Norman app retitles the entry at once, without reloading it.
+
+    Renamed only at the next setup, the title was compared with a hub device already
+    renamed, and stayed on the old name for good.
+    """
+    async with loaded(hass, mock_config_entry) as entry:
+        registrations = len(fake_hub.calls_to("/registration"))
+        fake_hub.devices["results"]["CustomDeviceName"] = "Annisquam Shades"
+        await notifications.put({"UpdateTime": {"device": 1}})
+        await settle(hass)
+
+        assert entry.title == "Annisquam Shades"
+        assert len(fake_hub.calls_to("/registration")) == registrations
+
+
+async def test_a_new_title_does_not_reload_the_hub(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Only the hub's address and the options are read at setup; a title is not."""
+    registrations = len(fake_hub.calls_to("/registration"))
+
+    hass.config_entries.async_update_entry(init_integration, title="Upstairs")
+    await hass.async_block_till_done()
+
+    assert len(fake_hub.calls_to("/registration")) == registrations
+
+
 async def test_a_title_chosen_in_home_assistant_stays(
     hass: HomeAssistant, fake_hub: FakeHub
 ) -> None:
@@ -222,3 +255,45 @@ async def test_a_title_chosen_in_home_assistant_stays(
     )
     async with loaded(hass, entry):
         assert entry.title == "Upstairs shades"
+
+
+async def test_a_new_address_reloads_the_hub_once(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    aioclient_mock: AiohttpClientMocker,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Reconfiguring a loaded hub sets it up again once, through its update listener.
+
+    The flow reloading it as well set the hub up twice, and Home Assistant flags a flow
+    that reloads an entry with an update listener.
+    """
+    new_url = "http://192.168.1.99:10123/NM/v1"
+    handlers = {
+        "registration": None,
+        "GetAllPeripheral": fake_hub._devices,
+        "status": fake_hub._status,
+        "control": fake_hub._control,
+        "notification": fake_hub._notification,
+    }
+    for endpoint, handler in handlers.items():
+        if handler is None:
+            aioclient_mock.post(
+                f"{new_url}/{endpoint}", json={"Error": 0, "ThingName": HUB_THING_NAME}
+            )
+        else:
+            aioclient_mock.post(f"{new_url}/{endpoint}", side_effect=handler)
+    registrations = len(fake_hub.calls_to("/registration"))
+
+    result = await init_integration.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={CONF_HOST: "192.168.1.99"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert init_integration.state is ConfigEntryState.LOADED
+    # The flow checks the new address once, and one setup registers once more.
+    assert len(fake_hub.calls_to("/registration")) == registrations + 2
+    assert "update listener" not in caplog.text

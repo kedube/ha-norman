@@ -39,8 +39,9 @@ nudge_tilt:
 room_command:
   name: Room command
   description: >-
-    Run one of the Norman app's room buttons against every blind in a room, in a single
-    request to the hub.
+    Run one of the Norman app's room buttons against every blind in a room. best_privacy,
+    best_view and favorite go in a single request to the hub; refresh in a room sends a
+    status request to each blind.
   fields:
     room:
       name: Room
@@ -54,8 +55,8 @@ room_command:
     command:
       name: Command
       description: >-
-        best_privacy closes the bottom rail and leaves the middle rail where it is;
-        best_view opens the bottom rail; favorite sends the room to its stored favorite;
+        best_privacy closes the bottom rail and fully opens the middle rail; best_view
+        fully opens both rails; favorite sends the room to its stored favorite;
         refresh asks every blind in the room to report in (nothing moves).
       required: true
       selector:
@@ -98,7 +99,7 @@ send_hub_command:
       name: Peripheral UID
       description: The blind's id as the hub reports it (the cover's unique id, or PeripheralUID in get_hub_data).
       required: true
-      example: 58850
+      example: 1001
       selector:
         number:
           min: 0

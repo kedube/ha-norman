@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import Any
 
@@ -14,7 +15,6 @@ from homeassistant.components.cover import (
 )
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import (
     AddConfigEntryEntitiesCallback,
     async_get_current_platform,
@@ -38,7 +38,6 @@ from .const import (
     COVER_TYPE_SHUTTER,
     COVER_TYPE_SINGLE_RAIL,
     COVER_TYPE_TWO_RAIL,
-    DOMAIN,
     MSD_VANE_OPEN_STOP,
     MSD_VANE_STOPS,
     SERVICE_NUDGE_POSITION,
@@ -47,7 +46,12 @@ from .const import (
     SHUTTER_OPEN,
 )
 from .coordinator import NormanConfigEntry, NormanCoordinator, clamp_position
-from .entity import NormanRailMixin, async_add_entities_for_new_devices, async_remove_entity
+from .entity import (
+    NormanRailMixin,
+    async_add_entities_for_new_devices,
+    async_remove_entity,
+    raise_command_failed,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -198,18 +202,16 @@ class NormanCoverBase(NormanRailMixin, CoverEntity):
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover (bottom rail to 0), leaving the middle rail where it is."""
-        await self._async_set_position(bottom=0, middle=None, action="close cover")
+        await self._async_set_position(bottom=0, middle=None, action="close")
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover (bottom rail to 100), leaving the middle rail where it is."""
-        await self._async_set_position(bottom=100, middle=None, action="open cover")
+        await self._async_set_position(bottom=100, middle=None, action="open")
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move the cover to a specific position."""
         position = kwargs[ATTR_POSITION]
-        await self._async_set_position(
-            bottom=position, middle=None, action="set position", value=position
-        )
+        await self._async_set_position(bottom=position, middle=None, action="move")
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the motor where it is (the hub has one stop for both rails)."""
@@ -260,21 +262,16 @@ class NormanBlind(NormanCoverBase):
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         """Open the cover tilt."""
-        await self._async_set_position(bottom=None, middle=100, action="open tilt")
+        await self._async_set_position(bottom=None, middle=100, action="open")
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         """Close the cover tilt."""
-        await self._async_set_position(bottom=None, middle=0, action="close tilt")
+        await self._async_set_position(bottom=None, middle=0, action="close")
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         """Move the cover tilt to a specific position."""
         tilt_position = kwargs[ATTR_TILT_POSITION]
-        await self._async_set_position(
-            bottom=None,
-            middle=tilt_position,
-            action="set tilt position",
-            value=tilt_position,
-        )
+        await self._async_set_position(bottom=None, middle=tilt_position, action="move")
 
     async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
         """Stop the tilt: the same motor stop, since the hub has no per-rail stop."""
@@ -325,26 +322,24 @@ class NormanDrape(NormanBlind):
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         """Open the vanes fully (the middle stop, 50)."""
-        await self._async_set_vanes(VANE_LEVELS, "open tilt")
+        await self._async_set_vanes(VANE_LEVELS, "open")
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         """Close the vanes (towards 100, the Best Privacy side)."""
-        await self._async_set_vanes(0, "close tilt")
+        await self._async_set_vanes(0, "close")
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         """Open the vanes to the stop nearest ``tilt_position``."""
         tilt = kwargs[ATTR_TILT_POSITION]
-        await self._async_set_vanes(_level(tilt, VANE_LEVELS), "set tilt position", tilt)
+        await self._async_set_vanes(_level(tilt, VANE_LEVELS))
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Open or close the vanes by ``step``, at least one stop for any step."""
         level = _vane_level(self._target_or_current_middle())
-        await self._async_set_vanes(_nudged(level, step, VANE_LEVELS), "nudge tilt", step)
+        await self._async_set_vanes(_nudged(level, step, VANE_LEVELS))
 
-    async def _async_set_vanes(self, level: int, action: str, value: int | None = None) -> None:
-        await self._async_set_position(
-            bottom=None, middle=_vane_raw(level), action=action, value=value
-        )
+    async def _async_set_vanes(self, level: int, action: str = "move") -> None:
+        await self._async_set_position(bottom=None, middle=_vane_raw(level), action=action)
 
 
 class NormanSheer(NormanBlind):
@@ -415,31 +410,31 @@ class NormanShutter(NormanCoverBase):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Turn the louvers horizontal."""
-        await self._async_set_louvers(SHUTTER_OPEN, "open cover")
+        await self._async_set_louvers(SHUTTER_OPEN, "open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the louvers fully."""
-        await self._async_set_louvers(SHUTTER_CLOSED, "close cover")
+        await self._async_set_louvers(SHUTTER_CLOSED, "close")
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         """Turn the louvers horizontal."""
-        await self._async_set_louvers(SHUTTER_OPEN, "open tilt")
+        await self._async_set_louvers(SHUTTER_OPEN, "open")
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         """Close the louvers fully."""
-        await self._async_set_louvers(SHUTTER_CLOSED, "close tilt")
+        await self._async_set_louvers(SHUTTER_CLOSED, "close")
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         """Open the louvers to the step nearest ``tilt_position``."""
         tilt = kwargs[ATTR_TILT_POSITION]
         position = _louver_position(_level(tilt, LOUVER_LEVELS))
-        await self._async_set_louvers(position, "set tilt position", tilt)
+        await self._async_set_louvers(position, "move")
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Open or close the louvers by ``step``, at least one step for any step."""
         level = _louver_level(self._target_or_current_louvers())
         position = _louver_position(_nudged(level, step, LOUVER_LEVELS))
-        await self._async_set_louvers(position, "nudge tilt", step)
+        await self._async_set_louvers(position, "move")
 
     async def async_nudge_position(self, step: int) -> None:
         """A Shutter's only motion is its louvers, so a position nudge turns them."""
@@ -455,23 +450,18 @@ class NormanShutter(NormanCoverBase):
                 return value
         return SHUTTER_CLOSED
 
-    async def _async_set_louvers(
-        self, position: int, action: str, value: int | None = None
-    ) -> None:
+    async def _async_set_louvers(self, position: int, action: str) -> None:
+        """Turn the louvers; ``action`` -- "open", "close" or "move" -- names a failure."""
+        serial = self.coordinator.async_supersede([self._device_id])
         try:
-            await self.coordinator.api.async_set_louvers(self._device_id, position)
+            await self.coordinator.api.async_set_louvers(
+                self._device_id,
+                position,
+                still_wanted=functools.partial(self.coordinator.holds, self._device_id, serial),
+            )
         except (NormanApiError, NormanConnectionError) as err:
-            detail = f" (value: {value})" if value is not None else ""
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="command_failed",
-                translation_placeholders={
-                    "action": f"{action}{detail}",
-                    "name": self._device_name,
-                    "error": str(err),
-                },
-            ) from err
-        self.coordinator.async_watch_louvers(self._device_id, position)
+            raise_command_failed(action, self._device_name, err)
+        self.coordinator.async_watch_louvers(self._device_id, position, serial)
         await self.coordinator.async_request_refresh()
 
 
@@ -509,18 +499,16 @@ class NormanMiddleRailCover(NormanCoverBase):
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the middle rail, leaving the bottom rail where it is heading."""
-        await self._async_set_position(bottom=None, middle=0, action="close middle rail")
+        await self._async_set_position(bottom=None, middle=0, action="close")
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the middle rail, leaving the bottom rail where it is heading."""
-        await self._async_set_position(bottom=None, middle=100, action="open middle rail")
+        await self._async_set_position(bottom=None, middle=100, action="open")
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move the middle rail to a specific position."""
         position = kwargs[ATTR_POSITION]
-        await self._async_set_position(
-            bottom=None, middle=position, action="set middle rail position", value=position
-        )
+        await self._async_set_position(bottom=None, middle=position, action="move")
 
     async def async_nudge_position(self, step: int) -> None:
         """Move the middle rail by ``step`` relative to where it is heading (or is)."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
+import json
 from typing import Any
 from unittest.mock import patch
 
@@ -404,3 +405,61 @@ async def test_diagnostics_include_the_scenes(
         "position": 0,
     }
     assert diagnostics["scene_groups"][GROUP_ID]["scene_keys"] == ["1_1", "2_1"]
+
+
+async def test_a_room_holding_only_scenes_is_named_by_the_hub_and_kept(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """A room with scenes but no blind takes the hub's name, and cannot be deleted.
+
+    Its scenes' entities live on its device, so deleting it would take them away.
+    """
+    from custom_components.norman import async_remove_config_entry_device
+
+    fake_hub.devices["results"]["RoomList"].append(
+        {
+            "RoomID": 7,
+            "RoomName": "Den",
+            "GroupList": [],
+            "SceneList": [_scene("1", "Movie", _target(UID_LIVING, 0, 90, 33))],
+        }
+    )
+    async with loaded(hass, mock_config_entry) as entry:
+        scene = _entity_id(hass, entry, "7_scene_1")
+        device = dr.async_get(hass).async_get(er.async_get(hass).async_get(scene).device_id)
+
+        assert device.name == "Den"
+        assert device.area_id is not None
+        assert not await async_remove_config_entry_device(hass, entry, device)
+
+
+async def test_a_scene_refused_as_busy_is_not_retried_once_its_blind_is_taken_over(
+    hass: HomeAssistant, with_scenes: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A stop for one of the scene's blinds while the hub is waited out drops the retry.
+
+    The hub never ran the refused scene; running it after the stop would move that blind.
+    """
+    coordinator: NormanCoordinator = with_scenes.runtime_data
+    orig = fake_hub._control
+    fake_hub.control_responses = [{"Error": 2}]
+
+    async def _stopped_while_busy(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if "SetToScene" in body:
+            coordinator.async_supersede([UID_LIVING])
+        return await orig(method, url, data)
+
+    with (
+        patch.object(fake_hub, "_control", _stopped_while_busy),
+        patch("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _run(hass, _entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_1"))
+
+    assert len([call for call in fake_hub.control_calls if "SetToScene" in call]) == 1
+    assert UID_LIVING not in coordinator._move_watchers

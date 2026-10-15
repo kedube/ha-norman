@@ -94,6 +94,17 @@ async def test_bad_responses_are_api_errors(
         await client.async_validate_connection()
 
 
+async def test_a_reply_with_a_bad_byte_is_still_read(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A byte that is not UTF-8 (a name cut mid-character) is replaced, not raised."""
+    aioclient_mock.post(STATUS, content=b'{"Error": 0, "Peripherals": [], "Name": "Caf\xe9"}')
+
+    status = await client.async_get_status()
+
+    assert status["Name"] == "Caf�"
+
+
 @pytest.mark.parametrize(
     "exc",
     [aiohttp.ClientConnectionError("refused"), aiohttp.ClientOSError(), TimeoutError()],
@@ -318,6 +329,26 @@ async def test_listen_connection_failures(
             pass
 
 
+async def test_listen_gives_up_on_a_hub_that_never_answers(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A hub that takes the connection but never answers is a connection error, not a hang."""
+
+    async def _never(method, url, data):  # noqa: ANN001
+        await asyncio.Event().wait()
+
+    aioclient_mock.post(NOTIFICATION, side_effect=_never)
+
+    with (
+        patch("custom_components.norman.api.REQUEST_TIMEOUT", 0.01),
+        pytest.raises(NormanConnectionError),
+    ):
+        async with asyncio.timeout(5):
+            async for _ in client.async_listen_notifications():
+                pass
+    assert client.traffic.as_dict()["exchanges"][-1]["error"] == "no answer"
+
+
 # ---- debug log ------------------------------------------------------------------------
 
 
@@ -418,6 +449,25 @@ async def test_recorder_truncates_large_bodies_but_not_latest_raw(
     assert len(clipped) < client.traffic.body_limit + 64
     assert "more bytes]" in clipped
     assert len(traffic["latest_raw"]["/NM/v1/status"]) > client.traffic.body_limit
+
+
+async def test_recorder_blanks_identifying_fields_before_clipping(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A clipped body no longer parses, so its identifying fields are blanked before the cut."""
+    big = {
+        "Error": 0,
+        "GeoLoc": {"Latitude": HUB_LATITUDE, "Longitude": "-70.6"},
+        "Peripherals": [{"PeripheralUID": i, "pad": "x" * 100} for i in range(400)],
+    }
+    aioclient_mock.post(STATUS, json=big)
+
+    await client.async_get_status()
+
+    clipped = client.traffic.as_dict()["exchanges"][0]["response"]
+    assert "more bytes]" in clipped
+    assert '"GeoLoc":"**REDACTED**"' in clipped
+    assert HUB_LATITUDE not in clipped
 
 
 async def test_recorder_bounds_latest_raw_too(

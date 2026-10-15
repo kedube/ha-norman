@@ -71,6 +71,13 @@ const cardSource = await import("node:fs").then((fs) => fs.readFileSync(url, "ut
 // How long the card treats a new target as a move under way, and the watchdog it mirrors:
 // three sends, each followed by MOVE_TIMEOUT and MOVE_REPORT_WAIT (const.py).
 const MOVE_WINDOW_MS = Function(`return ${/const MOVE_WINDOW_MS = ([^;]+);/.exec(cardSource)[1]}`)();
+// How long the card gathers arrow keys before it writes the move they make.
+const KEY_COMMIT_MS = Number(/const KEY_COMMIT_MS = (\d+);/.exec(cardSource)[1]);
+// How long a refresh control's icon turns, how long a second press of it is ignored, and the
+// translation key of the blind's Request status button.
+const REFRESH_SPIN_MS = Number(/const REFRESH_SPIN_MS = (\d+);/.exec(cardSource)?.[1]);
+const REFRESH_HOLD_MS = Number(/const REFRESH_HOLD_MS = (\d+);/.exec(cardSource)?.[1]);
+const REQUEST_STATUS = /const BUTTON_REQUEST_STATUS = "(\w+)";/.exec(cardSource)?.[1];
 
 // The headrail depth and rail thickness are design constants shared by the CSS and the JS;
 // read them rather than restating them.
@@ -97,6 +104,8 @@ const entities = {
   "cover.den_1_bottom_rail": { platform:"norman", device_id:"d2", translation_key:"bottom_rail" },
   "number.den_1_bottom_rail_position": { platform:"norman", device_id:"d2", translation_key:"bottom_rail_position" },
   "sensor.den_1_battery": { platform:"norman", device_id:"d2", translation_key:"battery_level" },
+  "button.front_bedroom_1_request_status": { platform:"norman", device_id:"d1", translation_key:"request_status" },
+  "button.den_1_request_status": { platform:"norman", device_id:"d2", translation_key:"request_status" },
   // Noise that must be ignored:
   "button.den_1_jog_up": { platform:"norman", device_id:"d2", translation_key:"jog_up" },
   "sensor.norman_hub_wi_fi_network": { platform:"norman", device_id:"hub", translation_key:"wifi_ssid" },
@@ -115,6 +124,8 @@ const hass = {
     "cover.den_1_bottom_rail": { state:"open", attributes:{ current_position:90 } },
     "number.den_1_bottom_rail_position": { state:"90" },
     "sensor.den_1_battery": { state:"12" },
+    "button.front_bedroom_1_request_status": { state:"unknown" },
+    "button.den_1_request_status": { state:"unknown" },
   },
 };
 card._hass = hass;
@@ -142,6 +153,9 @@ check("two-rail: MIDDLE cover found", fb?.middleCover==="cover.front_bedroom_1_m
 check("two-rail: bottom slider", fb?.bottomNumber==="number.front_bedroom_1_bottom_rail_position", String(fb?.bottomNumber));
 check("two-rail: MIDDLE slider found", fb?.middleNumber==="number.front_bedroom_1_middle_rail_position", String(fb?.middleNumber));
 check("two-rail: battery found", fb?.battery==="sensor.front_bedroom_1_battery", String(fb?.battery));
+check("two-rail: Request status button found", fb?.refresh==="button.front_bedroom_1_request_status", String(fb?.refresh));
+check("single-rail: Request status button found", den?.refresh==="button.den_1_request_status", String(den?.refresh));
+check("a blind's other buttons are not taken for Request status", blinds.every((b) => !String(b.refresh).includes("jog")));
 check("two-rail: room from area", fb?.room==="Front Bedroom", String(fb?.room));
 check("single-rail: no middle cover", den?.middleCover===null, String(den?.middleCover));
 check("single-rail: no middle slider", den?.middleNumber===null, String(den?.middleNumber));
@@ -166,6 +180,17 @@ check("single-rail: battery found", den?.battery==="sensor.den_1_battery", Strin
   const [only] = c._collectBlinds();
   check("a non-battery sensor ending in _battery is not taken as the battery",
         only?.battery === "sensor.imposter_battery", String(only?.battery));
+}
+
+// The frontend's registry marks a hidden entity `hidden: true`; it has no `hidden_by`. A blind
+// whose cover is hidden is left off the card, as docs/dashboard.md says.
+{
+  const h = { ...hass, entities: { ...entities,
+    "cover.den_1_bottom_rail": { ...entities["cover.den_1_bottom_rail"], hidden:true } } };
+  const c = new Card();
+  c._hass = h; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = h;
+  const ids = c._collectBlinds().map((b) => b.deviceId);
+  check("a blind whose cover is hidden is left out", JSON.stringify(ids) === '["d1"]', JSON.stringify(ids));
 }
 
 const rails = card._railsOf(fb);
@@ -276,6 +301,24 @@ check("_build attaches presets by default", countIn({}, "room-presets") === 6,
       String(countIn({}, "room-presets")));
 check("_build drops presets when hidden", countIn({ hide_room_presets:true }, "room-presets") === 0);
 {
+  // A preset names its room to the hub, which has no room called "Unassigned": blinds in no area
+  // keep the room's open/stop/close, which go through their covers, but get no presets.
+  const h = { ...hass, devices: { ...hass.devices, d2:{ name:"Den_1", area_id:null } } };
+  const c = rendered({}, h);
+  const section = byClass(c.shadowRoot, "room").find((r) => byClass(r, "room-name")[0]?.textContent === "Unassigned");
+  check("blinds in no area are grouped under Unassigned", Boolean(section));
+  check("...with the room's open/stop/close", byClass(section, "room-buttons")[0]?.children.length === 3);
+  check("...but no presets to send the hub, only the refresh in its tray",
+        !byClass(section, "room-presets").length &&
+        JSON.stringify(byClass(section, "tray")[0]?.children.map((ch) => ch.className)) === '["segmented room-refresh"]',
+        JSON.stringify(byClass(section, "tray")[0]?.children.map((ch) => ch.className)));
+  check("a room in an area keeps its presets", byClass(c.shadowRoot, "room-presets").length === 1);
+  // With no Request status button among them there is nothing for its refresh to press either.
+  const bare = { ...h, entities: Object.fromEntries(Object.entries(h.entities).filter(([id]) => !id.endsWith("_request_status"))) };
+  const plain = byClass(rendered({}, bare).shadowRoot, "room").find((r) => byClass(r, "room-name")[0]?.textContent === "Unassigned");
+  check("...and with nothing to refresh, no tray at all", !byClass(plain, "more").length && !byClass(plain, "tray").length);
+}
+{
   // The presets fold out of the heading: hidden until its button is pressed.
   const c = rendered();
   const [tray] = byClass(c.shadowRoot, "tray");
@@ -326,17 +369,17 @@ check("_build drops presets when hidden", countIn({ hide_room_presets:true }, "r
 
   let c = rendered({}, sceneHass());
   const denTray = trayOf(c, "Den");
-  check("a room's scenes follow its presets in the tray",
-        denTray?.children.length === 2 && denTray.children[0].className.includes("room-presets") &&
-        denTray.children[1].className.includes("room-scenes"),
+  check("a room's scenes follow its presets in the tray, and its refresh them",
+        JSON.stringify(denTray?.children.map((ch) => ch.className)) ===
+          '["segmented room-presets","segmented room-scenes","segmented room-refresh"]',
         JSON.stringify(denTray?.children.map((ch) => ch.className)));
   check("a room's scenes are folded away with its presets", denTray?.hidden === true);
   check("a room's scenes are listed by name, without hidden ones or scene groups",
         JSON.stringify(words(sceneChips(denTray))) === JSON.stringify(["Evening", "Home Assistant"]),
         JSON.stringify(words(sceneChips(denTray))));
   const fbTray = trayOf(c, "Front Bedroom");
-  check("a room without scenes shows only its presets",
-        fbTray?.children.length === 1 && !byClass(fbTray, "room-scenes").length,
+  check("a room without scenes shows only its presets and refresh",
+        JSON.stringify(fbTray?.children.map((ch) => ch.className)) === '["segmented room-presets","segmented room-refresh"]',
         JSON.stringify(fbTray?.children.map((ch) => ch.className)));
   check("a scene in a room with no blinds is not shown",
         !byClass(c.shadowRoot, "room-scenes").some((group) => words(group.children).includes("Morning")));
@@ -518,6 +561,20 @@ check("an explicit empty title is respected", headerTextOf({ title:"" }) === "",
 }
 check("a configured title always wins, even 'Shades'", headerTextOf({ title:"Shades" }) === "Shades");
 {
+  // A dashboard hands a card a changed config with setConfig alone (hui-card), and hass only
+  // with the next state change in the house: the card draws itself with the hass it has.
+  const c = new Card();
+  c.setConfig({ type:"custom:norman-shades-card" });
+  c.hass = hass;
+  c.setConfig({ type:"custom:norman-shades-card", title:"Upstairs", hide_picture:true });
+  check("a new config is drawn at once, without waiting for the next hass",
+        byClass(c.shadowRoot, "header-text")[0]?.textContent === "Upstairs" && byClass(c.shadowRoot, "row").length === 2,
+        JSON.stringify(byClass(c.shadowRoot, "header-text").map((x) => x.textContent)));
+  const before = new Card();
+  before.setConfig({ type:"custom:norman-shades-card" });
+  check("...and a card with no hass yet waits for it", before.shadowRoot.children.length === 0);
+}
+{
   const empty = { ...hass, devices: {} };
   const c = new Card();
   c._hass = empty; c.setConfig({ type:"custom:norman-shades-card" }); c.hass = empty;
@@ -549,8 +606,9 @@ check("house buttons are not labelled as open/close arrows",
       !homeIcons.includes("mdi:arrow-up") && !homeIcons.includes("mdi:arrow-down"), JSON.stringify(homeIcons));
 // The absence of `room` is what makes it house-wide; sending one would scope it to a room.
 check("home controls omit the room entirely", homeCalls.every(c => !("room" in c[2])));
-// With no hub configured the action picks the only one, as it always has.
-check("an unpinned card sends no hub", homeCalls.every(c => !("config_entry_id" in c[2])));
+// With no hub configured, and none named by its blinds' devices, the action picks the only one,
+// as it always has.
+check("an unpinned card with no hub to go on sends none", homeCalls.every(c => !("config_entry_id" in c[2])));
 check("home controls render by default", countIn({}, "home-buttons") === 3);
 check("home controls render alongside a title", countIn({ title:"Shades" }, "home-buttons") === 3);
 check("home controls drop out when hidden", countIn({ hide_home_controls:true }, "home-buttons") === 0);
@@ -594,6 +652,288 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
         svc.length === 6 && svc.every(x => x[1] === "room_command" && x[2].config_entry_id === "cabin"),
         JSON.stringify(svc.map(x => x[2])));
   check("...the house ones still with no room", !("room" in svc[0][2]) && svc[3][2].room === "Den");
+
+  // With no hub configured the card shows both hubs' blinds, and the action cannot pick a hub
+  // itself: each preset goes to the hubs its blinds are on, read from their devices.
+  const h = {
+    ...twoHubs,
+    devices: { ...twoHubs.devices, c1:{ ...twoHubs.devices.c1, area_id:"a3" } },
+    areas: { ...twoHubs.areas, a3:{ name:"Cabin" } },
+    callService: (d,s2,data) => svc.push([d,s2,data]),
+  };
+  const both = rendered({}, h);
+  const presetsOf = (room) => byClass(byClass(both.shadowRoot, "room")
+    .find((r) => byClass(r, "room-name")[0]?.textContent === room), "room-presets")[0].children;
+  svc.length = 0;
+  presetsOf("Cabin")[0]._on.click();
+  presetsOf("Den")[0]._on.click();
+  check("an unpinned card sends a room's presets to that room's hub",
+        JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([
+          { room:"Cabin", command:"best_privacy", config_entry_id:"cabin" },
+          { room:"Den", command:"best_privacy", config_entry_id:"home" }]),
+        JSON.stringify(svc.map((x) => x[2])));
+  svc.length = 0;
+  byClass(both.shadowRoot, "home-buttons")[0].children[1]._on.click();
+  check("...and the house's to each hub on the card, one call each",
+        svc.length === 2 && svc.every((x) => x[1] === "room_command" && x[2].command === "best_view" && !("room" in x[2])) &&
+        JSON.stringify(svc.map((x) => x[2].config_entry_id).sort()) === '["cabin","home"]',
+        JSON.stringify(svc.map((x) => x[2])));
+  // A blind another integration has added itself to lists that entry too, and the device
+  // registry names the hub's as its primary entry: the one that created the device.
+  const presetIn = (card, room) => byClass(byClass(card.shadowRoot, "room")
+    .find((r) => byClass(r, "room-name")[0]?.textContent === room), "room-presets")[0].children[0];
+  const shared = { ...h, devices: { ...h.devices,
+    c1:{ ...h.devices.c1, config_entries:["battery_notes", "cabin"], primary_config_entry:"cabin" } } };
+  svc.length = 0;
+  presetIn(rendered({}, shared), "Cabin")._on.click();
+  check("a blind with a second integration's entry still finds its hub",
+        svc.length === 1 && svc[0][2].config_entry_id === "cabin", JSON.stringify(svc.map((x) => x[2])));
+  // ...even when that integration is on every one of the hub's devices, listed first: no count
+  // of entries tells the two apart.
+  const everywhere = { ...h, devices: Object.fromEntries(Object.entries(h.devices).map(([id, device]) =>
+    [id, device.config_entries[0] === "home"
+      ? { ...device, config_entries:["other_integration", "home"], primary_config_entry:"home" } : device])) };
+  svc.length = 0;
+  presetIn(rendered({}, everywhere), "Den")._on.click();
+  check("...even when every device of that hub lists the other entry first",
+        svc.length === 1 && svc[0][2].config_entry_id === "home", JSON.stringify(svc.map((x) => x[2])));
+  // Newer Home Assistant versions name a device's one entry (config_entry_id); older ones list them.
+  const single = Object.fromEntries(Object.entries(twoHubs.devices).map(([id, { config_entries, ...device }]) =>
+    [id, { ...device, config_entry_id: config_entries[0] }]));
+  const current = scoped({ config_entry_id:"cabin" });
+  current._hass = { ...current._hass, devices: single };
+  check("a device with only config_entry_id is still on its hub's card",
+        JSON.stringify(current._collectBlinds().map((b) => b.deviceId)) === '["c1"]' &&
+        current._entryOf("c1") === "cabin");
+
+  // A hub that failed to set up leaves its blinds on the card, restored as unavailable, and the
+  // action refuses a call naming it (entry_not_loaded). The presets go to the hubs whose blinds
+  // are there, and with none of those the action picks the only hub it has, as before.
+  const unloaded = { ...h, states: { ...h.states, "cover.cabin_1_bottom_rail": { state:"unavailable", attributes:{ restored:true } } } };
+  const half = rendered({}, unloaded);
+  svc.length = 0;
+  byClass(half.shadowRoot, "home-buttons")[0].children[0]._on.click();
+  check("an unpinned card leaves a hub with no blind available out of the house's presets",
+        JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([{ command:"best_privacy", config_entry_id:"home" }]),
+        JSON.stringify(svc.map((x) => x[2])));
+  svc.length = 0;
+  presetIn(half, "Cabin")._on.click();
+  check("...and a room whose blinds are all unavailable names no hub",
+        JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([{ room:"Cabin", command:"best_privacy" }]),
+        JSON.stringify(svc.map((x) => x[2])));
+}
+
+// --- refresh ------------------------------------------------------------------------------
+// A refresh asks blinds to report in, and nothing moves. A blind's tile presses its Request
+// status button; a room's tray presses the Request status of each blind shown in it, and the
+// header sends norman.room_command's refresh with no room, for the whole house. A press turns the icon once, and a second press
+// of the same control within REFRESH_HOLD_MS is ignored.
+{
+  const fs = await import("node:fs");
+  const strings = JSON.parse(fs.readFileSync(new URL("../strings.json", url), "utf8"));
+  check("the card's Request status key is a button the integration declares",
+        Boolean(REQUEST_STATUS && strings.entity.button[REQUEST_STATUS]), String(REQUEST_STATUS));
+  check("the card offers no Report battery levels button, which can close shades", !/report_battery/.test(cardSource));
+
+  const svc = [];
+  // The hub's and a room's own refresh and Report battery levels buttons are there too: the
+  // card presses none of them.
+  const refreshHass = (extra = {}) => ({
+    ...hass,
+    entities: {
+      ...hass.entities,
+      "button.norman_hub_refresh_blinds": { platform:"norman", device_id:"hub", translation_key:"refresh_blinds" },
+      "button.norman_hub_report_battery_levels": { platform:"norman", device_id:"hub", translation_key:"report_battery_levels" },
+      "button.den_refresh_blinds": { platform:"norman", device_id:"r2", translation_key:"room_refresh" },
+      "button.den_report_battery_levels": { platform:"norman", device_id:"r2", translation_key:"room_report_battery_levels" },
+      ...extra.entities,
+    },
+    devices: { ...hass.devices, r2:{ name:"Den", area_id:"a2" }, ...extra.devices },
+    areas: { ...hass.areas, ...extra.areas },
+    states: { ...hass.states, ...extra.states },
+    callService: (d, s2, data) => { svc.push([d, s2, data]); return Promise.resolve(); },
+  });
+  const cellOf = (c, id) => c._cells.find((x) => x.blind.deviceId === id);
+  const sectionOf = (c, room) => byClass(c.shadowRoot, "room").find((r) => byClass(r, "room-name")[0]?.textContent === room);
+  const roomRefresh = (c, room) => byClass(sectionOf(c, room), "room-refresh")[0]?.children[0];
+  const homeRefresh = (c) => byClass(c.shadowRoot, "home-refresh")[0]?.children[0];
+
+  // On every tile, in both layouts, beside the battery.
+  for (const cfg of [{}, { hide_picture:true }]) {
+    const layout = cfg.hide_picture ? "list" : "grid";
+    const c = rendered(cfg, refreshHass());
+    check(`${layout}: every blind has a refresh button`, c._cells.every((x) => x.refreshEl?.tagName === "button"));
+    const den = cellOf(c, "d2");
+    const bottom = byClass(den.tile, "meta-bottom")[0];
+    check(`${layout}: ...beside its battery`,
+          bottom.children.indexOf(den.refreshEl) === bottom.children.indexOf(den.batteryEl) + 1,
+          JSON.stringify(bottom.children.map((ch) => ch.className)));
+    check(`${layout}: ...with the refresh icon, named for the blind`,
+          den.refreshEl.children[0].getAttribute("icon") === "mdi:refresh" && den.refreshEl.title === "Refresh Den_1" &&
+          den.refreshEl.attrs["aria-label"] === "Refresh Den_1", den.refreshEl.title);
+    svc.length = 0;
+    den.refreshEl._on.click();
+    check(`${layout}: ...which presses the blind's Request status`,
+          JSON.stringify(svc) === JSON.stringify([["button", "press", { entity_id:"button.den_1_request_status" }]]),
+          JSON.stringify(svc));
+  }
+  {
+    // A hidden Request status, or one disabled (and so not in the frontend's registry), gives none.
+    const hidden = refreshHass({ entities: { "button.den_1_request_status": { ...hass.entities["button.den_1_request_status"], hidden:true } } });
+    const missing = refreshHass();
+    delete missing.entities["button.front_bedroom_1_request_status"];
+    check("a blind whose Request status is hidden has no refresh", cellOf(rendered({}, hidden), "d2").refreshEl === null);
+    check("...nor one whose Request status is disabled", cellOf(rendered({}, missing), "d1").refreshEl === null);
+    const c = rendered({}, refreshHass({ states: { "button.den_1_request_status": { state:"unavailable" } } }));
+    check("a blind's refresh is greyed out while its Request status is unavailable",
+          cellOf(c, "d2").refreshEl.disabled === true && cellOf(c, "d1").refreshEl.disabled === false);
+    c.hass = refreshHass();
+    check("...and comes back with it", cellOf(c, "d2").refreshEl.disabled === false);
+  }
+
+  // The acknowledgment, and the hold on repeats.
+  {
+    const c = rendered({}, refreshHass());
+    const button = cellOf(c, "d2").refreshEl;
+    svc.length = 0;
+    button._on.click();
+    check("a refresh press turns its icon", button.classList.contains("spin"));
+    button._on.click();
+    check("a second press of it straight away sends nothing", svc.length === 1, JSON.stringify(svc));
+    c.hass = refreshHass({ devices: { d2:{ ...hass.devices.d2, name_by_user:"Den window" } } });
+    const rebuilt = cellOf(c, "d2").refreshEl;
+    rebuilt._on.click();
+    check("...nor once the tile is rebuilt", rebuilt !== button && svc.length === 1, JSON.stringify(svc));
+    cellOf(c, "d1").refreshEl._on.click();
+    roomRefresh(c, "Den")._on.click();
+    homeRefresh(c)._on.click();
+    check("each refresh control is held on its own", svc.length === 4, JSON.stringify(svc));
+    const now = Date.now;
+    Date.now = () => now() + REFRESH_HOLD_MS;
+    try {
+      rebuilt._on.click();
+    } finally {
+      Date.now = now;
+    }
+    check("...and sends again once its hold is over", svc.length === 5 && svc[4][2].entity_id === "button.den_1_request_status",
+          JSON.stringify(svc.at(-1)));
+    await new Promise((resolve) => setTimeout(resolve, REFRESH_SPIN_MS + 50));
+    check("the icon stops turning after a moment", !button.classList.contains("spin") && !rebuilt.classList.contains("spin"));
+  }
+
+  // A room's: at the end of its tray, and sent to the hub as the room's refresh.
+  {
+    const c = rendered({}, refreshHass());
+    const chip = roomRefresh(c, "Den");
+    check("a room's tray ends with its refresh",
+          byClass(sectionOf(c, "Den"), "tray")[0].children.at(-1).className === "segmented room-refresh" &&
+          chip.children[0].getAttribute("icon") === "mdi:refresh" && chip.children[1].textContent === "Refresh" &&
+          chip.title === "Refresh every blind in Den", chip?.title);
+    svc.length = 0;
+    chip._on.click();
+    check("...which presses the Request status of each blind shown in it",
+          JSON.stringify(svc) === JSON.stringify([["button", "press", { entity_id:"button.den_1_request_status" }]]), JSON.stringify(svc));
+    check("...and turns, rather than flashing as a preset does", chip.classList.contains("spin") && !chip.classList.contains("sent"));
+  }
+  {
+    // Blinds in no area are in no room of the hub's: the refresh presses each one's own button.
+    const c = rendered({}, refreshHass({ devices: { d1:{ ...hass.devices.d1, area_id:null }, d2:{ ...hass.devices.d2, area_id:null } } }));
+    const section = sectionOf(c, "Unassigned");
+    check("blinds in no area get a tray with only the refresh",
+          JSON.stringify(byClass(section, "tray")[0]?.children.map((ch) => ch.className)) === '["segmented room-refresh"]');
+    check("...behind a ⋯ that does not promise presets", byClass(section, "more")[0]?.title === "More for Unassigned",
+          byClass(section, "more")[0]?.title);
+    svc.length = 0;
+    roomRefresh(c, "Unassigned")._on.click();
+    check("...which presses each blind's Request status, in one call",
+          svc.length === 1 && svc[0][0] === "button" && svc[0][1] === "press" &&
+          JSON.stringify([...svc[0][2].entity_id].sort()) === '["button.den_1_request_status","button.front_bedroom_1_request_status"]',
+          JSON.stringify(svc));
+  }
+
+  // The whole house's: in the header, beside the presets.
+  {
+    const c = rendered({}, refreshHass());
+    const order = byClass(c.shadowRoot, "header")[0].children.map((child) => child.className);
+    check("the header's refresh sits beside the whole-house presets",
+          order.indexOf("segmented home-buttons") === order.indexOf("icon-group home-refresh") + 1, JSON.stringify(order));
+    const button = homeRefresh(c);
+    check("...titled for the whole house", button.title === "Refresh every blind" && button.children[0].getAttribute("icon") === "mdi:refresh");
+    svc.length = 0;
+    button._on.click();
+    check("...which sends the refresh with no room",
+          JSON.stringify(svc) === JSON.stringify([["norman", "room_command", { command:"refresh" }]]), JSON.stringify(svc));
+  }
+
+  // Two hubs on an unpinned card: each refresh goes to the hubs its blinds are on.
+  {
+    const two = refreshHass({
+      entities: {
+        "cover.cabin_1_bottom_rail": { platform:"norman", device_id:"c1", translation_key:"bottom_rail" },
+        "button.cabin_1_request_status": { platform:"norman", device_id:"c1", translation_key:"request_status" },
+        "sensor.cabin_hub_wi_fi_network": { platform:"norman", device_id:"hub2", translation_key:"wifi_ssid" },
+      },
+      devices: {
+        d1:{ ...hass.devices.d1, config_entries:["home"] },
+        d2:{ ...hass.devices.d2, config_entries:["home"] },
+        hub:{ ...hass.devices.hub, config_entries:["home"] },
+        c1:{ name:"Cabin_1", area_id:"a3", config_entries:["cabin"] },
+        hub2:{ name:"Cabin Hub", area_id:null, config_entries:["cabin"] },
+      },
+      areas: { a3:{ name:"Cabin" } },
+      states: { "cover.cabin_1_bottom_rail": { state:"open", attributes:{ current_position:0 } },
+                "button.cabin_1_request_status": { state:"unknown" } },
+    });
+    const c = rendered({}, two);
+    svc.length = 0;
+    roomRefresh(c, "Cabin")._on.click();
+    check("a room's refresh needs no hub: it presses the blinds' own buttons",
+          JSON.stringify(svc) === JSON.stringify([["button", "press", { entity_id:"button.cabin_1_request_status" }]]),
+          JSON.stringify(svc));
+    svc.length = 0;
+    homeRefresh(c)._on.click();
+    check("...and the house's to each hub on the card, one call each",
+          svc.length === 2 && svc.every((x) => x[1] === "room_command" && x[2].command === "refresh" && !("room" in x[2])) &&
+          JSON.stringify(svc.map((x) => x[2].config_entry_id).sort()) === '["cabin","home"]',
+          JSON.stringify(svc.map((x) => x[2])));
+    svc.length = 0;
+    homeRefresh(rendered({ config_entry_id:"cabin" }, two))._on.click();
+    check("a pinned card's house refresh goes to its hub",
+          JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([{ command:"refresh", config_entry_id:"cabin" }]),
+          JSON.stringify(svc.map((x) => x[2])));
+  }
+
+  // What the options take away.
+  {
+    const count = (cfg, name) => byClass(rendered(cfg, refreshHass()).shadowRoot, name).length;
+    check("by default: a refresh per blind and per room, and one for the house",
+          count({}, "refresh") === 2 && count({}, "room-refresh") === 2 && count({}, "home-refresh") === 1);
+    check("hide_refresh takes every one away, in both layouts",
+          [{}, { hide_picture:true }].every((cfg) => ["refresh", "room-refresh", "home-refresh"]
+            .every((name) => count({ ...cfg, hide_refresh:true }, name) === 0)));
+    check("hide_home_controls takes the house's with the presets, and leaves the rest",
+          count({ hide_home_controls:true }, "home-refresh") === 0 && count({ hide_home_controls:true }, "room-refresh") === 2 &&
+          count({ hide_home_controls:true }, "refresh") === 2);
+    const c = rendered({ hide_room_presets:true }, refreshHass());
+    const trays = byClass(c.shadowRoot, "tray");
+    check("hide_room_presets leaves each room's ⋯ with only its refresh",
+          trays.length === 2 && trays.every((t) => JSON.stringify(t.children.map((ch) => ch.className)) === '["segmented room-refresh"]') &&
+          byClass(sectionOf(c, "Den"), "more")[0]?.title === "More for Den",
+          JSON.stringify(trays.map((t) => t.children.map((ch) => ch.className))));
+    check("...and with hide_refresh too, no ⋯ at all",
+          count({ hide_room_presets:true, hide_refresh:true }, "more") === 0 && count({ hide_room_presets:true, hide_refresh:true }, "tray") === 0);
+  }
+
+  // Every refresh control, pressed: none presses the hub's or a room's own buttons.
+  {
+    const c = rendered({}, refreshHass({ devices: { d1:{ ...hass.devices.d1, area_id:null } } }));
+    svc.length = 0;
+    for (const cell of c._cells) cell.refreshEl._on.click();
+    for (const chip of byClass(c.shadowRoot, "room-refresh")) chip.children[0]._on.click();
+    homeRefresh(c)._on.click();
+    check("no refresh presses a Report battery levels button, or the hub's or a room's own refresh",
+          svc.length === 5 && svc.every((x) => !/report_battery|refresh_blinds/.test(JSON.stringify(x))), JSON.stringify(svc));
+  }
 }
 
 // --- the sidebar panel's menu button -------------------------------------------------------
@@ -689,12 +1029,113 @@ for (const cfg of [{}, { hide_picture:true }]) {
   c.hass = { ...hass, states: { ...hass.states, "sensor.den_1_battery": { state:"11" } } };
   check("a change to one of the card's own entities does", patched === 1, String(patched));
 }
+{
+  // A redraw writes only the text and attributes that changed: a write of the same text still
+  // costs the browser a fresh layout of the tile. Every write to a tile's text is recorded.
+  for (const cfg of [{}, { hide_picture:true }]) {
+    const layout = cfg.hide_picture ? "list" : "grid";
+    const c = rendered(cfg);
+    const writes = [];
+    const watch = (node, label) => {
+      if (!node) return;
+      const text = Object.getOwnPropertyDescriptor(node, "textContent");
+      Object.defineProperty(node, "textContent", { configurable:true, get: text.get,
+        set(v) { writes.push(`${label} text`); text.set.call(this, v); } });
+      const setAttribute = node.setAttribute;
+      node.setAttribute = function (k, v) { writes.push(`${label} ${k}`); setAttribute.call(this, k, v); };
+      let title = node.title;
+      Object.defineProperty(node, "title", { configurable:true, get: () => title, set(v) { writes.push(`${label} title`); title = v; } });
+    };
+    for (const cell of c._cells) {
+      const id = cell.blind.deviceId;
+      watch(cell.status, `${id} status`);
+      watch(cell.batteryEl, `${id} battery`);
+      watch(cell.batteryEl?.firstChild, `${id} battery icon`);
+      watch(cell.batteryEl?.lastChild, `${id} battery level`);
+      for (const zone of cell.shade?.zones || []) watch(zone, `${id} rail`);
+      for (const slider of cell.sliders) watch(slider.value, `${id} slider`);
+    }
+    c._patch();
+    check(`${layout}: a redraw with nothing changed writes no text or attributes`, writes.length === 0, writes.join(", "));
+    c.hass = { ...hass, states: { ...hass.states, "sensor.den_1_battery": { state:"11" } } };
+    check(`${layout}: ...and a new battery level writes only that battery`,
+          writes.length > 0 && writes.every((w) => w.startsWith("d2 battery")), writes.join(", "));
+  }
+}
+
+// Nor should it scan the entity registry: Home Assistant replaces its registries only when they
+// change, so what the card reads from them is kept until then. Counted by listing its keys.
+let scans = 0;
+const counted = (registry) => new Proxy(registry, { ownKeys: (target) => { scans += 1; return Reflect.ownKeys(target); } });
+{
+  const h = { ...hass, entities: counted(hass.entities) };
+  const c = rendered({}, h);
+  scans = 0;
+  c.hass = { ...h, states: { ...h.states, "light.kitchen": { state:"on" } } };
+  c.hass = { ...h, states: { ...h.states, "sensor.den_1_battery": { state:"11" } } };
+  check("a state change does not scan the entity registry again", scans === 0, String(scans));
+  c.hass = { ...h, entities: counted({ ...hass.entities }) };
+  check("a new entity registry is read", scans > 0 && c._cells.length === 2, String(scans));
+}
+{
+  // What the card reads from states still follows them without a registry scan: the side a
+  // drape stacks to, and the name of a scene the registry leaves unnamed.
+  const registry = {
+    entities: counted({
+      "cover.living_1_bottom_rail": { platform:"norman", device_id:"l1", translation_key:"bottom_rail" },
+      "scene.living_evening": { platform:"norman", device_id:"r1", translation_key:"room_scene" },
+    }),
+    devices: { l1:{ name:"Living_1", area_id:"a1", model_id:"80/1" }, r1:{ name:"Living", area_id:"a1" } },
+    areas: { a1:{ name:"Living" } },
+  };
+  const at = (stack, sceneName) => ({ ...registry, states: {
+    "cover.living_1_bottom_rail": { state:"open", attributes:{ current_position:100, target_position:100, stack } },
+    "scene.living_evening": { state:"unknown", attributes:{ friendly_name:sceneName } },
+  } });
+  const c = rendered({}, at("left", "Evening"));
+  const sceneNames = () => byClass(c.shadowRoot, "room-scenes").flatMap((g) => g.children.map((chip) => chip.children[1].textContent));
+  check("a drape stacking left is drawn with one side", c._cells[0]?.shade.parts.length === 1);
+  check("an unnamed scene takes its state's name", JSON.stringify(sceneNames()) === '["Evening"]', JSON.stringify(sceneNames()));
+  scans = 0;
+  c.hass = at("split", "Evening");
+  check("a drape that now stacks to both sides is redrawn split", c._cells[0]?.shade.parts.length === 2);
+  c.hass = at("split", "Dusk");
+  check("an unnamed scene follows its state's name", JSON.stringify(sceneNames()) === '["Dusk"]', JSON.stringify(sceneNames()));
+  check("...neither by scanning the registry", scans === 0, String(scans));
+}
 
 {
   const c = rendered();
   c.hass = { ...hass, devices: { ...hass.devices, d2:{ name:"Den_1", name_by_user:"Den window", area_id:"a2" } } };
   check("a renamed blind is renamed on the card",
         c._cells.some(x => x.blind.name === "Den window"), JSON.stringify(c._cells.map(x => x.blind.name)));
+}
+{
+  // Each tile is bound to its blind's entity ids, so an id that changes ("Recreate entity IDs"),
+  // or an entity disabled or enabled, rebuilds the tile rather than leaving it on the old one.
+  const renamed = { ...hass.entities, "cover.den_window": hass.entities["cover.den_1_bottom_rail"] };
+  delete renamed["cover.den_1_bottom_rail"];
+  const states = { ...hass.states, "cover.den_window": hass.states["cover.den_1_bottom_rail"] };
+  delete states["cover.den_1_bottom_rail"];
+  const c = rendered();
+  c.hass = { ...hass, entities: renamed, states };
+  const moved = c._cells.find((x) => x.blind.deviceId === "d2");
+  check("a cover given a new entity id rebinds its tile",
+        moved.blind.bottomCover === "cover.den_window" && moved.status.textContent === "90% open",
+        `${moved.blind.bottomCover} ${moved.status.textContent}`);
+
+  // A disabled entity leaves the frontend's registry: the card stops writing to it.
+  const disabled = { ...hass.entities };
+  delete disabled["number.den_1_bottom_rail_position"];
+  c.hass = { ...hass, entities: disabled };
+  calls.length = 0;
+  c._move(c._cells.find((x) => x.blind.deviceId === "d2").rails, 0, 40);
+  check("a disabled slider entity is no longer written; the cover is",
+        JSON.stringify(calls) === JSON.stringify([["cover", "set_cover_position", { entity_id:"cover.den_1_bottom_rail", position:40 }]]),
+        JSON.stringify(calls));
+  c.hass = hass;
+  check("...and the slider entity is written again once enabled",
+        c._cells.find((x) => x.blind.deviceId === "d2").rails[0].numberId === "number.den_1_bottom_rail_position");
 }
 
 // ---- the status line -----------------------------------------------------------------
@@ -738,7 +1179,7 @@ for (const cfg of [{}, { hide_picture:true }]) {
   check("a moving middle rail is named", cells.d1.status.textContent.replace(/ /g, " ") === "Opening · Middle 80%", cells.d1.status.textContent);
 
   // The hub stores a target whether or not the blind hears the command, and keeps it and the
-  // old position until the blind next reports in: blind 8399 sat at bottom 100 heading for 0
+  // old position until the blind next reports in: a blind sat at bottom 100 heading for 0
   // for two hours, and had in fact closed. Past the move window the card says neither value
   // is confirmed, and draws the rail where it was sent with the marker where it was heard.
   const ago = (ms) => new Date(Date.now() - ms).toISOString();
@@ -932,6 +1373,110 @@ check("the sheer is drawn see-through", /\.fabric\.sheer \{[^}]*backdrop-filter/
   check("moving a rail to where it already is writes nothing", writes.length === 0, JSON.stringify(writes));
 }
 
+// Arrow keys on one rail, then on the other before KEY_COMMIT_MS is up: a blind gathers one
+// rail's keys at a time, so the first rail's move is sent when the second rail's keys begin.
+// And a drag on a blind while keys are being gathered: on the same rail the drag takes the
+// keys' move over and sends one move on release; on the other rail the keys' move goes first.
+// Either way no key timer goes off mid-drag, and a release never sends the blind to 0.
+{
+  const recorder = () => {
+    const writes = [];
+    const card = rendered({}, { ...hass, callService: (d, sv, data) => { writes.push([d, sv, data]); return Promise.resolve(); } });
+    return { card, writes, cell: (id) => card._cells.find((x) => x.blind.deviceId === id) };
+  };
+  let prevented = 0;
+  const key = (k) => ({ key:k, preventDefault() { prevented += 1; } });
+  const valuesOf = (writes) => JSON.stringify(writes.map((x) => [x[2].entity_id, x[2].value ?? x[2].position]));
+  const MIDDLE = "number.front_bedroom_1_middle_rail_position", BOTTOM = "number.front_bedroom_1_bottom_rail_position";
+  const DEN = "number.den_1_bottom_rail_position";
+
+  const two = recorder();   // bottom 60, middle 80
+  const { shade } = two.cell("d1");
+  two.card._onKey(shade, 1, key("ArrowDown"));
+  two.card._onKey(shade, 0, key("ArrowDown"));
+  check("keys on the other rail first send the move gathered on this one",
+        valuesOf(two.writes) === JSON.stringify([[MIDDLE, 70]]), valuesOf(two.writes));
+  check("...which stays drawn while the other rail's keys are gathered",
+        two.card._shadeValue(shade, 1) === 70 && shade.dragValues[0] === 50, JSON.stringify(shade.dragValues));
+
+  // A mouse drag on a blind: the press, a move, and the release, in the opening's pixels.
+  const drag = (card, target, index, from, to) => {
+    target.opening.getBoundingClientRect = () => ({ top:0, left:0, width:100, height:100 });
+    const at = (value) => card._railTop(target, index, value) + RAIL / 2;
+    const pointer = (y) => ({ pointerId:1, pointerType:"mouse", button:0, clientX:50, clientY:y, target:target.zones[index], preventDefault() {} });
+    return {
+      press: () => target.element._on.pointerdown(pointer(at(from))),
+      move: () => target.element._on.pointermove(pointer(at(to))),
+      release: () => target.element._on.pointerup(pointer(at(to))),
+      cancel: () => target.element._on.pointercancel(pointer(at(to))),
+    };
+  };
+  // Keys take Den_1 from 90 to 80, then a drag of the same rail from there to 50.
+  const one = recorder();
+  const den = one.cell("d2").shade;
+  one.card._onKey(den, 0, key("ArrowDown"));
+  const dragDen = drag(one.card, den, 0, 80, 50);
+  dragDen.press();
+  dragDen.move();
+  check("a drag of the rail the keys are moving takes their move over: nothing is sent as it starts",
+        one.writes.length === 0, valuesOf(one.writes));
+
+  // Keys on the middle rail, then a drag of the bottom rail: the keys' move goes as the drag starts.
+  const other = recorder();
+  const otherShade = other.cell("d1").shade;
+  other.card._onKey(otherShade, 1, key("ArrowDown"));
+  const dragOther = drag(other.card, otherShade, 0, 60, 30);
+  dragOther.press();
+  dragOther.move();
+  check("a drag of the other rail sends the keys' move as it starts",
+        valuesOf(other.writes) === JSON.stringify([[MIDDLE, 70]]), valuesOf(other.writes));
+  dragOther.release();
+  check("...and its own on release", valuesOf(other.writes) === JSON.stringify([[MIDDLE, 70], [BOTTOM, 30]]),
+        valuesOf(other.writes));
+
+  // A drag that took the keys' move over and is then called off by the browser still sends it.
+  const cancelled = recorder();
+  const cancelledDen = cancelled.cell("d2").shade;
+  cancelled.card._onKey(cancelledDen, 0, key("ArrowDown"));
+  const dragCancelled = drag(cancelled.card, cancelledDen, 0, 80, 50);
+  dragCancelled.press();
+  dragCancelled.move();
+  dragCancelled.cancel();
+  check("a cancelled drag still sends the keys' move it took over",
+        valuesOf(cancelled.writes) === JSON.stringify([[DEN, 80]]), valuesOf(cancelled.writes));
+
+  // The middle rail's keys pressed mid-drag on the bottom rail are ignored: the drag owns the
+  // blind's drawing until its release, which sends it. Keys work again once it is let go.
+  const mid = recorder();
+  const fbShade = mid.cell("d1").shade;
+  const dragBottom = drag(mid.card, fbShade, 0, 60, 30);
+  dragBottom.press();
+  dragBottom.move();
+  prevented = 0;
+  mid.card._onKey(fbShade, 1, key("ArrowDown"));
+  check("keys on the other rail mid-drag leave the drag as it is",
+        near(fbShade.dragValues[0], 30) && fbShade.dragValues[1] === undefined && !fbShade.keyMove,
+        JSON.stringify(fbShade.dragValues));
+  check("...though they still do not scroll the page", prevented === 1);
+  dragBottom.release();
+  check("...and the release sends the drag", valuesOf(mid.writes) === JSON.stringify([[BOTTOM, 30]]), valuesOf(mid.writes));
+  mid.card._onKey(fbShade, 1, key("ArrowDown"));
+
+  await new Promise((resolve) => setTimeout(resolve, KEY_COMMIT_MS + 100));
+  check("...then the other rail's, once the keys stop", valuesOf(two.writes) === JSON.stringify([[MIDDLE, 70], [BOTTOM, 50]]),
+        valuesOf(two.writes));
+  check("no key move goes off mid-drag", one.writes.length === 0, valuesOf(one.writes));
+  dragDen.release();
+  check("...and the release sends one move, from where the keys left the rail to where it was dragged",
+        valuesOf(one.writes) === JSON.stringify([[DEN, 50]]), valuesOf(one.writes));
+  check("keys after a drag are gathered again", valuesOf(mid.writes) === JSON.stringify([[BOTTOM, 30], [MIDDLE, 70]]),
+        valuesOf(mid.writes));
+  check("nothing more goes once the keys' move is taken over or sent",
+        valuesOf(other.writes) === JSON.stringify([[MIDDLE, 70], [BOTTOM, 30]]) &&
+        valuesOf(cancelled.writes) === JSON.stringify([[DEN, 80]]),
+        `${valuesOf(other.writes)} ${valuesOf(cancelled.writes)}`);
+}
+
 // The tabs sit apart on a two-rail blind, so both can be reached when the rails are together.
 check("the middle rail's tab is left of the bottom rail's",
       twoRail._tabX(twoRail._railsOf(twoRailBlind), 1) < 50 && twoRail._tabX(twoRail._railsOf(twoRailBlind), 0) > 50);
@@ -969,6 +1514,109 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   fbSliders[1].input._on.change();
   check("moving a slider writes that rail", calls[0]?.[2]?.entity_id === "number.front_bedroom_1_bottom_rail_position" && calls[0][2].value === 20,
         JSON.stringify(calls[0]));
+}
+{
+  // A slider is left alone while it is held, and must let go however the press ends: a tap on
+  // the thumb or a drag back to the start fires no `change`, nor does a touch the browser takes
+  // for a scroll (pointercancel).
+  const c = rendered({ hide_picture:true });
+  const { input, value } = c._cells.find((x) => x.blind.deviceId === "d2").sliders[0];
+  const hubAt = (position) => ({ ...hass, states: { ...hass.states,
+    "cover.den_1_bottom_rail": { state:"open", attributes:{ current_position:position, target_position:position } },
+    "number.den_1_bottom_rail_position": { state:String(position) } } });
+  input._on.pointerdown();
+  c.hass = hubAt(50);
+  check("a held slider is not moved by the hub", input.value === "90", input.value);
+  input._on.pointerup?.();
+  check("a tap that changes nothing catches up with the hub on release", input.value === "50" && value.textContent === "50%",
+        `${input.value} ${value.textContent}`);
+  input._on.pointerdown();
+  input._on.pointercancel?.();
+  c.hass = hubAt(20);
+  check("after a touch taken for a scroll the slider follows the hub again", input.value === "20", input.value);
+  input._on.pointerdown();
+  input._on.lostpointercapture?.();
+  c.hass = hubAt(30);
+  check("...and after the pointer is otherwise let go", input.value === "30", input.value);
+
+  // A pointer's move is sent on release; arrow keys, which fire `change` on every step, are
+  // gathered into one write the way the picture's are.
+  calls.length = 0;
+  input._on.pointerdown();
+  input.value = "70";
+  input._on.input();
+  input._on.pointerup?.();
+  input._on.change();
+  check("a slider dragged and let go is sent at once", JSON.stringify(calls.map((x) => x[2].value)) === "[70]",
+        JSON.stringify(calls));
+  calls.length = 0;
+  for (const step of ["60", "50", "40"]) {
+    input._on.keydown?.({ key:"ArrowLeft" });
+    input.value = step;
+    input._on.input();
+    input._on.change();
+  }
+  check("arrow keys on a slider are not sent one by one", calls.length === 0, JSON.stringify(calls));
+  c.hass = hubAt(70);
+  check("...nor moved by the hub while they are gathered", input.value === "40", input.value);
+  await new Promise((resolve) => setTimeout(resolve, KEY_COMMIT_MS + 100));
+  check("...but sent once, when they stop",
+        JSON.stringify(calls) === JSON.stringify([["number", "set_value", { entity_id:"number.den_1_bottom_rail_position", value:40 }]]),
+        JSON.stringify(calls));
+}
+{
+  // A blind going unavailable while its slider is held. Chromium fires `change` on a held range
+  // input that is disabled, which would send the half-dragged value; so the slider is disabled
+  // only once the press ends, and a `change` on a blind that is unavailable sends nothing.
+  const recorder = () => {
+    const writes = [];
+    const at = (states = {}) => ({ ...hass, states: { ...hass.states, ...states },
+      callService: (d, sv, data) => { writes.push([d, sv, data]); return Promise.resolve(); } });
+    const card = rendered({ hide_picture:true }, at());
+    return { card, writes, at, input: card._cells.find((x) => x.blind.deviceId === "d2").sliders[0].input };
+  };
+  const valuesOf = (writes) => JSON.stringify(writes.map((x) => x[2].value));
+  const held = recorder();
+  const { input } = held;
+  input._on.pointerdown();
+  input.value = "60";
+  input._on.input();
+  held.card.hass = held.at({ "cover.den_1_bottom_rail": { state:"unavailable", attributes:{} },
+                             "number.den_1_bottom_rail_position": { state:"unavailable" } });
+  check("a held slider is not disabled under the pointer when its blind goes unavailable", input.disabled === false,
+        String(input.disabled));
+  input._on.pointerup();
+  input._on.change();
+  check("...its `change` then sends nothing", held.writes.length === 0, JSON.stringify(held.writes));
+  check("...and once let go it is disabled", input.disabled === true, String(input.disabled));
+  held.card.hass = held.at();
+  check("...until the blind is back, where the hub has it", input.disabled === false && input.value === "90",
+        `${input.disabled} ${input.value}`);
+
+  // Arrow keys, then a press on the same slider before their move is sent: the press holds the
+  // keys' move back. A press that moves the slider sends its own `change` alone; one that does
+  // not sends the keys' move when it ends.
+  const keysThenPress = () => {
+    const r = recorder();
+    r.input._on.keydown({ key:"ArrowLeft" });
+    r.input.value = "80";
+    r.input._on.input();
+    r.input._on.change();
+    r.input._on.pointerdown();
+    return r;
+  };
+  const dragged = keysThenPress();
+  const tapped = keysThenPress();
+  await new Promise((resolve) => setTimeout(resolve, KEY_COMMIT_MS + 100));
+  check("a press on a slider holds back the move its keys gathered", !dragged.writes.length && !tapped.writes.length,
+        `${valuesOf(dragged.writes)} ${valuesOf(tapped.writes)}`);
+  dragged.input.value = "40";
+  dragged.input._on.input();
+  dragged.input._on.pointerup();
+  dragged.input._on.change();
+  check("...a press that moves it sends only its own", valuesOf(dragged.writes) === "[40]", valuesOf(dragged.writes));
+  tapped.input._on.pointerup();
+  check("...and one that does not sends the keys' move", valuesOf(tapped.writes) === "[80]", valuesOf(tapped.writes));
 }
 
 // A Shutter: no rails, one cover whose tilt is how open its louvers are.
@@ -1045,7 +1693,7 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   list._hass = sHass;
   list.setConfig({ type:"custom:norman-shades-card", hide_picture:true });
   list._hass = sHass;
-  const slider = list._buildSlider(rails, rails[0]);
+  const slider = list._buildSlider(shutter, rails, rails[0]);
   check("the list layout's louver slider moves in quarters", slider.input.step === "25", String(slider.input.step));
 }
 
@@ -1291,6 +1939,9 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   check("German counts its blinds and batteries", de.includes("2 Rollos") && de.includes("1 Batterie schwach"), de.slice(0, 200));
   check("German writes a space before %", de.includes("Batterie 84 %") && de.includes("90 % offen"), de.slice(0, 400));
   check("German labels the presets", de.includes("Privatsphäre") && de.includes("Beste Aussicht – alle Räume"));
+  check("German names the refresh as the integration does",
+        de.includes("Den_1 aktualisieren") && de.includes("Alle Rollos in Den aktualisieren") && de.includes("Alle Rollos aktualisieren"),
+        de.split(" | ").filter((t) => t.includes("aktualisieren")).join(" ; "));
   check("a regional tag uses its base language", textOf(rendered({}, inLanguage("de-CH"))).includes("2 Rollos"));
   check("Japanese follows the app's words", textOf(rendered({}, inLanguage("ja"))).includes("プライバシー重視"));
   check("zh-TW is Traditional Chinese", textOf(rendered({}, inLanguage("zh-TW"))).includes("2 個窗簾"));
@@ -1318,6 +1969,7 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   editor.setConfig({ type:"custom:norman-shades-card" });
   const labels = findAll(editor.shadowRoot, (el) => el.tagName === "span").map((el) => el.textContent);
   check("the editor's labels are translated", labels.includes("Ocultar los niveles de batería"), JSON.stringify(labels));
+  check("the editor offers hide_refresh", labels.at(-1) === "Ocultar los botones de actualizar", JSON.stringify(labels));
 
   // The panel's one message, for when the card itself failed to load.
   const Panel = els.get("norman-panel");
@@ -1329,6 +1981,47 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   console.error = error;
   const message = byClass(p.shadowRoot, "error")[0]?.textContent || "";
   check("the panel's load failure is translated", message.startsWith("Norman ブラインドを読み込めませんでした"), message);
+}
+
+// ---- the visual editor -------------------------------------------------------------------
+{
+  // Home Assistant hands the editor its config back after every change, and ha-form's title
+  // field reports one per keystroke. The form must take the new values in place: a rebuilt
+  // form takes the focus out of the field being typed in.
+  const Editor = els.get("norman-shades-card-editor");
+  const get = customElements.get;
+  els.set("ha-form", class extends HTMLElement {});
+  customElements.get = (name) => els.get(name);
+  try {
+    const editor = new Editor();
+    editor.hass = hass;
+    editor.setConfig({ type:"custom:norman-shades-card" });
+    const form = editor._form;
+    check("the editor draws Home Assistant's form once it is loaded",
+          Boolean(form) && editor.shadowRoot.children.length === 1 && editor.shadowRoot.children[0] === form);
+    editor.setConfig({ type:"custom:norman-shades-card", title:"U" });
+    editor.setConfig({ type:"custom:norman-shades-card", title:"Up" });
+    check("a config handed back is given to the same form, not a new one",
+          editor._form === form && editor.shadowRoot.children.length === 1 && editor.shadowRoot.children[0] === form &&
+          form.data.title === "Up", JSON.stringify(form.data));
+    editor.hass = { ...hass, locale:{ language:"de" } };
+    check("a change of language still redraws the form in it",
+          editor._form !== form && editor.shadowRoot.children[0] === editor._form &&
+          editor._form.computeLabel({ name:"hide_battery" }) === "Batteriestände ausblenden");
+  } finally {
+    customElements.get = get;
+    els.delete("ha-form");
+  }
+
+  // Without ha-form the editor's plain inputs still show the config they are handed.
+  const plain = new Editor();
+  plain.hass = hass;
+  plain.setConfig({ type:"custom:norman-shades-card" });
+  plain.setConfig({ type:"custom:norman-shades-card", hide_battery:true, title:"Up" });
+  const inputs = findAll(plain.shadowRoot, (el) => el.tagName === "input");
+  check("the plain editor follows a new config",
+        inputs.length === 9 && inputs[0].value === "Up" && inputs[3].checked === true,
+        JSON.stringify(inputs.map((i) => i.value ?? i.checked)));
 }
 
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);

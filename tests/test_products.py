@@ -538,3 +538,30 @@ async def test_shutter_watchdog_is_quiet_when_the_louvers_turn(
 
     assert len(_louvers_sent(fake_hub, UID_SHUTTER)) == 1
     assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+
+
+async def test_a_louver_turn_refused_as_busy_is_not_retried_after_a_newer_command(
+    hass: HomeAssistant, init_with_every_product: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A newer command for the Shutter while the hub is waited out drops the retry and its
+    watch: the hub never turned the louvers for the refused one."""
+    coordinator = init_with_every_product.runtime_data
+    orig = fake_hub._control
+    fake_hub.control_responses = [{"Error": 2}]
+
+    async def _taken_over(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if "Position" in body:
+            coordinator.async_supersede([UID_SHUTTER])
+        return await orig(method, url, data)
+
+    with (
+        patch.object(fake_hub, "_control", _taken_over),
+        patch("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _call(hass, UID_SHUTTER, SERVICE_OPEN_COVER_TILT)
+
+    assert len(_louvers_sent(fake_hub, UID_SHUTTER)) == 1
+    assert UID_SHUTTER not in coordinator._move_watchers

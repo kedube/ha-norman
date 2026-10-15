@@ -35,6 +35,7 @@
     },
     "abort": {
       "already_configured": "このNorman Hubはすでに設定されています",
+      "already_in_progress": "このNorman Hubはすでに設定中です",
       "cannot_connect": "Norman Hubに接続できませんでした",
       "invalid_response": "Norman Hubから無効な応答を受信しました",
       "reconfigure_successful": "Hubのアドレスを更新しました",
@@ -90,15 +91,15 @@
     },
     "room_command": {
       "name": "部屋コマンド",
-      "description": "Normanアプリの部屋ボタンを、部屋のすべての窓装飾に対して1回のハブ要求で実行します。",
+      "description": "Normanアプリの部屋ボタンを、部屋のすべての窓装飾に対して実行します。best_privacy、best_view、favorite は1回のハブ要求で送信されます。部屋の refresh は各ブラインドに個別に状態要求を送信します。",
       "fields": {
         "room": {
           "name": "部屋",
-          "description": "ハブが認識している部屋名（Normanアプリの部屋名）。"
+          "description": "ハブが認識している部屋名（Normanアプリの部屋名）。空欄にするとハブのすべてのブラインドが対象になります。"
         },
         "command": {
           "name": "コマンド",
-          "description": "best_privacy は下レールを閉じ、中レールはそのままにします。best_view は下レールを開きます。favorite は部屋を保存済みのお気に入り位置へ動かします。refresh は部屋の各ブラインドに応答を求めます（何も動きません）。"
+          "description": "best_privacy は下レールを閉じ、中レールを全開にします。best_view は両方のレールを全開にします。favorite は部屋を保存済みのお気に入り位置へ動かします。refresh は部屋の各ブラインドに応答を求めます（何も動きません）。"
         },
         "config_entry_id": {
           "name": "ハブ",
@@ -282,8 +283,14 @@
     }
   },
   "exceptions": {
-    "command_failed": {
-      "message": "{name} の {action} に失敗しました: {error}"
+    "open_failed": {
+      "message": "{name} を開けませんでした: {error}"
+    },
+    "close_failed": {
+      "message": "{name} を閉じられませんでした: {error}"
+    },
+    "move_failed": {
+      "message": "{name} を動かせませんでした: {error}"
     },
     "stop_failed": {
       "message": "{name} を停止できませんでした: {error}"
@@ -293,6 +300,9 @@
     },
     "hub_read_failed": {
       "message": "Norman Hub {hub} から読み取れませんでした: {error}"
+    },
+    "connect_failed": {
+      "message": "Norman Hub {hub} に接続できませんでした: {error}"
     },
     "hub_command_rejected": {
       "message": "Norman Hub {hub} が {uid} へのコマンドを拒否しました: {error}"

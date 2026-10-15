@@ -35,6 +35,7 @@
     },
     "abort": {
       "already_configured": "此 Norman Hub 已設定完成",
+      "already_in_progress": "此 Norman Hub 正在設定中",
       "cannot_connect": "無法連線至 Norman Hub",
       "invalid_response": "從 Norman Hub 收到無效的回應",
       "reconfigure_successful": "Hub 位址已更新",
@@ -90,15 +91,15 @@
     },
     "room_command": {
       "name": "房間命令",
-      "description": "對房間內所有窗飾執行 Norman 應用程式的房間按鈕，只需向中樞發送一次請求。",
+      "description": "對房間內所有窗飾執行 Norman 應用程式的房間按鈕。best_privacy、best_view 和 favorite 只需向中樞發送一次請求；房間的 refresh 會向每個窗簾分別發送狀態請求。",
       "fields": {
         "room": {
           "name": "房間",
-          "description": "中樞所知的房間名稱（Norman 應用程式中的房間名稱）。"
+          "description": "中樞所知的房間名稱（Norman 應用程式中的房間名稱）。留空則作用於中樞上的所有窗簾。"
         },
         "command": {
           "name": "命令",
-          "description": "best_privacy 關閉下軌並保持中軌不動；best_view 打開下軌；favorite 將房間移至已儲存的最愛位置；refresh 要求房間內每個窗簾回報狀態（不會移動）。"
+          "description": "best_privacy 關閉下軌並將中軌完全打開；best_view 將兩條軌道完全打開；favorite 將房間移至已儲存的最愛位置；refresh 要求房間內每個窗簾回報狀態（不會移動）。"
         },
         "config_entry_id": {
           "name": "中樞",
@@ -282,8 +283,14 @@
     }
   },
   "exceptions": {
-    "command_failed": {
-      "message": "{name} 執行「{action}」失敗：{error}"
+    "open_failed": {
+      "message": "無法打開 {name}：{error}"
+    },
+    "close_failed": {
+      "message": "無法關閉 {name}：{error}"
+    },
+    "move_failed": {
+      "message": "無法移動 {name}：{error}"
     },
     "stop_failed": {
       "message": "無法停止 {name}：{error}"
@@ -293,6 +300,9 @@
     },
     "hub_read_failed": {
       "message": "無法從 Norman Hub {hub} 讀取：{error}"
+    },
+    "connect_failed": {
+      "message": "無法連線到 Norman Hub {hub}：{error}"
     },
     "hub_command_rejected": {
       "message": "Norman Hub {hub} 拒絕了對 {uid} 的指令：{error}"

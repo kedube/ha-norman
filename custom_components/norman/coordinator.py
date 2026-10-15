@@ -58,6 +58,7 @@ from .const import (
     ROOM_POSITION_TYPES,
     SHUTTER_CLOSED,
     WAKE_DISABLED,
+    is_default_title,
 )
 from .models import (
     NormanDevices,
@@ -275,6 +276,12 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # What the hub says about itself; refreshed alongside the peripherals
         self.hub = NormanHubData(model=api.hub_model, firmware_version=api.hub_firmware_version)
         self._device_info: dict[str, Any] = {}
+        # The entry's data and options as this setup read them; a later change to either
+        # reloads the entry, a new title does not (__init__._async_entry_updated).
+        self.config_at_setup: tuple[dict[str, Any], dict[str, Any]] = (
+            dict(entry.data),
+            dict(entry.options),
+        )
         self._device_info_stale = True
         self._device_info_error_logged = False
         # Area ids for rooms named after their blinds' area while the hub cannot name them
@@ -291,6 +298,11 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # of the move that recorded them (see async_note_move).
         self._moves: dict[int, tuple[int, tuple[int, int]]] = {}
         self._move_serial = 0
+        # The serial of the last command to take each blind over: a move (async_note_move)
+        # or a stop, jog, preset or scene (async_supersede). A command that waited its turn
+        # in the control queue is sent and watched only while it still holds its blind, so
+        # a stop or a newer command issued meanwhile is not undone.
+        self._claims: dict[int, int] = {}
         # The scenes and scene groups saved on the hub, from its device list (_parse_scenes).
         # Kept from the last good read while the hub cannot read its configuration.
         self.scenes: dict[str, NormanScene] = {}
@@ -307,11 +319,19 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         if interval is None:
             return
 
-        async def _sweep(_now: datetime) -> None:
+        async def _async_sweep() -> None:
             try:
                 await self.async_wake_disconnected_blinds()
             except (NormanApiError, NormanConnectionError) as err:
                 _LOGGER.warning("Wake sweep failed: %s", err)
+
+        @callback
+        def _sweep(_now: datetime) -> None:
+            # A task of the entry's, so unloading it stops a sweep part-way through: one left
+            # running would send through the old client, unpaced against the new one.
+            self.config_entry.async_create_background_task(
+                self.hass, _async_sweep(), name="norman-wake-sweep"
+            )
 
         self.config_entry.async_on_unload(
             async_track_time_interval(self.hass, _sweep, interval, name="norman-wake-sweep")
@@ -379,11 +399,31 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         target, and the second would undo the first. Reading this record first lets each
         see the one before it. It lasts until the move's watch ends, the move fails to send,
         or another command supersedes it (``async_supersede``). Returns the move's serial,
-        which ends the record only while it is still this move's.
+        which ends the record only while it is still this move's, and which holds the blind
+        until another command takes it over (``holds``).
+
+        The move in flight before it loses its watch now, not once this one is sent: left
+        running, that watch would read the blind heading here as its own move never arriving
+        and send it again -- and this move may never be sent, or never be watched.
         """
+        self.async_cancel_move_watch(device_id)
         self._move_serial += 1
         self._moves[device_id] = (self._move_serial, (bottom, middle))
+        self._claims[device_id] = self._move_serial
         return self._move_serial
+
+    def holds(self, device_id: int, serial: int) -> bool:
+        """Whether command ``serial`` is still the last to have taken this blind over."""
+        return self._claims.get(device_id) == serial
+
+    def _holds_all(self, claims: dict[int, int | None]) -> bool:
+        """Whether no command has taken any of these blinds over since ``claims`` was read.
+
+        One request reaches all of them, so a busy hub's retry is dropped once any has been
+        taken over: it would undo that blind's newer command. The rest are still watched,
+        and sent their move on their own if they never went.
+        """
+        return all(self._claims.get(device_id) == claim for device_id, claim in claims.items())
 
     @callback
     def async_forget_move(self, device_id: int, serial: int | None = None) -> None:
@@ -393,27 +433,45 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             del self._moves[device_id]
 
     @callback
-    def async_supersede(self, device_ids: Iterable[int] | None = None) -> None:
+    def async_supersede(self, device_ids: Iterable[int] | None = None) -> int:
         """Another command has taken these blinds over (every blind, for None).
 
         A stop, a jog or a preset replaces whatever move was in flight, so its watch has to
         go too: left running, it would read the blind heading somewhere else as a move that
         never arrived and send the old one again, undoing the new command. The move record
-        goes with it, and the next move fills its other rail in from the hub.
+        goes with it, and the next move fills its other rail in from the hub. A command
+        still waiting its turn loses the blinds too: a per-blind batch skips them, and no
+        command is watched once it has lost its blind (``holds``). Returns the new command's
+        serial, which holds the blinds until something else takes them over.
         """
+        self._move_serial += 1
         if device_ids is None:
-            device_ids = set(self._moves) | set(self._move_watchers)
+            device_ids = set(self.data or {}) | set(self._moves) | set(self._move_watchers)
         for device_id in list(device_ids):
             self.async_cancel_move_watch(device_id)
             self.async_forget_move(device_id)
+            self._claims[device_id] = self._move_serial
+        return self._move_serial
 
     @callback
-    def async_supersede_room(self, room_id: int | None) -> None:
+    def async_supersede_room(self, room_id: int | None) -> int:
         """``async_supersede`` for every blind in a room, or on the hub for None."""
         if room_id is None:
-            self.async_supersede()
-            return
-        self.async_supersede(self.blinds_in(room_id))
+            return self.async_supersede()
+        return self.async_supersede(self.blinds_in(room_id))
+
+    def room_name(self, room_id: int) -> str | None:
+        """The hub's name for one of its rooms: from a blind in it, else from a scene saved in it.
+
+        None while the hub's device list is unreadable and its blinds have no room names.
+        """
+        for data in (self.data or {}).values():
+            if data.room_id == room_id and data.room_name:
+                return data.room_name
+        for scene in self.scenes.values():
+            if scene.room_id == room_id and scene.room_name:
+                return scene.room_name
+        return None
 
     def blinds_in(self, room_id: int | None) -> dict[int, NormanPeripheralData]:
         """The blinds in one of the hub's rooms, or every blind on the hub for None."""
@@ -456,7 +514,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         )
         serial = self.async_note_move(device_id, *rails)
         try:
-            await self.api.async_set_position(device_id, *rails)
+            await self.api.async_set_position(
+                device_id, *rails, still_wanted=functools.partial(self.holds, device_id, serial)
+            )
         except BaseException:
             self.async_forget_move(device_id, serial)
             raise
@@ -496,8 +556,13 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             await self._async_move_each(moves)
             return
         serials = {device_id: self.async_note_move(device_id, *rails) for device_id in moves}
+        # The request reaches every blind in scope, not only the ones it moves, so a busy
+        # hub's retry is dropped once any of them is taken over.
+        claims = {device_id: self._claims.get(device_id) for device_id in blinds}
         try:
-            await self.api.async_set_room_position(room_id, *rails)
+            await self.api.async_set_room_position(
+                room_id, *rails, still_wanted=lambda: self._holds_all(claims)
+            )
         except BaseException:
             for device_id, serial in serials.items():
                 self.async_forget_move(device_id, serial)
@@ -534,15 +599,23 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         """Send each blind its own move, one after another.
 
         Every move is recorded before the first is sent, as ``async_move_blind`` does for one,
-        so a command issued while these queue sees where each blind is going. A failure
-        stops the rest, and the moves left unsent are forgotten.
+        so a command issued while these queue sees where each blind is going. A blind that
+        another command takes over before its turn -- a stop, or a newer move -- is skipped.
+        A failure stops the rest, and the moves left unsent are forgotten.
         """
         pending = {
             device_id: self.async_note_move(device_id, *rails) for device_id, rails in moves.items()
         }
         try:
             for device_id, rails in moves.items():
-                await self.api.async_set_position(device_id, *rails)
+                if not self.holds(device_id, pending[device_id]):
+                    del pending[device_id]
+                    continue
+                await self.api.async_set_position(
+                    device_id,
+                    *rails,
+                    still_wanted=functools.partial(self.holds, device_id, pending[device_id]),
+                )
                 self.async_watch_move(device_id, *rails, pending.pop(device_id))
         finally:
             for device_id, serial in pending.items():
@@ -561,7 +634,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         is asked to report in, and only one that then shows it never moved is sent the move
         again (``_async_supervise``). A new move for the same blind replaces the watch; a
         stop cancels it. ``serial`` is the move's record (``async_note_move``), which ends
-        with the watch.
+        with the watch; a move that lost its blind while it waited to be sent is not watched.
         """
 
         async def resend() -> None:
@@ -570,24 +643,27 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self._async_start_watch(device_id, (bottom, middle), resend, "move", serial)
 
     @callback
-    def async_watch_louvers(self, device_id: int, position: int) -> None:
+    def async_watch_louvers(self, device_id: int, position: int, serial: int | None = None) -> None:
         """``async_watch_move`` for a Shutter: its louvers take the bottom rail's place."""
 
         async def resend() -> None:
             await self.api.async_set_louvers(device_id, position)
 
-        self._async_start_watch(device_id, (position, None), resend, "louver")
+        self._async_start_watch(device_id, (position, None), resend, "louver", serial)
 
     @callback
-    def async_watch_preset(self, device_id: int, resend: Callable[[], Awaitable[Any]]) -> None:
+    def async_watch_preset(
+        self, device_id: int, resend: Callable[[], Awaitable[Any]], serial: int | None = None
+    ) -> None:
         """After a preset verb (Best Privacy, Best View, Favorite), make sure it arrived.
 
         A preset has no position for the caller to aim at: the blind resolves it to its own
         stored one. The hub records that in its target fields as soon as it accepts the
         command -- for a command it then drops, too -- so the watch reads its goal from there
-        first and then supervises it exactly like a move.
+        first and then supervises it exactly like a move. ``serial`` is the one that took the
+        blind over for the preset (``async_supersede``), if any.
         """
-        self._async_start_watch(device_id, None, resend, "preset")
+        self._async_start_watch(device_id, None, resend, "preset", serial)
 
     async def async_send_room_preset(self, room_id: int | None, fields: dict[str, Any]) -> None:
         """Send a preset to every blind in a room (every blind on the hub, for None).
@@ -596,16 +672,17 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         not each blind hears it, so every blind it reached is then watched as its own preset
         would be (``async_watch_preset``), and one that never moves is sent the preset on its
         own. Those watches are what catch a blind the command reached but whose report did
-        not: on 2026-10-12 blind 8399 closed for Best Privacy without the hub hearing it, and
+        not: on 2026-10-12 a blind closed for Best Privacy without the hub hearing it, and
         the hub showed it open, heading for closed, for two hours until it was asked to report
         in. A blind without a room and group to address it by is not watched.
         """
-        self.async_supersede_room(room_id)
+        serial = self.async_supersede_room(room_id)
         await self.api.async_send_room_control(room_id, fields)
         # Every watch needs the targets the hub recorded on accepting the command, and one
         # read serves them all. The watches are registered now rather than after it, so a
         # stop or a move for one of these blinds meanwhile still replaces its watch.
-        targets_read = self.config_entry.async_create_task(
+        # A background task, so unloading the entry cancels it rather than waiting on it.
+        targets_read = self.config_entry.async_create_background_task(
             self.hass, self.async_refresh(), name="norman-room-preset-read"
         )
         for device_id, device in self.blinds_in(room_id).items():
@@ -618,7 +695,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 fields,
                 device_id,
             )
-            self._async_start_watch(device_id, None, resend, "preset", targets_read=targets_read)
+            self._async_start_watch(device_id, None, resend, "preset", serial, targets_read)
 
     async def async_run_scene(self, scene: NormanScene) -> None:
         """Run a scene saved in one of the hub's rooms, then watch each of its blinds.
@@ -630,7 +707,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         """
         await self._async_run_saved(
             self._scene_targets([scene]),
-            lambda: self.api.async_run_scene(scene.room_id, scene.scene_id),
+            lambda still_wanted: self.api.async_run_scene(
+                scene.room_id, scene.scene_id, still_wanted=still_wanted
+            ),
         )
 
     async def async_run_scene_group(self, group: NormanSceneGroup) -> None:
@@ -643,7 +722,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         members = [self.scenes[key] for key in group.scene_keys if key in self.scenes]
         await self._async_run_saved(
             self._scene_targets(members),
-            lambda: self.api.async_run_scene_group(group.group_id),
+            lambda still_wanted: self.api.async_run_scene_group(
+                group.group_id, still_wanted=still_wanted
+            ),
         )
 
     def _scene_targets(self, scenes: Iterable[NormanScene]) -> dict[int, NormanSceneTarget]:
@@ -657,17 +738,20 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         }
 
     async def _async_run_saved(
-        self, targets: dict[int, NormanSceneTarget], send: Callable[[], Awaitable[None]]
+        self,
+        targets: dict[int, NormanSceneTarget],
+        send: Callable[[Callable[[], bool]], Awaitable[None]],
     ) -> None:
         """Send a saved scene, then watch every blind in it.
 
         The scene replaces any move in flight for its blinds. Each blind's move is recorded
         before the request goes, as a room move's are (``async_note_move``), so a command for
         one of them right behind it keeps the scene's other rail. A Shutter is aimed at its
-        stored louvers, every other blind at its stored rails.
+        stored louvers, every other blind at its stored rails. ``send`` is handed the check a
+        busy hub's retry asks: whether the scene still holds every one of its blinds.
         """
         devices = self.data or {}
-        self.async_supersede(targets)
+        serial = self.async_supersede(targets)
         moves: dict[int, tuple[int, int]] = {}
         louvers: dict[int, int] = {}
         for device_id, target in targets.items():
@@ -683,16 +767,19 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         serials = {
             device_id: self.async_note_move(device_id, *rails) for device_id, rails in moves.items()
         }
+        claims: dict[int, int | None] = {
+            device_id: serials.get(device_id, serial) for device_id in targets
+        }
         try:
-            await send()
+            await send(lambda: self._holds_all(claims))
         except BaseException:
-            for device_id, serial in serials.items():
-                self.async_forget_move(device_id, serial)
+            for device_id, move_serial in serials.items():
+                self.async_forget_move(device_id, move_serial)
             raise
         for device_id, rails in moves.items():
             self.async_watch_move(device_id, *rails, serials[device_id])
         for device_id, position in louvers.items():
-            self.async_watch_louvers(device_id, position)
+            self.async_watch_louvers(device_id, position, serial)
 
     @callback
     def _async_start_watch(
@@ -704,6 +791,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         serial: int | None = None,
         targets_read: Awaitable[None] | None = None,
     ) -> None:
+        if serial is not None and not self.holds(device_id, serial):
+            # A stop or a newer command took the blind over while this one waited to be
+            # sent. Its watch would read the new heading as a command that never arrived.
+            return
         self.async_cancel_move_watch(device_id)
         start = self._sighting(device_id)
         self._move_watchers[device_id] = self.config_entry.async_create_background_task(
@@ -758,11 +849,11 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 # A preset: read the position the hub resolved it to, now. The hub replaces
                 # its target with the blind's actual position whenever the blind reports in,
                 # so a target read after asking the blind to report in always matches -- which
-                # is how a dropped preset used to go unnoticed (blind 9943, 2026-09-21). A
+                # is how a dropped preset used to go unnoticed (2026-09-21). A
                 # room- or hub-wide preset shares one read among its blinds; shielded, so a
                 # watch replaced meanwhile does not cancel it for the rest.
                 if targets_read is None:
-                    await self.async_refresh()
+                    await self._async_watch_read()
                 else:
                     await asyncio.shield(targets_read)
                 goal = self._hub_target(device_id)
@@ -824,7 +915,35 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         ):
             # The answer normally arrives as a notification that refreshes the data;
             # re-read in case it did not.
-            await self.async_refresh()
+            await self._async_watch_read()
+
+    async def _async_watch_read(self) -> None:
+        """Re-read the hub for a watch, in a task of its own that the watch only waits on.
+
+        A watch is cancelled whenever a stop or a newer command takes its blind over, and
+        cancelling a task inside ``async_refresh`` marks the update failed: every entity of
+        the hub would read unavailable, and Home Assistant would drop commands to them, until
+        the next good read. Shielded, the read finishes whatever happens to the watch; a
+        background task, it is cancelled when the entry unloads rather than waited for.
+        """
+        await asyncio.shield(
+            self.config_entry.async_create_background_task(
+                self.hass, self.async_refresh(), name="norman-watch-read"
+            )
+        )
+
+    async def async_request_refresh(self) -> None:
+        """Ask for a refresh, debounced, that its caller being cancelled cannot fail.
+
+        The debouncer runs the first request at once, in the caller's task: every command
+        asks for one, so an automation restarted mid-command (``mode: restart``) would
+        cancel the read and mark the update failed, as a watch would (``_async_watch_read``).
+        """
+        await asyncio.shield(
+            self.config_entry.async_create_background_task(
+                self.hass, super().async_request_refresh(), name="norman-request-refresh"
+            )
+        )
 
     async def _async_wait_until(self, condition: Callable[[], bool], timeout: float) -> bool:
         """Wait until an update makes ``condition`` true, or ``timeout`` passes.
@@ -939,12 +1058,18 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         Runs as a config-entry background task; cancellation ends the loop.
         """
         while True:
+            # Whether the device list is read again before the next connection: after a
+            # stream cycle or the first failure, but not on every retry of an outage. The
+            # list is large, and the hub's reader for it is the part that fails.
+            reread = True
             try:
                 async for notification in self.api.async_listen_notifications():
                     _LOGGER.debug("Received notification: %s", notification)
                     if self._listener_offline:
                         self._listener_offline = False
                         _LOGGER.info("Norman hub notification stream restored")
+                        # Anything renamed or paired while the stream was down.
+                        self._device_info_stale = True
                     if self._structure_changed(notification):
                         # A rename, room edit, or hub rename in the Norman app: re-read
                         # the device list so names and rooms follow. Keep the last good
@@ -967,6 +1092,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     )
                 else:
                     _LOGGER.debug("Notification listener still down: %s", err)
+                    reread = False
                 await asyncio.sleep(RECONNECT_INTERVAL)
             except Exception:  # noqa: BLE001 - the listener must outlive any single failure
                 # A poll, if one is set, would keep state moving, but at a fraction of the
@@ -986,9 +1112,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 # right away.
                 _LOGGER.debug("Reconnecting notification listener")
 
-            # Re-fetch the device list and states before the next connection so anything
-            # that changed while the stream was down (or a newly paired blind) is picked up.
-            self._device_info_stale = True
+            # Re-read the hub before the next connection so anything that changed while the
+            # stream was down (or a newly paired blind) is picked up.
+            if reread:
+                self._device_info_stale = True
             await self.async_refresh()
 
     @staticmethod
@@ -1037,19 +1164,28 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     if self._device_info_error_logged:
                         _LOGGER.info("Norman hub device list restored")
                         self._device_info_error_logged = False
+                    # The scenes live in the device list, so they change only when it does.
+                    if self._device_info:
+                        self.scenes, self.scene_groups = _parse_scenes(self._device_info)
 
             # Status is the lightweight call that carries positions
             status_data = await self.api.async_get_status()
         except NormanConnectionError as err:
-            raise UpdateFailed(f"Error communicating with Norman hub: {err}") from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="connect_failed",
+                translation_placeholders={"hub": self.config_entry.title, "error": str(err)},
+            ) from err
         except NormanApiError as err:
-            raise UpdateFailed(f"Invalid response from Norman hub: {err}") from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="hub_read_failed",
+                translation_placeholders={"hub": self.config_entry.title, "error": str(err)},
+            ) from err
 
         self._log_unknown_fields(self._device_info, status_data)
         self._update_hub_data(self._device_info, status_data)
         devices = self._process_data(self._device_info, status_data)
-        if self._device_info:
-            self.scenes, self.scene_groups = _parse_scenes(self._device_info)
         if not self._device_info:
             self._keep_registry_names(devices)
         self._warn_about_unknown_module_types(devices)
@@ -1133,6 +1269,12 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         wanted = {str(device_id): data.name for device_id, data in devices.items()}
         for room_id, room_name in rooms_of(devices).items():
             wanted[room_identifier(self.config_entry, room_id)] = room_name
+        # A room holding only scenes is named after them.
+        for scene in self.scenes.values():
+            if scene.room_name:
+                wanted.setdefault(
+                    room_identifier(self.config_entry, scene.room_id), scene.room_name
+                )
         if self.hub_device_id and self.hub.custom_name:
             wanted[hub_identifier(self.config_entry)] = self.hub.custom_name
         # Devices are looked up through the entry rather than by identifier: identifiers
@@ -1147,12 +1289,25 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     continue
                 name = wanted.get(identifier)
                 if name and device.name != name:
+                    if identifier == hub_identifier(self.config_entry):
+                        self._async_retitle(device.name, name)
                     registry.async_update_device(device.id, name=name)
                 area_id = room_areas.get(identifier)
                 if area_id and device.area_id is None:
                     registry.async_update_device(device.id, area_id=area_id)
         # Placed once: a room taken out of its area afterwards is not put back
         self._room_areas = {}
+
+    @callback
+    def _async_retitle(self, previous: str | None, name: str) -> None:
+        """Follow a hub renamed in the Norman app with the entry's title, as setup does.
+
+        Only a title the integration gave moves: the default ``Norman Hub (<host>)`` or the
+        hub's previous name. One chosen in Home Assistant stays.
+        """
+        title = self.config_entry.title
+        if title != name and (is_default_title(title) or title == previous):
+            self.hass.config_entries.async_update_entry(self.config_entry, title=name)
 
     def _update_hub_data(self, device_info: dict[str, Any], status_data: dict[str, Any]) -> None:
         """Refresh the hub's own attributes from the two payloads."""
@@ -1396,6 +1551,7 @@ def _parse_scenes(
                 scene_id=scene_id,
                 name=str(raw.get("SceneName") or ""),
                 targets=targets,
+                room_name=str(room.get("RoomName") or ""),
             )
             scenes[scene.key] = scene
     groups: dict[str, NormanSceneGroup] = {}

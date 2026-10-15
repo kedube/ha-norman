@@ -35,6 +35,7 @@
     },
     "abort": {
       "already_configured": "Ce Norman Hub est déjà configuré",
+      "already_in_progress": "Ce Norman Hub est déjà en cours de configuration",
       "cannot_connect": "Impossible de se connecter au Norman Hub",
       "invalid_response": "Réponse invalide reçue du Norman Hub",
       "reconfigure_successful": "L'adresse du hub a été mise à jour",
@@ -90,15 +91,15 @@
     },
     "room_command": {
       "name": "Commande de pièce",
-      "description": "Exécute l'un des boutons de pièce de l'application Norman sur tous les stores d'une pièce, en une seule requête vers le hub.",
+      "description": "Exécute l'un des boutons de pièce de l'application Norman sur tous les stores d'une pièce. best_privacy, best_view et favorite partent en une seule requête vers le hub ; refresh dans une pièce envoie une demande d'état à chaque store.",
       "fields": {
         "room": {
           "name": "Pièce",
-          "description": "Le nom de la pièce tel que le hub le connaît (le nom dans l'application Norman)."
+          "description": "Le nom de la pièce tel que le hub le connaît (le nom dans l'application Norman). Laissez vide pour viser tous les stores du hub."
         },
         "command": {
           "name": "Commande",
-          "description": "best_privacy ferme le rail inférieur et laisse le rail central où il est ; best_view ouvre le rail inférieur ; favorite envoie la pièce à sa position favorite enregistrée ; refresh demande à chaque store de la pièce de se signaler (rien ne bouge)."
+          "description": "best_privacy ferme le rail inférieur et ouvre entièrement le rail central ; best_view ouvre entièrement les deux rails ; favorite envoie la pièce à sa position favorite enregistrée ; refresh demande à chaque store de la pièce de se signaler (rien ne bouge)."
         },
         "config_entry_id": {
           "name": "Hub",
@@ -282,8 +283,14 @@
     }
   },
   "exceptions": {
-    "command_failed": {
-      "message": "Échec de {action} pour {name} : {error}"
+    "open_failed": {
+      "message": "Impossible d'ouvrir {name} : {error}"
+    },
+    "close_failed": {
+      "message": "Impossible de fermer {name} : {error}"
+    },
+    "move_failed": {
+      "message": "Impossible de déplacer {name} : {error}"
     },
     "stop_failed": {
       "message": "Impossible d'arrêter {name} : {error}"
@@ -293,6 +300,9 @@
     },
     "hub_read_failed": {
       "message": "Impossible de lire le Norman Hub {hub} : {error}"
+    },
+    "connect_failed": {
+      "message": "Impossible de se connecter au Norman Hub {hub} : {error}"
     },
     "hub_command_rejected": {
       "message": "Le Norman Hub {hub} a rejeté la commande pour {uid} : {error}"

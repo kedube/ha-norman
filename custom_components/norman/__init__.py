@@ -31,7 +31,12 @@ from .coordinator import (
     rooms_of,
 )
 from .entity import hub_identifier
-from .frontend import async_add_entry_panel, async_register_card, async_remove_entry_panel
+from .frontend import (
+    async_add_entry_panel,
+    async_register_card,
+    async_remove_card_resource,
+    async_remove_entry_panel,
+)
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,7 +59,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
     try:
         thing_name = await api.async_validate_connection()
     except (NormanConnectionError, NormanApiError) as err:
-        raise ConfigEntryNotReady(f"Failed to connect to Norman hub: {err}") from err
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="connect_failed",
+            translation_placeholders={"hub": entry.title, "error": str(err)},
+        ) from err
 
     _async_migrate_unique_id(hass, entry, thing_name)
     await _async_migrate_entity_unique_ids(hass, entry)
@@ -94,7 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
 
     # A changed poll or wake interval is applied by reloading: both are read from the
     # options at construction / setup.
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # With the hub's device list unreadable, rooms are named after their blinds' areas,
@@ -152,9 +161,16 @@ async def _async_resolve_mac(hass: HomeAssistant, host: str) -> str | None:
     return dr.format_mac(mac) if mac else None
 
 
-async def _async_reload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
-    """Reload the entry when its options change."""
-    await hass.config_entries.async_reload(entry.entry_id)
+async def _async_entry_updated(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
+    """Reload when the hub's address or an option changed; follow a new title otherwise.
+
+    Options are read at setup, so a change needs a reload. A title does not: only the
+    sidebar panel shows it, with more than one hub, and the panel is brought in line.
+    """
+    if (dict(entry.data), dict(entry.options)) != entry.runtime_data.config_at_setup:
+        await hass.config_entries.async_reload(entry.entry_id)
+    else:
+        await async_add_entry_panel(hass, entry)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bool:
@@ -165,17 +181,28 @@ async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> b
     return unload_ok
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
+    """Take the dashboard card's resource away with the last hub removed."""
+    if not hass.config_entries.async_entries(DOMAIN):
+        await async_remove_card_resource(hass)
+
+
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: NormanConfigEntry, device_entry: dr.DeviceEntry
 ) -> bool:
     """Allow deleting a blind's or a room's device from the UI once the hub no longer has it.
 
     The hub device, and blinds and rooms that are still reported, are refused: they would
-    be recreated on the next refresh. A room is reported while it holds a blind.
+    be recreated on the next refresh. A room is reported while it holds a blind or a scene.
     """
     data = entry.runtime_data.data
     live = {(DOMAIN, str(uid)) for uid in data}
     live.update((DOMAIN, room_identifier(entry, room_id)) for room_id in rooms_of(data))
+    # A room is reported, too, while it holds a scene: the scene's entity lives on its device.
+    live.update(
+        (DOMAIN, room_identifier(entry, scene.room_id))
+        for scene in entry.runtime_data.scenes.values()
+    )
     live.add((DOMAIN, hub_identifier(entry)))
     return not (device_entry.identifiers & live)
 

@@ -133,8 +133,8 @@ _STATUS: dict[str, Any] = {
 
 # The two products reported in issue #2, as its get_hub_data output showed them. Neither is
 # in the default payloads; tests that want them pair them with FakeHub.add_blind.
-UID_ROLLER = 53479
-UID_SMARTDRAPE = 13702
+UID_ROLLER = 4001
+UID_SMARTDRAPE = 4002
 
 ROLLER_DEVICE: dict[str, Any] = {
     "PeripheralUID": str(UID_ROLLER),

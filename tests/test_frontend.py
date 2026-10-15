@@ -142,6 +142,43 @@ async def test_registration_is_idempotent(hass: HomeAssistant, lovelace: FakeRes
     assert hass.http.async_register_static_paths.call_count == 1
 
 
+async def test_the_last_hub_removed_takes_the_card_resource_with_it(
+    hass: HomeAssistant, lovelace: FakeResources
+) -> None:
+    """The card's URL is served only while a hub is set up; its resource goes with the last.
+
+    A hub added again before a restart puts it back: the files are still served.
+    """
+    from custom_components.norman import async_remove_entry
+
+    hass.http = MagicMock(async_register_static_paths=AsyncMock())
+    await async_register_card(hass)
+    other = MockConfigEntry(domain="norman", unique_id="other")
+    other.add_to_hass(hass)
+
+    await async_remove_entry(hass, MockConfigEntry(domain="norman"))
+    assert lovelace.deleted == []
+
+    await hass.config_entries.async_remove(other.entry_id)
+    assert lovelace.async_items() == []
+
+    await async_register_card(hass)
+    assert [item["url"] for item in lovelace.async_items()] == [RESOURCE_URL]
+    assert hass.http.async_register_static_paths.call_count == 1
+
+
+async def test_a_resource_list_kept_in_yaml_is_left_alone_on_removal(hass: HomeAssistant) -> None:
+    """Resources kept in YAML are the user's to edit."""
+    from custom_components.norman.frontend import async_remove_card_resource
+
+    resources = FakeResources([{"id": "a", "url": RESOURCE_URL}], yaml_mode=True)
+    hass.data["lovelace"] = MagicMock(resources=resources)
+
+    await async_remove_card_resource(hass)
+
+    assert resources.deleted == []
+
+
 async def test_an_already_registered_card_is_left_alone(hass: HomeAssistant) -> None:
     """A resource already carrying the current URL is not duplicated."""
     resources = FakeResources([{"id": "a", "url": RESOURCE_URL}])

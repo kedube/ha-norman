@@ -45,10 +45,11 @@ fits as many windows across as there is room for.
 
 | Element | Notes |
 |---|---|
-| Room heading | The area name, with **▲ ■ ▼** for the whole room and **⋯** for the room's presets and scenes. Blinds with no area are grouped under "Unassigned". |
+| Room heading | The area name, with **▲ ■ ▼** for the whole room and **⋯** for the room's presets, scenes and **Refresh**. Blinds with no area are grouped under "Unassigned", with **▲ ■ ▼** and Refresh but no presets: a preset needs a room the hub knows. |
 | The window | The blind, drawn where the hub says each rail is. **Drag a pull tab** to move that rail; the percentage shows above it as you drag, in steps of 10, and the position is sent when you let go. |
 | Blind name | Click it to open the usual more-info dialog. |
 | Battery | Beside the status: the battery icon, filled to the level, and the percentage. Amber at 30% and below, red at 15% and below. |
+| **⟳** | Beside the battery: asks the blind to report in, through its **Request status** button. Nothing moves. Greyed out while that button is unavailable. See [Refreshing](#refreshing). |
 | Status | "Open", "Closed", "40% open"; on a two-rail blind "Privacy" for the app's preset, or both rails, e.g. "Middle 70% · Bottom 30%". |
 | While moving | The shade is drawn where it is **going**, a dashed line marks where the rail actually **is**, the status reads "Closing · 70%", and a **■ Stop** button appears on the window's corner until it arrives. |
 
@@ -58,7 +59,7 @@ A blind the hub has not heard arrive 3½ minutes after it was sent somewhere rea
 confirmed"**, with no Stop button. It is drawn where it was sent, with the dashed line where the
 hub last heard it. Either could be wrong. The blind may have missed the command, or carried it
 out without the hub hearing its report: the hub keeps both values until the blind next reports
-in, which can be hours. **Request status** on the blind's device settles it.
+in, which can be hours. The blind's **⟳** (its **Request status** button) settles it.
 
 3½ minutes is as long as the integration keeps checking and resending a move, and that check
 asks a silent blind to report in ([Data updates](entities.md#data-updates)). So after a
@@ -183,7 +184,9 @@ bottom rail — the blackout across the window.
 ### The app's room buttons
 
 The **⋯** at the end of each room heading folds out the app's own three for that room, then
-the room's scenes. On a dashboard, `hide_room_presets: true` removes it.
+the room's scenes, then the room's [**Refresh**](#refreshing). On a dashboard,
+`hide_room_presets: true` removes the three and the scenes, and the **⋯** stays with only
+Refresh in it; add `hide_refresh: true` as well and there is no **⋯** at all.
 
 | Button | Does |
 |---|---|
@@ -207,8 +210,9 @@ several rooms.
 ### The whole house
 
 The same three buttons sit in the header, where they move **every** blind on the hub, followed by
-the hub's **scene groups**. On a narrow screen the three shrink to their icons. On a dashboard,
-`hide_home_controls: true` leaves the header plain.
+the hub's **scene groups** and preceded by the whole house's [**⟳**](#refreshing). On a narrow
+screen the three shrink to their icons. On a dashboard, `hide_home_controls: true` leaves the
+header plain.
 
 | Button | Does |
 |---|---|
@@ -245,6 +249,36 @@ you rename an area, the preset buttons for it will report that the room is unkno
 ones the hub does know. The house buttons carry no room at all, and a scene button runs its scene
 entity, so neither can mismatch.
 
+### Refreshing
+
+A refresh asks blinds to report in — battery, position and last seen — and moves nothing. There
+is one for each blind, each room and the whole house:
+
+| Button | Where | Does |
+|---|---|---|
+| **⟳** | Beside each blind's battery | Presses the blind's **Request status** button. |
+| **Refresh** | In each room's **⋯** | Presses the **Request status** button of every blind the card shows in the room, in one call: one status request per blind, paced through the hub's command queue, as the room's own **Refresh blinds** sends. It follows the card's rooms, which are areas, so it works for "Unassigned" and for an area renamed since. |
+| **⟳** | In the header, before the whole-house presets | Sends `norman.room_command` with `refresh` and no room: one request, which reaches every blind on the hub. |
+
+The icon turns once when pressed, to show the request went. The answers arrive as the blinds
+report in, and the card redraws with each: a single blind's within seconds, a room's or the
+whole house's over up to a couple of minutes. Measured on real hardware: an unscoped request
+reached all 13 blinds on one hub within two minutes. A second press of the same button within 5
+seconds does nothing, since each press queues more requests at the hub and repeats only delay
+the answers.
+
+With more than one hub, a card with no `config_entry_id` sends the header's refresh to each
+hub with blinds on the card, as it does the presets. A room's Refresh needs no hub: it presses
+the blinds' own buttons.
+
+Norman Shades does not offer the hub's and rooms' **Report battery levels (may close shades)**
+buttons.
+
+On a dashboard, `hide_refresh: true` removes all three. `hide_home_controls: true` removes the
+header's with the presets, and `hide_room_presets: true` leaves each room's **⋯** with only
+Refresh in it. A room's Refresh is in its heading, so `hide_room_names: true` removes it along
+with the room's presets; each blind's **⟳** and the header's stay.
+
 ## On a dashboard
 
 Norman Shades is also a card you can put on a dashboard, beside your other cards or with some of
@@ -274,8 +308,9 @@ hide_picture: false        # list layout: a slider per rail instead of the windo
 hide_battery: false        # hide the battery readings
 hide_room_names: false     # one grid instead of room headings
 hide_room_controls: false  # remove the open/stop/close from each room heading
-hide_room_presets: false   # remove each room's ⋯ presets and scenes
-hide_home_controls: false  # remove the whole-house presets and scene groups from the header
+hide_room_presets: false   # remove each room's presets and scenes (its ⋯ keeps Refresh)
+hide_home_controls: false  # remove the whole-house presets, scene groups and ⟳ from the header
+hide_refresh: false        # remove every refresh: each blind's ⟳, each room's and the header's
 rooms:                     # only these areas, in this order
   - Master Bedroom
   - Den
@@ -284,15 +319,18 @@ bottom_label: Bottom rail  # rename the rails (the status line uses the first wo
 middle_label: Middle rail
 ```
 
-`title`, the hub and the `hide_*` options are also available in the card's visual editor.
+`title`, the hub and every `hide_*` option above, `hide_refresh` included, are also available in
+the card's visual editor.
 `title` replaces the hub's name in the header, and `title: ""` leaves no heading text at all. A
 card added before v0.30 may already have `title: Shades` saved in its config — the card picker
 used to supply that automatically. Remove the `title` line to get the hub name.
 
-With more than one hub, a card with no `config_entry_id` shows every hub's blinds together, and
-its whole-house and room presets have no single hub to send to. Pick the hub in the visual
-editor, which fills in `config_entry_id` for you, to give each hub a card of its own. The
-sidebar already has one entry per hub.
+With more than one hub, a card with no `config_entry_id` shows every hub's blinds together. Its
+room presets go to each hub the room's blinds are on, and its whole-house presets to each hub
+with blinds on the card, one request per hub. Unavailable blinds do not count, so a hub that is
+not set up, whose blinds show as unavailable, is left out. To give each hub a card of its own,
+pick the hub in the visual editor, which fills in `config_entry_id` for you. The sidebar already
+has one entry per hub.
 
 ### List layout
 
@@ -304,7 +342,8 @@ hide_picture: true
 ```
 
 The sliders drive the integration's `number` entities, so they move in the same 10% steps as
-those entities and never disagree with the covers.
+those entities and never disagree with the covers. A slider moved with the arrow keys sends its
+position once you stop pressing them, as a window does. Each row keeps its battery and **⟳**.
 
 ## Building your own instead
 

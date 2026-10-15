@@ -91,7 +91,7 @@ data:
   command: best_view      # every blind in the house, in one request
 ```
 
-All four commands work without a room — the first three are what the app's **All Rooms** screen sends, and `refresh` without a room is the hub-wide report-in the app sent from its device & battery status screen.
+All four commands work without a room — the first three are what the app's **All Rooms** screen sends, and `refresh` without a room is one unscoped `StatusRequest`, which reaches every blind on the hub.
 
 `Switch` sets both rails to fixed positions; it is not a relative move.
 
@@ -166,7 +166,7 @@ response includes every field, including ones the integration does not understan
 
 | Field | Required | Meaning |
 |---|---|---|
-| `config_entry_id` | only with several hubs | Which hub to read. With one hub configured it can be omitted. |
+| `config_entry_id` | only with several hubs | Which hub to read. With one hub set up it can be omitted; a hub that is ignored, disabled or not set up does not count. |
 
 Response:
 
@@ -208,7 +208,7 @@ the Norman app is known to send are listed under [Hub verbs](#hub-verbs).
 ```yaml
 action: norman.send_hub_command
 data:
-  peripheral_uid: 58850
+  peripheral_uid: 1001
   fields:
     MotorFineTuneToUp: 170
 response_variable: reply

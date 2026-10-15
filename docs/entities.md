@@ -30,7 +30,7 @@ one declares.*
 |---|---|---|
 | Hub | `norman` / `hub_<entry id>` | Named as in the Norman app (for example "ShadeAuto Hub"); model and firmware from the hub (`NienMadeHub`, 6.x); configuration URL is the hub's base address; the MAC address is attached as a network connection when it can be resolved (see below). |
 | Room | `norman` / `room_<entry id>_<RoomID>` | Named after the room in the Norman app, model "Room", suggested into the area of the same name so its controls sit beside its blinds on the area's page; `via_device` links it to the hub. One per room that holds a blind or a scene. |
-| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman app's product name for its `ModuleType` and `ModuleDetail` — "Shutter", "Cellular Shade", "Cellular Shade (dual rail)", "Roller Shade", "Roman Shade", "PerfectSheer" or "SmartDrape" (see [Cover entities](#cover-entities)); a type the app does not know is "Window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`; the suggested area is the hub's room name. |
+| Blind | `norman` / `<PeripheralUID>` | Named after the blind's name in the Norman app; model is the Norman app's product name for its `ModuleType` and `ModuleDetail` — "Shutter", "Cellular Shade", "Cellular Shade (dual rail)", "Roller Shade", "Roman Shade", "PerfectSheer" or "SmartDrape" (see [Cover entities](#cover-entities)); a type the app does not know is "Window covering" with the hub's `ModuleType/ModuleDetail` as model id; `via_device` links it to the hub; `sw_version` is the version the app shows (see [Firmware](#firmware-version)); the serial number is the `PeripheralUID`, which the Norman app shows in hexadecimal; the suggested area is the hub's room name. |
 
 The device page therefore mirrors the app's blind details: room (area), battery (sensor),
 version, module type (model id), and serial number.
@@ -136,7 +136,7 @@ It becomes available again automatically on the next successful refresh.
 
 **Move watchdog.** A blind can answer a move with `Error 0` and then not move: the hub keeps
 reporting the old position with the new target, indefinitely, until the blind next reports in
-(blind 8399 sat at middle 0 with target 100 for twelve minutes on 2026-09-18). Nothing the hub
+(one blind sat at middle 0 with target 100 for twelve minutes on 2026-09-18). Nothing the hub
 says at the time tells a delivered command from a dropped one, so every move and every preset
 press (Best privacy, Best view, Favorite) is followed by a check that runs in the background —
 it never holds up the next command.
@@ -247,7 +247,7 @@ dashboard by hand if you want them there.
 | Best privacy / Best view | `Switch: 0` / `Switch: 1` | The app's own buttons, addressed at this blind by its room and group. Privacy is bottom rail 0 with the middle rail at 100; view opens both. |
 | Favorite position | `Favorite: 0` | Moves to the favorite stored in the blind, addressed the same way. Works on both rail types. |
 | Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | One small motor step, addressed by `PeripheralUID`. The app uses it while setting limits and as the Fine-tune step of calibration, tapping it repeatedly to inch a rail into place. Independent of position targets, and the hub reports no position change until the motor settles. |
-| Request status | `StatusRequest: 0` | Asks this one blind to report in; nothing moves. Filed under **Diagnostic**, next to the sensors it refreshes. A battery blind's radio sleeps between commands and the hub stops hearing from it, so its battery, last-seen and position go stale and the Norman app eventually lists it as "Disconnect". This is the per-blind form of the app's refresh, taken from the app's network library; on hardware the blind answered within five seconds every time. The answer arrives as a hub notification a few seconds after the press, not in the press itself. See [Waking a blind](NORMAN_API.md#waking-a-blind). |
+| Request status | `StatusRequest: 0` | Asks this one blind to report in; nothing moves. Filed under **Diagnostic**, next to the sensors it refreshes. A battery blind's radio sleeps between commands and the hub stops hearing from it, so its battery, last-seen and position go stale and the Norman app eventually lists it as "Disconnect". This is the per-blind form of the app's refresh, confirmed by a live app capture; on hardware the blind answered within five seconds every time. The answer arrives as a hub notification a few seconds after the press, not in the press itself. See [Waking a blind](NORMAN_API.md#waking-a-blind). |
 
 Errors follow the cover convention: a hub error or timeout fails the press with a message
 naming the verb and the blind.
@@ -293,9 +293,13 @@ position, battery and last-seen.
 **Report battery levels (may close shades)** sends the Norman app's separate
 `{"ReportBatteryLevel": 0}` request, with `RoomID` for a room or no scope on the hub. It closed
 type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)) and nine type 33
-cellular shades in direct tests. The app also closes shades when this action is used. A
-`ReportBatteryLevel` request with one `PeripheralUID` caused eight blinds to report in a
-previous test, so the integration offers this action only on room and hub devices.
+cellular shades in direct tests. The app also closes shades when this action is used.
+Two isolated `ReportBatteryLevel` requests, each addressed to one Office shade by
+`PeripheralUID`, caused that shade and eight others to report; shades outside Office
+physically moved both times. The integration therefore offers this action only on room and
+hub devices. In a separate isolated Office `RoomID` test, both Office shades reported and
+none of the eleven shades outside Office changed through two minutes; only the Office shades
+physically moved.
 
 **Start pairing** sends `{"PairingMode": 5}`, which opens the hub's pairing window for ten
 minutes; the **Pairing mode** sensor shows it. Under *Configuration*. What happens next — putting
@@ -386,7 +390,7 @@ or the hub's preset reaches; stop and the jogs have nothing to watch.
 
 Stop, the presets and the jogs were tried at room scope on cellular shades; the hub takes them
 for any room, but what a drape or a Shutter makes of a room-wide jog has not been seen. A room's
-device can be deleted once the hub no longer has the room (see
+device can be deleted once the hub no longer has the room, or any scene saved in it (see
 [Removing a blind](#removing-a-blind)).
 
 ## Scenes
@@ -502,7 +506,8 @@ Once the hub stops reporting a blind (it was unpaired or is not responding), its
 deleted from **Settings → Devices & services → Norman → the device → ⋮ → Delete**. Blinds the
 hub still reports, and the hub device itself, refuse deletion because they would come straight
 back on the next refresh. A room's device works the same way: its entities turn unavailable
-once the room holds no blind, and it can then be deleted.
+once the room holds no blind, and it can then be deleted, unless a scene is still saved in it.
+A blind or room deleted here returns, with its entities, if the hub reports it again.
 
 ## Not exposed (yet)
 

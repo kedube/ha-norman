@@ -40,7 +40,7 @@ Read this before changing anything in [`api.py`](../custom_components/norman/api
 | Port | `10123` (fixed; `HUB_PORT` in `const.py`) |
 | Method | every endpoint is `POST` with a JSON body |
 | Authentication | none |
-| Timeouts | 10 s per request (`REQUEST_TIMEOUT`); the notification stream has no total timeout |
+| Timeouts | 10 s per request (`REQUEST_TIMEOUT`); the notification stream has 10 s to answer and then no limit, since it stays quiet while nothing changes |
 
 Every request body carries `"Timestamp": <unix seconds>`. Command-style requests also carry
 `"TaskID": <int>`; the hub appears to echo it and the integration simply uses an incrementing
@@ -322,14 +322,14 @@ app's network library and then sent directly:
 | `CleanTopLimit` / `CleanBottomLimit` | 0 | Clear the stored limit (the app sends this right before setting a new one). |
 | `Calibration` | 0 | Run the motor's calibration. |
 | `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`) or sweep the whole hub (unscoped). `RoomID` did not confine the sweep to one room. The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification. A live unscoped test reached all 13 blinds within two minutes without movement. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
-| `ReportBatteryLevel` | 0 | The app's battery-report request for a room (`RoomID`) or hub (unscoped). It has closed type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)) and type 33 cellular shades. `PeripheralUID` did not constrain it in one direct test. **Used** only by the explicitly named room and hub battery-report buttons. |
+| `ReportBatteryLevel` | 0 | The app's battery-report request for a room (`RoomID`) or hub (unscoped). It has closed type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)) and type 33 cellular shades. Two isolated Office tests confirmed that `PeripheralUID` does not constrain it to one shade. **Used** only by the explicitly named room and hub battery-report buttons. |
 
 ```json
-{"PeripheralUID": 58850, "Timestamp": 1788828922, "TaskID": 43620, "MotorStop": 170}
+{"PeripheralUID": 1001, "Timestamp": 1788828922, "TaskID": 43620, "MotorStop": 170}
 ```
 
 ```json
-{"PeripheralUID": 58850, "MotorStop": 170, "Error": 0, "TaskID": 43620, "RequestTimestamp": 1788828922, "Timestamp": 1788828922530}
+{"PeripheralUID": 1001, "MotorStop": 170, "Error": 0, "TaskID": 43620, "RequestTimestamp": 1788828922, "Timestamp": 1788828922530}
 ```
 
 The registration reply lists more verbs per blind than the app was seen to use (`Favorite`,
@@ -363,7 +363,7 @@ form has been captured from the app.
 | `Switch` / `Favorite` | Captured from the app and confirmed | Confirmed | Confirmed |
 | `MotorStop` | Captured from the app | Stopped both moving Office shades | Stopped one moving Office shade; simultaneous motors in multiple rooms not tested |
 | `MotorFineTuneToUp` / `MotorFineTuneToDown` | Captured from the app | Small position changes on both Office shades | Small position changes in Office and Den; all 13 blinds reported in |
-| `StatusRequest` / `ReportBatteryLevel` | `StatusRequest` confirmed; `ReportBatteryLevel` with only `PeripheralUID` appears to cause a broader sweep | `ReportBatteryLevel` confirmed; `StatusRequest` with room or room/group fields causes a broader sweep | Both confirmed; an unscoped `StatusRequest` reached all 13 blinds within two minutes |
+| `StatusRequest` / `ReportBatteryLevel` | `StatusRequest` confirmed; `ReportBatteryLevel` with only `PeripheralUID` caused a broader sweep in two isolated tests | `ReportBatteryLevel` reached only the addressed Office room in an isolated test; `StatusRequest` with room or room/group fields causes a broader sweep | Both confirmed; an unscoped `StatusRequest` reached all 13 blinds within two minutes |
 | Saved scene `SetToScene` | Not tested | Confirmed with `RoomID` and numeric `SceneID` as the `SetToScene` value | Not tested |
 | Shutter `Position` (0–7) | Built by the app's library; no live Shutter test here | Not tested | Not tested |
 
@@ -489,9 +489,20 @@ and offers a refresh for them), then confirmed by reading the app's network libr
 
 All three carry the value `0` — the same literal the library uses for `FindTop` and
 `Favorite`, while `MotorStop` gets `170` — and the hub echoes the verb back with `Error: 0`.
-The capture's refresh sent the hub-wide form; the other two were verified by sending them.
-The app offers that refresh only while it lists a blind as disconnected. A connected blind has
-no refresh, so the app never asks a healthy blind to report in.
+The 2026-09-18 capture's refresh sent the hub-wide form; the room form was verified by
+sending it. A later app capture confirmed the per-blind form below. In the earlier app
+screen, refresh was offered while a blind was listed as disconnected; the current UI
+availability rule has not been checked systematically.
+
+**App per-blind capture on 2026-10-14.** During individual refresh taps for all three Den
+shades in ShadeAuto 0.8.33 on a Mac, the app sent
+`{"PeripheralUID": X, "StatusRequest": 0}` to `/NM/v1/control` for each shade, with
+`Timestamp` and `TaskID` and no `RoomID` or `ReportBatteryLevel`. The capture contained nine
+such requests, three per Den shade; some taps were repeated by hand, so this does not show
+that the app retries automatically. Each request was acknowledged with `Error: 0`, and
+subsequent `/status` reads showed Den shades reporting in, with no reports outside Den in
+the captured interval. This confirms that the app's individual refresh uses the same
+request as the integration's per-blind **Request status** button.
 
 What happens next is visible in `status`: each blind's `Timestamp` is **when the hub last
 heard from it**, and it moves when a blind reports in with nothing changed, so it is a
@@ -528,6 +539,28 @@ changes in reported position and target fields, consistent with a stale hub cach
 corrected during a broad report-in. No physical motor movement was verified. Use
 `StatusRequest` to refresh a single blind; an accepted `ReportBatteryLevel` with a UID is not
 evidence that it was scoped to that blind.
+
+**Isolated per-shade `ReportBatteryLevel` tests on 2026-10-14.** On the 6.1.25 hub with 13
+shades, a 60 s no-command baseline had no reports or position changes. A single
+`ReportBatteryLevel: 0` request with the first Office shade's `PeripheralUID` returned
+`Error: 0`; by 30 s five other shades had reported, while the addressed shade had not. By
+60 s the addressed shade and eight others had reported, with reported position and target
+changes on all nine. The counts were unchanged at 120 s. Shades outside Office physically
+moved. Some reports continued in the following no-command intervals, so the second
+test waited for a quiet 60 s baseline. A request with the other Office shade's
+`PeripheralUID` then produced the same counts and timing: five other shades by 30 s, and the
+addressed shade plus eight others by 60 s, unchanged at 120 s. Shades outside Office again
+physically moved. Both requests were individually addressed, and the test
+script sent no other control command during either observation. On this hub, `PeripheralUID`
+is not a safe per-shade scope for `ReportBatteryLevel`.
+
+**Isolated room `ReportBatteryLevel` test on 2026-10-14.** A 60 s no-command baseline had
+no reports or position changes. One `ReportBatteryLevel: 0` request with the Office `RoomID`
+returned `Error: 0`. Neither Office shade had reported by 30 s; both had reported by 60 s,
+with reported position and target changes. None of the other eleven shades reported or had
+position or target changes through 120 s. Only the Office shades physically moved.
+This confirms room scope on the tested 6.1.25 hub with type 32 and 33 shades; it does not
+establish the same behavior on every hub or shade model.
 
 **On one hub, type 48 roller shades closed on a hub-wide report-in (issue
 [#5](https://github.com/kedube/ha-norman/issues/5), 2026-10-12 and 2026-10-13).** On a hub at
@@ -581,7 +614,7 @@ would explain the computer's list, but not the phone's.
 reported every type 33 blind's `MiddleRailPosition` as 100 for the preceding hour; when the
 blinds reported in, several read 0 (nothing had moved). And a blind that accepts a move and
 does not go leaves the hub reporting the old position with the *new target* indefinitely:
-blind 8399 answered a move to middle 100 with `Error: 0` at 22:00:00 and `status` then
+one blind answered a move to middle 100 with `Error: 0` at 22:00:00 and `status` then
 showed `MiddleRailPosition: 0, TargetMiddleRailPosition: 100` until a room-wide
 `ReportBatteryLevel` at 22:12:10 had it report in, at which point the target snapped to 0.
 Neither `status` nor the notification stream reveals either case on its own. The
@@ -616,7 +649,7 @@ Request: empty body.
 Response stream, as observed:
 
 ```text
-{"Error":"Success."}{"Status":1788827049448,"PeripheralList":[58850]}{"Status":…,"PeripheralList":[58850,8399]}…
+{"Error":"Success."}{"Status":1788827049448,"PeripheralList":[1001]}{"Status":…,"PeripheralList":[1001,1002]}…
 ```
 
 - The first object is an acknowledgement. The integration passes on only objects that carry
@@ -1010,7 +1043,7 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 
 | Field | Where | Example | Used |
 |---|---|---|---|
-| `PeripheralUID`, `PeripheralName`, `RoomID`, `GroupID` | GetAllPeripheral (strings), status (ints) | | **used**. `PeripheralUID` is also exposed as the device's serial number: no other per-blind identifier appears in any payload, so it is the best candidate for the app's "Serial Number" |
+| `PeripheralUID`, `PeripheralName`, `RoomID`, `GroupID` | GetAllPeripheral (strings), status (ints) | | **used**. `PeripheralUID` is the blind's serial number: the Norman app shows it in hexadecimal as "Serial Number". A shade pairs with one hub only, so the id is unique across hubs. Exposed as the device's serial number |
 | `ModuleType` / `ModuleDetail` | both | `33`/`3`, `32`/`2`, `48`/`1`, `80`/`1` | **used** (cover type; see below) |
 | `BottomRailPosition`, `MiddleRailPosition`, `Target…` | status | 0–100 | **used** |
 | `BatteryVoltage` | status | `5` … `100` | **used** as a **percentage** (battery sensor) |
@@ -1026,7 +1059,7 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 | `Mrs2Status` | status (type 49, from the app) | | not used; the MRS2 roller's counterpart of `MsdStatus`. |
 | `SpeedInformation`, `CalibrationState` | status, registration (type 48, issue #5) | `0`, `0` in status; `15`, `1` in registration | not used; meaning unknown. A type 48 status entry has these instead of `RssiMean`, `PacketReceiveRate` and `StallCurrent`. |
 | `PacketReceiveRate` | status | `0` | not used. Has been `0` on every blind in every capture, including blinds that are plainly reachable, so it is either unimplemented in this firmware or counts something the hub never populates. |
-| `StallCurrent` | status (type 33 only) | `4100`, `1240` | not used. Despite the name it reads as a **stall threshold, not a measurement**: the current draw at which the motor decides it has hit an obstruction (or a limit) and stops. It does not vary during travel -- it holds one value through a full open and close, in both directions, and at rest. It is not fixed per blind either: two blinds read `4100` in captures a day apart and `1240` afterwards, with no setting changed in the app, so the motor appears to adapt it. A **falling** value on one blind is therefore the interesting signal (a motor deciding it needs less force to call something a stall), not the absolute number. Both blinds that changed are in one room, and one of them (`58850`) is the blind a `Calibration` was run against the day before -- so calibration, or the limit-setting around it, is the likeliest cause. Unconfirmed: the other blind was not calibrated. Not exposed as an entity while its meaning rests on a single observation. |
+| `StallCurrent` | status (type 33 only) | `4100`, `1240` | not used. Despite the name it reads as a **stall threshold, not a measurement**: the current draw at which the motor decides it has hit an obstruction (or a limit) and stops. It does not vary during travel -- it holds one value through a full open and close, in both directions, and at rest. It is not fixed per blind either: two blinds read `4100` in captures a day apart and `1240` afterwards, with no setting changed in the app, so the motor appears to adapt it. A **falling** value on one blind is therefore the interesting signal (a motor deciding it needs less force to call something a stall), not the absolute number. Both blinds that changed are in one room, and one of them is the blind a `Calibration` was run against the day before -- so calibration, or the limit-setting around it, is the likeliest cause. Unconfirmed: the other blind was not calibrated. Not exposed as an entity while its meaning rests on a single observation. |
 | `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. Type 48 (issue #5) lists the shared verbs except `StopSensorSwitch`, plus `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust` (`259`) and `ReverseMotorDirection` like type 33, and `SetMiddleLimit`/`CleanMiddleLimit` and `SmartDialSwitch` like type 32; it has no `FindTop`, `RailSpacing` family or `CleanErrorCode`. |
 
 ### Cover types
@@ -1062,7 +1095,7 @@ in, resends the preset twice, and gives up. That is how type 48 was found.
 
 - First object: `{"Error": "Success."}` — note the **string** value; `_raise_on_error_code`
   accepts it.
-- Then, per change: `{"Status": 1788827049448, "PeripheralList": [58850]}` — `PeripheralList`
+- Then, per change: `{"Status": 1788827049448, "PeripheralList": [1001]}` — `PeripheralList`
   is a list of **ids**, not objects, and `Status` is a millisecond timestamp.
 - A control call produced a notification within the same second and another when the move
   finished, about eight seconds later. Each hub call answered in 3–11 ms.

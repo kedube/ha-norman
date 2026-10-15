@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import patch
 
@@ -101,12 +102,30 @@ async def test_press_sends_the_verb_and_refreshes(
     assert len(fake_hub.calls_to("/status")) == status_calls + 1
 
 
+async def test_a_preset_press_reads_the_hub_once(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The preset's watch reads the hub for its target at once; no second read follows."""
+    status_calls = len(fake_hub.calls_to("/status"))
+
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _button(hass, UID_LIVING, "best_privacy").entity_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(fake_hub.calls_to("/status")) == status_calls + 1
+    init_integration.runtime_data.async_supersede()
+
+
 async def test_press_failure_names_the_button_and_blind(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
     """A hub error becomes a HomeAssistantError naming the verb and the blind."""
     fake_hub.control_response = {"Error": 9}
-    with pytest.raises(HomeAssistantError, match="Failed to send jog_up to Living Drape"):
+    with pytest.raises(HomeAssistantError, match="Failed to send Jog up to Living Drape"):
         await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
@@ -279,7 +298,7 @@ async def test_refresh_blinds_failure_names_the_hub(
 ) -> None:
     """A hub error on the hub button reads as a hub failure, not a blind's."""
     fake_hub.control_response = {"Error": 9}
-    with pytest.raises(HomeAssistantError, match="Failed to send refresh_blinds to the hub"):
+    with pytest.raises(HomeAssistantError, match="Failed to send Refresh blinds to the hub"):
         await hass.services.async_call(
             BUTTON_DOMAIN,
             SERVICE_PRESS,
@@ -415,7 +434,7 @@ async def test_preset_watchdog_is_not_fooled_when_the_hub_overwrites_its_target(
 ) -> None:
     """A blind reporting in resets the hub's target to wherever the blind is.
 
-    Diagnostics, 2026-09-21: blind 9943 ignored Best Privacy (target 0, still at 100), was
+    Diagnostics, 2026-09-21: a blind ignored Best Privacy (target 0, still at 100), was
     asked to report in, and the hub then showed its target as 100 -- matching its position.
     The watch compared against that overwritten target, called the blind arrived, and never
     resent. It now keeps the goal the hub recorded when the preset went out.
@@ -539,4 +558,35 @@ async def test_a_second_preset_keeps_the_replacement_watcher(
     assert coordinator._move_watchers.get(UID_LIVING) is second, "the live watcher survives"
 
     coordinator.async_cancel_move_watch(UID_LIVING)
+    assert UID_LIVING not in coordinator._move_watchers
+
+
+async def test_a_preset_stopped_while_it_waits_its_turn_is_not_watched(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A stop while a blind's preset waits to be sent leaves it unwatched once sent.
+
+    Watched, the stopped blind would read as a preset that never arrived and be sent it
+    again.
+    """
+    coordinator = init_integration.runtime_data
+    api = coordinator.api
+    await api._control_lock.acquire()
+    try:
+        press = asyncio.create_task(
+            hass.services.async_call(
+                BUTTON_DOMAIN,
+                SERVICE_PRESS,
+                {ATTR_ENTITY_ID: _button(hass, UID_LIVING, "best_privacy").entity_id},
+                blocking=True,
+            )
+        )
+        for _ in range(25):
+            await asyncio.sleep(0)
+        coordinator.async_supersede([UID_LIVING])
+    finally:
+        api._control_lock.release()
+    await press
+
+    assert [call.get("Switch") for call in fake_hub.control_calls if "Switch" in call] == [0]
     assert UID_LIVING not in coordinator._move_watchers

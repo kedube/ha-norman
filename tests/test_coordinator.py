@@ -903,6 +903,33 @@ async def test_wake_sweep_asks_only_disconnected_blinds(
     assert not [c for c in calls if "ReportBatteryLevel" in c]
 
 
+async def test_unloading_stops_a_wake_sweep_part_way(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A sweep still sending when its entry unloads sends nothing more.
+
+    Left running, it would keep sending through the old client after a reload, unpaced
+    against the new one.
+    """
+    fake_hub.peripheral_status(UID_BEDROOM)["Timestamp"] = 1700000000
+    hass.config_entries.async_update_entry(init_integration, options={CONF_WAKE_INTERVAL: 3600})
+    await hass.async_block_till_done()
+    init_integration.runtime_data.api.control_interval = 0.5
+    before = len(fake_hub.control_calls)
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3601))
+    for _ in range(100):
+        if len(fake_hub.control_calls) > before:
+            break
+        await asyncio.sleep(0.01)
+    assert await hass.config_entries.async_unload(init_integration.entry_id)
+    at_unload = len(fake_hub.control_calls)
+    await asyncio.sleep(1)
+
+    assert at_unload - before == 1
+    assert len(fake_hub.control_calls) == at_unload
+
+
 async def test_wake_sweep_sends_nothing_while_every_blind_is_connected(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
@@ -1026,3 +1053,15 @@ async def test_refresh_blinds_survives_an_empty_coordinator(
 
     # Hub refresh does not need a populated coordinator to send its single request.
     assert [c for c in fake_hub.control_calls if "StatusRequest" in c]
+
+
+async def test_a_hub_wide_command_takes_over_blinds_with_no_move(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Stopping every blind takes each one over, moving or not, so a command still queued
+    for any of them is not sent or watched afterwards."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+
+    serial = coordinator.async_supersede()
+
+    assert all(coordinator.holds(uid, serial) for uid in coordinator.data)

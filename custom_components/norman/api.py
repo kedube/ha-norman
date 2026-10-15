@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass, field
 import itertools
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -78,20 +79,40 @@ def _redact_for_log(value: Any) -> Any:
     return value
 
 
-def _body_for_log(text: str | None, secrets: tuple[str, ...]) -> str | None:
-    """A hub reply for the debug log: identifying fields blanked, then truncated.
+# The value of an identifying key in JSON text that does not parse -- a reply clipped short,
+# or a piece of the notification stream: a string, an object one level deep (GeoLoc), or a
+# bare number or literal, any of them possibly cut off at the end of the text.
+_SENSITIVE_VALUE = re.compile(
+    r'("(?:{keys})"\s*:\s*)(?:"(?:[^"\\]|\\.)*(?:"|$)|\{{[^{{}}]*(?:\}}|$)|[^,}}\]\s]+)'.format(
+        keys="|".join(map(re.escape, sorted(SENSITIVE_HUB_KEYS)))
+    )
+)
 
-    A JSON reply is redacted by key and re-serialized compactly, so more of it fits in the
-    limit. Anything else is redacted by value, for the ``secrets`` the client already knows.
+
+def redact_hub_text(text: str) -> str:
+    """Blank the hub's identifying fields (SENSITIVE_HUB_KEYS) in raw reply text.
+
+    JSON is redacted by key and re-serialized compactly. Text that does not parse is matched
+    key by key instead, so a reply clipped mid-way still loses the fields it reached.
     """
-    if not text:
-        return text
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        data = None
+        return _SENSITIVE_VALUE.sub(rf'\1"{REDACTED}"', text)
     if isinstance(data, dict | list):
-        text = json.dumps(_redact_for_log(data), ensure_ascii=False, separators=(",", ":"))
+        return json.dumps(_redact_for_log(data), ensure_ascii=False, separators=(",", ":"))
+    return text
+
+
+def _body_for_log(text: str | None, secrets: tuple[str, ...]) -> str | None:
+    """A hub reply for the debug log: identifying fields blanked, then truncated.
+
+    Redacted by key (``redact_hub_text``), then by value for the ``secrets`` the client
+    already knows.
+    """
+    if not text:
+        return text
+    text = redact_hub_text(text)
     for secret in secrets:
         text = text.replace(secret, REDACTED)
     return text[:LOG_BODY_LIMIT]
@@ -167,7 +188,14 @@ class TrafficRecorder:
         return f"{body[:limit]}… [{len(body) - limit} more bytes]"
 
     def _clip(self, body: str | None) -> str | None:
-        """Clip a ring-buffer body."""
+        """Clip a ring-buffer body, blanking its identifying fields first if it is cut.
+
+        Diagnostics redact a body by key only when it parses as JSON, and a clipped one
+        does not: a device list's location, hub name and time zone come before its rooms,
+        well inside the part that is kept.
+        """
+        if body is not None and len(body) > self.body_limit:
+            body = redact_hub_text(body)
         return self._clip_to(body, self.body_limit)
 
     def record(
@@ -357,7 +385,9 @@ class NormanApiClient:
                 timeout=ClientTimeout(total=REQUEST_TIMEOUT),
             ) as response:
                 status = response.status
-                text = await response.text()
+                # Not strict: one bad byte (a name the firmware cut mid-character) would
+                # raise UnicodeDecodeError, past the error mapping callers rely on.
+                text = await response.text(errors="replace")
         except TimeoutError as err:
             # aiohttp's total timeout raises a bare TimeoutError, which is *not* a
             # ClientError, so it needs its own clause or it escapes as an unexpected error.
@@ -452,8 +482,12 @@ class NormanApiClient:
         self.hub_wifi_ssid = data.get("WiFiSSID") or self.hub_wifi_ssid
         return data
 
-    async def async_get_devices(self) -> dict[str, Any]:
-        """Get the list of all devices (rooms, groups, peripherals) from the hub."""
+    async def async_get_devices(self, *, validate: bool = True) -> dict[str, Any]:
+        """Get the list of all devices (rooms, groups, peripherals) from the hub.
+
+        ``validate`` False returns the reply as the hub sent it, a failed read included,
+        for the ``get_hub_data`` action: a failed read is when a bug report needs it.
+        """
         # GetAllPeripheral needs the ThingName obtained during registration
         if not self._thing_name:
             await self._async_registration()
@@ -466,6 +500,8 @@ class NormanApiClient:
                 "Timestamp": int(time.time()),
             },
         )
+        if not validate:
+            return data
         status = data.get("status")
         if isinstance(status, dict) and status.get("code", 0) != 0:
             raise NormanApiError(f"GetAllPeripheral failed: {status.get('error', 'Unknown error')}")
@@ -476,14 +512,23 @@ class NormanApiClient:
             raise NormanApiError("GetAllPeripheral returned no RoomList")
         return data
 
-    async def async_get_status(self) -> dict[str, Any]:
-        """Get the current status (positions, battery, firmware) of all devices."""
+    async def async_get_status(self, *, validate: bool = True) -> dict[str, Any]:
+        """Get the current status (positions, battery, firmware) of all devices.
+
+        ``validate`` False returns a reply carrying an error code too (``async_get_devices``).
+        """
         data = await self._async_request(ENDPOINT_STATUS, {"Timestamp": int(time.time())})
-        self._raise_on_error_code(data, "Status request")
+        if validate:
+            self._raise_on_error_code(data, "Status request")
         return data
 
     async def async_set_position(
-        self, device_id: int, bottom_rail_position: int, middle_rail_position: int
+        self,
+        device_id: int,
+        bottom_rail_position: int,
+        middle_rail_position: int,
+        *,
+        still_wanted: Callable[[], bool] | None = None,
     ) -> None:
         """Move a cover.
 
@@ -491,6 +536,7 @@ class NormanApiClient:
             device_id: PeripheralUID of the Norman device
             bottom_rail_position: Bottom rail position (0=closed, 100=open)
             middle_rail_position: Middle rail position (0=closed, 100=open)
+            still_wanted: asked before a busy hub is tried again (``_async_while_busy``)
 
         Both rails always go together. The hub also accepts one on its own (the Norman
         app's group screen sends ``MiddleRailPosition`` alone), but sending both is what
@@ -502,18 +548,23 @@ class NormanApiClient:
                 "BottomRailPosition": bottom_rail_position,
                 "MiddleRailPosition": middle_rail_position,
             },
+            still_wanted,
         )
 
-    async def async_set_louvers(self, device_id: int, position: int) -> None:
+    async def async_set_louvers(
+        self, device_id: int, position: int, *, still_wanted: Callable[[], bool] | None = None
+    ) -> None:
         """Turn a Shutter's louvers to ``position``, 0-7 (7 closed, 3 horizontal).
 
         ``{"Position": n, "PeripheralUID": ...}`` is what the Norman app's network library
         builds for a Shutter (its CreateNormanPeripheral:position:). Not yet sent to a real
         Shutter from here.
         """
-        await self._async_move(device_id, {HUB_CMD_SHUTTER_POSITION: position})
+        await self._async_move(device_id, {HUB_CMD_SHUTTER_POSITION: position}, still_wanted)
 
-    async def async_run_scene(self, room_id: int, scene_id: int) -> None:
+    async def async_run_scene(
+        self, room_id: int, scene_id: int, *, still_wanted: Callable[[], bool] | None = None
+    ) -> None:
         """Run a scene saved in a room: ``{"RoomID": R, "SetToScene": S}``.
 
         The hub moves each of the scene's blinds to the position it stored for it, in one
@@ -523,9 +574,12 @@ class NormanApiClient:
         await self._async_while_busy(
             lambda: self.async_send_room_control(room_id, {HUB_CMD_SET_TO_SCENE: scene_id}),
             f"scene {scene_id} in room {room_id}",
+            still_wanted,
         )
 
-    async def async_run_scene_group(self, group_id: str) -> None:
+    async def async_run_scene_group(
+        self, group_id: str, *, still_wanted: Callable[[], bool] | None = None
+    ) -> None:
         """Run a group of room scenes: ``{"SceneGroupID": "<uuid>"}``, with no RoomID.
 
         The group's id is the whole scope, so the room field is left out; the hub fans the
@@ -534,10 +588,16 @@ class NormanApiClient:
         await self._async_while_busy(
             lambda: self.async_send_room_control(None, {HUB_CMD_SCENE_GROUP: group_id}),
             f"scene group {group_id}",
+            still_wanted,
         )
 
     async def async_set_room_position(
-        self, room_id: int | None, bottom_rail_position: int, middle_rail_position: int
+        self,
+        room_id: int | None,
+        bottom_rail_position: int,
+        middle_rail_position: int,
+        *,
+        still_wanted: Callable[[], bool] | None = None,
     ) -> None:
         """Move every blind in a room, or on the hub (``room_id`` None), in one request.
 
@@ -554,16 +614,25 @@ class NormanApiClient:
         await self._async_while_busy(
             lambda: self.async_send_room_control(room_id, fields),
             "every blind" if room_id is None else f"room {room_id}",
+            still_wanted,
         )
 
-    async def _async_move(self, device_id: int, fields: dict[str, Any]) -> None:
+    async def _async_move(
+        self,
+        device_id: int,
+        fields: dict[str, Any],
+        still_wanted: Callable[[], bool] | None = None,
+    ) -> None:
         """Send one blind a move, retrying while the hub answers busy."""
         await self._async_while_busy(
-            lambda: self.async_send_control(device_id, fields), str(device_id)
+            lambda: self.async_send_control(device_id, fields), str(device_id), still_wanted
         )
 
     async def _async_while_busy(
-        self, send: Callable[[], Awaitable[dict[str, Any]]], target: str
+        self,
+        send: Callable[[], Awaitable[dict[str, Any]]],
+        target: str,
+        still_wanted: Callable[[], bool] | None = None,
     ) -> None:
         """Send a move, retrying while the hub answers busy.
 
@@ -572,6 +641,10 @@ class NormanApiClient:
         while the hub was sweeping its blinds after a refresh answered 2, and the same moves
         succeeded once the sweep was over (const.py, ``HUB_ERROR_BUSY``), so a wait is the
         fix. Any other error is raised at once.
+
+        The hub never carried out the refused move, so one that ``still_wanted`` says has
+        been overtaken during the wait -- a stop, or a newer command for the same blinds --
+        is dropped rather than sent after it.
         """
         for attempt in range(HUB_BUSY_RETRIES + 1):
             try:
@@ -588,6 +661,9 @@ class NormanApiClient:
                     HUB_BUSY_RETRIES,
                 )
                 await asyncio.sleep(HUB_BUSY_RETRY_DELAY)
+                if still_wanted is not None and not still_wanted():
+                    _LOGGER.debug("Dropped the retry for %s: another command took over", target)
+                    return
             else:
                 return
 
@@ -603,16 +679,15 @@ class NormanApiClient:
         await self.async_send_control(device_id, {HUB_CMD_REQUEST_STATUS: HUB_COMMAND_SETTING})
 
     async def async_request_battery_report(self, room_id: int | None = None) -> None:
-        """Ask every blind in a room, or on the hub, to report in.
+        """Send the Norman app's battery report to a room or the hub; it can close shades.
 
-        ``{"ReportBatteryLevel": 0}`` is what the app sent to refresh from its device &
-        battery status screen (captured 2026-09-18), which offers a refresh only while it
-        lists a blind as disconnected. The hub polls its blinds one after another; the
-        whole hub took about 30 s, one room about 5 s, though single-rail blinds ignored
-        the hub-wide form in testing. Despite the name the reply carries
-        position and last-seen as well as battery. ``room_id`` of ``None`` addresses the
-        whole hub. This command has closed type 48 roller shades and type 33 cellular
-        shades in live tests, so it is separate from status refresh.
+        ``{"ReportBatteryLevel": 0}`` has closed type 48 roller shades and type 33 cellular
+        shades in live tests, so status refresh never sends it: only the explicitly named
+        Report battery levels buttons do. ``room_id`` of ``None`` addresses the whole hub,
+        and a ``PeripheralUID`` does not confine it to one blind. The app sent it from its
+        device & battery status screen (captured 2026-09-18). The hub then polls its blinds
+        one after another, and despite the name each reply carries position and last-seen
+        as well as battery.
         """
         await self.async_send_room_control(room_id, {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING})
 
@@ -735,10 +810,18 @@ class NormanApiClient:
         parser = JsonStreamParser()
 
         try:
-            async with self._session.post(
-                self.base_url.with_path(ENDPOINT_NOTIFICATION),
-                timeout=ClientTimeout(total=None),
-            ) as response:
+            # The hub answers at once, with an acknowledgement, and then stays quiet for as
+            # long as nothing changes. Only that first answer is waited for with a limit: a
+            # hub that took the connection and never answered would otherwise hold the
+            # stream open forever, with no update arriving and no reconnect.
+            async with (
+                asyncio.timeout(REQUEST_TIMEOUT) as answer,
+                self._session.post(
+                    self.base_url.with_path(ENDPOINT_NOTIFICATION),
+                    timeout=ClientTimeout(total=None),
+                ) as response,
+            ):
+                answer.reschedule(None)
                 if response.status >= 400:
                     self.traffic.record(
                         "stream",
@@ -778,6 +861,11 @@ class NormanApiClient:
                             yield obj
         except ClientError as err:
             raise NormanConnectionError(f"Notification listener connection error: {err}") from err
+        except TimeoutError as err:
+            self.traffic.record("stream", ENDPOINT_NOTIFICATION, error="no answer")
+            raise NormanConnectionError(
+                f"Notification stream not answered within {REQUEST_TIMEOUT} seconds"
+            ) from err
 
         _LOGGER.debug(
             "Max notification connection time reached (%s seconds); reconnecting",
