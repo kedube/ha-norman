@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.88 — 2026-10-15
 
 - **Moving a blind's other rail no longer restarts a stopped move.** Within about 10 s of a stop
   or a jog, moving a two-rail blind's other rail, a SmartDrape's vanes or a room slider sent the
