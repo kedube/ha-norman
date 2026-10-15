@@ -395,6 +395,37 @@ async def test_a_scene_deleted_while_home_assistant_was_off_is_removed(
         assert er.async_get(hass).async_get(stale.entity_id) is None
 
 
+async def test_scenes_deleted_meanwhile_go_once_the_device_list_is_read(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Every scene deleted while Home Assistant was off, and the hub's first read failed.
+
+    The first good read finds none, as the failed one did; it still clears the old ones away.
+    """
+    mock_config_entry.add_to_hass(hass)
+    stale = er.async_get(hass).async_get_or_create(
+        SCENE_DOMAIN,
+        DOMAIN,
+        f"{mock_config_entry.entry_id}_{LIVING_ROOM}_scene_5",
+        config_entry=mock_config_entry,
+    )
+    devices = fake_hub.devices
+    fake_hub.devices = {"status": {"code": 1, "error": "Request process fail."}}
+    async with loaded(hass, mock_config_entry) as entry:
+        coordinator: NormanCoordinator = entry.runtime_data
+        assert er.async_get(hass).async_get(stale.entity_id) is not None
+        fake_hub.devices = devices
+        coordinator._next_device_info_retry = 0
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert coordinator.has_device_list
+        assert er.async_get(hass).async_get(stale.entity_id) is None
+
+
 async def test_diagnostics_include_the_scenes(
     hass: HomeAssistant, with_scenes: MockConfigEntry
 ) -> None:

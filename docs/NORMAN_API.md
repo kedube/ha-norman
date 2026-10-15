@@ -68,10 +68,12 @@ The hub announces itself with multicast DNS, which is what the integration's zer
 | Target host | `Dexatek.local.` (Dexatek is the hub's ODM), port `10123`, A and AAAA records |
 | TXT | `thing_name`, `multicast_group`, `multicast_port` on the hub checked 2026-10-11; an earlier capture had no TXT fields |
 
-The config flow calls `registration` on the discovered address to validate it and get the
-`ThingName`, whether or not a TXT identity is present. It then decides whether the hub is new
-(offer it) or known (refresh its stored address). The app itself resolves the instance name
-with a unicast SRV query rather than browsing.
+An announcement from the address of a hub that is already set up is dropped without a
+request; every hub announces itself each time Home Assistant starts. Otherwise the config flow
+calls `registration` on the discovered address to validate it and get the `ThingName`, whether
+or not a TXT identity is present. It then decides whether the hub is new (offer it) or known
+(refresh its stored address, and set up again a hub that was waiting to retry). The app itself
+resolves the instance name with a unicast SRV query rather than browsing.
 
 ## Endpoints
 
@@ -223,6 +225,15 @@ before both. This works in both directions: moving the bottom rail sends the mid
 target back with it, and moving the middle rail — through the **Middle rail** cover, the
 middle-rail slider, or a tilt command — sends the bottom rail's back. A capture therefore always
 shows both fields, even when the user touched only one.
+
+A stop or a jog leaves the blind wherever it halts, and its target in hand is the one it
+abandoned until the hub is read again; the read the stop asks for waits out the refresh
+cooldown the move before it started. So the next move of either rail after a stop, a jog or a
+preset reads the hub first. A blind still on its way to report where it stopped — not heard
+from since, the hub holding a target it has not reached — is given up to 10 s to report; the
+hub replaces its target with where the blind stopped when it does. Without that, moving the
+middle rail just after stopping the bottom rail sent the bottom rail on to where it had been
+going.
 
 A **Shutter** (`ModuleType` 1) has no rails. Its louvers are one field, `Position` 0–7 (7 shut,
 3 horizontal, 0 turned fully the other way), sent alone: `{"PeripheralUID": …, "Position": 3}`.
@@ -1235,10 +1246,19 @@ blind occasionally at 1.3 s, so the hand test was the easier case; at **1.5 s** 
 consecutive whole-house runs dropped nothing, but longer use at 1.5 s still lost a command from
 time to time, so the shipped default is **1.6 s**.
 
-So `_async_control` holds an `asyncio.Lock` and spaces every `/control` send by the entry's
-command-spacing option (const.py, `DEFAULT_CONTROL_INTERVAL`, 1.6 s), measured from the end
-of the previous send so that a slow hub reply counts towards the gap rather than adding to
-it. Concurrent callers queue rather than collide; thirteen commands take ~21 s to dispatch.
+So `_async_control` gives every `/control` send its turn in a queue and spaces the sends by
+the entry's command-spacing option (const.py, `DEFAULT_CONTROL_INTERVAL`, 1.6 s), measured from
+the end of the previous send so that a slow hub reply counts towards the gap rather than adding
+to it. Concurrent callers queue rather than collide; thirteen commands take ~21 s to dispatch.
+
+Two things keep that queue from holding up what matters. A `MotorStop` goes to the front,
+behind only the stops already waiting: a stop that lags is worse than none. And a command whose
+blinds another command has taken over while it waited — a stop, a newer move, a preset — is
+dropped at its turn without being sent, and takes no time at the radio. Sent, it would start
+the blinds moving for the newer command to undo, so with a stop at the front it has to go. A
+room or hub request that has lost only some of its blinds is sent to the rest one by one
+instead, straight away. Stops are never dropped, and nor are status requests or commands sent
+with `norman.send_hub_command`.
 
 Only `/control` is gated. `status` reads, `GetAllPeripheral` and the notification stream are
 unaffected and still run concurrently, so the UI stays responsive while a batch drains.
@@ -1260,11 +1280,11 @@ before any parsing happens, and the last complete response per endpoint is kept 
 unique id, and every key in `SENSITIVE_HUB_KEYS` (`ThingName`, `GeoLoc`, `Latitude`,
 `Longitude`, `WiFiSSID`, `NetworkID`, `TimeZone`, `CustomDeviceName`) are removed by key inside
 JSON bodies, and the host and `ThingName` are additionally replaced by value anywhere they
-appear in text. The export also carries a `frontend` block with the card's expected and
-registered versions. The `norman.get_hub_data` action returns live `GetAllPeripheral` and
-`status` payloads for the same purpose, with the same sensitive keys removed. When someone
-reports a new blind type, ask for either of these; the parsed model in `NormanPeripheralData`
-drops unknown fields and is not enough.
+appear in text. The export also carries the entry's options and a `frontend` block with the
+card's expected and registered versions. The `norman.get_hub_data` action returns live
+`GetAllPeripheral` and `status` payloads for the same purpose, with the same sensitive keys
+removed. When someone reports a new blind type, ask for either of these; the parsed model in
+`NormanPeripheralData` drops unknown fields and is not enough.
 
 Debug logging (`custom_components.norman.api: debug`) prints every exchange with the same keys
 redacted (and the `ThingName` replaced by value in a reply that is not JSON), each reply

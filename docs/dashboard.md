@@ -4,14 +4,15 @@
 shade hanging in it. The window is the control: **drag a rail's pull tab** to move it. It is in
 Home Assistant's sidebar as soon as the integration is set up, with nothing to add or configure.
 
-<img src="../images/dashboard-card.png" alt="Norman Shades: the hub's name with a summary and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — cellular shades in ivory, one of them closing, a roller shade on its roll, two-rail shades with the see-through light-filtering fabric above the blackout, a SmartDrape part drawn with its vanes open, a PerfectSheer lowered with its vanes open, a Roman shade part raised with its folds above the hem, and two shutters with their louvers half open and open." width="560">
+<img src="../images/dashboard-card.png" alt="Norman Shades: the hub's name with a summary, a refresh button and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — cellular shades in ivory, one of them closing, a roller shade on its roll, two-rail shades with the see-through light-filtering fabric above the blackout, a SmartDrape part drawn with its vanes open, a PerfectSheer lowered with its vanes open, a Roman shade part raised with its folds above the hem, and two shutters with their louvers half open and open. Under each window are its name, its state, its battery and a refresh button." width="560">
 
-*Eight blinds across three rooms. Den_2 is on its way down: the shade is drawn where it is
+*Eleven blinds across four rooms. Den_2 is on its way down: the shade is drawn where it is
 going, the dashed line is where it is now, and its Stop button sits on the corner. The two-rail
-blinds in the middle row show Best privacy (the blackout across the window), both rails
+blinds in the Front Guest Bedroom show Best privacy (the blackout across the window), both rails
 part-way, and both rails down (the light-filtering fabric across the window, with the view
 showing through it). The Study's two Shutters have their louvers half open and open; Study_2's
-battery is the low one the summary counts.*
+battery is the low one the summary counts. The **⟳** beside each battery, and the one in the
+header, ask for fresh status.*
 
 ## Opening it
 
@@ -35,8 +36,9 @@ a reload of the integration.
 ## What it shows
 
 The header is named after your **hub** — the name it has in Home Assistant, which the
-integration takes from the Norman app — so two hubs are easy to tell apart. Under the name, a
-summary line counts the shades, how many are open, any that are moving, and any low batteries.
+integration takes from the Norman app — so two hubs are easy to tell apart. A dashboard card
+showing the blinds of more than one hub is headed "Shades" instead. Under the name, a summary
+line counts the shades, how many are open, any that are moving, and any low batteries.
 
 Blinds are grouped by their Home Assistant **area**, which the integration seeds from the
 hub's own room names, so the grouping matches the Norman app out of the box. Moving a blind to
@@ -64,7 +66,8 @@ in, which can be hours. The blind's **⟳** (its **Request status** button) sett
 3½ minutes is as long as the integration keeps checking and resending a move, and that check
 asks a silent blind to report in ([Data updates](entities.md#data-updates)). So after a
 command from Home Assistant this is rare; after one from the Norman app or a hub schedule,
-nothing checks. Sending the blind a position from the card starts a new move.
+nothing checks. Sending the blind a position from the card starts a new move, the position it
+is drawn at included: drag its rail away and back, or press ↑ then ↓.
 
 ### Moving a blind
 
@@ -75,7 +78,8 @@ nothing checks. Sending the blind a position from the card starts a new move.
   windows cannot move a blind.
 - **Keyboard:** Tab to a rail, then ↑ / ↓ (10%), Page Up / Page Down (30%), Home (closed) and
   End (open). The position is sent once you stop pressing keys, because the hub drops commands
-  that arrive closer together than about 1.6 seconds.
+  that arrive closer together than about 1.6 seconds. A key held with Alt, Ctrl or ⌘ moves
+  nothing, so the browser's shortcuts, such as Alt+← for Back, still work.
 
 A press that does not move sends nothing, so a mis-tap cannot move a blind. The drag follows
 your finger's movement rather than jumping to where you pressed.
@@ -133,7 +137,8 @@ shade.
 
 A SmartDrape is drawn as it hangs: fabric vanes on a sheer, from a track to the sill, drawn
 sideways. Open, it is gathered to the side it stacks to — left, right, or half to each side
-for a split drape, from the hub's `MSDStackType` — and closed, it spreads across the window.
+for a split drape, from the hub's `MSDStackType`, kept while the drape is unavailable — and
+closed, it spreads across the window.
 **Drag its leading edge** sideways: towards its stack opens it, away draws it across. The left
 and right arrow keys move the edge the same way. A split drape has an edge on each half, and
 both move together.
@@ -170,7 +175,10 @@ screen, and scales with the window.
 
 Each room heading carries **▲ ■ ▼** of its own, acting on every blind in that room at once —
 including the middle rails of two-rail blinds, so "close the bedroom" puts both rails down. It
-is one service call per press, not one per blind.
+is one service call per press, and one command to the hub per blind, paced like any other:
+**▲** goes to each blind's bottom rail, which takes a two-rail blind's middle rail up with it,
+**▼** to a two-rail blind's middle rail, which takes its bottom rail down, and **■** to each
+blind's one motor.
 
 On a dashboard, `hide_room_controls: true` gives plain headings instead. The buttons live in
 the heading, so `hide_room_names: true` removes them too — there is nowhere left to put them,
@@ -321,16 +329,20 @@ middle_label: Middle rail
 
 `title`, the hub and every `hide_*` option above, `hide_refresh` included, are also available in
 the card's visual editor.
-`title` replaces the hub's name in the header, and `title: ""` leaves no heading text at all. A
-card added before v0.30 may already have `title: Shades` saved in its config — the card picker
-used to supply that automatically. Remove the `title` line to get the hub name.
+`title` replaces the hub's name in the header, and `title: ""` leaves no heading text at all;
+the visual editor keeps it while other options change, and emptying its title field gives the
+hub's name again. A card added before v0.30 may already have `title: Shades` saved in its
+config — the card picker used to supply that automatically. Remove the `title` line to get the
+hub name.
 
-With more than one hub, a card with no `config_entry_id` shows every hub's blinds together. Its
-room presets go to each hub the room's blinds are on, and its whole-house presets to each hub
-with blinds on the card, one request per hub. Unavailable blinds do not count, so a hub that is
-not set up, whose blinds show as unavailable, is left out. To give each hub a card of its own,
-pick the hub in the visual editor, which fills in `config_entry_id` for you. The sidebar already
-has one entry per hub.
+With more than one hub, a card with no `config_entry_id` shows every hub's blinds together,
+under the heading "Shades". Its room presets go to each hub the room's blinds are on, and its
+whole-house presets and **⟳** to each hub with blinds on the card, one request per hub.
+Unavailable blinds do not count while others are available, so a hub that is not set up, whose
+blinds show as unavailable, is left out. When every one of them is unavailable the request still
+goes to their hubs, and the error says what is wrong with them. To give each hub a card of its
+own, pick the hub in the visual editor, which fills in `config_entry_id` for you. The sidebar
+already has one entry per hub.
 
 ### List layout
 
@@ -344,6 +356,9 @@ hide_picture: true
 The sliders drive the integration's `number` entities, so they move in the same 10% steps as
 those entities and never disagree with the covers. A slider moved with the arrow keys sends its
 position once you stop pressing them, as a window does. Each row keeps its battery and **⟳**.
+A row's state shows beside its name only while the blind is moving, its move is not confirmed,
+or it is unavailable. Each slider is named for its blind, and its rail on a two-rail blind, for
+screen readers.
 
 ## Building your own instead
 

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import partial
 import logging
+from typing import Any
 
 from getmac import get_mac_address
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -20,10 +23,22 @@ from homeassistant.helpers import (
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.util.network import is_ip_address
+from homeassistant.util.network import is_ipv4_address, is_ipv6_address
 
+from . import coordinator as norman_coordinator
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
-from .const import DOMAIN, MANUFACTURER, PLATFORMS, is_default_title
+from .const import (
+    CONF_CONTROL_INTERVAL,
+    CONF_POLL_INTERVAL,
+    CONF_SHOW_SIDEBAR_PANEL,
+    CONF_WAKE_INTERVAL,
+    DEFAULT_POLL_INTERVAL,
+    DEFAULT_WAKE_INTERVAL,
+    DOMAIN,
+    MANUFACTURER,
+    PLATFORMS,
+    is_default_title,
+)
 from .coordinator import (
     NormanConfigEntry,
     NormanCoordinator,
@@ -146,13 +161,15 @@ async def _async_resolve_mac(hass: HomeAssistant, host: str) -> str | None:
 
     No hub payload carries a MAC, so it is read from the ARP table (getmac), which works
     only when Home Assistant is on the same network segment as the hub. Elsewhere it is
-    simply unknown; a failed lookup is never an error.
+    simply unknown; a failed lookup is never an error. getmac takes an IPv6 address only as
+    ``ip6``: passed as ``ip`` it is looked up as IPv4 and never found.
     """
-    lookup = (
-        partial(get_mac_address, ip=host)
-        if is_ip_address(host)
-        else partial(get_mac_address, hostname=host)
-    )
+    if is_ipv4_address(host):
+        lookup = partial(get_mac_address, ip=host)
+    elif is_ipv6_address(host):
+        lookup = partial(get_mac_address, ip6=host)
+    else:
+        lookup = partial(get_mac_address, hostname=host)
     try:
         mac = await hass.async_add_executor_job(lookup)
     except Exception:  # noqa: BLE001 - getmac shells out; any failure means "unknown"
@@ -161,16 +178,40 @@ async def _async_resolve_mac(hass: HomeAssistant, host: str) -> str | None:
     return dr.format_mac(mac) if mac else None
 
 
-async def _async_entry_updated(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
-    """Reload when the hub's address or an option changed; follow a new title otherwise.
+# Options applied to the running hub by the update listener. Every other option, and the
+# entry's data, is read at setup and reloads the entry when it changes.
+_LIVE_OPTIONS = frozenset({CONF_CONTROL_INTERVAL, CONF_SHOW_SIDEBAR_PANEL})
+# What an option the entry does not store yet amounts to, so that saving the options form for
+# the first time does not count as a change to an interval it leaves at its default.
+_SETUP_OPTION_DEFAULTS = {
+    CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
+    CONF_WAKE_INTERVAL: DEFAULT_WAKE_INTERVAL,
+}
 
-    Options are read at setup, so a change needs a reload. A title does not: only the
-    sidebar panel shows it, with more than one hub, and the panel is brought in line.
+
+def _read_at_setup(
+    data: Mapping[str, Any], options: Mapping[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The part of an entry's data and options that only a setup reads."""
+    options = {**_SETUP_OPTION_DEFAULTS, **options}
+    return dict(data), {key: value for key, value in options.items() if key not in _LIVE_OPTIONS}
+
+
+async def _async_entry_updated(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
+    """Reload when the hub's address or an interval changed; apply anything else live.
+
+    The poll and wake sweep intervals are read at setup, so a change to either reloads the
+    entry. Command spacing is set on the running client, derived as setup derives it, and the
+    sidebar is brought in line with its switch and with the title, which only the sidebar
+    shows (with more than one hub). Reloading for those would reconnect the hub's stream and
+    drop every move watch in flight for nothing.
     """
-    if (dict(entry.data), dict(entry.options)) != entry.runtime_data.config_at_setup:
+    coordinator = entry.runtime_data
+    if _read_at_setup(entry.data, entry.options) != _read_at_setup(*coordinator.config_at_setup):
         await hass.config_entries.async_reload(entry.entry_id)
-    else:
-        await async_add_entry_panel(hass, entry)
+        return
+    coordinator.api.control_interval = norman_coordinator._control_interval(entry)
+    await async_add_entry_panel(hass, entry)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bool:
@@ -182,8 +223,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
-    """Take the dashboard card's resource away with the last hub removed."""
-    if not hass.config_entries.async_entries(DOMAIN):
+    """Take the dashboard card's resource away with the last hub removed.
+
+    A hub that is ignored or disabled does not count: Home Assistant does not set the
+    integration up for one, so after a restart nothing would serve the card. Enabling a
+    disabled hub registers the resource again when it is set up.
+    """
+    if not hass.config_entries.async_entries(DOMAIN, include_ignore=False, include_disabled=False):
         await async_remove_card_resource(hass)
 
 
@@ -194,7 +240,13 @@ async def async_remove_config_entry_device(
 
     The hub device, and blinds and rooms that are still reported, are refused: they would
     be recreated on the next refresh. A room is reported while it holds a blind or a scene.
+
+    While the hub is not set up (unreachable, or disabled) there is no report to check
+    against, so any device may go; a blind or room the hub still has is recreated at the
+    next setup.
     """
+    if entry.state is not ConfigEntryState.LOADED:
+        return True
     data = entry.runtime_data.data
     live = {(DOMAIN, str(uid)) for uid in data}
     live.update((DOMAIN, room_identifier(entry, room_id)) for room_id in rooms_of(data))

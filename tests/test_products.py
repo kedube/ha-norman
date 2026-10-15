@@ -475,6 +475,33 @@ async def test_shutter_nudges_turn_the_louvers(
     assert _louvers_sent(fake_hub, UID_SHUTTER)[-1]["Position"] == position
 
 
+async def test_quick_louver_nudges_add_up(
+    hass: HomeAssistant, init_with_every_product: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Three quick nudges from shut turn the louvers three steps, as three rail nudges move three.
+
+    Each starts where the one before sends them. Read from the hub's target, the second and
+    third saw the same stale value inside the refresh cooldown, and sent 6, 5, 5.
+    """
+    orig = fake_hub._control
+
+    async def _hub(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if body.get("PeripheralUID") == UID_SHUTTER and "Position" in body:
+            # Stored as the target on accept, as the hub stores a rail's.
+            fake_hub.peripheral_status(UID_SHUTTER)["TargetPosition"] = body["Position"]
+        return await orig(method, url, data)
+
+    with patch.object(fake_hub, "_control", _hub):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        for _ in range(3):
+            await _nudge(hass, UID_SHUTTER, "nudge_tilt", 25)
+
+    assert [c["Position"] for c in _louvers_sent(fake_hub, UID_SHUTTER)] == [6, 5, 4]
+    init_with_every_product.runtime_data.async_supersede()
+
+
 async def test_a_busy_hub_is_retried_for_louvers_too(
     hass: HomeAssistant, init_with_every_product: MockConfigEntry, fake_hub: FakeHub
 ) -> None:

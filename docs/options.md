@@ -1,7 +1,8 @@
 # Options
 
-**Settings → Devices & services → Norman → ⋮ → Configure.** All four options are per hub, and
-changing any of them reloads the entry.
+**Settings → Devices & services → Norman → ⋮ → Configure.** All four options are per hub.
+Changing the poll or wake sweep interval reloads the entry; command spacing and the sidebar
+switch take effect straight away, without a reload.
 
 | Option | Default | Range | What it does |
 |---|---|---|---|

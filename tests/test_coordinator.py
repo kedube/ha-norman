@@ -716,6 +716,34 @@ async def test_stream_outage_is_logged_once_and_recovery_announced(
     assert any(r.levelno == logging.INFO and "restored" in r.message for r in caplog.records)
 
 
+async def test_a_stream_back_for_a_quiet_cycle_ends_the_outage(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A stream that runs a whole cycle with nothing moving is back, so the next drop is news.
+
+    Counted as down until a notification came, a night with nothing moving left the next
+    outage logged only at debug level.
+    """
+    caplog.set_level(logging.DEBUG, logger="custom_components.norman")
+
+    with patch("custom_components.norman.coordinator.RECONNECT_INTERVAL", 0):
+        await notifications.put(NormanConnectionError("first drop"))
+        await settle(hass)
+        await notifications.put(None)  # a full cycle, quiet
+        await settle(hass)
+        await notifications.put(NormanConnectionError("second drop"))
+        await settle(hass)
+
+    errors = [r.message for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 2
+    assert "second drop" in errors[1]
+    assert any(r.levelno == logging.INFO and "restored" in r.message for r in caplog.records)
+
+
 async def test_hub_outage_makes_entities_unavailable_until_it_recovers(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,

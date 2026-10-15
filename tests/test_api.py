@@ -329,6 +329,18 @@ async def test_listen_connection_failures(
             pass
 
 
+async def test_a_stream_transport_failure_is_recorded(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A connection lost mid-stream shows in diagnostics, as a refusal or a close does."""
+    aioclient_mock.post(NOTIFICATION, exc=aiohttp.ClientConnectionError("reset by peer"))
+
+    with pytest.raises(NormanConnectionError):
+        async for _ in client.async_listen_notifications():
+            pass
+    assert client.traffic.as_dict()["exchanges"][-1]["error"] == "reset by peer"
+
+
 async def test_listen_gives_up_on_a_hub_that_never_answers(
     client: NormanApiClient, aioclient_mock: AiohttpClientMocker
 ) -> None:
@@ -577,6 +589,74 @@ async def test_control_sends_are_spaced(
     assert len(aioclient_mock.mock_calls) == 4
     # The first send goes out at once; each later one waits out the full gap.
     assert slept == [pytest.approx(1.3)] * 3
+
+
+async def test_a_stop_goes_ahead_of_the_commands_waiting(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Stops wait only for the send in progress and for each other, then the rest go in order."""
+    client.control_interval = 0
+    aioclient_mock.post(CONTROL, json={"Error": 0})
+    move = {"BottomRailPosition": 0, "MiddleRailPosition": 0}
+
+    await client._control_lock.acquire()
+    try:
+        waiting = [asyncio.create_task(client.async_send_control(uid, move)) for uid in (1, 2)]
+        waiting += [asyncio.create_task(client.async_stop(uid)) for uid in (3, 4)]
+        for _ in range(5):
+            await asyncio.sleep(0)
+    finally:
+        client._control_lock.release()
+    await asyncio.gather(*waiting)
+
+    sent = [
+        (call[2]["PeripheralUID"], "MotorStop" in call[2]) for call in aioclient_mock.mock_calls
+    ]
+    assert sent == [(3, True), (4, True), (1, False), (2, False)]
+
+
+async def test_a_command_no_longer_wanted_at_its_turn_is_not_sent(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Overtaken while it waited -- its blind taken over -- a command is dropped, unsent."""
+    aioclient_mock.post(CONTROL, json={"Error": 0})
+    wanted = True
+
+    await client._control_lock.acquire()
+    try:
+        move = asyncio.create_task(client.async_set_position(1, 0, 0, still_wanted=lambda: wanted))
+        await asyncio.sleep(0)
+        wanted = False
+    finally:
+        client._control_lock.release()
+
+    assert await move is False
+    assert aioclient_mock.call_count == 0
+    assert not client._control_lock.locked()
+
+
+async def test_a_command_cancelled_while_it_waits_gives_up_its_place(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A cancelled waiter leaves the queue; the turn passes on and the queue frees up."""
+    client.control_interval = 0
+    aioclient_mock.post(CONTROL, json={"Error": 0})
+
+    await client._control_lock.acquire()
+    try:
+        cancelled = asyncio.create_task(client.async_send_control(1, {"Switch": 0}))
+        kept = asyncio.create_task(client.async_send_control(2, {"Switch": 0}))
+        await asyncio.sleep(0)
+        cancelled.cancel()
+        await asyncio.sleep(0)
+    finally:
+        client._control_lock.release()
+    await kept
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled
+
+    assert [call[2]["PeripheralUID"] for call in aioclient_mock.mock_calls] == [2]
+    assert not client._control_lock.locked()
 
 
 async def test_control_gap_counts_time_already_spent(

@@ -135,7 +135,6 @@ const STRINGS = {
     middle_short: "Middle",
     louvers: "Louvers",
     position: "Position",
-    rail_position: "{rail} position",
     blind_rail: "{name} {rail}",
     blind_louvers: "{name} louvers",
     blind_left_half: "{name} left half",
@@ -208,7 +207,6 @@ const STRINGS = {
     middle_short: "Mitte",
     louvers: "Lamellen",
     position: "Position",
-    rail_position: "Position: {rail}",
     blind_rail: "{name}, {rail}",
     blind_louvers: "{name}, Lamellen",
     blind_left_half: "{name}, linke Hälfte",
@@ -281,7 +279,6 @@ const STRINGS = {
     middle_short: "Intermedio",
     louvers: "Lamas",
     position: "Posición",
-    rail_position: "Posición: {rail}",
     blind_rail: "{name}, {rail}",
     blind_louvers: "{name}, lamas",
     blind_left_half: "{name}, mitad izquierda",
@@ -354,7 +351,6 @@ const STRINGS = {
     middle_short: "Milieu",
     louvers: "Lames",
     position: "Position",
-    rail_position: "Position : {rail}",
     blind_rail: "{name}, {rail}",
     blind_louvers: "{name}, lames",
     blind_left_half: "{name}, moitié gauche",
@@ -427,7 +423,6 @@ const STRINGS = {
     middle_short: "ミッド",
     louvers: "ルーバー",
     position: "位置",
-    rail_position: "{rail}の位置",
     blind_rail: "{name} {rail}",
     blind_louvers: "{name} ルーバー",
     blind_left_half: "{name} 左半分",
@@ -500,7 +495,6 @@ const STRINGS = {
     middle_short: "中梁",
     louvers: "叶片",
     position: "位置",
-    rail_position: "{rail}位置",
     blind_rail: "{name} {rail}",
     blind_louvers: "{name} 叶片",
     blind_left_half: "{name} 左半边",
@@ -573,7 +567,6 @@ const STRINGS = {
     middle_short: "中樑",
     louvers: "葉片",
     position: "位置",
-    rail_position: "{rail}位置",
     blind_rail: "{name} {rail}",
     blind_louvers: "{name} 葉片",
     blind_left_half: "{name} 左半邊",
@@ -1719,7 +1712,7 @@ const STYLES = `
   .slider input:focus-visible { outline: 2px solid var(--n-accent); outline-offset: 4px; }
   .slider input:disabled { cursor: default; }
   /* The sliders already say where each rail is; the status line only speaks up to say it
-     is moving or unavailable. */
+     is moving, that its move is not confirmed, or that it is unavailable. */
   .row .status.rest { display: none; }
   .row.unavailable { opacity: 0.5; }
 
@@ -1746,10 +1739,14 @@ class NormanShadesCard extends HTMLElement {
     // Positions the user chose, drawn until the hub reports them as its target. Keyed by
     // the entity the write went to; each entry is { value, at }.
     this._pending = new Map();
-    // When this card last wrote each rail, keyed like _pending. Sending a blind the target the
-    // hub already holds leaves the cover's state as it was, so without this its last_updated
-    // would not restart the move window (see _railState).
+    // This card's last write to each rail, keyed and shaped like _pending: its `at` is when it
+    // went. Sending a blind the target the hub already holds leaves the cover's state as it
+    // was, so without this its last_updated would not restart the move window (see
+    // _railState). A write that fails is taken back out (see _expect).
     this._sent = new Map();
+    // The side each SmartDrape was last seen stacking to, by device: an unavailable cover
+    // carries no attributes, and the drape keeps its side meanwhile (see _collectBlinds).
+    this._stacks = new Map();
     // Redraws the card when the next move window closes (see _patch).
     this._settleTimer = null;
     // What the card has read from Home Assistant's registries, by name (see _fromRegistry).
@@ -1897,7 +1894,13 @@ class NormanShadesCard extends HTMLElement {
     return this._fromRegistry("blinds", () => this._registryBlinds()).map((blind) => {
       if (blind.product !== "drape") return blind;
       const stack = states[blind.bottomCover]?.attributes?.stack;
-      return { ...blind, stack: STACK_SIDES[stack] ? stack : "left" };
+      // Home Assistant leaves an unavailable entity's attributes out, `stack` with them. The
+      // drape keeps the side it was last seen on meanwhile, rather than being redrawn
+      // gathering left -- a new side would rebuild the card under the user's hands.
+      if (stack !== undefined && stack !== null) {
+        this._stacks.set(blind.deviceId, STACK_SIDES[stack] ? stack : "left");
+      }
+      return { ...blind, stack: this._stacks.get(blind.deviceId) || "left" };
     });
   }
 
@@ -2045,8 +2048,9 @@ class NormanShadesCard extends HTMLElement {
    *
    * A configured `title` always wins, whatever it says -- including `""` for a blank
    * heading. With no title the header names the hub, so a house with two hubs gets two
-   * cards you can tell apart; "Shades" is only the fallback for when no hub device can be
-   * found (an install with no Norman devices yet, or before the registry has loaded).
+   * cards you can tell apart; "Shades" is the fallback for when no hub device can be found
+   * (an install with no Norman devices yet, or before the registry has loaded), and for a
+   * card with no hub chosen that shows the blinds of more than one (see _hubName).
    *
    * Cards added from the picker before v0.30 have `title: "Shades"` saved in their config,
    * because `getStubConfig()` used to supply it. Those keep saying "Shades" until the title
@@ -2065,6 +2069,9 @@ class NormanShadesCard extends HTMLElement {
    * cover -- each of the hub's rooms is one of those too. `name_by_user` wins, matching how
    * Home Assistant shows the device everywhere else. Returns null when there is no hub to
    * name.
+   *
+   * A card with no `config_entry_id` shows every hub's blinds. Showing one hub's, it names
+   * that hub, not another one set up beside it; showing several hubs', it names none of them.
    */
   _hubName() {
     const hass = this._hass;
@@ -2073,11 +2080,19 @@ class NormanShadesCard extends HTMLElement {
     return this._fromRegistry("hub name", () => {
       const registry = hass.entities || {};
       const devices = hass.devices || {};
+      let hubs = null;
+      if (!this._config.config_entry_id) {
+        const shown = this._roomsOf(this._fromRegistry("blinds", () => this._registryBlinds()));
+        hubs = new Set(shown.flatMap(([, list]) => list.map((blind) => this._entryOf(blind.deviceId))).filter(Boolean));
+        if (hubs.size > 1) return null;
+        if (!hubs.size) hubs = null;
+      }
 
       for (const entry of Object.values(registry)) {
         if (entry.platform !== DOMAIN || !entry.device_id) continue;
         if (!HUB_KEYS.has(entry.translation_key)) continue;
         if (!this._inScope(entry.device_id)) continue;
+        if (hubs && !hubs.has(this._entryOf(entry.device_id))) continue;
         const device = devices[entry.device_id];
         const name = device && (device.name_by_user || device.name);
         if (name) return name;
@@ -2184,7 +2199,7 @@ class NormanShadesCard extends HTMLElement {
     const updated = Date.parse(cover?.last_updated);
     const since = Math.max(
       Number.isNaN(updated) ? -Infinity : updated,
-      this._sent.get(rail.numberId || rail.coverId) ?? -Infinity,
+      this._sent.get(rail.numberId || rail.coverId)?.at ?? -Infinity,
     );
     if (since === -Infinity) return { current, target };
     const until = since + MOVE_WINDOW_MS;
@@ -2392,27 +2407,33 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /**
-   * Open / stop / close every rail of every blind in one room.
+   * Open / stop / close every blind in one room, both rails of a two-rail blind included.
    *
-   * This is NOT the hub's own room verb. Close here sends close_cover to every rail, so a
-   * two-rail blind ends at bottom 0 AND middle 0 -- both rails down, which leaves the
-   * light-filtering sheer across the window. The app's "Best privacy" is bottom 0 with
-   * middle 100: the sheer stacked away and the blackout across the window instead. That one
-   * lives in the presets tray (norman.room_command).
+   * One cover per blind, so one hub command per blind: the integration paces commands about
+   * 1.6 s apart, and a second command to the same blind only holds the room's others back.
+   * Open and stop go to each blind's bottom rail. Opened, a two-rail blind's bottom rail
+   * takes its middle rail up with it, as the integration carries a rail the other would
+   * pass; and its two rails share one motor, which one stop stops. Close goes to a two-rail
+   * blind's middle rail, which takes the bottom rail down with it.
+   *
+   * This is NOT the hub's own room verb. Close here ends a two-rail blind at bottom 0 AND
+   * middle 0 -- both rails down, which leaves the light-filtering sheer across the window.
+   * The app's "Best privacy" is bottom 0 with middle 100: the sheer stacked away and the
+   * blackout across the window instead. That one lives in the presets tray
+   * (norman.room_command).
    */
   _buildRoomControls(roomName, blinds) {
     const controls = el("div", "icon-group room-buttons");
     for (const [icon, service, label] of ROOM_ACTIONS) {
       controls.appendChild(
         this._iconButton(icon, this._t(label, { room: roomName }), () => {
-          // Every rail in the room: the bottom rails, plus the middle rails of two-rail
-          // blinds. One service call with a list, not one call per entity.
+          // One service call with a list, not one call per entity.
           const entityId = [];
           for (const blind of blinds) {
             // A Shutter's open and close turn its louvers; it has no stop to send.
             if (service === "stop_cover" && blind.louvers) continue;
-            if (blind.bottomCover) entityId.push(blind.bottomCover);
-            if (blind.middleCover) entityId.push(blind.middleCover);
+            const cover = service === "close_cover" ? blind.middleCover || blind.bottomCover : blind.bottomCover;
+            if (cover) entityId.push(cover);
           }
           if (entityId.length) this._hass.callService("cover", service, { entity_id: entityId });
         }),
@@ -2542,22 +2563,19 @@ class NormanShadesCard extends HTMLElement {
   /**
    * norman.room_command, sent to this card's hub when it has one (`config_entry_id`). A card
    * with none shows every hub's blinds, and with two hubs the action cannot pick one itself,
-   * so the card sends one call to each hub `blinds` are on, read from their devices. An
-   * unavailable blind does not count: it may be on a hub that is not set up, which the action
-   * refuses. With no hub to go on the action picks the only one, as it always has.
+   * so the card sends one call to each hub `blinds` are on, read from their devices.
+   *
+   * An unavailable blind does not count while others do: it may be on a hub that is not set
+   * up, which the action refuses. With every one of them unavailable they all count, so the
+   * call still names their hubs, and the action says what is wrong with them rather than
+   * asking which hub was meant. With no hub to go on the action picks the only one, as it
+   * always has.
    */
   _roomCommand(data, blinds = []) {
     const pinned = this._config.config_entry_id;
-    const hubs = pinned
-      ? [pinned]
-      : [
-          ...new Set(
-            blinds
-              .filter((blind) => !this._isUnavailable(blind))
-              .map((blind) => this._entryOf(blind.deviceId))
-              .filter(Boolean),
-          ),
-        ];
+    const hubsOf = (list) => [...new Set(list.map((blind) => this._entryOf(blind.deviceId)).filter(Boolean))];
+    let hubs = pinned ? [pinned] : hubsOf(blinds.filter((blind) => !this._isUnavailable(blind)));
+    if (!hubs.length) hubs = hubsOf(blinds);
     if (!hubs.length) {
       this._hass.callService(DOMAIN, "room_command", data);
       return;
@@ -2750,7 +2768,7 @@ class NormanShadesCard extends HTMLElement {
       zone.setAttribute("aria-orientation", "vertical");
       zone.setAttribute("aria-valuemin", "0");
       zone.setAttribute("aria-valuemax", "100");
-      zone.setAttribute("aria-label", twoRail ? this._t("blind_rail", { name: blind.name, rail: rail.label }) : blind.name);
+      zone.setAttribute("aria-label", this._railName(blind, rails, rail));
       return zone;
     });
     const bubble = el("div", "bubble");
@@ -2817,7 +2835,7 @@ class NormanShadesCard extends HTMLElement {
     zone.setAttribute("aria-orientation", "vertical");
     zone.setAttribute("aria-valuemin", "0");
     zone.setAttribute("aria-valuemax", "100");
-    zone.setAttribute("aria-label", this._t("blind_louvers", { name: blind.name }));
+    zone.setAttribute("aria-label", this._railName(blind, rails, rails[0]));
     const marker = el("div", "marker");
     const bubble = el("div", "bubble");
 
@@ -3064,10 +3082,11 @@ class NormanShadesCard extends HTMLElement {
    * A blind gathers one rail's keys at a time: keys on its other rail first send the move
    * gathered so far, which would otherwise be dropped with the timer and the drawing it shares.
    * While a pointer is pressed on the blind its arrow keys only keep the page from scrolling:
-   * the drag draws the blind, and its release sends it.
+   * the drag draws the blind, and its release sends it. A key held with Alt, Ctrl or Meta is
+   * a shortcut of the browser's or the system's (Alt+Left is Back), so it is left to them.
    */
   _onKey(shade, index, event, side) {
-    if (shade.disabled) return;
+    if (shade.disabled || event.altKey || event.ctrlKey || event.metaKey) return;
     const step = stepOf(shade.rails[index]);
     const activeSide = shade.drape ? side || shade.parts[0].side : null;
     const across = shade.drape && activeSide !== "right" ? -1 : 1;
@@ -3090,6 +3109,10 @@ class NormanShadesCard extends HTMLElement {
     const value = clampToStep((this._shadeValue(shade, index) ?? 0) + moves[event.key], step);
     this._dragTo(shade, index, value);
     this._showBubble(shade, index, value);
+    // A screen reader says the new value now, not when the keys' move is sent.
+    shade.zones.forEach((zone, i) => {
+      if (Number(zone.dataset?.index ?? i) === index) this._sayValue(zone, value);
+    });
     clearTimeout(shade.keyTimer);
     shade.keyMove = { index, value };
     shade.keyTimer = setTimeout(() => this._sendKeys(shade), KEY_COMMIT_MS);
@@ -3138,15 +3161,19 @@ class NormanShadesCard extends HTMLElement {
    * Send rail `index` to `value`. One write: the integration carries the other rail along
    * in the same hub command when it has to, so that rail is only drawn there until the hub
    * reports it -- never written separately, where two commands could cross in flight.
+   *
+   * A rail already drawn at `value` is not sent there again, unless its move is not confirmed:
+   * the blind may never have heard it, and sending it again starts a new move.
    */
   _move(rails, index, value) {
     const rail = rails[index];
-    if (value === this._railValue(rail)) return;
+    if (value === this._railValue(rail) && !this._railState(rail).stale) return;
     const carried = this._carried(rails, index, value);
+    let undoCarried = null;
     if (carried !== null && carried !== this._railValue(rails[1 - index])) {
-      this._expect(rails[1 - index], carried);
+      undoCarried = this._expect(rails[1 - index], carried);
     }
-    this._setRail(rail, value);
+    this._setRail(rail, value, undoCarried);
   }
 
   /** Where a two-rail blind's pull tab sits across the rail, in percent: apart, so both can be reached. */
@@ -3391,6 +3418,16 @@ class NormanShadesCard extends HTMLElement {
     shade.bubble.classList.remove("on");
   }
 
+  /**
+   * What a rail's control is called for assistive technology, the same on the picture and in
+   * the list: the blind's name, with the rail's on a two-rail blind and "louvers" on a
+   * Shutter, so each control on the card is told apart from the others.
+   */
+  _railName(blind, rails, rail) {
+    if (rail.louvers) return this._t("blind_louvers", { name: blind.name });
+    return rails.length > 1 ? this._t("blind_rail", { name: blind.name, rail: rail.label }) : blind.name;
+  }
+
   /** The list layout's control for one rail of `blind`: a plain range input, in 10% steps. */
   _buildSlider(blind, rails, rail) {
     const row = el("label", "slider");
@@ -3400,12 +3437,13 @@ class NormanShadesCard extends HTMLElement {
     input.min = "0";
     input.max = "100";
     input.step = String(stepOf(rail));
-    input.setAttribute("aria-label", this._t("rail_position", { rail: rail.label }));
+    input.setAttribute("aria-label", this._railName(blind, rails, rail));
     const value = el("span", "slider-value");
     // `holding` while a pointer is down on it and `keyTimer` while arrow keys are gathering a
     // move: _patchSlider leaves the slider alone for both. `keys` when a key moved it last, and
-    // `keyMove` the position the keys have gathered until it is sent.
-    const slider = { rail, row, input, value, holding: false, keys: false, keyTimer: null, keyMove: null };
+    // `keyMove` the position the keys have gathered until it is sent. `moved` once the held
+    // pointer has moved it.
+    const slider = { rail, row, input, value, holding: false, moved: false, keys: false, keyTimer: null, keyMove: null };
     // A blind that has gone unavailable takes no write, and its slider goes back to the hub's value.
     const send = (position) => {
       clearTimeout(slider.keyTimer);
@@ -3416,6 +3454,7 @@ class NormanShadesCard extends HTMLElement {
     };
     input.addEventListener("pointerdown", () => {
       slider.holding = true;
+      slider.moved = false;
       slider.keys = false;
       slider.pressedAt = input.value;
       // A move the keys are still gathering waits on the press, which sends it or its own.
@@ -3427,13 +3466,17 @@ class NormanShadesCard extends HTMLElement {
     // press does. A press that moved the slider has a `change` coming, which sends it in place
     // of any move the keys gathered. Any other press -- and any on a blind gone unavailable,
     // whose `change` sends nothing -- sends the keys' move if there is one, or else catches the
-    // slider up with the hub at once.
+    // slider up with the hub at once. A drag back to where it began sends that position on a
+    // rail whose move is not confirmed, as a drag of the picture does: it is the one way to
+    // send the blind the position it is drawn at again (see _move).
     const release = (cancelled) => {
       if (!slider.holding) return;
       slider.holding = false;
       const unavailable = this._isUnavailable(blind);
       if (!cancelled && !unavailable && input.value !== slider.pressedAt) return;
+      const resend = !cancelled && !unavailable && slider.moved && this._railState(rail).stale;
       if (slider.keyMove !== null) send(slider.keyMove);
+      else if (resend) send(clampToStep(input.value, stepOf(rail)));
       else this._patchSlider(slider, unavailable);
     };
     input.addEventListener("pointerup", () => release(false));
@@ -3446,6 +3489,7 @@ class NormanShadesCard extends HTMLElement {
       slider.keys = true;
     });
     input.addEventListener("input", () => {
+      if (slider.holding) slider.moved = true;
       value.textContent = this._pct(clampToStep(input.value, stepOf(rail)));
       input.style.setProperty?.("--n-fill", `${input.value}%`);
     });
@@ -3469,25 +3513,37 @@ class NormanShadesCard extends HTMLElement {
   /**
    * Draw a rail at `position` until the hub reports it as the rail's target. Past
    * PENDING_MS the hub's own value is shown again, so a move that never happened shows.
-   * Returns a function that drops the expectation early (a failed call).
+   *
+   * Returns a function that takes the expectation back, for a call that failed: the rail is
+   * drawn where the hub has it again, and its move window is the one it had before (see
+   * _railState), so a write that never left Home Assistant does not read as a move.
    */
   _expect(rail, position) {
     const key = rail.numberId || rail.coverId;
     const entry = { value: position, at: Date.now() };
+    const before = this._sent.get(key);
     this._pending.set(key, entry);
-    this._sent.set(key, entry.at);
-    const retire = () => {
+    this._sent.set(key, entry);
+    setTimeout(() => {
       if (this._pending.get(key) !== entry) return;
       this._pending.delete(key);
       this._patch();
+    }, PENDING_MS);
+    return () => {
+      if (this._pending.get(key) === entry) this._pending.delete(key);
+      // Unless a later write to the rail has taken its place.
+      if (this._sent.get(key) !== entry) return;
+      if (before === undefined) this._sent.delete(key);
+      else this._sent.set(key, before);
     };
-    setTimeout(retire, PENDING_MS);
-    return retire;
   }
 
-  /** Write a rail position, preferring the number entity so the 10% step is enforced. */
-  _setRail(rail, position) {
-    const retire = this._expect(rail, position);
+  /**
+   * Write a rail position, preferring the number entity so the 10% step is enforced.
+   * `undoCarried` takes back the other rail's expectation when this write carries it along.
+   */
+  _setRail(rail, position, undoCarried = null) {
+    const undo = this._expect(rail, position);
     let call;
     if (rail.louvers) {
       call = this._hass.callService("cover", "set_cover_tilt_position", {
@@ -3499,8 +3555,13 @@ class NormanShadesCard extends HTMLElement {
     } else {
       call = this._hass.callService("cover", "set_cover_position", { entity_id: rail.coverId, position });
     }
-    // A failed call is reported by Home Assistant; the picture goes back to the hub's values.
-    Promise.resolve(call).catch(retire);
+    // A failed call is reported by Home Assistant. The picture goes back to the hub's values,
+    // the carried rail's included, and the status to what it said before the write.
+    Promise.resolve(call).catch(() => {
+      undo();
+      undoCarried?.();
+      this._patch();
+    });
   }
 
   /** Call a cover service on the rail's own entity -- never the blind's bottom rail. */
@@ -3572,8 +3633,9 @@ class NormanShadesCard extends HTMLElement {
 
       setText(cell.status, this._statusOf(rails, states, unavailable));
       const isMoving = states.some((state) => state.moving);
+      const unconfirmed = states.some((state) => state.unconfirmed);
       cell.status.classList.toggle("moving", isMoving);
-      cell.status.classList.toggle("rest", !isMoving && !unavailable);
+      cell.status.classList.toggle("rest", !isMoving && !unconfirmed && !unavailable);
       // A Shutter's louvers turn in a moment and take no stop.
       const noStop = !isMoving || Boolean(blind.louvers);
       if (cell.stop.hidden !== noStop) cell.stop.hidden = noStop;
@@ -3625,8 +3687,7 @@ class NormanShadesCard extends HTMLElement {
         part.marker.classList.toggle("on", showMarker);
         if (showMarker) part.marker.style.left = `${round3(this._drapeEdge(part, reach))}%`;
         part.lead.classList.toggle("moving", state.moving);
-        setAttr(part.zone, "aria-valuenow", String(value));
-        setAttr(part.zone, "aria-valuetext", this._t("percent_open", { value }));
+        this._sayValue(part.zone, value);
         setAttr(part.zone, "aria-disabled", String(unavailable));
       }
       return;
@@ -3641,11 +3702,15 @@ class NormanShadesCard extends HTMLElement {
       }
       shade.railEls[index].classList.toggle("moving", state.moving);
       const zone = shade.zones[index];
-      const value = Math.round(this._shadeValue(shade, index) ?? 0);
-      setAttr(zone, "aria-valuenow", String(value));
-      setAttr(zone, "aria-valuetext", this._t("percent_open", { value }));
+      this._sayValue(zone, Math.round(this._shadeValue(shade, index) ?? 0));
       setAttr(zone, "aria-disabled", String(unavailable));
     });
+  }
+
+  /** Where a rail's grab zone says the rail is, to assistive technology. */
+  _sayValue(zone, value) {
+    setAttr(zone, "aria-valuenow", String(value));
+    setAttr(zone, "aria-valuetext", this._t("percent_open", { value }));
   }
 
   _patchSlider(slider, unavailable) {
@@ -3764,9 +3829,16 @@ class NormanShadesCardEditor extends HTMLElement {
     return translate(languageOf(this._hass), field.label);
   }
 
+  /**
+   * Report a changed config, without the options left empty or turned off: the card's
+   * defaults. A blank title is kept unless it is the title field that was just emptied --
+   * `title: ""` set in YAML is a heading left blank on purpose, which a change to another
+   * option must not turn back into the hub's name.
+   */
   _changed(config) {
     const next = { ...config };
     for (const { key } of EDITOR_FIELDS) {
+      if (key === "title" && next.title === "" && this._config?.title === "") continue;
       if (next[key] === "" || next[key] === false) delete next[key];
     }
     this._config = next;

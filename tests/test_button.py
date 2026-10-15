@@ -67,13 +67,14 @@ async def test_every_blind_gets_the_buttons(
 
 
 @pytest.mark.parametrize(
-    ("key", "verb", "value"),
+    ("key", "verb", "value", "reads"),
     [
-        ("jog_up", "MotorFineTuneToUp", HUB_COMMAND_TRIGGER),
-        ("jog_down", "MotorFineTuneToDown", HUB_COMMAND_TRIGGER),
+        ("jog_up", "MotorFineTuneToUp", HUB_COMMAND_TRIGGER, 1),
+        ("jog_down", "MotorFineTuneToDown", HUB_COMMAND_TRIGGER, 1),
         # The app's per-blind status request, value 0 like every non-motor verb; the
-        # blind answered within 5 s each time it was tried on hardware (2026-09-18).
-        ("request_status", "StatusRequest", HUB_COMMAND_SETTING),
+        # blind answered within 5 s each time it was tried on hardware (2026-09-18). Its
+        # answer comes as a notification with a read of its own, so none follows the press.
+        ("request_status", "StatusRequest", HUB_COMMAND_SETTING, 0),
     ],
 )
 async def test_press_sends_the_verb_and_refreshes(
@@ -83,8 +84,9 @@ async def test_press_sends_the_verb_and_refreshes(
     key: str,
     verb: str,
     value: int,
+    reads: int,
 ) -> None:
-    """A press is one control call carrying exactly the verb, then a status re-read."""
+    """A press is one control call carrying exactly the verb, then a status re-read if needed."""
     status_calls = len(fake_hub.calls_to("/status"))
 
     await hass.services.async_call(
@@ -99,7 +101,27 @@ async def test_press_sends_the_verb_and_refreshes(
     assert call["PeripheralUID"] == UID_LIVING
     assert call[verb] == value
     assert set(call) == {"PeripheralUID", "Timestamp", "TaskID", verb}
+    assert len(fake_hub.calls_to("/status")) == status_calls + reads
+
+
+async def test_request_status_reads_the_hub_while_the_stream_is_down(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """With no notification to bring the answer's read, the press reads the hub itself."""
+    coordinator = init_integration.runtime_data
+    coordinator._listener_offline = True
+    status_calls = len(fake_hub.calls_to("/status"))
+
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _button(hass, UID_LIVING, "request_status").entity_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
     assert len(fake_hub.calls_to("/status")) == status_calls + 1
+    coordinator._listener_offline = False
 
 
 async def test_a_preset_press_reads_the_hub_once(
@@ -291,6 +313,60 @@ async def test_refresh_blinds_requests_status_from_the_whole_hub(
     assert len(calls) == 1
     assert set(calls[0]) == {"Timestamp", "TaskID", "StatusRequest"}
     assert calls[0]["StatusRequest"] == HUB_COMMAND_SETTING
+
+
+@pytest.mark.parametrize(("listening", "reads"), [(True, 0), (False, 1)])
+async def test_refresh_blinds_reads_the_hub_only_while_the_stream_is_down(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    listening: bool,
+    reads: int,
+) -> None:
+    """The blinds' answers come seconds later, each a notification with a read of its own.
+
+    A read straight after the press sees none of them, and holds back the first answer's
+    read until the refresh cooldown is over. With the stream down it is the only read.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    coordinator._listener_offline = not listening
+    before = len(fake_hub.calls_to("/status"))
+    await hass.services.async_call(
+        BUTTON_DOMAIN,
+        SERVICE_PRESS,
+        {ATTR_ENTITY_ID: _hub_button(hass, init_integration, "refresh_blinds").entity_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(fake_hub.calls_to("/status")) == before + reads
+    coordinator._listener_offline = False
+
+
+async def test_a_jog_taken_over_while_it_waits_is_not_sent(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A stop or a newer command for the blind, issued while the jog waits its turn, drops it."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    api = coordinator.api
+    await api._control_lock.acquire()
+    try:
+        press = asyncio.create_task(
+            hass.services.async_call(
+                BUTTON_DOMAIN,
+                SERVICE_PRESS,
+                {ATTR_ENTITY_ID: _button(hass, UID_LIVING, "jog_up").entity_id},
+                blocking=True,
+            )
+        )
+        for _ in range(25):
+            await asyncio.sleep(0)
+        coordinator.async_supersede([UID_LIVING])
+    finally:
+        api._control_lock.release()
+    await press
+
+    assert not [call for call in fake_hub.control_calls if "MotorFineTuneToUp" in call]
 
 
 async def test_refresh_blinds_failure_names_the_hub(
@@ -564,10 +640,10 @@ async def test_a_second_preset_keeps_the_replacement_watcher(
 async def test_a_preset_stopped_while_it_waits_its_turn_is_not_watched(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """A stop while a blind's preset waits to be sent leaves it unwatched once sent.
+    """A stop while a blind's preset waits to be sent drops the preset, unsent and unwatched.
 
-    Watched, the stopped blind would read as a preset that never arrived and be sent it
-    again.
+    Sent, it would start the stopped blind moving again; watched, the blind would read as a
+    preset that never arrived and be sent it again.
     """
     coordinator = init_integration.runtime_data
     api = coordinator.api
@@ -588,5 +664,5 @@ async def test_a_preset_stopped_while_it_waits_its_turn_is_not_watched(
         api._control_lock.release()
     await press
 
-    assert [call.get("Switch") for call in fake_hub.control_calls if "Switch" in call] == [0]
+    assert [call.get("Switch") for call in fake_hub.control_calls if "Switch" in call] == []
     assert UID_LIVING not in coordinator._move_watchers

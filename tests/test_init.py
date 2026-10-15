@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import aiohttp
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.components import frontend
+from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntryDisabler, ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -13,7 +17,14 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.norman.const import DOMAIN
+from custom_components.norman.const import (
+    CONF_CONTROL_INTERVAL,
+    CONF_POLL_INTERVAL,
+    CONF_SHOW_SIDEBAR_PANEL,
+    CONF_WAKE_INTERVAL,
+    DOMAIN,
+)
+from custom_components.norman.frontend import PANEL_URL_PATH, async_register_card
 
 from .conftest import HUB_MAC, FakeHub, cover_entity_id, loaded, settle
 from .const import (
@@ -190,6 +201,140 @@ async def test_remove_device_only_for_blinds_the_hub_dropped(
 
     assert await async_remove_config_entry_device(hass, entry, status_only)
     assert not await async_remove_config_entry_device(hass, entry, living)
+
+
+async def test_any_device_can_be_removed_while_the_hub_is_not_set_up(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A hub that cannot be reached has no report to check a device against.
+
+    The device page offers Delete all the same, and asking the hub's report there failed
+    with an unknown error. A blind the hub still has is recreated at the next setup.
+    """
+    from custom_components.norman import async_remove_config_entry_device
+
+    aioclient_mock.post(f"{HUB_URL}/NM/v1/registration", exc=aiohttp.ClientConnectionError())
+    mock_config_entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    blind = dr.async_get(hass).async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id, identifiers={(DOMAIN, str(UID_LIVING))}
+    )
+
+    assert await async_remove_config_entry_device(hass, mock_config_entry, blind)
+
+
+@pytest.mark.parametrize(
+    "other",
+    [{"source": SOURCE_IGNORE}, {"disabled_by": ConfigEntryDisabler.USER}],
+    ids=["ignored", "disabled"],
+)
+async def test_the_card_resource_goes_with_the_last_hub_that_is_set_up(
+    hass: HomeAssistant, other: dict
+) -> None:
+    """An ignored or disabled hub is never set up, so nothing would serve the card for it.
+
+    Left on the list, the resource made every dashboard ask for a module that is not there
+    after the next restart.
+    """
+    from custom_components.norman import async_remove_entry
+
+    from .test_frontend import FakeResources
+
+    resources = FakeResources()
+    hass.data["lovelace"] = MagicMock(resources=resources)
+    hass.http = MagicMock(async_register_static_paths=AsyncMock())
+    await async_register_card(hass)
+    assert resources.async_items()
+    MockConfigEntry(domain=DOMAIN, unique_id="Other", **other).add_to_hass(hass)
+
+    await async_remove_entry(hass, MockConfigEntry(domain=DOMAIN))
+
+    assert resources.async_items() == []
+
+
+@pytest.mark.parametrize(
+    ("changes", "reloads"),
+    [
+        ({CONF_SHOW_SIDEBAR_PANEL: False}, False),
+        ({CONF_CONTROL_INTERVAL: 2.5}, False),
+        ({CONF_POLL_INTERVAL: 30}, True),
+        ({CONF_WAKE_INTERVAL: 3600}, True),
+    ],
+    ids=["sidebar", "command-spacing", "poll", "wake-sweep"],
+)
+async def test_saving_the_options_reloads_only_for_an_interval(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    changes: dict,
+    reloads: bool,
+) -> None:
+    """The poll and the wake sweep are read at setup; the rest is applied to the running hub.
+
+    A reload registers with the hub again, re-reads its device list, reconnects its stream
+    and drops every move watch in flight, which a sidebar switch has no need of. The form
+    stores every field the first time it is saved, and the intervals it leaves at their
+    defaults do not count as a change.
+    """
+    coordinator = init_integration.runtime_data
+    registrations = len(fake_hub.calls_to("/registration"))
+
+    result = await hass.config_entries.options.async_init(init_integration.entry_id)
+    await hass.config_entries.options.async_configure(result["flow_id"], user_input=changes)
+    await hass.async_block_till_done()
+
+    assert init_integration.state is ConfigEntryState.LOADED
+    assert (init_integration.runtime_data is not coordinator) is reloads
+    assert len(fake_hub.calls_to("/registration")) == registrations + reloads
+    shown = changes.get(CONF_SHOW_SIDEBAR_PANEL, True)
+    assert (PANEL_URL_PATH in hass.data.get(frontend.DATA_PANELS, {})) is shown
+
+
+async def test_new_command_spacing_reaches_the_running_client(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The gap is set on the client as setup sets it, and the move in flight stays watched.
+
+    The autouse fixture zeroes pacing for every other test, so this one restores the real
+    helper to see what the option does.
+    """
+    monkeypatch.undo()
+    async with loaded(hass, mock_config_entry) as entry:
+        coordinator = entry.runtime_data
+        await coordinator.async_move_blind(UID_LIVING, 10, None)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={CONF_CONTROL_INTERVAL: 2.5}
+        )
+        await hass.async_block_till_done()
+
+        assert entry.runtime_data is coordinator
+        assert coordinator.api.control_interval == 2.5
+        assert UID_LIVING in coordinator._move_watchers
+        coordinator.async_supersede()
+
+
+@pytest.mark.parametrize(
+    ("host", "argument"),
+    [("192.168.1.50", "ip"), ("2001:db8::50", "ip6"), ("norman-hub.local", "hostname")],
+    ids=["ipv4", "ipv6", "hostname"],
+)
+async def test_the_mac_is_looked_up_by_the_kind_of_address(
+    hass: HomeAssistant, host: str, argument: str
+) -> None:
+    """getmac reads an IPv6 address only as ``ip6``; passed as ``ip`` it is never found."""
+    from custom_components.norman import _async_resolve_mac
+
+    with patch("custom_components.norman.get_mac_address", return_value=HUB_MAC) as lookup:
+        assert await _async_resolve_mac(hass, host) == HUB_MAC
+
+    lookup.assert_called_once_with(**{argument: host})
 
 
 async def test_the_entry_is_titled_after_the_hub(

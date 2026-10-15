@@ -11,6 +11,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.discovery_flow import DiscoveryKey
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -329,6 +330,48 @@ async def test_zeroconf_discovery_of_known_hub_updates_host(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
     assert mock_config_entry.data[CONF_HOST] == "192.168.1.99"
+
+
+async def test_rediscovering_a_loaded_hub_at_its_address_asks_it_nothing(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry
+) -> None:
+    """Every hub announces itself at each start; one loaded at that address is not contacted.
+
+    The discovery is still recorded on its entry, so removing the entry offers the hub again.
+    """
+    mock_config_entry.add_to_hass(hass)
+    mock_config_entry.mock_state(hass, ConfigEntryState.LOADED)
+    aioclient_mock.post(REGISTRATION, json={"Error": 0, "ThingName": HUB_THING_NAME})
+    key = DiscoveryKey(
+        domain="zeroconf",
+        key=("_nien_made._tcp.local.", "NienMadeLocal._nien_made._tcp.local."),
+        version=1,
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_ZEROCONF, "discovery_key": key}, data=_discovery()
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert aioclient_mock.call_count == 0
+    assert mock_config_entry.discovery_keys["zeroconf"] == (key,)
+
+
+async def test_rediscovering_a_hub_waiting_to_retry_setup_reloads_it(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry
+) -> None:
+    """A hub that failed to set up is asked who it is, and found, it is set up again at once."""
+    mock_config_entry.add_to_hass(hass)
+    mock_config_entry.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    aioclient_mock.post(REGISTRATION, json={"Error": 0, "ThingName": HUB_THING_NAME})
+
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload:
+        result = await _start_zeroconf_flow(hass)
+
+    assert result["reason"] == "already_configured"
+    assert aioclient_mock.call_count == 1
+    reload.assert_called_once_with(mock_config_entry.entry_id)
 
 
 @pytest.mark.parametrize(

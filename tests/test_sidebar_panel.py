@@ -262,7 +262,7 @@ async def test_turning_the_option_off_removes_the_entry(
     fake_hub: FakeHub,
     notifications: asyncio.Queue,
 ) -> None:
-    """Saving the options reloads the entry, which brings the sidebar in line with them."""
+    """Saving the options brings the sidebar in line with them, without a reload."""
     hass.http = MagicMock(async_register_static_paths=AsyncMock())
 
     async with loaded(hass, mock_config_entry):

@@ -529,8 +529,8 @@ async def test_a_room_move_refused_as_busy_is_not_retried_over_a_newer_command(
 ) -> None:
     """One blind taken over while the hub is waited out: the room request is not sent again.
 
-    It would reach that blind too and undo its newer command. The other blind keeps its
-    watch, which sends it the move on its own if it never goes.
+    It would reach that blind too and undo its newer command. The other blind is sent the
+    move on its own instead, straight away, and watched.
     """
     coordinator: NormanCoordinator = two_in_living_room.runtime_data
     orig = fake_hub._control
@@ -550,7 +550,11 @@ async def test_a_room_move_refused_as_busy_is_not_retried_over_a_newer_command(
         fake_hub._register()
         await _set(hass, _room_slider(hass, two_in_living_room, LIVING_ROOM, "bottom"), 20)
 
-    assert [move.get("RoomID") for move in _moves(fake_hub)] == [LIVING_ROOM]
+    assert [(move.get("RoomID"), move.get("PeripheralUID")) for move in _moves(fake_hub)] == [
+        (LIVING_ROOM, None),
+        (None, UID_LIVING),
+    ]
+    assert _moves(fake_hub)[1]["BottomRailPosition"] == 20
     assert UID_LIVING in coordinator._move_watchers
     assert UID_SECOND not in coordinator._move_watchers
     coordinator.async_supersede()
@@ -604,6 +608,70 @@ async def test_room_refresh_requests_each_blind_without_a_room_wide_command(
     assert [call["PeripheralUID"] for call in calls] == [UID_LIVING, UID_SECOND]
     assert all(call["StatusRequest"] == 0 for call in calls)
     assert all("RoomID" not in call and "ReportBatteryLevel" not in call for call in calls)
+
+
+async def test_a_room_preset_that_loses_a_blind_while_it_waits_goes_to_the_rest_one_by_one(
+    hass: HomeAssistant, two_in_living_room: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """One of the room's blinds is stopped while its preset waits its turn.
+
+    The stop goes first. The room request would undo it, so it is dropped, and the other
+    blind is sent the preset on its own -- addressed as the app addresses one blind.
+    """
+    coordinator: NormanCoordinator = two_in_living_room.runtime_data
+    api = coordinator.api
+    await api._control_lock.acquire()
+    try:
+        preset = asyncio.create_task(
+            _press(
+                hass,
+                _scope_entity(
+                    hass, two_in_living_room, BUTTON_DOMAIN, LIVING_ROOM, "room_best_privacy"
+                ),
+            )
+        )
+        for _ in range(25):
+            await asyncio.sleep(0)
+        coordinator.async_supersede([UID_SECOND])
+        stop = asyncio.create_task(coordinator.api.async_stop(UID_SECOND))
+        for _ in range(5):
+            await asyncio.sleep(0)
+    finally:
+        api._control_lock.release()
+    await stop
+    await preset
+
+    sent = [
+        {k: v for k, v in call.items() if k not in ("Timestamp", "TaskID")}
+        for call in fake_hub.control_calls
+        if "MotorStop" in call or "Switch" in call
+    ]
+    assert sent[0] == {"PeripheralUID": UID_SECOND, "MotorStop": HUB_COMMAND_TRIGGER}
+    assert sent[1:] == [
+        {"RoomID": LIVING_ROOM, "GroupID": 10, "PeripheralUID": UID_LIVING, "Switch": 0}
+    ]
+    assert UID_SECOND not in coordinator._move_watchers
+    coordinator.async_supersede()
+
+
+@pytest.mark.parametrize(("listening", "reads"), [(True, 0), (False, 1)])
+async def test_room_refresh_reads_the_hub_only_while_the_stream_is_down(
+    hass: HomeAssistant,
+    two_in_living_room: MockConfigEntry,
+    fake_hub: FakeHub,
+    listening: bool,
+    reads: int,
+) -> None:
+    """Each blind's answer comes as a notification with a read of its own."""
+    coordinator: NormanCoordinator = two_in_living_room.runtime_data
+    coordinator._listener_offline = not listening
+    before = len(fake_hub.calls_to("/status"))
+    await _press(
+        hass, _scope_entity(hass, two_in_living_room, BUTTON_DOMAIN, LIVING_ROOM, "room_refresh")
+    )
+
+    assert len(fake_hub.calls_to("/status")) == before + reads
+    coordinator._listener_offline = False
 
 
 async def test_room_battery_report_sends_only_the_app_room_command(
@@ -664,10 +732,11 @@ def _set_soon(hass: HomeAssistant, entity_id: str, value: int) -> asyncio.Task[A
 async def test_a_room_stop_skips_the_blinds_a_room_move_has_not_reached(
     hass: HomeAssistant, two_in_living_room: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """A room moved blind by blind, stopped before the second blind's turn, leaves it be.
+    """A room moved blind by blind, stopped while its moves wait their turn, moves nothing.
 
-    The move already waiting goes out ahead of the stop, but nothing after it does, and
-    nothing is watched: the stopped blinds would read as moves that never arrived.
+    The stop goes ahead of the move already waiting, which is then dropped, and nothing
+    after it goes either. Nothing is watched: the stopped blinds would read as moves that
+    never arrived.
     """
     coordinator: NormanCoordinator = two_in_living_room.runtime_data
     fake_hub.set_position(UID_SECOND, middle=80)
@@ -697,7 +766,7 @@ async def test_a_room_stop_skips_the_blinds_a_room_move_has_not_reached(
     await stop
     await hass.async_block_till_done()
 
-    assert [move.get("PeripheralUID") for move in _moves(fake_hub)] == [UID_LIVING]
+    assert _moves(fake_hub) == []
     assert "MotorStop" in fake_hub.control_calls[-1]
     assert not {UID_LIVING, UID_SECOND} & set(coordinator._move_watchers)
 
@@ -707,8 +776,9 @@ async def test_a_newer_room_move_is_not_overtaken_by_an_older_one(
 ) -> None:
     """A room move queued behind an older one sent blind by blind is not undone by it.
 
-    The older move goes to each blind in turn; the newer one, raising both bottom rails past
-    their middle rails, takes both to 90/90 in one room request.
+    The older move, waiting to go to each blind in turn, loses them to the newer one and is
+    not sent at all; the newer one, raising both bottom rails past their middle rails, takes
+    both to 90/90 in one room request.
     """
     coordinator: NormanCoordinator = two_in_living_room.runtime_data
     fake_hub.set_position(UID_SECOND, middle=80)
@@ -729,7 +799,6 @@ async def test_a_newer_room_move_is_not_overtaken_by_an_older_one(
     await hass.async_block_till_done()
 
     assert _moves(fake_hub) == [
-        {"PeripheralUID": UID_LIVING, "BottomRailPosition": 20, "MiddleRailPosition": 60},
         {"RoomID": LIVING_ROOM, "BottomRailPosition": 90, "MiddleRailPosition": 90},
     ]
     assert coordinator.commanded_rails(UID_SECOND) == (90, 90)
@@ -797,8 +866,15 @@ async def test_a_room_preset_is_watched_blind_by_blind(
     assert resent == [
         {"RoomID": LIVING_ROOM, "GroupID": 10, "PeripheralUID": UID_LIVING, "Switch": 0}
     ] * (MOVE_ATTEMPTS - 1)
-    assert f"Living Drape did not move after {MOVE_ATTEMPTS} attempts" in caplog.text
-    assert "Living Sheer" not in caplog.text
+    # The integration's own warnings only: with debug logging on, Home Assistant's event log
+    # and the integration's device-list dump name every blind.
+    warnings = "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("custom_components.norman") and record.levelname == "WARNING"
+    )
+    assert f"Living Drape did not move after {MOVE_ATTEMPTS} attempts" in warnings
+    assert "Living Sheer" not in warnings
 
 
 async def test_a_hub_wide_preset_watches_every_blind_it_can_address(
@@ -963,7 +1039,7 @@ async def test_a_busy_room_request_is_not_retried_over_a_blind_it_reaches_but_do
     """A room middle-rail move reaches the room's single-rail shade too, without moving it.
 
     Stopped while the hub is waited out, that shade would be sent back to the room's bottom
-    rail by the retry, so the retry is dropped.
+    rail by the retry, so the retry is dropped, and the blind it moves is sent its own.
     """
     single = 1005
     _pair(
@@ -1005,7 +1081,12 @@ async def test_a_busy_room_request_is_not_retried_over_a_blind_it_reaches_but_do
             fake_hub._register()
             await _set(hass, _room_slider(hass, entry, LIVING_ROOM, "middle"), 80)
 
-        assert [move.get("RoomID") for move in _moves(fake_hub)] == [LIVING_ROOM]
+        moves = _moves(fake_hub)
+        assert [(move.get("RoomID"), move.get("PeripheralUID")) for move in moves] == [
+            (LIVING_ROOM, None),
+            (None, UID_LIVING),
+        ]
+        assert moves[1]["MiddleRailPosition"] == 80
         coordinator.async_supersede()
 
 

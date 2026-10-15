@@ -818,10 +818,11 @@ async def test_stop_cancels_the_move_watchdog(
 async def test_a_stop_while_the_move_waits_its_turn_is_not_undone(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
-    """A move still queued when the blind is stopped goes out, then the stop, and no watch.
+    """A move still queued when the blind is stopped is never sent, nor watched.
 
-    Watched, the stopped blind would read as a move that never arrived, and the move would
-    be sent again after the stop.
+    The stop goes ahead of it, and the move, no longer holding the blind, is dropped at its
+    turn: sent, it would start the blind moving for the stop to catch; watched, the stopped
+    blind would read as a move that never arrived, and the move would be sent again.
     """
     coordinator: NormanCoordinator = init_integration.runtime_data
     api = coordinator.api
@@ -844,8 +845,8 @@ async def test_a_stop_while_the_move_waits_its_turn_is_not_undone(
         await settle(hass)
 
     sent = [c for c in fake_hub.control_calls if c.get("PeripheralUID") == UID_LIVING]
-    assert ["BottomRailPosition" in c for c in sent] == [True, False]
-    assert sent[1][HUB_CMD_STOP] == HUB_COMMAND_TRIGGER
+    assert ["BottomRailPosition" in c for c in sent] == [False]
+    assert sent[0][HUB_CMD_STOP] == HUB_COMMAND_TRIGGER
 
 
 async def test_a_newer_move_ends_the_watch_of_the_one_before_it_at_once(
@@ -855,7 +856,8 @@ async def test_a_newer_move_ends_the_watch_of_the_one_before_it_at_once(
 
     Left running, the older watch would read the blind heading for the newer move as its
     own never arriving and send it again -- and the newer one may never be watched, here
-    because a third move took the blind over before it was sent and was then refused.
+    because a third move took the blind over before it was sent, and was then refused. The
+    second is not sent at all: the third took the blind over while it waited.
     """
     coordinator: NormanCoordinator = init_integration.runtime_data
     api = coordinator.api
@@ -869,7 +871,7 @@ async def test_a_newer_move_ends_the_watch_of_the_one_before_it_at_once(
         for _ in range(10):
             await asyncio.sleep(0)
         assert UID_LIVING not in coordinator._move_watchers
-        fake_hub.control_responses = [{"Error": 0}, {"Error": 5}]
+        fake_hub.control_responses = [{"Error": 5}]
     finally:
         api._control_lock.release()
     await second
@@ -877,7 +879,7 @@ async def test_a_newer_move_ends_the_watch_of_the_one_before_it_at_once(
         await third
 
     assert UID_LIVING not in coordinator._move_watchers
-    assert _rails_sent(fake_hub) == [(10, 60), (30, 60), (50, 60)]
+    assert _rails_sent(fake_hub) == [(10, 60), (50, 60)]
 
 
 async def test_a_command_cancelled_mid_refresh_leaves_the_hub_available(
@@ -1194,3 +1196,182 @@ async def test_blind_dropped_by_hub_becomes_unavailable(
 
     assert hass.states.get(cover_entity_id(hass, UID_STATUS_ONLY)).state == "unavailable"
     assert hass.states.get(cover_entity_id(hass, UID_LIVING)).state == CoverState.OPEN
+
+
+# --- a move after a stop ---------------------------------------------------------------------
+
+
+def _hub_takes_moves(fake_hub: FakeHub, stopped_at: int | None) -> None:
+    """The hub records a move's targets on accepting it, as the real one does.
+
+    With ``stopped_at``, the Living Drape reports stopping there the moment it is stopped:
+    its position, and the target the hub replaces with it, both read that from then on.
+    """
+    orig = fake_hub._control
+
+    async def _hub(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        if body.get("PeripheralUID") == UID_LIVING:
+            if "BottomRailPosition" in body:
+                fake_hub.set_position(
+                    UID_LIVING,
+                    target_bottom=body["BottomRailPosition"],
+                    target_middle=body["MiddleRailPosition"],
+                )
+            elif HUB_CMD_STOP in body and stopped_at is not None:
+                _reports_in(fake_hub, UID_LIVING, stopped_at)
+        return await orig(method, url, data)
+
+    fake_hub._control = _hub  # type: ignore[method-assign]
+    fake_hub.mock.clear_requests()
+    fake_hub._register()
+
+
+async def _stop(hass: HomeAssistant) -> None:
+    await hass.services.async_call(
+        COVER_DOMAIN,
+        SERVICE_STOP_COVER,
+        {ATTR_ENTITY_ID: cover_entity_id(hass, UID_LIVING)},
+        blocking=True,
+    )
+
+
+async def test_a_move_of_the_other_rail_after_a_stop_keeps_the_stopped_rail_where_it_stopped(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Bottom rail sent from 40 to 0 and stopped at 25; then the middle rail is moved.
+
+    The stop's own read waits out the cooldown the move's read started, so the target in
+    hand was still 0, and the middle-rail move sent the stopped bottom rail on to it.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    _hub_takes_moves(fake_hub, stopped_at=25)
+
+    await _slide(hass, "bottom", 0)
+    await _stop(hass)
+    await _slide(hass, "middle", 70)
+
+    assert _rails_sent(fake_hub) == [(0, 60), (25, 70)]
+    coordinator.async_supersede()
+
+
+async def test_a_move_after_a_stop_waits_for_the_blind_to_say_where_it_stopped(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Moved before the stopped blind has reported, the other rail waits for its report.
+
+    Until then the hub still holds the target the stop abandoned. The report comes as a
+    notification, and the hub replaces the target with where the blind stopped.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    _hub_takes_moves(fake_hub, stopped_at=None)
+
+    await _slide(hass, "bottom", 0)
+    await _stop(hass)
+    middle = asyncio.create_task(_slide(hass, "middle", 70))
+    for _ in range(25):
+        await asyncio.sleep(0)
+    assert not middle.done(), "sent before the blind said where it stopped"
+
+    _reports_in(fake_hub, UID_LIVING, 25)
+    await notifications.put({"PeripheralList": [{"PeripheralUID": UID_LIVING}]})
+    async with asyncio.timeout(5):
+        await middle
+
+    assert _rails_sent(fake_hub) == [(0, 60), (25, 70)]
+    coordinator.async_supersede()
+
+
+async def test_a_move_after_a_stop_goes_ahead_if_the_blind_never_reports(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A blind that never reports after a stop holds the next move up only for a while.
+
+    The stop may never have reached it, and then it is still on its way to the target.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    _hub_takes_moves(fake_hub, stopped_at=None)
+
+    await _slide(hass, "bottom", 0)
+    await _stop(hass)
+    with patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0):
+        await _slide(hass, "middle", 70)
+
+    assert _rails_sent(fake_hub) == [(0, 60), (0, 70)]
+    coordinator.async_supersede()
+
+
+async def test_a_move_after_stopping_a_blind_at_rest_does_not_wait(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A stop sent to a blind already at rest leaves nothing to report: the move goes at once."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    _hub_takes_moves(fake_hub, stopped_at=None)
+
+    await _stop(hass)
+    async with asyncio.timeout(1):
+        await _slide(hass, "middle", 70)
+
+    assert _rails_sent(fake_hub) == [(40, 70)]
+    coordinator.async_supersede()
+
+
+async def test_a_stop_goes_ahead_of_the_moves_waiting_their_turn(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A stop overtakes queued moves; the one for its own blind is dropped, the rest follow."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    api = coordinator.api
+    await api._control_lock.acquire()
+    try:
+        moves = [
+            hass.async_create_task(coordinator.async_move_blind(uid, 10, None))
+            for uid in (UID_BEDROOM, UID_LIVING)
+        ]
+        for _ in range(10):
+            await asyncio.sleep(0)
+        stop = hass.async_create_task(_stop(hass))
+        for _ in range(25):
+            if coordinator.commanded_rails(UID_LIVING) is None:
+                break
+            await asyncio.sleep(0)
+    finally:
+        api._control_lock.release()
+    await asyncio.gather(*moves, stop)
+
+    sent = [
+        (c["PeripheralUID"], HUB_CMD_STOP in c)
+        for c in fake_hub.control_calls
+        if "StatusRequest" not in c
+    ]
+    assert sent == [(UID_LIVING, True), (UID_BEDROOM, False)]
+    coordinator.async_supersede()
+
+
+async def test_a_blind_a_point_short_of_its_goal_has_arrived(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """Sent 25 again from the 24 it stopped at last time, the blind has nothing to do.
+
+    Two shades sent to 25 reported 25 and 24 (docs/NORMAN_API.md). Held to the exact
+    value, a blind that does not move for one point was asked to report in, sent the move
+    twice more, and reported as not responding.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    fake_hub.set_position(UID_LIVING, bottom=24)
+    await coordinator.async_refresh()
+    events = async_capture_events(hass, EVENT_COMMAND_FAILED)
+
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        await coordinator.async_move_blind(UID_LIVING, 25, None)
+        await _watchdog_done(coordinator, UID_LIVING)
+
+    assert len(_moves(fake_hub, UID_LIVING)) == 1
+    assert not _status_requests(fake_hub, UID_LIVING)
+    assert not events

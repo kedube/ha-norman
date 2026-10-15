@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import logging
 from typing import Any
 
@@ -219,6 +218,7 @@ class NormanCoverBase(NormanRailMixin, CoverEntity):
 
     async def async_nudge_position(self, step: int) -> None:
         """Move the cover by ``step`` relative to where it is heading (or is)."""
+        await self.coordinator.async_settle([self._device_id])
         new_pos = clamp_position(self._target_or_current_bottom() + step)
         await self.async_set_cover_position(position=new_pos)
 
@@ -279,6 +279,7 @@ class NormanBlind(NormanCoverBase):
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Move the tilt by ``step`` relative to where it is heading (or is)."""
+        await self.coordinator.async_settle([self._device_id])
         new_tilt = clamp_position(self._target_or_current_middle() + step)
         await self.async_set_cover_tilt_position(tilt_position=new_tilt)
 
@@ -335,6 +336,7 @@ class NormanDrape(NormanBlind):
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Open or close the vanes by ``step``, at least one stop for any step."""
+        await self.coordinator.async_settle([self._device_id])
         level = _vane_level(self._target_or_current_middle())
         await self._async_set_vanes(_nudged(level, step, VANE_LEVELS))
 
@@ -432,6 +434,7 @@ class NormanShutter(NormanCoverBase):
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Open or close the louvers by ``step``, at least one step for any step."""
+        await self.coordinator.async_settle([self._device_id])
         level = _louver_level(self._target_or_current_louvers())
         position = _louver_position(_nudged(level, step, LOUVER_LEVELS))
         await self._async_set_louvers(position, "move")
@@ -441,8 +444,15 @@ class NormanShutter(NormanCoverBase):
         await self.async_nudge_tilt(step)
 
     def _target_or_current_louvers(self) -> int:
+        """Where the louvers are heading, for a nudge to start from.
+
+        The last turn sent from here while it is in flight (recorded in the bottom rail's
+        place), else the hub's target, else where they are.
+        """
+        commanded = self.coordinator.commanded_rails(self._device_id)
         data = self._data
         for value in (
+            commanded[0] if commanded else None,
             data.target_position if data else None,
             data.position if data else None,
         ):
@@ -452,16 +462,10 @@ class NormanShutter(NormanCoverBase):
 
     async def _async_set_louvers(self, position: int, action: str) -> None:
         """Turn the louvers; ``action`` -- "open", "close" or "move" -- names a failure."""
-        serial = self.coordinator.async_supersede([self._device_id])
         try:
-            await self.coordinator.api.async_set_louvers(
-                self._device_id,
-                position,
-                still_wanted=functools.partial(self.coordinator.holds, self._device_id, serial),
-            )
+            await self.coordinator.async_turn_louvers(self._device_id, position)
         except (NormanApiError, NormanConnectionError) as err:
             raise_command_failed(action, self._device_name, err)
-        self.coordinator.async_watch_louvers(self._device_id, position, serial)
         await self.coordinator.async_request_refresh()
 
 
@@ -512,6 +516,7 @@ class NormanMiddleRailCover(NormanCoverBase):
 
     async def async_nudge_position(self, step: int) -> None:
         """Move the middle rail by ``step`` relative to where it is heading (or is)."""
+        await self.coordinator.async_settle([self._device_id])
         await self.async_set_cover_position(
             position=clamp_position(self._target_or_current_middle() + step)
         )

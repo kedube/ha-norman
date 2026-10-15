@@ -241,14 +241,24 @@ roomCard._cells = [];
 const fbRoom = roomCard._buildRoomControls("Front Bedroom", [fb]);
 check("room controls render 3 buttons", fbRoom.children.length === 3, String(fbRoom.children.length));
 
+// One cover per blind, so one paced hub command per blind. A two-rail blind's other rail is
+// carried by the integration (rails_to_send): open on the bottom rail takes the middle rail up,
+// close on the middle rail takes the bottom rail down, and its two rails share one stop.
 fbRoom.children[0]._on?.click?.();
 check("room open sends ONE call", calls.length === 1, JSON.stringify(calls));
-const roomTargets = calls[0]?.[2]?.entity_id || [];
-check("room open includes BOTH rails of a two-rail blind",
-      Array.isArray(roomTargets) && roomTargets.length === 2 &&
-      roomTargets.includes("cover.front_bedroom_1_bottom_rail") &&
-      roomTargets.includes("cover.front_bedroom_1_middle_rail"),
-      JSON.stringify(roomTargets));
+check("room open sends a two-rail blind's bottom rail only, which carries the middle rail up",
+      JSON.stringify(calls[0]?.[2]?.entity_id) === '["cover.front_bedroom_1_bottom_rail"]',
+      JSON.stringify(calls[0]?.[2]));
+calls.length = 0;
+fbRoom.children[1]._on?.click?.();
+check("room stop sends a two-rail blind one stop, not one per rail",
+      calls[0]?.[1] === "stop_cover" && JSON.stringify(calls[0][2].entity_id) === '["cover.front_bedroom_1_bottom_rail"]',
+      JSON.stringify(calls));
+calls.length = 0;
+fbRoom.children[2]._on?.click?.();
+check("room close sends a two-rail blind's middle rail only, which carries the bottom rail down",
+      calls[0]?.[1] === "close_cover" && JSON.stringify(calls[0][2].entity_id) === '["cover.front_bedroom_1_middle_rail"]',
+      JSON.stringify(calls));
 
 calls.length = 0;
 const denRoom = roomCard._buildRoomControls("Den", [den]);
@@ -261,8 +271,9 @@ check("room close uses close_cover", calls[0]?.[1] === "close_cover", String(cal
 calls.length = 0;
 const multi = roomCard._buildRoomControls("Everything", [fb, den]);
 multi.children[1]._on?.click?.();
-check("a room with 2 blinds sends one call covering all 3 rails",
-      calls.length === 1 && calls[0][2].entity_id.length === 3, JSON.stringify(calls));
+check("a room with 2 blinds sends one call, one cover per blind",
+      calls.length === 1 && JSON.stringify(calls[0][2].entity_id) === '["cover.front_bedroom_1_bottom_rail","cover.den_1_bottom_rail"]',
+      JSON.stringify(calls));
 check("room stop uses stop_cover", calls[0]?.[1] === "stop_cover");
 check("room buttons are labelled with the room name",
       String(fbRoom.children[0].title).includes("Front Bedroom"), String(fbRoom.children[0].title));
@@ -662,6 +673,18 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
     callService: (d,s2,data) => svc.push([d,s2,data]),
   };
   const both = rendered({}, h);
+  // Its heading: neither hub's name for a card showing both hubs' blinds. A configured title
+  // still wins, a pinned card names its hub, and a card showing one hub's blinds names that
+  // one, not another hub set up beside it.
+  check("an unpinned card showing two hubs' blinds is headed Shades, not one hub's name",
+        byClass(both.shadowRoot, "header-text")[0]?.textContent === "Shades",
+        byClass(both.shadowRoot, "header-text")[0]?.textContent);
+  check("...while a configured title still wins, and a pinned card names its hub",
+        headerTextOf({ title:"Upstairs" }, h) === "Upstairs" && headerTextOf({ config_entry_id:"cabin" }, h) === "Cabin Hub",
+        `${headerTextOf({ title:"Upstairs" }, h)} ${headerTextOf({ config_entry_id:"cabin" }, h)}`);
+  const cabinFirst = { ...h, entities: { "sensor.cabin_hub_wi_fi_network": h.entities["sensor.cabin_hub_wi_fi_network"], ...hass.entities } };
+  check("an unpinned card showing one hub's blinds names that hub, though another is listed first",
+        headerTextOf({}, cabinFirst) === "Norman Hub", headerTextOf({}, cabinFirst));
   const presetsOf = (room) => byClass(byClass(both.shadowRoot, "room")
     .find((r) => byClass(r, "room-name")[0]?.textContent === room), "room-presets")[0].children;
   svc.length = 0;
@@ -707,8 +730,8 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
         current._entryOf("c1") === "cabin");
 
   // A hub that failed to set up leaves its blinds on the card, restored as unavailable, and the
-  // action refuses a call naming it (entry_not_loaded). The presets go to the hubs whose blinds
-  // are there, and with none of those the action picks the only hub it has, as before.
+  // action refuses a call naming it (entry_not_loaded). The house's presets go to the hubs whose
+  // blinds are there.
   const unloaded = { ...h, states: { ...h.states, "cover.cabin_1_bottom_rail": { state:"unavailable", attributes:{ restored:true } } } };
   const half = rendered({}, unloaded);
   svc.length = 0;
@@ -716,10 +739,26 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
   check("an unpinned card leaves a hub with no blind available out of the house's presets",
         JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([{ command:"best_privacy", config_entry_id:"home" }]),
         JSON.stringify(svc.map((x) => x[2])));
+  // With every one of them unavailable they all count: a call naming no hub would only have the
+  // action ask which hub was meant (multiple_hubs), when it can say what is wrong with this one.
   svc.length = 0;
   presetIn(half, "Cabin")._on.click();
-  check("...and a room whose blinds are all unavailable names no hub",
-        JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([{ room:"Cabin", command:"best_privacy" }]),
+  check("...and a room whose blinds are all unavailable still names their hub",
+        JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([{ room:"Cabin", command:"best_privacy", config_entry_id:"cabin" }]),
+        JSON.stringify(svc.map((x) => x[2])));
+  const down = { ...unloaded, states: { ...unloaded.states,
+    "cover.front_bedroom_1_bottom_rail": { state:"unavailable", attributes:{} },
+    "cover.den_1_bottom_rail": { state:"unavailable", attributes:{} } } };
+  svc.length = 0;
+  byClass(rendered({}, down).shadowRoot, "home-buttons")[0].children[1]._on.click();
+  check("...as does the house's preset with every blind on the card unavailable",
+        svc.length === 2 && JSON.stringify(svc.map((x) => x[2].config_entry_id).sort()) === '["cabin","home"]',
+        JSON.stringify(svc.map((x) => x[2])));
+  svc.length = 0;
+  byClass(rendered({}, down).shadowRoot, "home-refresh")[0].children[0]._on.click();
+  check("...and the header's refresh",
+        svc.length === 2 && svc.every((x) => x[2].command === "refresh") &&
+        JSON.stringify(svc.map((x) => x[2].config_entry_id).sort()) === '["cabin","home"]',
         JSON.stringify(svc.map((x) => x[2])));
 }
 
@@ -1102,6 +1141,20 @@ const counted = (registry) => new Proxy(registry, { ownKeys: (target) => { scans
   c.hass = at("split", "Dusk");
   check("an unnamed scene follows its state's name", JSON.stringify(sceneNames()) === '["Dusk"]', JSON.stringify(sceneNames()));
   check("...neither by scanning the registry", scans === 0, String(scans));
+  // Home Assistant leaves an unavailable entity's attributes out, `stack` with them: the drape
+  // keeps its side meanwhile, rather than being redrawn gathering left and the card rebuilt
+  // under the user's hands (a drag on another blind, a room's tray folded out).
+  const tile = c._cells[0]?.tile;
+  const unavailable = at("split", "Dusk");
+  unavailable.states["cover.living_1_bottom_rail"] = { state:"unavailable", attributes:{} };
+  c.hass = unavailable;
+  check("a drape gone unavailable keeps the side it stacks to, without a rebuild",
+        c._cells[0]?.tile === tile && c._cells[0].shade.parts.length === 2 && c._cells[0].shade.disabled === true,
+        `${c._cells[0]?.tile === tile} ${c._cells[0]?.shade.parts.length}`);
+  c.hass = at("split", "Dusk");
+  check("...and nor is it rebuilt when it is back", c._cells[0]?.tile === tile && c._cells[0].shade.disabled === false);
+  c.hass = at("left", "Dusk");
+  check("...while a side the drape reports does redraw it", c._cells[0]?.shade.parts.length === 1);
 }
 
 {
@@ -1224,6 +1277,98 @@ const counted = (registry) => new Proxy(registry, { ownKeys: (target) => { scans
     c._patch();
     check("sending a missed move again shows it moving", cell.status.textContent === "Closing · 90%", cell.status.textContent);
     clearTimeout(c._settleTimer);
+  }
+
+  // A rail whose move is not confirmed is drawn where it was sent, and sending it there again is
+  // how to start a new move: the keys, a drag and a slider can all send the position it is drawn
+  // at. A rail whose move is confirmed is not sent where it already is.
+  {
+    const writes = [];
+    const h = { ...hass, states: { ...hass.states, ...den(ago(10 * 60_000)) },
+      callService: (d, sv, data) => { writes.push([d, sv, data]); return Promise.resolve(); } };
+    const valuesOf = () => JSON.stringify(writes.map((x) => [x[2].entity_id, x[2].value]));
+    const DEN = "number.den_1_bottom_rail_position";
+    let c = rendered({}, h);
+    let cell = c._cells.find((x) => x.blind.deviceId === "d2");
+    c._move(cell.rails, 0, 30);
+    check("a missed move can be sent again to where it is drawn", valuesOf() === JSON.stringify([[DEN, 30]]), valuesOf());
+    c._move(cell.rails, 0, 30);
+    check("...once, not again while that send is under way", writes.length === 1, valuesOf());
+    clearTimeout(c._settleTimer);
+
+    writes.length = 0;
+    c = rendered({}, h);
+    cell = c._cells.find((x) => x.blind.deviceId === "d2");
+    for (const k of ["ArrowUp", "ArrowDown"]) c._onKey(cell.shade, 0, { key:k, preventDefault() {} });
+    c._sendKeys(cell.shade);
+    check("...by the arrow keys, there and back", valuesOf() === JSON.stringify([[DEN, 30]]), valuesOf());
+    clearTimeout(c._settleTimer);
+
+    writes.length = 0;
+    c = rendered({ hide_picture:true }, h);
+    const [slider] = c._cells.find((x) => x.blind.deviceId === "d2").sliders;
+    const { input } = slider;
+    input._on.pointerdown();
+    for (const v of ["40", "30"]) { input.value = v; input._on.input(); }
+    input._on.pointerup();
+    check("...and by a slider dragged away and back, which fires no `change`", valuesOf() === JSON.stringify([[DEN, 30]]), valuesOf());
+    writes.length = 0;
+    input._on.pointerdown();
+    input._on.pointerup();
+    check("...though a tap on it still sends nothing", writes.length === 0, valuesOf());
+    clearTimeout(c._settleTimer);
+
+    writes.length = 0;
+    const atRest = { ...h, states: hass.states };
+    c = rendered({ hide_picture:true }, atRest);
+    const [still] = c._cells.find((x) => x.blind.deviceId === "d2").sliders;
+    still.input._on.pointerdown();
+    for (const v of ["80", "90"]) { still.input.value = v; still.input._on.input(); }
+    still.input._on.pointerup();
+    c._move(c._cells.find((x) => x.blind.deviceId === "d2").rails, 0, 90);
+    check("a rail at rest is not sent where it already is", writes.length === 0, valuesOf());
+  }
+
+  // A write that fails is taken back: the rail is drawn where the hub has it, the rail it carried
+  // along is drawn back too, and a missed move reads Not confirmed again rather than moving --
+  // nothing reached the hub.
+  {
+    const failing = (states) => rendered({}, { ...hass, states: { ...hass.states, ...states },
+      callService: () => Promise.reject(new Error("hub busy")) });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const c = failing(den(ago(10 * 60_000)));
+    const cell = c._cells.find((x) => x.blind.deviceId === "d2");
+    c._move(cell.rails, 0, 60);
+    c._patch();
+    check("a write to a missed move shows it moving while it is sent", cell.status.textContent === "Closing · 90%",
+          cell.status.textContent);
+    await settle();
+    check("...and once it fails, Not confirmed again, with no Stop",
+          cell.status.textContent === "Not confirmed" && cell.stop.hidden === true && !c._pending.size && !c._sent.size,
+          `${cell.status.textContent} stop hidden ${cell.stop.hidden} sent ${c._sent.size}`);
+    clearTimeout(c._settleTimer);
+
+    const two = failing({});   // Front_Bedroom_1: bottom 60, middle 80
+    const fbCell = two._cells.find((x) => x.blind.deviceId === "d1");
+    two._move(fbCell.rails, 0, 90);
+    check("a rail raised past the other carries it, drawn there while the write is sent",
+          two._railValue(fbCell.rails[1]) === 90, String(two._railValue(fbCell.rails[1])));
+    await settle();
+    check("...and a failed write takes the carried rail back as well",
+          !two._pending.size && two._railValue(fbCell.rails[1]) === 80 && fbCell.stop.hidden === true &&
+          fbCell.status.textContent.replace(/\s/g, " ") === "Middle 80% · Bottom 60%",
+          `${fbCell.status.textContent} pending ${[...two._pending.keys()]}`);
+    check("...with nothing left counting as sent", !two._sent.size, String([...two._sent.keys()]));
+    clearTimeout(two._settleTimer);
+  }
+
+  // In the list layout the status line is hidden at rest, the sliders saying where the rails are;
+  // it still says when a move is not confirmed, which no slider shows.
+  {
+    const listed = statusOf(den(ago(10 * 60_000)), { hide_picture:true }).d2.status;
+    check("list: a move not confirmed is said, not hidden as at rest",
+          listed.textContent === "Not confirmed" && !listed.classList.contains("rest"), listed.className);
+    check("list: a blind at rest keeps its status hidden", statusOf({}, { hide_picture:true }).d2.status.classList.contains("rest"));
   }
 
   // The window closes on time even if no state changes by then.
@@ -1477,6 +1622,25 @@ check("the sheer is drawn see-through", /\.fabric\.sheer \{[^}]*backdrop-filter/
         `${valuesOf(other.writes)} ${valuesOf(cancelled.writes)}`);
 }
 
+// A key held with Alt, Ctrl or Meta is a browser or system shortcut (Alt+Left is Back): it moves
+// nothing and the browser keeps it. A plain arrow key tells a screen reader the new value at
+// once, rather than when its move is sent KEY_COMMIT_MS later.
+{
+  const c = rendered();
+  const { shade } = c._cells.find((x) => x.blind.deviceId === "d2");   // Den_1 at 90
+  for (const modifier of ["altKey", "ctrlKey", "metaKey"]) {
+    let prevented = false;
+    c._onKey(shade, 0, { key:"ArrowLeft", [modifier]:true, preventDefault() { prevented = true; } });
+    check(`an arrow key held with ${modifier.replace("Key", "")} is left to the browser`,
+          !prevented && !shade.keyMove && shade.dragValues[0] === undefined, JSON.stringify(shade.dragValues));
+  }
+  c._onKey(shade, 0, { key:"ArrowUp", preventDefault() {} });
+  check("an arrow key tells a screen reader the new value at once",
+        shade.zones[0].attrs["aria-valuenow"] === "100" && shade.zones[0].attrs["aria-valuetext"] === "100% open",
+        `${shade.zones[0].attrs["aria-valuenow"]} ${shade.zones[0].attrs["aria-valuetext"]}`);
+  clearTimeout(shade.keyTimer);
+}
+
 // The tabs sit apart on a two-rail blind, so both can be reached when the rails are together.
 check("the middle rail's tab is left of the bottom rail's",
       twoRail._tabX(twoRail._railsOf(twoRailBlind), 1) < 50 && twoRail._tabX(twoRail._railsOf(twoRailBlind), 0) > 50);
@@ -1508,6 +1672,14 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   check("hide_picture gives a slider per rail", sliders.length === 3, String(sliders.length));
   const fbSliders = c._cells.find(x => x.blind.deviceId === "d1").sliders;
   check("the list shows the top rail first", fbSliders[0].rail.key === "middle" && fbSliders[1].rail.key === "bottom");
+  // Each slider is named for its blind, as the picture's rails are, so a screen reader's list of
+  // controls does not read "Bottom rail position" once per blind.
+  const sliderNames = c._cells.flatMap((x) => x.sliders.map((slider) => slider.input.attrs["aria-label"])).sort();
+  const railNames = rendered()._cells.flatMap((x) => x.shade.zones.map((zone) => zone.attrs["aria-label"])).sort();
+  check("each slider is named for its blind, as the picture's rails are",
+        JSON.stringify(sliderNames) === JSON.stringify(["Den_1", "Front_Bedroom_1 Bottom rail", "Front_Bedroom_1 Middle rail"]) &&
+        JSON.stringify(sliderNames) === JSON.stringify(railNames),
+        `${JSON.stringify(sliderNames)} vs ${JSON.stringify(railNames)}`);
   check("a slider shows its rail's position", fbSliders[0].input.value === "80" && fbSliders[0].value.textContent === "80%");
   calls.length = 0;
   fbSliders[1].input.value = "20";
@@ -1695,6 +1867,9 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   list._hass = sHass;
   const slider = list._buildSlider(shutter, rails, rails[0]);
   check("the list layout's louver slider moves in quarters", slider.input.step === "25", String(slider.input.step));
+  check("...and is named for its Shutter, as the tilt rod is",
+        slider.input.attrs["aria-label"] === "Study Shutter louvers" && rod.attrs["aria-label"] === "Study Shutter louvers",
+        slider.input.attrs["aria-label"]);
 }
 
 // Roller shades, Roman shades, PerfectSheers and SmartDrapes: told apart by their device's
@@ -1826,6 +2001,9 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   split.dragValues = {};
   c._onKey(split, 0, { key: "ArrowRight", preventDefault: () => {} }, "right");
   check("ArrowRight on the right half gathers it (opens)", split.dragValues[0] === 60, JSON.stringify(split.dragValues));
+  check("...and both halves tell a screen reader so at once",
+        split.zones.every((z) => z.attrs["aria-valuenow"] === "60" && z.attrs["aria-valuetext"] === "60% open"),
+        JSON.stringify(split.zones.map((z) => z.attrs["aria-valuenow"])));
   clearTimeout(split.keyTimer);
 
   // The Roman shade: a flat panel that folds up into a stack above its hem.
@@ -2011,6 +2189,24 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   } finally {
     customElements.get = get;
     els.delete("ha-form");
+  }
+
+  // `title: ""` is a heading left blank on purpose: a change to another option keeps it. Emptying
+  // the title field itself leaves it out, for the hub's name, as an option turned off is.
+  {
+    const editor = new Editor();
+    editor.hass = hass;
+    const reported = () => editor._events?.at(-1)?.detail?.config;
+    editor.setConfig({ type:"custom:norman-shades-card", title:"" });
+    editor._changed({ ...editor._config, hide_battery:true });
+    check("the editor keeps a blank title when another option changes",
+          reported()?.title === "" && reported().hide_battery === true, JSON.stringify(reported()));
+    editor.setConfig({ type:"custom:norman-shades-card", title:"Up" });
+    editor._changed({ ...editor._config, title:"" });
+    check("...and leaves it out once the title field itself is emptied", reported() && !("title" in reported()),
+          JSON.stringify(reported()));
+    editor._changed({ ...editor._config, hide_battery:false });
+    check("...as it does an option turned off", reported() && !("hide_battery" in reported()), JSON.stringify(reported()));
   }
 
   // Without ha-form the editor's plain inputs still show the config they are handed.

@@ -91,6 +91,10 @@ CONF_WAKE_INTERVAL = "wake_interval"
 MOVE_TIMEOUT = 60.0
 MOVE_REPORT_WAIT = 10.0
 MOVE_ATTEMPTS = 3
+# How far short of its goal, in percent, a rail still counts as arrived: two Office shades
+# sent from 0 to 25 reported 25 and 24 (docs/NORMAN_API.md), so a shade sent to 25 again
+# from 24 may have nothing to move and nothing new to report.
+ARRIVAL_TOLERANCE = 1
 # What a blind that ignored every attempt fires, besides a warning in the log: an event
 # automations can trigger on.
 EVENT_COMMAND_FAILED = f"{DOMAIN}_command_failed"
@@ -108,10 +112,12 @@ EVENT_COMMAND_FAILED = f"{DOMAIN}_command_failed"
 # to time, so the default is 1.6 s. A tenth of a second per blind costs about a second and a
 # half on a whole-house scene, which buys nothing against a failure mode that is silent when
 # it happens.
-# Sends are serialised by a lock and spaced by this gap, so a burst of commands takes
-# (n * this) seconds to dispatch rather than colliding. Hubs differ -- more blinds, longer
-# range, a different radio environment -- so this is the default for a user-configurable
-# option rather than a fixed constant.
+# Sends take turns in a queue and are spaced by this gap, so a burst of commands takes
+# (n * this) seconds to dispatch rather than colliding. A stop goes to the front, and a
+# command whose blinds were taken over while it waited is dropped at its turn
+# (api._ControlQueue). Hubs differ -- more blinds, longer range, a different radio
+# environment -- so this is the default for a user-configurable option rather than a fixed
+# constant, applied as soon as it is saved.
 DEFAULT_CONTROL_INTERVAL = 1.6
 # Bounds offered in the options flow. The floor is the hub's own observed serialisation rate
 # (~333 ms), below which pacing cannot help; the ceiling keeps a mistyped value from making a
@@ -123,8 +129,7 @@ CONF_CONTROL_INTERVAL = "control_interval"
 
 # A "Norman Shades" entry in Home Assistant's sidebar (frontend.py registers it), so every
 # blind is there without building a dashboard. On by default; with several hubs each gets its
-# own entry. Changing it reloads the entry, which
-# re-syncs the sidebar.
+# own entry. Changing it brings the sidebar in line at once, without reloading the entry.
 CONF_SHOW_SIDEBAR_PANEL = "show_sidebar_panel"
 DEFAULT_SHOW_SIDEBAR_PANEL = True
 

@@ -48,7 +48,7 @@ async def async_setup_entry(
     """Set up a scene for each one saved on the hub, following the hub's list as it changes."""
     coordinator = entry.runtime_data
     added: set[str] = set()
-    synced: frozenset[str] | None = None
+    synced: tuple[frozenset[str], bool] | None = None
 
     @callback
     def _async_sync() -> None:
@@ -60,9 +60,12 @@ async def async_setup_entry(
         for group in coordinator.scene_groups.values():
             unique_id = scope_unique_id(entry, None, _group_key(group))
             wanted[unique_id] = functools.partial(NormanSceneGroupEntity, coordinator, entry, group)
-        if frozenset(wanted) == synced:
+        # The list read is part of what was synced: the first good read after a failed one
+        # still clears away scenes deleted meanwhile, even when it finds none at all.
+        state = (frozenset(wanted), coordinator.has_device_list)
+        if state == synced:
             return
-        synced = frozenset(wanted)
+        synced = state
         # A scene deleted in the Norman app, while Home Assistant was running or not. The
         # scenes only change on a successful read of the hub's device list, so a hub that
         # cannot read its configuration for a while does not take them away.

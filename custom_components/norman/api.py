@@ -325,6 +325,60 @@ class JsonStreamParser:
         return objects
 
 
+class _ControlQueue:
+    """Turns at the hub's radio for control sends: in order, except that a stop goes first.
+
+    A stop is the one command whose worth falls with every second it waits; one that lags is
+    worse than none. So it is served ahead of every other command still waiting, behind
+    only the stops already there. That is safe because a stop takes its blinds over before
+    it queues: a command it overtakes for one of them no longer holds it, and is dropped at
+    its turn rather than sent after the stop (``still_wanted``). Commands for other blinds
+    simply go after it. Used like a lock -- ``acquire``, then ``release`` -- so a test can
+    hold the queue the way it would hold one.
+    """
+
+    def __init__(self) -> None:
+        self._held = False
+        # Whose turn is next, each waiter with whether it is a stop.
+        self._waiters: deque[tuple[bool, asyncio.Future[None]]] = deque()
+
+    def locked(self) -> bool:
+        """Whether a send has the turn."""
+        return self._held
+
+    async def acquire(self, *, first: bool = False) -> None:
+        """Wait for the turn; ``first`` (a stop) waits only behind other stops."""
+        if not self._held and not self._waiters:
+            self._held = True
+            return
+        waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        entry = (first, waiter)
+        if first:
+            ahead = sum(1 for is_first, _ in self._waiters if is_first)
+            self._waiters.insert(ahead, entry)
+        else:
+            self._waiters.append(entry)
+        try:
+            await waiter
+        except asyncio.CancelledError:
+            if waiter.done() and not waiter.cancelled():
+                # Handed the turn just as it was cancelled: pass it on.
+                self.release()
+            elif entry in self._waiters:
+                # A release in the meantime may have passed over it already.
+                self._waiters.remove(entry)
+            raise
+
+    def release(self) -> None:
+        """Hand the turn to the next waiter, or free it."""
+        while self._waiters:
+            _, waiter = self._waiters.popleft()
+            if not waiter.done():
+                waiter.set_result(None)
+                return
+        self._held = False
+
+
 class NormanApiClient:
     """API client for the Norman hub."""
 
@@ -342,9 +396,10 @@ class NormanApiClient:
         self._thing_name: str | None = None
         self._task_ids = itertools.count(1)
         # The hub has a single radio and transmits to one blind at a time, so `control`
-        # sends are serialised and spaced (``control_interval``, from the options). Only
-        # control is gated: status reads and the notification stream are unaffected.
-        self._control_lock = asyncio.Lock()
+        # sends are serialised and spaced (``control_interval``, from the options), a stop
+        # ahead of the rest. Only control is gated: status reads and the notification stream
+        # are unaffected.
+        self._control_lock = _ControlQueue()
         self._last_control: float | None = None
         # Seconds between control sends; set from the entry's options when it loads.
         self.control_interval = DEFAULT_CONTROL_INTERVAL
@@ -529,20 +584,20 @@ class NormanApiClient:
         middle_rail_position: int,
         *,
         still_wanted: Callable[[], bool] | None = None,
-    ) -> None:
-        """Move a cover.
+    ) -> bool:
+        """Move a cover; False when it was dropped as no longer wanted (``_async_while_busy``).
 
         Args:
             device_id: PeripheralUID of the Norman device
             bottom_rail_position: Bottom rail position (0=closed, 100=open)
             middle_rail_position: Middle rail position (0=closed, 100=open)
-            still_wanted: asked before a busy hub is tried again (``_async_while_busy``)
+            still_wanted: asked at the move's turn and before a busy hub is tried again
 
         Both rails always go together. The hub also accepts one on its own (the Norman
         app's group screen sends ``MiddleRailPosition`` alone), but sending both is what
         lets the integration carry a two-rail shade's other rail along in the same command.
         """
-        await self._async_move(
+        return await self._async_move(
             device_id,
             {
                 "BottomRailPosition": bottom_rail_position,
@@ -553,40 +608,46 @@ class NormanApiClient:
 
     async def async_set_louvers(
         self, device_id: int, position: int, *, still_wanted: Callable[[], bool] | None = None
-    ) -> None:
+    ) -> bool:
         """Turn a Shutter's louvers to ``position``, 0-7 (7 closed, 3 horizontal).
 
         ``{"Position": n, "PeripheralUID": ...}`` is what the Norman app's network library
         builds for a Shutter (its CreateNormanPeripheral:position:). Not yet sent to a real
-        Shutter from here.
+        Shutter from here. False when it was dropped as no longer wanted.
         """
-        await self._async_move(device_id, {HUB_CMD_SHUTTER_POSITION: position}, still_wanted)
+        return await self._async_move(device_id, {HUB_CMD_SHUTTER_POSITION: position}, still_wanted)
 
     async def async_run_scene(
         self, room_id: int, scene_id: int, *, still_wanted: Callable[[], bool] | None = None
-    ) -> None:
+    ) -> bool:
         """Run a scene saved in a room: ``{"RoomID": R, "SetToScene": S}``.
 
         The hub moves each of the scene's blinds to the position it stored for it, in one
         request (docs/NORMAN_API.md, "Run a saved scene"). As with a room move, ``Error 0``
         means the hub accepted it, not that every blind moved; the coordinator watches each.
+        False when it was dropped as no longer wanted.
         """
-        await self._async_while_busy(
-            lambda: self.async_send_room_control(room_id, {HUB_CMD_SET_TO_SCENE: scene_id}),
+        return await self._async_while_busy(
+            lambda: self.async_send_room_control(
+                room_id, {HUB_CMD_SET_TO_SCENE: scene_id}, still_wanted=still_wanted
+            ),
             f"scene {scene_id} in room {room_id}",
             still_wanted,
         )
 
     async def async_run_scene_group(
         self, group_id: str, *, still_wanted: Callable[[], bool] | None = None
-    ) -> None:
+    ) -> bool:
         """Run a group of room scenes: ``{"SceneGroupID": "<uuid>"}``, with no RoomID.
 
         The group's id is the whole scope, so the room field is left out; the hub fans the
-        command out to every member scene's room itself.
+        command out to every member scene's room itself. False when it was dropped as no
+        longer wanted.
         """
-        await self._async_while_busy(
-            lambda: self.async_send_room_control(None, {HUB_CMD_SCENE_GROUP: group_id}),
+        return await self._async_while_busy(
+            lambda: self.async_send_room_control(
+                None, {HUB_CMD_SCENE_GROUP: group_id}, still_wanted=still_wanted
+            ),
             f"scene group {group_id}",
             still_wanted,
         )
@@ -598,21 +659,22 @@ class NormanApiClient:
         middle_rail_position: int,
         *,
         still_wanted: Callable[[], bool] | None = None,
-    ) -> None:
+    ) -> bool:
         """Move every blind in a room, or on the hub (``room_id`` None), in one request.
 
         Every blind in scope is sent the same pair. Both rails always go: the hub refused a
         room request carrying only ``MiddleRailPosition`` (Error 2), and one carrying only
         ``BottomRailPosition`` set every blind's middle-rail target to 0 (docs/NORMAN_API.md,
         "Room-wide and hub-wide control"). An ``Error 0`` reply means the hub accepted it,
-        not that every blind moved; the coordinator watches each blind afterwards.
+        not that every blind moved; the coordinator watches each blind afterwards. False
+        when it was dropped as no longer wanted.
         """
         fields = {
             "BottomRailPosition": bottom_rail_position,
             "MiddleRailPosition": middle_rail_position,
         }
-        await self._async_while_busy(
-            lambda: self.async_send_room_control(room_id, fields),
+        return await self._async_while_busy(
+            lambda: self.async_send_room_control(room_id, fields, still_wanted=still_wanted),
             "every blind" if room_id is None else f"room {room_id}",
             still_wanted,
         )
@@ -622,19 +684,21 @@ class NormanApiClient:
         device_id: int,
         fields: dict[str, Any],
         still_wanted: Callable[[], bool] | None = None,
-    ) -> None:
+    ) -> bool:
         """Send one blind a move, retrying while the hub answers busy."""
-        await self._async_while_busy(
-            lambda: self.async_send_control(device_id, fields), str(device_id), still_wanted
+        return await self._async_while_busy(
+            lambda: self.async_send_control(device_id, fields, still_wanted=still_wanted),
+            str(device_id),
+            still_wanted,
         )
 
     async def _async_while_busy(
         self,
-        send: Callable[[], Awaitable[dict[str, Any]]],
+        send: Callable[[], Awaitable[dict[str, Any] | None]],
         target: str,
         still_wanted: Callable[[], bool] | None = None,
-    ) -> None:
-        """Send a move, retrying while the hub answers busy.
+    ) -> bool:
+        """Send a move, retrying while the hub answers busy; False if it was dropped.
 
         A move the hub answers with ``Error 2`` is retried, ``HUB_BUSY_RETRIES`` times and
         ``HUB_BUSY_RETRY_DELAY`` seconds apart, before the error is raised. Every move sent
@@ -644,11 +708,13 @@ class NormanApiClient:
 
         The hub never carried out the refused move, so one that ``still_wanted`` says has
         been overtaken during the wait -- a stop, or a newer command for the same blinds --
-        is dropped rather than sent after it.
+        is dropped rather than sent after it, as one overtaken while it waited its turn is
+        (``_async_control``).
         """
         for attempt in range(HUB_BUSY_RETRIES + 1):
             try:
-                await send()
+                if await send() is None:
+                    return False
             except NormanApiError as err:
                 if err.code != HUB_ERROR_BUSY or attempt == HUB_BUSY_RETRIES:
                     raise
@@ -663,9 +729,10 @@ class NormanApiClient:
                 await asyncio.sleep(HUB_BUSY_RETRY_DELAY)
                 if still_wanted is not None and not still_wanted():
                     _LOGGER.debug("Dropped the retry for %s: another command took over", target)
-                    return
+                    return False
             else:
-                return
+                return True
+        return False  # pragma: no cover - the last attempt returns or raises
 
     async def async_request_status(self, device_id: int) -> None:
         """Ask one blind to report in.
@@ -678,7 +745,9 @@ class NormanApiClient:
         """
         await self.async_send_control(device_id, {HUB_CMD_REQUEST_STATUS: HUB_COMMAND_SETTING})
 
-    async def async_request_battery_report(self, room_id: int | None = None) -> None:
+    async def async_request_battery_report(
+        self, room_id: int | None = None, *, still_wanted: Callable[[], bool] | None = None
+    ) -> None:
         """Send the Norman app's battery report to a room or the hub; it can close shades.
 
         ``{"ReportBatteryLevel": 0}`` has closed type 48 roller shades and type 33 cellular
@@ -687,9 +756,12 @@ class NormanApiClient:
         and a ``PeripheralUID`` does not confine it to one blind. The app sent it from its
         device & battery status screen (captured 2026-09-18). The hub then polls its blinds
         one after another, and despite the name each reply carries position and last-seen
-        as well as battery.
+        as well as battery. ``still_wanted`` drops it at its turn once another command has
+        taken one of its blinds over (``_async_control``).
         """
-        await self.async_send_room_control(room_id, {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING})
+        await self.async_send_room_control(
+            room_id, {HUB_CMD_REPORT_BATTERY: HUB_COMMAND_SETTING}, still_wanted=still_wanted
+        )
 
     async def async_start_pairing(self) -> None:
         """Open the hub's pairing window.
@@ -708,32 +780,61 @@ class NormanApiClient:
         """
         await self.async_send_control(device_id, {HUB_CMD_STOP: HUB_COMMAND_TRIGGER})
 
-    async def _async_control(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """POST to the control endpoint, serialised and paced.
+    async def _async_control(
+        self, payload: dict[str, Any], still_wanted: Callable[[], bool] | None = None
+    ) -> dict[str, Any] | None:
+        """POST to the control endpoint, serialised and paced; None if it was dropped.
 
         Every control send goes through here. The hub acks a command it cannot deliver
         (``Error 0``, target stored, blind never moves), so a burst of commands is lost
-        silently; ``DEFAULT_CONTROL_INTERVAL`` in const.py has the measurement. The lock makes
-        concurrent callers queue rather than collide, and the gap is measured from the end
-        of the previous send, so a slow hub reply counts towards it.
+        silently; ``DEFAULT_CONTROL_INTERVAL`` in const.py has the measurement. The queue
+        makes concurrent callers take turns rather than collide, a stop first
+        (``_ControlQueue``), and the gap is measured from the end of the previous send, so a
+        slow hub reply counts towards it.
+
+        A command that ``still_wanted`` says has been overtaken while it waited -- a stop or
+        a newer command took its blinds over -- is not sent: it would only start the blinds
+        moving for the newer command to undo. It takes no time at the radio, either.
         """
-        async with self._control_lock:
+        await self._control_lock.acquire(first=HUB_CMD_STOP in payload)
+        try:
+            if self._overtaken(payload, still_wanted):
+                return None
             if self._last_control is not None:
                 gap = time.monotonic() - self._last_control
                 if gap < self.control_interval:
                     await asyncio.sleep(self.control_interval - gap)
+                    if self._overtaken(payload, still_wanted):
+                        return None
             try:
                 return await self._async_request(ENDPOINT_CONTROL, payload)
             finally:
                 self._last_control = time.monotonic()
+        finally:
+            self._control_lock.release()
 
-    async def async_send_control(self, device_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _overtaken(payload: dict[str, Any], still_wanted: Callable[[], bool] | None) -> bool:
+        """Whether a command is no longer wanted at its turn (logged when it is not)."""
+        if still_wanted is None or still_wanted():
+            return False
+        _LOGGER.debug("Dropped %s at its turn: another command took over", _redact_for_log(payload))
+        return True
+
+    async def async_send_control(
+        self,
+        device_id: int,
+        fields: dict[str, Any],
+        *,
+        still_wanted: Callable[[], bool] | None = None,
+    ) -> dict[str, Any] | None:
         """POST arbitrary fields to the control endpoint for one peripheral.
 
         ``PeripheralUID``, ``Timestamp`` and ``TaskID`` are filled in; ``fields`` is merged
         on top. This is what ``async_set_position`` and ``async_stop`` use, and what the
         ``send_hub_command`` action exposes for the other verbs the hub advertises (see
-        docs/NORMAN_API.md, "Control verbs"). Returns the hub's reply.
+        docs/NORMAN_API.md, "Control verbs"). Returns the hub's reply, or None when
+        ``still_wanted`` dropped the command at its turn (``_async_control``).
         """
         data = await self._async_control(
             {
@@ -741,14 +842,22 @@ class NormanApiClient:
                 "Timestamp": int(time.time()),
                 "TaskID": self._next_task_id(),
                 **fields,
-            }
+            },
+            still_wanted,
         )
-        self._raise_on_error_code(data, "Control request")
+        if data is not None:
+            self._raise_on_error_code(data, "Control request")
         return data
 
     async def async_send_blind_control(
-        self, room_id: int, group_id: int, fields: dict[str, Any], device_id: int | None = None
-    ) -> dict[str, Any]:
+        self,
+        room_id: int,
+        group_id: int,
+        fields: dict[str, Any],
+        device_id: int | None = None,
+        *,
+        still_wanted: Callable[[], bool] | None = None,
+    ) -> dict[str, Any] | None:
         """POST a verb addressed at one blind by its room and group.
 
         The ``Switch`` and ``Favorite`` verbs are **not** addressed by ``PeripheralUID``: the
@@ -756,7 +865,7 @@ class NormanApiClient:
         (``GroupID`` is the blind's remote-control button within its room). A
         ``PeripheralUID`` is sent alongside when known, as the app does, but the pair is what
         selects the blind -- captured from the app's per-blind Best Privacy / Best View /
-        Favorite buttons.
+        Favorite buttons. None when ``still_wanted`` dropped it at its turn.
         """
         payload: dict[str, Any] = {
             "RoomID": room_id,
@@ -767,13 +876,18 @@ class NormanApiClient:
         }
         if device_id is not None:
             payload["PeripheralUID"] = device_id
-        data = await self._async_control(payload)
-        self._raise_on_error_code(data, "Blind control request")
+        data = await self._async_control(payload, still_wanted)
+        if data is not None:
+            self._raise_on_error_code(data, "Blind control request")
         return data
 
     async def async_send_room_control(
-        self, room_id: int | None, fields: dict[str, Any]
-    ) -> dict[str, Any]:
+        self,
+        room_id: int | None,
+        fields: dict[str, Any],
+        *,
+        still_wanted: Callable[[], bool] | None = None,
+    ) -> dict[str, Any] | None:
         """POST a room- or hub-wide command in a single request.
 
         The hub accepts ``RoomID`` in place of ``PeripheralUID`` for ``Switch``,
@@ -785,7 +899,8 @@ class NormanApiClient:
 
         ``room_id`` of ``None`` omits the field entirely, which addresses **every blind on
         the hub** -- an empty scope means "everything", not "nothing", so never pass None
-        expecting a no-op.
+        expecting a no-op. Returns the hub's reply, or None when ``still_wanted`` dropped
+        the command at its turn.
         """
         payload: dict[str, Any] = {
             "Timestamp": int(time.time()),
@@ -794,8 +909,9 @@ class NormanApiClient:
         }
         if room_id is not None:
             payload["RoomID"] = room_id
-        data = await self._async_control(payload)
-        self._raise_on_error_code(data, "Room control request")
+        data = await self._async_control(payload, still_wanted)
+        if data is not None:
+            self._raise_on_error_code(data, "Room control request")
         return data
 
     async def async_listen_notifications(self) -> AsyncIterator[dict[str, Any]]:
@@ -860,6 +976,7 @@ class NormanApiClient:
                         if "PeripheralList" in obj or "UpdateTime" in obj:
                             yield obj
         except ClientError as err:
+            self.traffic.record("stream", ENDPOINT_NOTIFICATION, error=str(err))
             raise NormanConnectionError(f"Notification listener connection error: {err}") from err
         except TimeoutError as err:
             self.traffic.record("stream", ENDPOINT_NOTIFICATION, error="no answer")

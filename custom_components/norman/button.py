@@ -106,8 +106,8 @@ BUTTONS: tuple[NormanButtonDescription, ...] = (
     # hub stops hearing from it; the app then shows it as "Disconnect" and offers a refresh.
     # This is the per-blind form of that refresh, taken from the app's network library:
     # the blind answered within 5 s each time it was tried (docs/NORMAN_API.md, "Waking a
-    # blind"). The follow-up refresh below is usually too early to see the answer; the
-    # hub's own notification for the blind brings it a few seconds later.
+    # blind"). The hub's own notification for the blind brings the answer, and its read, so
+    # no read follows the press while the notification stream is up.
     NormanButtonDescription(
         key="request_status",
         translation_key="request_status",
@@ -127,11 +127,12 @@ class NormanHubButtonDescription(ButtonEntityDescription):
     """
 
     press_fn: Callable[[NormanCoordinator], Awaitable[Any]]
-    # Whether the action moves or stops every blind, and so replaces any move still in flight.
-    moves_blinds: bool = False
     # Whether the action re-reads the hub itself -- a preset's watches read it for their
     # targets at once -- so no refresh need follow the press.
     reads_hub: bool = False
+    # Whether the blinds answer the action one by one, each answer a notification with a
+    # read of its own, so no refresh need follow the press while the stream is up.
+    answered: bool = False
 
 
 # Refresh blinds uses StatusRequest, which did not move shades in live tests. The app's separate
@@ -151,7 +152,6 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="all_best_privacy",
         translation_key="all_best_privacy",
         entity_category=EntityCategory.CONFIG,
-        moves_blinds=True,
         reads_hub=True,
         press_fn=lambda coordinator: coordinator.async_send_room_preset(
             None, {HUB_CMD_SWITCH: HUB_SWITCH_CLOSE}
@@ -161,7 +161,6 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="all_best_view",
         translation_key="all_best_view",
         entity_category=EntityCategory.CONFIG,
-        moves_blinds=True,
         reads_hub=True,
         press_fn=lambda coordinator: coordinator.async_send_room_preset(
             None, {HUB_CMD_SWITCH: HUB_SWITCH_OPEN}
@@ -171,7 +170,6 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="all_favorite",
         translation_key="all_favorite",
         entity_category=EntityCategory.CONFIG,
-        moves_blinds=True,
         reads_hub=True,
         press_fn=lambda coordinator: coordinator.async_send_room_preset(
             None, {HUB_CMD_FAVORITE: HUB_COMMAND_SETTING}
@@ -185,8 +183,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
     NormanHubButtonDescription(
         key="all_stop",
         translation_key="all_stop",
-        moves_blinds=True,
-        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator: coordinator.async_send_room_verb(
             None, {HUB_CMD_STOP: HUB_COMMAND_TRIGGER}
         ),
     ),
@@ -194,8 +191,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="all_jog_up",
         translation_key="all_jog_up",
         entity_category=EntityCategory.CONFIG,
-        moves_blinds=True,
-        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator: coordinator.async_send_room_verb(
             None, {HUB_CMD_JOG_UP: HUB_COMMAND_TRIGGER}
         ),
     ),
@@ -203,8 +199,7 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="all_jog_down",
         translation_key="all_jog_down",
         entity_category=EntityCategory.CONFIG,
-        moves_blinds=True,
-        press_fn=lambda coordinator: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator: coordinator.async_send_room_verb(
             None, {HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER}
         ),
     ),
@@ -212,13 +207,13 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
         key="refresh_blinds",
         translation_key="refresh_blinds",
         entity_category=EntityCategory.DIAGNOSTIC,
+        answered=True,
         press_fn=lambda coordinator: coordinator.async_refresh_blinds(),
     ),
     NormanHubButtonDescription(
         key="report_battery_levels",
         translation_key="report_battery_levels",
         entity_category=EntityCategory.DIAGNOSTIC,
-        moves_blinds=True,
         press_fn=lambda coordinator: coordinator.async_report_battery_levels(),
     ),
     NormanHubButtonDescription(
@@ -235,11 +230,12 @@ class NormanRoomButtonDescription(ButtonEntityDescription):
     """A button on a room's device that acts on its blinds."""
 
     press_fn: Callable[[NormanCoordinator, int | None], Awaitable[Any]]
-    # Whether the action moves or stops the room's blinds, and so replaces their moves.
-    moves_blinds: bool = True
     # Whether the action re-reads the hub itself -- a preset's watches read it for their
     # targets at once -- so no refresh need follow the press.
     reads_hub: bool = False
+    # Whether the blinds answer the action one by one, each answer a notification with a
+    # read of its own, so no refresh need follow the press while the stream is up.
+    answered: bool = False
 
 
 # The room's own buttons. Most send one request with the room's RoomID; Refresh blinds
@@ -253,7 +249,7 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
     NormanRoomButtonDescription(
         key="room_stop",
         translation_key="room_stop",
-        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator, room_id: coordinator.async_send_room_verb(
             room_id, {HUB_CMD_STOP: HUB_COMMAND_TRIGGER}
         ),
     ),
@@ -288,7 +284,7 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
         key="room_jog_up",
         translation_key="room_jog_up",
         entity_category=EntityCategory.CONFIG,
-        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator, room_id: coordinator.async_send_room_verb(
             room_id, {HUB_CMD_JOG_UP: HUB_COMMAND_TRIGGER}
         ),
     ),
@@ -296,7 +292,7 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
         key="room_jog_down",
         translation_key="room_jog_down",
         entity_category=EntityCategory.CONFIG,
-        press_fn=lambda coordinator, room_id: coordinator.api.async_send_room_control(
+        press_fn=lambda coordinator, room_id: coordinator.async_send_room_verb(
             room_id, {HUB_CMD_JOG_DOWN: HUB_COMMAND_TRIGGER}
         ),
     ),
@@ -305,14 +301,13 @@ ROOM_BUTTONS: tuple[NormanRoomButtonDescription, ...] = (
         key="room_refresh",
         translation_key="room_refresh",
         entity_category=EntityCategory.DIAGNOSTIC,
-        moves_blinds=False,
+        answered=True,
         press_fn=lambda coordinator, room_id: coordinator.async_refresh_blinds(room_id),
     ),
     NormanRoomButtonDescription(
         key="room_report_battery_levels",
         translation_key="room_report_battery_levels",
         entity_category=EntityCategory.DIAGNOSTIC,
-        moves_blinds=True,
         press_fn=lambda coordinator, room_id: coordinator.async_report_battery_levels(room_id),
     ),
 )
@@ -359,6 +354,22 @@ async def async_setup_entry(
     async_add_scope_entities(entry, async_add_entities, _room_buttons, _room_button)
 
 
+def _reads_after(
+    description: NormanHubButtonDescription | NormanRoomButtonDescription,
+    coordinator: NormanCoordinator,
+) -> bool:
+    """Whether the hub is read once the action is sent (see the ``reads_hub`` and ``answered`` flags).
+
+    An answered action's first answer is seconds away, so a read straight after the press
+    would see none of them, and would hold the next one -- the read its notification asks
+    for -- until the refresh debouncer's cooldown ran out. With the stream down the answers
+    bring no reads, and this one is all there is.
+    """
+    if description.reads_hub:
+        return False
+    return not description.answered or not coordinator.listening
+
+
 def _command_name(button: ButtonEntity) -> str:
     """A button's own name, in the user's language, for an error; its key failing that."""
     name = button.name
@@ -384,13 +395,12 @@ class NormanHubButton(NormanHubEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Run the hub action.
 
-        A status re-read follows so the Pairing mode sensor flips at once; a refresh's
-        answers arrive later, one notification per blind, each with its own refresh. A
-        preset needs none: its watches read the hub for their targets straight away.
+        A status re-read follows so the Pairing mode sensor flips at once. A preset needs
+        none: its watches read the hub for their targets straight away. Nor does a refresh
+        while the notification stream is up: its answers arrive later, one notification per
+        blind, each with its own read. Every action that moves or stops the blinds takes
+        them over itself, in the coordinator, so their moves in flight are not resent.
         """
-        # A preset takes its blinds over itself (coordinator.async_send_room_preset).
-        if self.entity_description.moves_blinds and not self.entity_description.reads_hub:
-            self.coordinator.async_supersede()
         try:
             await self.entity_description.press_fn(self.coordinator)
         except (NormanApiError, NormanConnectionError) as err:
@@ -402,7 +412,7 @@ class NormanHubButton(NormanHubEntity, ButtonEntity):
                     "error": str(err),
                 },
             ) from err
-        if not self.entity_description.reads_hub:
+        if _reads_after(self.entity_description, self.coordinator):
             await self.coordinator.async_request_refresh()
 
 
@@ -418,11 +428,9 @@ class NormanRoomButton(NormanScopeEntity, ButtonEntity):
         blind by blind, as a blind's own preset is (coordinator.async_send_room_preset);
         stop and the jogs have no target to chase. Every action that moves or stops the
         blinds replaces any move in flight in the room, whose watch would otherwise take
-        the blinds' new heading for a move that never arrived and send it again.
+        the blinds' new heading for a move that never arrived and send it again; the
+        coordinator does that as it sends them (async_send_room_verb and the like).
         """
-        # A preset takes its blinds over itself (coordinator.async_send_room_preset).
-        if self.entity_description.moves_blinds and not self.entity_description.reads_hub:
-            self.coordinator.async_supersede_room(self._room_id)
         try:
             await self.entity_description.press_fn(self.coordinator, self._room_id)
         except (NormanApiError, NormanConnectionError) as err:
@@ -435,7 +443,7 @@ class NormanRoomButton(NormanScopeEntity, ButtonEntity):
                     "error": str(err),
                 },
             ) from err
-        if not self.entity_description.reads_hub:
+        if _reads_after(self.entity_description, self.coordinator):
             await self.coordinator.async_request_refresh()
 
 
@@ -457,43 +465,61 @@ class NormanButton(NormanEntity, ButtonEntity):
         self._attr_unique_id = f"{device_id}_{description.key}"
 
     async def async_press(self) -> None:
-        """Send the verb, then re-read the hub so the cover follows the motor."""
-        fields = dict(self.entity_description.fields)
+        """Send the verb, then re-read the hub so the cover follows the motor.
+
+        A verb that moves the blind takes it over first, and is not sent if another command
+        takes it over while it waits its turn (coordinator.holds). Request status needs no
+        read while the notification stream is up: the blind's answer brings its own.
+        """
+        description = self.entity_description
+        fields = dict(description.fields)
         data = self._data
-        try:
-            if self.entity_description.addressed:
-                if data is None or data.room_id is None or data.group_id is None:
-                    raise HomeAssistantError(
-                        translation_domain=DOMAIN,
-                        translation_key="button_needs_room",
-                        translation_placeholders={
-                            "command": _command_name(self),
-                            "name": self._device_name,
-                        },
-                    )
-                send = functools.partial(
-                    self.coordinator.api.async_send_blind_control,
-                    data.room_id,
-                    data.group_id,
-                    fields,
-                    self._device_id,
+        address: tuple[int, int] | None = None
+        if description.addressed:
+            if data is None or data.room_id is None or data.group_id is None:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="button_needs_room",
+                    translation_placeholders={
+                        "command": _command_name(self),
+                        "name": self._device_name,
+                    },
                 )
-            else:
-                send = functools.partial(
-                    self.coordinator.api.async_send_control, self._device_id, fields
-                )
-            serial = (
-                self.coordinator.async_supersede([self._device_id])
-                if self.entity_description.moves
-                else None
+            address = (data.room_id, data.group_id)
+        serial = (
+            self.coordinator.async_supersede([self._device_id], aimed=description.addressed)
+            if description.moves
+            else None
+        )
+        still_wanted = (
+            None
+            if serial is None
+            else functools.partial(self.coordinator.holds, self._device_id, serial)
+        )
+        send: Callable[[], Awaitable[dict[str, Any] | None]]
+        if address is not None:
+            send = functools.partial(
+                self.coordinator.api.async_send_blind_control,
+                *address,
+                fields,
+                self._device_id,
+                still_wanted=still_wanted,
             )
-            await send()
+        else:
+            send = functools.partial(
+                self.coordinator.api.async_send_control,
+                self._device_id,
+                fields,
+                still_wanted=still_wanted,
+            )
+        try:
+            reply = await send()
             # The addressed verbs (Best Privacy, Best View, Favorite) send the blind to a
             # stored position, and the hub acks a command it never delivers, so the move is
             # supervised the way a position move is (coordinator.async_watch_preset). The
             # rest -- jog, run-to-limit, status -- either do not move the blind or are held
             # rather than aimed, so there is no target to chase.
-            if self.entity_description.addressed:
+            if description.addressed and reply is not None:
                 self.coordinator.async_watch_preset(self._device_id, send, serial)
         except (NormanApiError, NormanConnectionError) as err:
             raise HomeAssistantError(
@@ -505,5 +531,5 @@ class NormanButton(NormanEntity, ButtonEntity):
                     "error": str(err),
                 },
             ) from err
-        if not self.entity_description.addressed:
+        if not description.addressed and (description.moves or not self.coordinator.listening):
             await self.coordinator.async_request_refresh()

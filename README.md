@@ -14,7 +14,7 @@ a remote, or the Norman app, Home Assistant sees the change within a second or t
 [![CI](https://github.com/kedube/ha-norman/actions/workflows/ci.yml/badge.svg)](https://github.com/kedube/ha-norman/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/kedube/ha-norman)](LICENSE)
 
-<img src="images/dashboard-card.png" alt="Norman Shades: blinds grouped by room, each drawn as a window with its own kind of shade, drape or shutter in it, with open, stop and close for each room and Privacy, View and Favorite for the whole house." width="560">
+<img src="images/dashboard-card.png" alt="Norman Shades: blinds grouped by room, each drawn as a window with its own kind of shade, drape or shutter in it, with open, stop and close for each room, Privacy, View and Favorite for the whole house, and a refresh button for the house and each blind." width="560">
 
 ***Norman Shades**, in Home Assistant's sidebar: drag a shade's pull tab, or a shutter's tilt rod,
 to move it. It finds your blinds by itself and needs no configuration.*
@@ -445,6 +445,7 @@ services → Norman → ⋮ → Download diagnostics**. It contains:
 
 - the last-known state of every blind (names, positions, targets, battery percentage, signal,
   both firmware versions) and whether the last refresh succeeded;
+- the hub's options (poll interval, wake sweep, command spacing, sidebar);
 - **`hub_traffic`**: a capture of the communication with the hub, taken below the parsing
   layer. `latest_raw` holds the last complete response from each endpoint (so the full device
   list and status are always there, including fields the integration does not understand), and

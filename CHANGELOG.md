@@ -5,6 +5,51 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Moving a blind's other rail no longer restarts a stopped move.** Within about 10 s of a stop
+  or a jog, moving a two-rail blind's other rail, a SmartDrape's vanes or a room slider sent the
+  stopped rail on to where it had been going. The next move after a stop, a jog or a preset now
+  reads the hub first, and waits up to 10 s for the blind to report where it stopped.
+- **A stop goes ahead of the commands waiting to be sent.** A command whose blinds a stop or a
+  newer command takes over while it waits is no longer sent at all: presets, jogs and battery
+  reports as well as moves. A stop behind a scene's thirteen queued moves went out after all of
+  them, about 21 s later, with every blind started first. A room or hub request that loses some
+  of its blinds while it waits now goes to the rest one by one straight away, not after the
+  70-second check.
+- **Quick shutter louver nudges add up.** Three quick nudges turned the louvers two steps.
+- **A blind one point short of where it was sent counts as there.** Sent 25 again from the 24 it
+  stopped at, a blind was asked to report in, sent the move twice more and reported as not
+  responding.
+- **Request status, Refresh blinds and a room's Refresh show the answers sooner.** The read
+  straight after the press saw none of them and held back the first answer's read for 10 s; it
+  is skipped while the notification stream is up.
+- **Command spacing and the sidebar switch apply without reloading the hub.** Turning the sidebar
+  entry on or off reloaded the whole hub and cancelled the checks of moves in flight.
+- **Discovery no longer contacts a hub already set up at that address** each time Home Assistant
+  starts.
+- **Deleting a device works while its hub is offline or disabled**, instead of failing with
+  "Unknown error".
+- **The dashboard card's resource goes with the last hub that is set up**, even when an ignored
+  or disabled hub entry remains. Every dashboard load used to ask for the missing file.
+- **Saved scenes deleted while Home Assistant was off are removed** even when the hub's first
+  device-list read failed and no scenes are left.
+- **A second stream outage is logged** after a quiet night: a stream back for a whole cycle with
+  nothing moving was still counted as down.
+- **Diagnostics** record a notification stream that drops mid-connection, include the hub's
+  options, and keep Japanese and Chinese names as written. The hub's MAC address is found when
+  it is set up by an IPv6 address.
+- **Norman Shades.** Room ▲ ■ ▼ send one command per blind, not one per rail, so a room's stop
+  reaches its last two-rail blind about twice as soon. A failed command no longer leaves a blind
+  reading "Closing", or its other rail drawn moved. "Not confirmed" shows in the list layout,
+  and a blind not confirmed can be sent the position it is drawn at again. A SmartDrape that
+  goes unavailable keeps the side it stacks to, and no longer rebuilds the card, closing trays
+  and dropping a drag on another blind. Alt, Ctrl and ⌘ arrow-key shortcuts no longer move
+  blinds; screen readers hear arrow-key moves at once, and list-layout sliders are named for
+  their blinds. The visual editor keeps `title: ""`. A card showing two hubs' blinds is headed
+  "Shades", and its presets and ⟳ still name a hub when all of a room's blinds are unavailable.
+  The screenshot shows the refresh buttons.
+
 ## 0.87 — 2026-10-15
 
 - **Room command descriptions corrected.** The action's help text said `best_privacy` leaves

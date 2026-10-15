@@ -143,6 +143,8 @@ it never holds up the next command.
 
 - The check listens to the updates the hub pushes anyway. As soon as the blind reports it has
   moved towards where it was sent, the check ends; a blind that moves costs no extra requests.
+  A rail within one point of where it was sent counts as there: two shades sent to 25 reported
+  25 and 24, and one sent there again from 24 may have nothing to move.
 - A blind still silent after 60 seconds is asked to report in (a `StatusRequest`). If its
   answer shows it never moved, the command is sent again, with a warning in the log — up to
   three sends in all. The answer also corrects a blind that did move but whose report the hub
@@ -157,6 +159,13 @@ For a preset, the check aims at the position the hub records when it accepts the
 has to read that straight away: once the blind reports in, the hub replaces its target with
 wherever the blind actually is. A new move, preset or jog for the same blind replaces the check
 and a stop cancels it.
+
+Commands go to the hub one at a time, 1.6 s apart by default, because it drops commands sent
+closer together ([Options](options.md)). A stop goes ahead of every other command waiting, and
+a command whose blind a stop or a newer command took over while it waited is not sent at all.
+After a stop, a jog or a preset, the next move of a blind reads the hub first, so a two-rail
+blind's other rail is sent where the blind actually stopped
+([`control`](NORMAN_API.md#post-nmv1control)).
 
 A room-wide or hub-wide preset (a room's or the hub's Best privacy, Best view or Favorite
 button, or `norman.room_command`) goes to every blind in one request, which the hub carries
@@ -507,7 +516,9 @@ deleted from **Settings → Devices & services → Norman → the device → ⋮
 hub still reports, and the hub device itself, refuse deletion because they would come straight
 back on the next refresh. A room's device works the same way: its entities turn unavailable
 once the room holds no blind, and it can then be deleted, unless a scene is still saved in it.
-A blind or room deleted here returns, with its entities, if the hub reports it again.
+A blind or room deleted here returns, with its entities, if the hub reports it again. While the
+hub is not set up (unreachable, or disabled) there is nothing to check against, so any of its
+devices can be deleted; one the hub still has comes back when the hub is set up again.
 
 ## Not exposed (yet)
 

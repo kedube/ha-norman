@@ -193,8 +193,23 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
         fields vary, so registration validates the address and supplies its identity. A hub
         already configured has its stored address refreshed, reloading the entry if changed,
         so a DHCP change heals itself the next time the hub announces.
+
+        Every hub announces itself at each Home Assistant start, so one already loaded at
+        this address is left alone without a request. One waiting to retry setup is still
+        asked, so that its rediscovery reloads it.
         """
         host = discovery_info.host
+        if loaded := next(
+            (
+                entry
+                for entry in self._async_current_entries(include_ignore=False)
+                if entry.data.get(CONF_HOST) == host and entry.state is ConfigEntryState.LOADED
+            ),
+            None,
+        ):
+            # Claimed for that entry as a full check would, so the discovery is recorded on it.
+            await self.async_set_unique_id(loaded.unique_id)
+            return self.async_abort(reason="already_configured")
         errors: dict[str, str] = {}
         unique_id = await self._async_validate_host(host, errors)
         if unique_id is None:

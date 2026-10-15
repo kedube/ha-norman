@@ -20,6 +20,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
+    ARRIVAL_TOLERANCE,
     CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
@@ -33,6 +34,7 @@ from .const import (
     DOMAIN,
     EVENT_COMMAND_FAILED,
     HUB_CMD_REQUEST_STATUS,
+    HUB_CMD_STOP,
     HUB_COMMAND_SETTING,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
@@ -106,6 +108,15 @@ def _distance(rails: _Rails, goal: _Rails) -> int:
     """How far the rails are from the goal, over the rails both sides have a value for."""
     return sum(
         abs(rail - target)
+        for rail, target in zip(rails, goal, strict=True)
+        if rail is not None and target is not None
+    )
+
+
+def _arrived(rails: _Rails, goal: _Rails, tolerance: int) -> bool:
+    """Whether every rail with a value on both sides is within ``tolerance`` of the goal."""
+    return all(
+        abs(rail - target) <= tolerance
         for rail, target in zip(rails, goal, strict=True)
         if rail is not None and target is not None
     )
@@ -303,6 +314,10 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # in the control queue is sent and watched only while it still holds its blind, so
         # a stop or a newer command issued meanwhile is not undone.
         self._claims: dict[int, int] = {}
+        # Blinds taken over by something other than a move, whose next move reads the hub
+        # first (async_settle): where each was when it was taken over, and whether the
+        # command aimed it at a target the hub records (a preset) or halted it (a stop).
+        self._unsettled: dict[int, tuple[_Sighting, bool]] = {}
         # The scenes and scene groups saved on the hub, from its device list (_parse_scenes).
         # Kept from the last good read while the hub cannot read its configuration.
         self.scenes: dict[str, NormanScene] = {}
@@ -374,14 +389,43 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         """Send the Norman app's report command to a room or the hub.
 
         This is deliberately separate from status refresh: ``ReportBatteryLevel`` has
-        closed roller and two-rail cellular shades on real hardware.
+        closed roller and two-rail cellular shades on real hardware. So it takes the blinds
+        over as a stop does, and is dropped at its turn if a command takes one of them over
+        while it waits (``_still_holds``).
         """
-        await self.api.async_request_battery_report(room_id)
+        serial = self.async_supersede_room(room_id)
+        await self.api.async_request_battery_report(
+            room_id, still_wanted=self._still_holds(self.blinds_in(room_id), serial)
+        )
+
+    async def async_send_room_verb(self, room_id: int | None, fields: dict[str, Any]) -> None:
+        """Send a stop or a jog to every blind in a room (every blind on the hub, for None).
+
+        One request; the hub carries it to each blind. It takes the blinds over first: a move
+        in flight is no longer watched, and one still queued is not sent. A jog that waits
+        its turn is itself dropped if a command takes one of its blinds over meanwhile, as a
+        move would be; a stop never is -- it is served first instead (api._ControlQueue).
+        """
+        serial = self.async_supersede_room(room_id)
+        still_wanted = (
+            None if HUB_CMD_STOP in fields else self._still_holds(self.blinds_in(room_id), serial)
+        )
+        await self.api.async_send_room_control(room_id, fields, still_wanted=still_wanted)
+
+    def _still_holds(self, device_ids: Iterable[int], serial: int) -> Callable[[], bool]:
+        """The check a command for these blinds, taken over as ``serial``, is sent under."""
+        claims: dict[int, int | None] = dict.fromkeys(device_ids, serial)
+        return lambda: self._holds_all(claims)
 
     @property
     def has_device_list(self) -> bool:
         """Whether the hub's device list has been read, so its rooms and scenes are known."""
         return bool(self._device_info)
+
+    @property
+    def listening(self) -> bool:
+        """Whether the notification stream is up, so the blinds' reports arrive as they come."""
+        return not self._listener_offline
 
     def commanded_rails(self, device_id: int) -> tuple[int, int] | None:
         """The rails this blind's move in flight was sent to, or None when there is none."""
@@ -410,6 +454,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         self._move_serial += 1
         self._moves[device_id] = (self._move_serial, (bottom, middle))
         self._claims[device_id] = self._move_serial
+        self._unsettled.pop(device_id, None)
         return self._move_serial
 
     def holds(self, device_id: int, serial: int) -> bool:
@@ -433,16 +478,20 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             del self._moves[device_id]
 
     @callback
-    def async_supersede(self, device_ids: Iterable[int] | None = None) -> int:
+    def async_supersede(
+        self, device_ids: Iterable[int] | None = None, *, aimed: bool = False
+    ) -> int:
         """Another command has taken these blinds over (every blind, for None).
 
         A stop, a jog or a preset replaces whatever move was in flight, so its watch has to
         go too: left running, it would read the blind heading somewhere else as a move that
         never arrived and send the old one again, undoing the new command. The move record
-        goes with it, and the next move fills its other rail in from the hub. A command
-        still waiting its turn loses the blinds too: a per-blind batch skips them, and no
-        command is watched once it has lost its blind (``holds``). Returns the new command's
-        serial, which holds the blinds until something else takes them over.
+        goes with it, and the next move reads the hub before it fills its other rail in
+        (``async_settle``). ``aimed`` says the command sends the blinds to targets the hub
+        records on accepting it -- a preset, a scene -- rather than halting them somewhere
+        only their report will tell. A command still waiting its turn loses the blinds too:
+        it is not sent, or watched, once it has lost them (``holds``). Returns the new
+        command's serial, which holds the blinds until something else takes them over.
         """
         self._move_serial += 1
         if device_ids is None:
@@ -451,14 +500,66 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             self.async_cancel_move_watch(device_id)
             self.async_forget_move(device_id)
             self._claims[device_id] = self._move_serial
+            self._unsettled[device_id] = (self._sighting(device_id), aimed)
         return self._move_serial
 
     @callback
-    def async_supersede_room(self, room_id: int | None) -> int:
+    def async_supersede_room(self, room_id: int | None, *, aimed: bool = False) -> int:
         """``async_supersede`` for every blind in a room, or on the hub for None."""
         if room_id is None:
-            return self.async_supersede()
-        return self.async_supersede(self.blinds_in(room_id))
+            return self.async_supersede(aimed=aimed)
+        return self.async_supersede(self.blinds_in(room_id), aimed=aimed)
+
+    async def async_settle(self, device_ids: Iterable[int]) -> None:
+        """Before a move works out where these blinds' other rails are heading: read the hub.
+
+        A blind taken over by a stop, a jog or a preset (``async_supersede``) has no move
+        record to fill its other rail in from, and the hub's target in hand is still the one
+        from before: the read the command asked for waits out the refresh debouncer's
+        cooldown, which the move before it started. A one-rail move made then would send the
+        stopped rail on to the target the stop abandoned. So the hub is read straight away.
+
+        A halted blind may still be on its way to report where it stopped: one not heard
+        from since, while the hub holds a target it has not reached, is given up to
+        ``MOVE_REPORT_WAIT`` to report. The hub replaces the target with the blind's
+        position when it does. A preset's target is the hub's from the moment it accepts
+        it, so an aimed blind is only read. Each takeover is settled once.
+        """
+        marks = {
+            device_id: self._unsettled[device_id]
+            for device_id in device_ids
+            if device_id in self._unsettled
+        }
+        if not marks:
+            return
+        await self._async_watch_read()
+        waiting = {
+            device_id: before
+            for device_id, (before, aimed) in marks.items()
+            if not aimed and self._halted_on_the_way(device_id, before)
+        }
+        if waiting and not await self._async_wait_until(
+            lambda: all(
+                self._heard_since(device_id, before) for device_id, before in waiting.items()
+            ),
+            MOVE_REPORT_WAIT,
+        ):
+            # The report normally arrives as a notification that refreshes the data;
+            # re-read in case it did not.
+            await self._async_watch_read()
+        for device_id, mark in marks.items():
+            if self._unsettled.get(device_id) is mark:
+                del self._unsettled[device_id]
+
+    def _halted_on_the_way(self, device_id: int, before: _Sighting) -> bool:
+        """Whether a halted blind has not reported since, with the hub's target not reached."""
+        data = (self.data or {}).get(device_id)
+        if data is None or self._heard_since(device_id, before):
+            return False
+        return any(
+            target is not None and target != rail
+            for rail, target in zip(_rails(data), _targets(data), strict=True)
+        )
 
     def room_name(self, room_id: int) -> str | None:
         """The hub's name for one of its rooms: from a blind in it, else from a scene saved in it.
@@ -508,19 +609,39 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         moved (``async_watch_move``). Raises the client's errors; a move that could not be
         sent leaves no record behind.
         """
+        await self.async_settle([device_id])
         data = (self.data or {}).get(device_id)
         rails = rails_to_send(
             data.type if data else None, self.heading_rails(device_id), bottom, middle
         )
         serial = self.async_note_move(device_id, *rails)
         try:
-            await self.api.async_set_position(
+            sent = await self.api.async_set_position(
                 device_id, *rails, still_wanted=functools.partial(self.holds, device_id, serial)
             )
         except BaseException:
             self.async_forget_move(device_id, serial)
             raise
-        self.async_watch_move(device_id, *rails, serial)
+        if sent:
+            self.async_watch_move(device_id, *rails, serial)
+
+    async def async_turn_louvers(self, device_id: int, position: int) -> None:
+        """Turn a Shutter's louvers to ``position`` (0-7), then watch them as a move is.
+
+        Recorded like a move (``async_note_move``, the louvers in the bottom rail's place), so
+        a nudge right behind it -- inside the refresh debouncer's cooldown, when the hub's
+        target in hand is still the old one -- starts from where this one sends them.
+        """
+        serial = self.async_note_move(device_id, position, 0)
+        try:
+            sent = await self.api.async_set_louvers(
+                device_id, position, still_wanted=functools.partial(self.holds, device_id, serial)
+            )
+        except BaseException:
+            self.async_forget_move(device_id, serial)
+            raise
+        if sent:
+            self.async_watch_louvers(device_id, position, serial)
 
     async def async_move_room(
         self, room_id: int | None, bottom: int | None, middle: int | None
@@ -541,8 +662,11 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
         Either way, every blind moved is watched afterwards and sent its move on its own if
         it does not go: on 2026-10-10 the hub acked a room restore that one of two shades
-        only carried out when its own command was resent.
+        only carried out when its own command was resent. A room request dropped because a
+        command took one of its blinds over while it waited is sent to the rest blind by
+        blind instead, at once.
         """
+        await self.async_settle(self.blinds_in(room_id))
         blinds = self.blinds_in(room_id)
         moves = {
             device_id: rails_to_send(device.type, self.heading_rails(device_id), bottom, middle)
@@ -560,13 +684,16 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # hub's retry is dropped once any of them is taken over.
         claims = {device_id: self._claims.get(device_id) for device_id in blinds}
         try:
-            await self.api.async_set_room_position(
+            sent = await self.api.async_set_room_position(
                 room_id, *rails, still_wanted=lambda: self._holds_all(claims)
             )
         except BaseException:
             for device_id, serial in serials.items():
                 self.async_forget_move(device_id, serial)
             raise
+        if not sent:
+            await self._async_move_each(dict.fromkeys(serials, rails), serials)
+            return
         for device_id, serial in serials.items():
             self.async_watch_move(device_id, *rails, serial)
 
@@ -595,28 +722,47 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             return None
         return bottoms.pop(), middles.pop() if middles else ROOM_MIDDLE_WITHOUT_TWO_RAIL
 
-    async def _async_move_each(self, moves: dict[int, tuple[int, int]]) -> None:
+    async def _async_move_each(
+        self,
+        moves: dict[int, tuple[int, int]],
+        serials: dict[int, int] | None = None,
+        louvers: frozenset[int] = frozenset(),
+    ) -> None:
         """Send each blind its own move, one after another.
 
         Every move is recorded before the first is sent, as ``async_move_blind`` does for one,
-        so a command issued while these queue sees where each blind is going. A blind that
-        another command takes over before its turn -- a stop, or a newer move -- is skipped.
-        A failure stops the rest, and the moves left unsent are forgotten.
+        so a command issued while these queue sees where each blind is going -- unless they
+        were recorded already (``serials``: a room request or a scene that was dropped, sent
+        blind by blind instead). A blind that another command takes over before its turn -- a
+        stop, or a newer move -- is skipped. A Shutter in ``louvers`` is sent its louvers,
+        the first value of its pair. A failure stops the rest, and the moves left unsent are
+        forgotten.
         """
-        pending = {
-            device_id: self.async_note_move(device_id, *rails) for device_id, rails in moves.items()
-        }
+        pending = (
+            {d: self.async_note_move(d, *rails) for d, rails in moves.items()}
+            if serials is None
+            else dict(serials)
+        )
         try:
             for device_id, rails in moves.items():
-                if not self.holds(device_id, pending[device_id]):
+                serial = pending[device_id]
+                if not self.holds(device_id, serial):
                     del pending[device_id]
                     continue
-                await self.api.async_set_position(
-                    device_id,
-                    *rails,
-                    still_wanted=functools.partial(self.holds, device_id, pending[device_id]),
-                )
-                self.async_watch_move(device_id, *rails, pending.pop(device_id))
+                still_wanted = functools.partial(self.holds, device_id, serial)
+                if device_id in louvers:
+                    sent = await self.api.async_set_louvers(
+                        device_id, rails[0], still_wanted=still_wanted
+                    )
+                    if sent:
+                        self.async_watch_louvers(device_id, rails[0], serial)
+                else:
+                    sent = await self.api.async_set_position(
+                        device_id, *rails, still_wanted=still_wanted
+                    )
+                    if sent:
+                        self.async_watch_move(device_id, *rails, serial)
+                del pending[device_id]
         finally:
             for device_id, serial in pending.items():
                 self.async_forget_move(device_id, serial)
@@ -675,9 +821,18 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         not: on 2026-10-12 a blind closed for Best Privacy without the hub hearing it, and
         the hub showed it open, heading for closed, for two hours until it was asked to report
         in. A blind without a room and group to address it by is not watched.
+
+        A command that takes one of the blinds over while the preset waits its turn drops it
+        (``_still_holds``); the rest are then sent the preset blind by blind, at once.
         """
-        serial = self.async_supersede_room(room_id)
-        await self.api.async_send_room_control(room_id, fields)
+        serial = self.async_supersede_room(room_id, aimed=True)
+        blinds = self.blinds_in(room_id)
+        reply = await self.api.async_send_room_control(
+            room_id, fields, still_wanted=self._still_holds(blinds, serial)
+        )
+        if reply is None:
+            await self._async_preset_each(blinds, fields, serial)
+            return
         # Every watch needs the targets the hub recorded on accepting the command, and one
         # read serves them all. The watches are registered now rather than after it, so a
         # stop or a move for one of these blinds meanwhile still replaces its watch.
@@ -696,6 +851,24 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 device_id,
             )
             self._async_start_watch(device_id, None, resend, "preset", serial, targets_read)
+
+    async def _async_preset_each(
+        self, blinds: dict[int, NormanPeripheralData], fields: dict[str, Any], serial: int
+    ) -> None:
+        """Send a preset to each of these blinds still held as ``serial``, and watch it."""
+        for device_id, device in blinds.items():
+            if device.room_id is None or device.group_id is None:
+                continue
+            send = functools.partial(
+                self.api.async_send_blind_control,
+                device.room_id,
+                device.group_id,
+                fields,
+                device_id,
+                still_wanted=functools.partial(self.holds, device_id, serial),
+            )
+            if await send() is not None:
+                self.async_watch_preset(device_id, send, serial)
 
     async def async_run_scene(self, scene: NormanScene) -> None:
         """Run a scene saved in one of the hub's rooms, then watch each of its blinds.
@@ -740,25 +913,31 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     async def _async_run_saved(
         self,
         targets: dict[int, NormanSceneTarget],
-        send: Callable[[Callable[[], bool]], Awaitable[None]],
+        send: Callable[[Callable[[], bool]], Awaitable[bool]],
     ) -> None:
         """Send a saved scene, then watch every blind in it.
 
         The scene replaces any move in flight for its blinds. Each blind's move is recorded
         before the request goes, as a room move's are (``async_note_move``), so a command for
         one of them right behind it keeps the scene's other rail. A Shutter is aimed at its
-        stored louvers, every other blind at its stored rails. ``send`` is handed the check a
-        busy hub's retry asks: whether the scene still holds every one of its blinds.
+        stored louvers, every other blind at its stored rails. ``send`` is handed the check
+        asked at the request's turn and before a busy hub's retry: whether the scene still
+        holds every one of its blinds. Dropped, the scene is sent blind by blind to the rest.
         """
+        await self.async_settle(targets)
         devices = self.data or {}
-        serial = self.async_supersede(targets)
+        targets = {
+            device_id: target for device_id, target in targets.items() if device_id in devices
+        }
+        serial = self.async_supersede(targets, aimed=True)
         moves: dict[int, tuple[int, int]] = {}
-        louvers: dict[int, int] = {}
+        louvers: set[int] = set()
         for device_id, target in targets.items():
             device_type = devices[device_id].type
             if device_type == COVER_TYPE_SHUTTER:
                 if target.position is not None:
-                    louvers[device_id] = target.position
+                    moves[device_id] = (target.position, 0)
+                    louvers.add(device_id)
             elif target.bottom is not None:
                 middle = None if device_type == COVER_TYPE_SINGLE_RAIL else target.middle
                 moves[device_id] = rails_to_send(
@@ -771,15 +950,19 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             device_id: serials.get(device_id, serial) for device_id in targets
         }
         try:
-            await send(lambda: self._holds_all(claims))
+            sent = await send(lambda: self._holds_all(claims))
         except BaseException:
             for device_id, move_serial in serials.items():
                 self.async_forget_move(device_id, move_serial)
             raise
+        if not sent:
+            await self._async_move_each(moves, serials, frozenset(louvers))
+            return
         for device_id, rails in moves.items():
-            self.async_watch_move(device_id, *rails, serials[device_id])
-        for device_id, position in louvers.items():
-            self.async_watch_louvers(device_id, position, serial)
+            if device_id in louvers:
+                self.async_watch_louvers(device_id, rails[0], serials[device_id])
+            else:
+                self.async_watch_move(device_id, *rails, serials[device_id])
 
     @callback
     def _async_start_watch(
@@ -997,8 +1180,14 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         data = (self.data or {}).get(device_id)
         if data is None or _rails(data)[0] is None:
             return True  # gone from the hub, or no position to judge by; nothing to chase
-        remaining = _distance(_rails(data), goal)
-        return remaining == 0 or remaining < _distance(start.rails, goal)
+        rails = _rails(data)
+        # A rail that lands a point short is there: a blind sent to 25 has reported 24, and
+        # one sent there again has nothing to move. A Shutter's louvers have eight steps, so
+        # theirs must match.
+        tolerance = 0 if data.type == COVER_TYPE_SHUTTER else ARRIVAL_TOLERANCE
+        if _arrived(rails, goal, tolerance):
+            return True
+        return _distance(rails, goal) < _distance(start.rails, goal)
 
     def _hub_target(self, device_id: int) -> _Rails | None:
         """The position the hub has recorded as this blind's target, if any."""
@@ -1109,7 +1298,12 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 await asyncio.sleep(RECONNECT_INTERVAL)
             else:
                 # The stream was cycled on purpose after NOTIF_MAX_DURATION; reconnect
-                # right away.
+                # right away. A full cycle is a working stream, whether or not anything
+                # moved during it, so an outage before it is over.
+                if self._listener_offline:
+                    self._listener_offline = False
+                    _LOGGER.info("Norman hub notification stream restored")
+                    self._device_info_stale = True
                 _LOGGER.debug("Reconnecting notification listener")
 
             # Re-read the hub before the next connection so anything that changed while the

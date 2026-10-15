@@ -10,10 +10,17 @@ from pytest_homeassistant_custom_component.components.diagnostics import (
 )
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
+from custom_components.norman.const import (
+    CONF_CONTROL_INTERVAL,
+    CONF_POLL_INTERVAL,
+    CONF_SHOW_SIDEBAR_PANEL,
+    CONF_WAKE_INTERVAL,
+    DOMAIN,
+)
 from custom_components.norman.diagnostics import redact_raw_body
 
 from .conftest import FakeHub, loaded
-from .const import HUB_HOST, HUB_LATITUDE, HUB_SSID, HUB_THING_NAME, UID_LIVING
+from .const import HUB_HOST, HUB_LATITUDE, HUB_SSID, HUB_THING_NAME, MOCK_CONFIG, UID_LIVING
 
 
 async def test_diagnostics_redacts_network_details(
@@ -98,6 +105,45 @@ async def test_a_device_list_clipped_in_the_traffic_log_is_still_redacted(
     assert HUB_LATITUDE not in exchanges
     assert "America/New_York" not in exchanges
     assert "ShadeAuto Hub" not in exchanges
+
+
+async def test_names_in_raw_bodies_are_kept_as_written(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: object,
+) -> None:
+    """A room named in Japanese reads as it does in the app, not as \\u escapes."""
+    fake_hub.devices["results"]["RoomList"][0]["RoomName"] = "リビング"
+    async with loaded(hass, mock_config_entry) as entry:
+        diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+
+    raw_devices = diagnostics["hub_traffic"]["latest_raw"]["/NM/v1/GetAllPeripheral"]
+    assert '"RoomName":"リビング"' in raw_devices
+    assert '"GeoLoc":"**REDACTED**"' in raw_devices
+
+
+async def test_diagnostics_include_the_options(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    fake_hub: FakeHub,
+    notifications: object,
+) -> None:
+    """Whether the poll and the wake sweep run, and the command spacing, are in the report."""
+    options = {
+        CONF_POLL_INTERVAL: 30,
+        CONF_WAKE_INTERVAL: 3600,
+        CONF_CONTROL_INTERVAL: 2.0,
+        CONF_SHOW_SIDEBAR_PANEL: False,
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=MOCK_CONFIG, unique_id=HUB_THING_NAME, options=options
+    )
+    async with loaded(hass, entry):
+        diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+
+    assert diagnostics["entry"]["options"] == options
 
 
 async def test_a_failed_request_does_not_name_the_hubs_address(

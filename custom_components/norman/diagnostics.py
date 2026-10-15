@@ -41,7 +41,10 @@ def redact_raw_body(body: str, secrets: list[str]) -> str:
     except json.JSONDecodeError:
         data = None
     if isinstance(data, dict | list):
-        body = json.dumps(async_redact_data(data, TO_REDACT), separators=(",", ":"))
+        # Unescaped, so names stay readable: a Japanese room name would otherwise be \u30ea...
+        body = json.dumps(
+            async_redact_data(data, TO_REDACT), ensure_ascii=False, separators=(",", ":")
+        )
     else:
         body = redact_hub_text(body)
     return _without_secrets(body, secrets)
@@ -74,8 +77,13 @@ async def async_get_config_entry_diagnostics(
     traffic = async_redact_data(traffic, TO_REDACT)
 
     return {
+        # The options say whether the poll and the wake sweep run, and the command spacing.
         "entry": async_redact_data(
-            {"data": dict(entry.data), "unique_id": entry.unique_id},
+            {
+                "data": dict(entry.data),
+                "options": dict(entry.options),
+                "unique_id": entry.unique_id,
+            },
             TO_REDACT,
         ),
         "last_update_success": coordinator.last_update_success,
