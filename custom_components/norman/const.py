@@ -84,13 +84,21 @@ CONF_WAKE_INTERVAL = "wake_interval"
 # reporting the old position with the new target -- indefinitely, until the blind next
 # reports in (one blind sat at middle 0 / target 100 for twelve minutes on 2026-09-18). The
 # only proof of delivery is the blind reporting a new position, which it does when it stops
-# moving, 10-45 s later. So each command is followed by a background watch that ends as soon
+# moving, 10-45 s later -- or, for the Den's single-rail shades on 2026-10-15, only 55-90 s
+# later, though they had stopped within 30 s and answered a status request in 4 s. So each command is followed by a background watch that ends as soon
 # as the blind reports progress; if it stays silent for MOVE_TIMEOUT it is asked to report in,
 # and if it then shows it never moved the command is sent again, up to MOVE_ATTEMPTS sends in
 # all. A large shade takes ~30 s to travel end to end, so the timeout leaves a margin.
 MOVE_TIMEOUT = 60.0
 MOVE_REPORT_WAIT = 10.0
 MOVE_ATTEMPTS = 3
+# How long a blind counts as on its way once the hub has a target for it that it has not
+# reached: the whole time the move watchdog keeps checking and resending a move. Past it the
+# hub has not heard the blind arrive, and may not for hours (a blind that missed the command
+# leaves the target standing), so the cover stops saying "opening" or "closing". The
+# dashboard card uses the same window (MOVE_WINDOW_MS). Single-rail Den shades took 55-90 s
+# to report a full open or close on 2026-10-15.
+MOVE_WINDOW = MOVE_ATTEMPTS * (MOVE_TIMEOUT + MOVE_REPORT_WAIT)
 # How far short of its goal, in percent, a rail still counts as arrived: two Office shades
 # sent from 0 to 25 reported 25 and 24 (docs/NORMAN_API.md), so a shade sent to 25 again
 # from 24 may have nothing to move and nothing new to report.

@@ -352,10 +352,10 @@ async def test_the_entry_title_follows_a_hub_rename(
     """A title taken from the hub's old name follows its new one."""
     async with loaded(hass, mock_config_entry) as entry:
         assert entry.title == "ShadeAuto Hub"
-        fake_hub.devices["results"]["CustomDeviceName"] = "Annisquam Shades"
+        fake_hub.devices["results"]["CustomDeviceName"] = "Lakehouse Shades"
         assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
-        assert entry.title == "Annisquam Shades"
+        assert entry.title == "Lakehouse Shades"
 
 
 async def test_the_entry_title_follows_a_hub_renamed_while_running(
@@ -371,11 +371,11 @@ async def test_the_entry_title_follows_a_hub_renamed_while_running(
     """
     async with loaded(hass, mock_config_entry) as entry:
         registrations = len(fake_hub.calls_to("/registration"))
-        fake_hub.devices["results"]["CustomDeviceName"] = "Annisquam Shades"
+        fake_hub.devices["results"]["CustomDeviceName"] = "Lakehouse Shades"
         await notifications.put({"UpdateTime": {"device": 1}})
         await settle(hass)
 
-        assert entry.title == "Annisquam Shades"
+        assert entry.title == "Lakehouse Shades"
         assert len(fake_hub.calls_to("/registration")) == registrations
 
 

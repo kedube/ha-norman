@@ -1,6 +1,7 @@
-# Norman Hub local API reference
+# Norman Gen 2 Hub local API reference
 
-This is the contributor reference for the hub protocol the integration speaks. It is
+This is the contributor reference for the protocol of the Norman Gen 2 Hub, the hub Norman's
+ShadeAuto app sets up and controls; it is the only hub the integration speaks to. It is
 reverse-engineered from direct hub tests, app traffic, and inspection of the installed
 ShadeAuto app's network library. Field names are reproduced exactly as the hub sends them.
 Where a field's meaning is inferred rather than confirmed, the text says so.
@@ -74,6 +75,10 @@ calls `registration` on the discovered address to validate it and get the `Thing
 or not a TXT identity is present. It then decides whether the hub is new (offer it) or known
 (refresh its stored address, and set up again a hub that was waiting to retry). The app itself
 resolves the instance name with a unicast SRV query rather than browsing.
+
+The hub did not advertise HomeKit (`_hap._tcp`) on the network checked on 2026-10-15. Owners
+have added it to Apple Home, but one hub driven from Apple Home and this integration together
+does not work well.
 
 ## Endpoints
 
@@ -233,13 +238,21 @@ preset reads the hub first. A blind still on its way to report where it stopped 
 from since, the hub holding a target it has not reached — is given up to 10 s to report; the
 hub replaces its target with where the blind stopped when it does. Without that, moving the
 middle rail just after stopping the bottom rail sent the bottom rail on to where it had been
-going.
+going. On 2026-10-15 a two-rail shade stopped five seconds into a move to 0 reported where it
+had stopped, 86, 2.8 s after the `MotorStop`, and the hub's target became 86 with it.
 
 A **Shutter** (`ModuleType` 1) has no rails. Its louvers are one field, `Position` 0–7 (7 shut,
 3 horizontal, 0 turned fully the other way), sent alone: `{"PeripheralUID": …, "Position": 3}`.
 That is what the app's network library builds for a Shutter; it has not been sent to a real
 one from here. The app's library can also send `Position1` / `Position2` (and read their
 `Target…` counterparts), a pair for split-panel shutters that no product in the app uses yet.
+
+Real Norman shutters on the older hub, which speaks a different protocol, agree with this
+reading ([norman-blinds](https://github.com/nsleigh/norman-blinds), six solar shutters). They
+report product code 1, detail 0, and take exactly eight louver positions, on a 0–100 scale
+there. Only one end is fully shut, the other turned nearly shut the opposite way, and the owner
+settled on the third stop from that end as "open", which is `Position` 3 here. They also report
+an `Angle` that stays 0.
 
 On a two-rail blind the middle rail hangs above the bottom rail, so the rail sent back is
 **carried along** when the move would pass it: raising the bottom rail above the middle rail
@@ -288,10 +301,15 @@ matched the starting positions of all 13 blinds on the hub. The partial move mea
 and target alone are not proof that every blind reaches the requested position. The ShadeAuto
 app has not been seen sending this hub-wide position form either.
 
-`GroupID` is the blind's **address within its room** — the button (1, 2, 4, ...) a paired
-Norman remote uses for it. The same value repeats across rooms, so it is only meaningful with
-`RoomID`, and the pair `(RoomID, GroupID)` is **unique per blind** (verified on real hardware
-across 13 blinds).
+`GroupID` is the blind's **address within its room** — the channel a paired Norman remote
+uses for it, one bit each: 1, 2, 4, … (a room's third group, `Group_3`, is `GroupID` 4). The
+same value repeats across rooms, so it is only meaningful with `RoomID`. The hub reads it as a
+**bitmask**: on 2026-10-15 `{"RoomID": <Den>, "GroupID": 3, "Switch": 0}` sent Best privacy to
+the Den's blinds on channels 1 and 2 and left the one on 4 alone, and `Switch: 1` to the same
+address brought both back. So the pair `(RoomID, GroupID)` names one blind only while each
+blind has a channel of its own, as all 13 blinds on the tested hub do. Blinds paired to the same
+channel, which its group's `PeripheralList` would list together, move together on any preset
+sent to it; the integration logs a warning when it finds them.
 
 That pair is how the `Switch` and `Favorite` verbs address a single blind. They are **not**
 addressed by `PeripheralUID`: sending `{"Switch": 1, "RoomID": 29550, "GroupID": 1}` moved only
@@ -655,7 +673,11 @@ A long-poll. The hub keeps the response open and writes a bare JSON object every
 peripheral's state changes (including changes made with a remote or the Norman app). There is
 no framing between objects: no newline, no length prefix.
 
-Request: empty body.
+Request: empty body. Other clients send `{"ThingName", "Timestamp", "Timeout"}`; on 2026-10-15
+the hub ignored all three. A stream opened with `Timeout: 5` was still open 15 s later, and one
+opened with a `Timestamp` from before a blind's report, in seconds or in milliseconds, replayed
+nothing: only a stream already open received the report. What the stream misses while it is
+down is recovered by reading `status`, not from the stream.
 
 Response stream, as observed:
 
@@ -1110,6 +1132,11 @@ in, resends the preset twice, and gives up. That is how type 48 was found.
   is a list of **ids**, not objects, and `Status` is a millisecond timestamp.
 - A control call produced a notification within the same second and another when the move
   finished, about eight seconds later. Each hub call answered in 3–11 ms.
+- A blind can take far longer to report on its own than to move. On 2026-10-15 the Den's
+  single-rail shades (32/2) reported a full close or open only 55–90 s after the command; asked
+  with a `StatusRequest` 30 s in, Den_1 answered within 4 s that it had already arrived, both
+  ways. The move watchdog's 60 s wait and status request (const.py, `MOVE_TIMEOUT`) cover that.
+  Den_2, sent to 0, stops at 18, as it did in an earlier test.
 
 ## Error conventions
 
@@ -1245,6 +1272,13 @@ thirteen responded**. The same scene driven from a Home Assistant automation kep
 blind occasionally at 1.3 s, so the hand test was the easier case; at **1.5 s** several
 consecutive whole-house runs dropped nothing, but longer use at 1.5 s still lost a command from
 time to time, so the shipped default is **1.6 s**.
+
+Giving every command its own `Timestamp` and `TaskID` does not stop the drops. Two other clients
+spaced their commands 0.75 s apart and gave each a unique `Timestamp` and `TaskID`, on the
+theory that the hub was discarding duplicates. But the thirteen-blind burst above, every request
+with the same `Timestamp`, had all thirteen targets stored, which a hub discarding duplicates
+would not do; and 1.0–1.2 s spacing, where every command already carries a second of its own,
+still lost blinds.
 
 So `_async_control` gives every `/control` send its turn in a queue and spaces the sends by
 the entry's command-spacing option (const.py, `DEFAULT_CONTROL_INTERVAL`, 1.6 s), measured from

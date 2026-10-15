@@ -11,10 +11,10 @@ import time
 from typing import Any, NamedTuple
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -53,6 +53,7 @@ from .const import (
     MOVE_ATTEMPTS,
     MOVE_REPORT_WAIT,
     MOVE_TIMEOUT,
+    MOVE_WINDOW,
     MSD_STACK_SIDES,
     POLL_DISABLED,
     RECONNECT_INTERVAL,
@@ -322,6 +323,14 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # Kept from the last good read while the hub cannot read its configuration.
         self.scenes: dict[str, NormanScene] = {}
         self.scene_groups: dict[str, NormanSceneGroup] = {}
+        # Each blind heading for a target it has not reached, with the target and when it set
+        # off, for the covers' opening and closing states (travelling). One timer redraws
+        # them when the next of these runs out of MOVE_WINDOW.
+        self._headings: dict[int, tuple[_Rails, datetime]] = {}
+        self._heading_timer: CALLBACK_TYPE | None = None
+        entry.async_on_unload(self._async_cancel_heading_timer)
+        # Remote-control channels found holding more than one blind, warned about once each.
+        self._shared_groups: set[tuple[int, int, frozenset[int]]] = set()
 
     @callback
     def async_start_wake_sweep(self) -> None:
@@ -421,6 +430,62 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
     def has_device_list(self) -> bool:
         """Whether the hub's device list has been read, so its rooms and scenes are known."""
         return bool(self._device_info)
+
+    def travelling(self, device_id: int) -> bool:
+        """Whether a blind is on its way to a target it has not reached yet.
+
+        From when the hub first shows the target until the blind reports it is there, or
+        ``MOVE_WINDOW`` passes: a blind that missed the command leaves the hub showing the
+        target, unreached, until it next reports in, which can be hours.
+        """
+        heading = self._headings.get(device_id)
+        if heading is None:
+            return False
+        return (dt_util.utcnow() - heading[1]).total_seconds() < MOVE_WINDOW
+
+    @callback
+    def _track_headings(self, devices: NormanDevices) -> None:
+        """Note when each blind set off for a target it has not reached (``travelling``)."""
+        now = dt_util.utcnow()
+        for device_id, data in devices.items():
+            targets = _targets(data)
+            heading = any(
+                target is not None and target != rail
+                for rail, target in zip(_rails(data), targets, strict=True)
+            )
+            if not heading:
+                self._headings.pop(device_id, None)
+            elif (known := self._headings.get(device_id)) is None or known[0] != targets:
+                self._headings[device_id] = (targets, now)
+        for device_id in set(self._headings) - set(devices):
+            del self._headings[device_id]
+        self._async_schedule_heading_expiry(now)
+
+    @callback
+    def _async_schedule_heading_expiry(self, now: datetime) -> None:
+        """Redraw the covers when the next blind's ``MOVE_WINDOW`` runs out."""
+        self._async_cancel_heading_timer()
+        ends = [
+            seconds
+            for _, since in self._headings.values()
+            if (seconds := MOVE_WINDOW - (now - since).total_seconds()) > 0
+        ]
+        if not ends:
+            return
+
+        @callback
+        def _expired(_now: datetime) -> None:
+            self._heading_timer = None
+            self.async_update_listeners()
+            self._async_schedule_heading_expiry(dt_util.utcnow())
+
+        self._heading_timer = async_call_later(self.hass, min(ends), _expired)
+
+    @callback
+    def _async_cancel_heading_timer(self) -> None:
+        if self._heading_timer is not None:
+            self._heading_timer()
+            self._heading_timer = None
 
     @property
     def listening(self) -> bool:
@@ -1383,8 +1448,38 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         if not self._device_info:
             self._keep_registry_names(devices)
         self._warn_about_unknown_module_types(devices)
+        self._warn_about_shared_groups(devices)
         self._sync_device_names(devices)
+        self._track_headings(devices)
         return devices
+
+    def _warn_about_shared_groups(self, devices: NormanDevices) -> None:
+        """Warn, once, about blinds that share a remote-control channel in their room.
+
+        A blind's own Best privacy, Best view and Favorite are addressed by its room and its
+        group -- the channel a Norman remote uses for it, one bit each (1, 2, 4, ...). The
+        hub sends a preset to every blind on the channels it names: on 2026-10-15 GroupID 3
+        reached the blinds on channels 1 and 2 and left the one on 4. Blinds paired to the
+        same channel are therefore moved together by each one's preset.
+        """
+        channels: dict[tuple[int, int], set[int]] = {}
+        for device_id, data in devices.items():
+            if data.room_id is not None and data.group_id is not None:
+                channels.setdefault((data.room_id, data.group_id), set()).add(device_id)
+        for (room_id, group_id), device_ids in channels.items():
+            key = (room_id, group_id, frozenset(device_ids))
+            if len(device_ids) < 2 or key in self._shared_groups:
+                continue
+            self._shared_groups.add(key)
+            names = sorted(devices[device_id].name for device_id in device_ids)
+            _LOGGER.warning(
+                "%s share remote channel %s in %s: the Best privacy, Best view and Favorite "
+                "buttons of each move all of them. Pair each blind to a channel of its own in "
+                "the Norman app to control them separately",
+                ", ".join(names),
+                group_id,
+                devices[next(iter(device_ids))].room_name or f"room {room_id}",
+            )
 
     def _keep_registry_names(self, devices: NormanDevices) -> None:
         """Name status-only placeholders as the device registry already has them.

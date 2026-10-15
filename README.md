@@ -1,9 +1,14 @@
 # (Unofficial) Norman smart blinds for Home Assistant
 
 A custom Home Assistant integration for [Norman](https://www.normanusa.com/) motorized
-window coverings. It talks to the **Norman Hub directly on your local network** — nothing goes
-through the cloud — and it is **push-based**: when a blind moves, whether from Home Assistant,
-a remote, or the Norman app, Home Assistant sees the change within a second or two.
+window coverings on a **Norman Gen 2 Hub**, the hub you set up and control with Norman's
+**ShadeAuto** app. It has not been tried with other Norman hubs. Norman's earlier **Gen 1**
+hub, set up with the older Norman app, speaks a different protocol (on port 80, at a
+`NORMANHUB…` address); [Norman-HA-Integration](https://github.com/Herbertmt978/Norman-HA-Integration)
+is a separate community integration for it. It talks to the **hub
+directly on your local network** — nothing goes through the cloud — and it is **push-based**:
+when a blind moves, whether from Home Assistant, a remote, or the ShadeAuto app, Home Assistant
+sees the change within a second or two.
 
 > ⚠️ This is an **unofficial** integration, reverse-engineered from the hub's local API. It is
 > not affiliated with or endorsed by Norman. The protocol has no vendor documentation and could
@@ -54,7 +59,8 @@ to move it. It finds your blinds by itself and needs no configuration.*
 
 > Requirements:
 >
-> - A Norman Hub on the same network as Home Assistant, reachable on TCP port 10123.
+> - A Norman Gen 2 Hub, set up in the ShadeAuto app, on the same network as Home Assistant and
+>   reachable on TCP port 10123.
 > - Home Assistant 2026.3 or newer (`hacs.json` declares this minimum; it is what the
 >   bundled brand icon needs). CI tests against the latest Home Assistant release.
 
@@ -260,7 +266,7 @@ A dashboard button that nudges the tilt a little at a time:
 
 ```yaml
 type: button
-name: Tilt left
+name: Close the vanes a step
 tap_action:
   action: perform-action
   perform_action: norman.nudge_tilt
@@ -327,7 +333,7 @@ sidebar entry per user). Any other language gets English.
 
 | Device | `ModuleType` / `ModuleDetail` | Exposed as |
 |---|---|---|
-| Norman Hub (`NienMadeHub`, firmware 6.x) | — | Required. The integration only talks to the hub. |
+| Norman Gen 2 Hub (`NienMadeHub`, firmware 6.x), set up in the ShadeAuto app | — | Required. The integration only talks to the hub. |
 | Cellular Shade, dual rail (day/night) | 33 | Two covers: the primary (bottom rail, with the middle rail also as tilt) and a **Middle rail** shade for the second fabric. |
 | Cellular Shade, top-down/bottom-up | 32 / 3–5 | The same two covers: the middle rail is the top rail. |
 | Cellular Shade | 32 / 0, 2 | Cover with position only, `shade` device class. |
@@ -349,6 +355,8 @@ unknown-type warning or behaves differently from its row.
 
 - **No authentication on the hub.** That is the vendor protocol, not a choice of this
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
+- **Use the hub from Home Assistant or from Apple Home (HomeKit), not both.** Controlling the
+  same hub from both does not work well.
 - **Several products are known only from the Norman app**: the Shutter (`ModuleType` 1), the
   MRS2 rollers (49), and the Roman Shade, PerfectSheer and top-down/bottom-up cellular details
   (48/2, 48/3, 32/3–5). See [Supported devices](#supported-devices).
@@ -386,7 +394,8 @@ Home Assistant could not reach the address on port 10123 within 10 seconds. Chec
 in your router, make sure Home Assistant and the hub are on the same network (or that the route
 and firewall allow the connection), and try `curl -X POST -d '{}' http://<hub-ip>:10123/NM/v1/status`
 from a machine on the same network; a JSON reply means the hub is reachable. Keep the `-d '{}'`:
-without a body the hub answers with an empty reply even when it is working.
+without a body the hub answers with an empty reply even when it is working. A Gen 1 hub never
+answers on port 10123; see the top of this page.
 
 **A blind or feature the integration does not support.**
 Turn on [debug logging](#debug-logging) and leave it for a day. Any field your hub sends that
@@ -504,8 +513,8 @@ product. CI runs HACS validation, `hassfest`, Ruff, Mypy, the card check and pyt
 For interoperability; no vendor code is included. This project is unaffiliated with Norman.
 Use at your own risk; it may void your warranty.
 
-Originally written by [Keito Uchiyama](https://github.com/keito/home-assistant-norman); about 93%
-of the integration's code and over 97% of the repository is new since. What survives is mostly
+Originally written by [Keito Uchiyama](https://github.com/keito/home-assistant-norman); about 94%
+of the integration's code and over 98% of the repository is new since. What survives is mostly
 structure: the module layout, the hub's endpoints and registration handshake, the data model, and the
 outline of the config flow and cover entity. Licensed under Apache 2.0 either way — see the
 [license](LICENSE) and [NOTICE](NOTICE).

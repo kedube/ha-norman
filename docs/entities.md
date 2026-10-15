@@ -123,6 +123,14 @@ hub reports status for but does not list by name gets `Norman <uid>`.
 | `louver_position` (attribute) | `Position` | Shutter only. The hub's own 0–7. |
 | `stack` (attribute) | `MSDStackType` | SmartDrape only. The side it gathers to when open: `left`, `right` or `split`. |
 
+A cover reads **opening** or **closing** while the hub has a target for its rail that the rail
+has not reached: from when the hub first shows the target until the blind reports it is there,
+for at most 3½ minutes, as long as a move is checked and resent. A blind that missed a command
+leaves the hub showing the target until it next reports in, which can be hours, so past that
+the cover reads open or closed again. A blind can report its arrival a minute or more after it
+stops, unless the move's check asks it first. The Middle rail cover follows the middle rail,
+and a Shutter its louvers.
+
 ### Availability
 
 A cover (and each of its sensors) is **unavailable** when:
@@ -253,7 +261,7 @@ dashboard by hand if you want them there.
 
 | Button | Hub verb | Notes |
 |---|---|---|
-| Best privacy / Best view | `Switch: 0` / `Switch: 1` | The app's own buttons, addressed at this blind by its room and group. Privacy is bottom rail 0 with the middle rail at 100; view opens both. |
+| Best privacy / Best view | `Switch: 0` / `Switch: 1` | The app's own buttons, addressed at this blind by its room and group. Privacy is bottom rail 0 with the middle rail at 100; view opens both. Blinds paired to the same remote channel move together on each one's buttons, and the integration logs a warning when it finds them. |
 | Favorite position | `Favorite: 0` | Moves to the favorite stored in the blind, addressed the same way. Works on both rail types. |
 | Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | One small motor step, addressed by `PeripheralUID`. The app uses it while setting limits and as the Fine-tune step of calibration, tapping it repeatedly to inch a rail into place. Independent of position targets, and the hub reports no position change until the motor settles. |
 | Request status | `StatusRequest: 0` | Asks this one blind to report in; nothing moves. Filed under **Diagnostic**, next to the sensors it refreshes. A battery blind's radio sleeps between commands and the hub stops hearing from it, so its battery, last-seen and position go stale and the Norman app eventually lists it as "Disconnect". This is the per-blind form of the app's refresh, confirmed by a live app capture; on hardware the blind answered within five seconds every time. The answer arrives as a hub notification a few seconds after the press, not in the press itself. See [Waking a blind](NORMAN_API.md#waking-a-blind). |

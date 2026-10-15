@@ -475,6 +475,19 @@ async def test_shutter_nudges_turn_the_louvers(
     assert _louvers_sent(fake_hub, UID_SHUTTER)[-1]["Position"] == position
 
 
+async def test_louvers_turning_open_read_as_opening(
+    hass: HomeAssistant,
+    init_with_every_product: MockConfigEntry,
+    fake_hub: FakeHub,
+) -> None:
+    """Shut (7) and heading for horizontal (3): the Shutter is opening."""
+    fake_hub.peripheral_status(UID_SHUTTER)["TargetPosition"] = 3
+    await init_with_every_product.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(cover_entity_id(hass, UID_SHUTTER)).state == CoverState.OPENING
+
+
 async def test_quick_louver_nudges_add_up(
     hass: HomeAssistant, init_with_every_product: MockConfigEntry, fake_hub: FakeHub
 ) -> None:

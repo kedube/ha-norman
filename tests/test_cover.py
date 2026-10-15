@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import patch
 
 import aiohttp
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.cover import (
     ATTR_CURRENT_POSITION,
     ATTR_CURRENT_TILT_POSITION,
@@ -45,7 +46,11 @@ from homeassistant.helpers import (
 )
 from homeassistant.setup import async_setup_component
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_capture_events,
+    async_fire_time_changed,
+)
 
 from custom_components.norman.api import NormanApiError
 from custom_components.norman.const import (
@@ -55,6 +60,7 @@ from custom_components.norman.const import (
     HUB_CMD_STOP,
     HUB_COMMAND_TRIGGER,
     MOVE_ATTEMPTS,
+    MOVE_WINDOW,
 )
 from custom_components.norman.coordinator import NormanCoordinator
 
@@ -1375,3 +1381,70 @@ async def test_a_blind_a_point_short_of_its_goal_has_arrived(
     assert len(_moves(fake_hub, UID_LIVING)) == 1
     assert not _status_requests(fake_hub, UID_LIVING)
     assert not events
+
+
+# --- opening and closing ---------------------------------------------------------------------
+
+
+async def _heard(hass: HomeAssistant, notifications: asyncio.Queue, uid: int) -> None:
+    await notifications.put({"PeripheralList": [uid]})
+    await settle(hass)
+
+
+async def test_a_blind_on_its_way_reads_closing_until_it_arrives(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """The hub has a target the blind has not reached: the cover says which way it is going."""
+    entity_id = cover_entity_id(hass, UID_LIVING)
+    fake_hub.set_position(UID_LIVING, target_bottom=0)
+    await _heard(hass, notifications, UID_LIVING)
+    assert hass.states.get(entity_id).state == CoverState.CLOSING
+
+    fake_hub.set_position(UID_LIVING, bottom=0)
+    await _heard(hass, notifications, UID_LIVING)
+    assert hass.states.get(entity_id).state == CoverState.CLOSED
+
+
+async def test_the_middle_rail_cover_reads_its_own_rail(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Only the middle rail is heading somewhere: its cover is opening, the primary is not."""
+    fake_hub.set_position(UID_LIVING, target_middle=100)
+    await _heard(hass, notifications, UID_LIVING)
+
+    assert hass.states.get(middle_rail_entity_id(hass, UID_LIVING)).state == CoverState.OPENING
+    assert hass.states.get(cover_entity_id(hass, UID_LIVING)).state == CoverState.OPEN
+
+
+async def test_a_target_the_blind_never_reaches_stops_reading_as_a_move(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A blind that missed the command leaves the hub's target standing, for hours.
+
+    It reads as opening only for as long as a move is checked and resent (MOVE_WINDOW),
+    and reading the same target again does not start that over.
+    """
+    entity_id = cover_entity_id(hass, UID_LIVING)
+    fake_hub.set_position(UID_LIVING, target_bottom=100)
+    await _heard(hass, notifications, UID_LIVING)
+    assert hass.states.get(entity_id).state == CoverState.OPENING
+
+    freezer.tick(MOVE_WINDOW - 10)
+    async_fire_time_changed(hass)
+    await _heard(hass, notifications, UID_LIVING)
+    assert hass.states.get(entity_id).state == CoverState.OPENING
+
+    freezer.tick(11)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id).state == CoverState.OPEN

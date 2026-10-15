@@ -194,6 +194,36 @@ class NormanCoverBase(NormanRailMixin, CoverEntity):
         return data.bottom_rail_position if data else None
 
     @property
+    def is_opening(self) -> bool:
+        """Whether the rail is on its way up, to a target the hub has for it."""
+        return self._travel() > 0
+
+    @property
+    def is_closing(self) -> bool:
+        """Whether the rail is on its way down, to a target the hub has for it."""
+        return self._travel() < 0
+
+    def _travel(self) -> int:
+        """1 while this cover's rail heads up, -1 while it heads down, else 0.
+
+        Only while the blind is travelling (coordinator.travelling): a hub target left
+        standing by a blind that never heard the command is not a move under way.
+        """
+        if not self.coordinator.travelling(self._device_id):
+            return 0
+        now, target = self._now_and_target()
+        if now is None or target is None or now == target:
+            return 0
+        return 1 if target > now else -1
+
+    def _now_and_target(self) -> tuple[int | None, int | None]:
+        """Where this cover's rail is and where it is heading, 0 (closed) to 100 (open)."""
+        data = self._data
+        if data is None:
+            return None, None
+        return data.bottom_rail_position, data.target_bottom_rail_position
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose the hub's target position, which leads the current position while moving."""
         data = self._data
@@ -398,6 +428,13 @@ class NormanShutter(NormanCoverBase):
             return None
         return _percent(_louver_level(data.position), LOUVER_LEVELS)
 
+    def _now_and_target(self) -> tuple[int | None, int | None]:
+        """How open the louvers are and how open they are turning, in steps."""
+        data = self._data
+        if data is None or data.position is None or data.target_position is None:
+            return None, None
+        return _louver_level(data.position), _louver_level(data.target_position)
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Where the louvers are heading, and the hub's own 0-7 Position."""
@@ -494,6 +531,12 @@ class NormanMiddleRailCover(NormanCoverBase):
         """Return the middle rail position."""
         data = self._data
         return data.middle_rail_position if data else None
+
+    def _now_and_target(self) -> tuple[int | None, int | None]:
+        data = self._data
+        if data is None:
+            return None, None
+        return data.middle_rail_position, data.target_middle_rail_position
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

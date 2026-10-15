@@ -5,6 +5,23 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Covers read opening and closing** while the hub has a target their rail has not reached, for
+  up to 3½ minutes, so automations, voice assistants and Home Assistant's own cards see a move
+  under way, not only Norman Shades.
+- **A warning names blinds that share a remote channel.** The hub sends a preset to every blind
+  on the channels it is addressed to, so such blinds move together on each one's Best privacy,
+  Best view and Favorite.
+- **The docs point Gen 1 hub owners to a separate integration**, and advise against using the
+  hub from Apple Home and Home Assistant together.
+- **Hub behaviour measured on 2026-10-15 is in the API notes:** `GroupID` is a channel bitmask; a
+  stopped blind reports where it stopped within 3 s and the hub's target follows; the
+  notification request's body is ignored; some blinds report a move only a minute or more after
+  making it, unless asked.
+- **The docs name the hub this is for:** the Norman Gen 2 Hub, set up with Norman's ShadeAuto
+  app.
+
 ## 0.88 — 2026-10-15
 
 - **Moving a blind's other rail no longer restarts a stopped move.** Within about 10 s of a stop
@@ -223,8 +240,8 @@ version heading and publishes it as the release's Highlights.
   so a hub without schedules no longer gets a repair it cannot act on. The integration reads
   the hub's schedule list (read-only) to decide, and the repairs now suggest replacing those
   schedules with Home Assistant automations.
-- **Repair titles name the hub once.** They read "Annisquam Shades has no time zone" instead
-  of "Norman Hub Annisquam Shades has no time zone".
+- **Repair titles name the hub once.** They read "Lakehouse Shades has no time zone" instead
+  of "Norman Hub Lakehouse Shades has no time zone".
 
 ## 0.76 — 2026-10-12
 

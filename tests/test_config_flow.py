@@ -210,7 +210,7 @@ async def test_reconfigure_keeps_a_chosen_title(
 ) -> None:
     """A new address does not undo a title from the hub's name or from Home Assistant."""
     mock_config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(mock_config_entry, title="Annisquam Shades")
+    hass.config_entries.async_update_entry(mock_config_entry, title="Lakehouse Shades")
     aioclient_mock.post(
         "http://192.168.1.99:10123/NM/v1/registration",
         json={"Error": 0, "ThingName": HUB_THING_NAME},
@@ -223,7 +223,7 @@ async def test_reconfigure_keeps_a_chosen_title(
 
     assert result["reason"] == "reconfigure_successful"
     assert mock_config_entry.data[CONF_HOST] == "192.168.1.99"
-    assert mock_config_entry.title == "Annisquam Shades"
+    assert mock_config_entry.title == "Lakehouse Shades"
 
 
 async def test_reconfigure_rejects_a_different_hub(

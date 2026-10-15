@@ -46,7 +46,7 @@ from custom_components.norman.coordinator import (
 )
 from custom_components.norman.entity import hub_identifier
 
-from .conftest import HUB_MAC, FakeHub, cover_entity_id, settle
+from .conftest import HUB_MAC, FakeHub, cover_entity_id, loaded, settle
 from .const import (
     HUB_HOST,
     HUB_SSID,
@@ -502,7 +502,7 @@ async def test_app_edits_re_read_the_device_list_and_rename_devices(
     """
     device_calls = len(fake_hub.calls_to("GetAllPeripheral"))
     results = fake_hub.devices["results"]
-    results["CustomDeviceName"] = "Annisquam Shade Hub"
+    results["CustomDeviceName"] = "Lakehouse Shade Hub"
     results["RoomList"][0]["GroupList"][0]["PeripheralList"][0]["PeripheralName"] = "Office_1"
 
     await notifications.put({"UpdateTime": {"peripheral": 1788831865}, "Timestamp": 1})
@@ -511,8 +511,8 @@ async def test_app_edits_re_read_the_device_list_and_rename_devices(
     assert len(fake_hub.calls_to("GetAllPeripheral")) == device_calls + 1
     assert _device(hass, init_integration, str(UID_LIVING)).name == "Office_1"
     hub_device = _device(hass, init_integration, hub_identifier(init_integration))
-    assert hub_device.name == "Annisquam Shade Hub"
-    assert init_integration.runtime_data.hub.custom_name == "Annisquam Shade Hub"
+    assert hub_device.name == "Lakehouse Shade Hub"
+    assert init_integration.runtime_data.hub.custom_name == "Lakehouse Shade Hub"
 
 
 async def test_user_renames_in_home_assistant_win_over_app_renames(
@@ -742,6 +742,38 @@ async def test_a_stream_back_for_a_quiet_cycle_ends_the_outage(
     assert len(errors) == 2
     assert "second drop" in errors[1]
     assert any(r.levelno == logging.INFO and "restored" in r.message for r in caplog.records)
+
+
+async def test_blinds_sharing_a_remote_channel_are_warned_about_once(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Two blinds on one channel move together on each one's preset; the log says so once.
+
+    A preset goes to every blind on the channels its GroupID names: on real hardware GroupID
+    3 reached the blinds on channels 1 and 2 of a room, and not the one on 4.
+    """
+    group = fake_hub.devices["results"]["RoomList"][0]["GroupList"][0]
+    group["PeripheralList"].append(
+        {
+            "PeripheralUID": "1009",
+            "PeripheralName": "Living Sheer",
+            "ModuleType": "32",
+            "ModuleDetail": "2",
+        }
+    )
+    fake_hub.status["Peripherals"].append(
+        {"PeripheralUID": 1009, "BottomRailPosition": 50, "MiddleRailPosition": 0}
+    )
+    async with loaded(hass, mock_config_entry) as entry:
+        await entry.runtime_data.async_refresh()
+
+    warnings = [r.message for r in caplog.records if "share remote channel" in r.message]
+    assert len(warnings) == 1
+    assert "Living Drape, Living Sheer" in warnings[0]
 
 
 async def test_hub_outage_makes_entities_unavailable_until_it_recovers(

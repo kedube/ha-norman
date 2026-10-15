@@ -44,7 +44,7 @@ _DEVICES: dict[str, Any] = {
         "CustomDeviceName": "ShadeAuto Hub",
         "TimeZone": "America/New_York",
         "GeoLoc": {"Latitude": HUB_LATITUDE, "Longitude": "-70.676380"},
-        "NetworkID": "42076",
+        "NetworkID": "10042",
         "RoomList": [
             {
                 "RoomID": 1,

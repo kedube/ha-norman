@@ -40,7 +40,8 @@ const SHADE_RAIL_PCT = 4.5;
 // the card shows the hub's own values again, so a command the hub dropped is visible.
 const PENDING_MS = 15000;
 // How long a rail counts as moving once the hub reports a new target. A blind reports its new
-// position when it stops, 10-45 s after a command, and the integration's watchdog gives a
+// position when it stops, 10-45 s after a command (some only a minute or more after, unless
+// asked), and the integration's watchdog gives a
 // silent one three sends, 70 s apart (const.py: MOVE_TIMEOUT + MOVE_REPORT_WAIT, MOVE_ATTEMPTS).
 // Past this the hub has not heard the blind arrive, and may not for hours: the blind missed the
 // command, or carried it out and its report was lost. So the card stops saying "Closing" and
