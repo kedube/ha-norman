@@ -5,6 +5,12 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **`norman.send_hub_command` is admin only.** Its verbs can rewrite or clear a blind's limits
+  and pairing, so a call from a non-admin user, or from a script that user started, is now
+  refused. Automations still run it.
+
 ## 0.90 — 2026-10-15
 
 - **The docs say what Signal strength shows.** The hub's `RssiMean` is fixed by blind type

@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 
 try:
     import probatio as vol
@@ -259,7 +260,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
         _async_room_command,
         schema=ROOM_COMMAND_SCHEMA,
     )
-    hass.services.async_register(
+    # Admin only: it reaches the verbs that rewrite or wipe a blind's limits and pairing.
+    async_register_admin_service(
+        hass,
         DOMAIN,
         SERVICE_SEND_HUB_COMMAND,
         _async_send_hub_command,

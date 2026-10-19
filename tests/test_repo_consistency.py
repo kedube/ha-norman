@@ -512,7 +512,9 @@ def _registered_services() -> set[str]:
         text = source.read_text(encoding="utf-8")
         for name in re.findall(r"async_register_entity_service\(\s*([A-Z_0-9]+)", text):
             registered.add(service_consts.get(name, name))
-        for name in re.findall(r"async_register\(\s*DOMAIN,\s*([A-Z_0-9]+)", text):
+        for name in re.findall(
+            r"async_register(?:_admin_service)?\(\s*(?:hass,\s*)?DOMAIN,\s*([A-Z_0-9]+)", text
+        ):
             registered.add(service_consts.get(name, name))
     return registered
 

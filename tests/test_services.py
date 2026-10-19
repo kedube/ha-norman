@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import aiohttp
 from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntryDisabler, ConfigEntryState
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.core import Context, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError, Unauthorized
 from homeassistant.setup import async_setup_component
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, MockUser
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 try:
@@ -222,6 +222,24 @@ async def test_send_hub_command_validates_input(
             "send_hub_command",
             {"peripheral_uid": UID_LIVING, "fields": {"Nested": {"a": 1}}},
             blocking=True,
+        )
+    assert fake_hub.control_calls == []
+
+
+async def test_send_hub_command_is_admin_only(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    hass_read_only_user: MockUser,
+) -> None:
+    """A non-admin user cannot send raw verbs, which can wipe a blind's limits or pairing."""
+    with pytest.raises(Unauthorized):
+        await hass.services.async_call(
+            DOMAIN,
+            "send_hub_command",
+            {"peripheral_uid": UID_LIVING, "fields": {"CleanTopLimit": 0}},
+            blocking=True,
+            context=Context(user_id=hass_read_only_user.id),
         )
     assert fake_hub.control_calls == []
 

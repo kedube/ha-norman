@@ -199,6 +199,10 @@ hub's reply. `PeripheralUID`, `Timestamp`, and `TaskID` are filled in; your fiel
 top. The blind will do whatever the hub makes of the fields, so use it deliberately. The verbs
 the Norman app is known to send are listed under [Hub verbs](#hub-verbs).
 
+Only an administrator can run it. Some verbs rewrite or clear a blind's limits or pairing, so a
+call from a non-admin user is refused before anything reaches the hub, including one from a
+script that user started. Automations still run it.
+
 | Field | Required | Meaning |
 |---|---|---|
 | `peripheral_uid` | yes | The blind's id: the cover entity's unique id, or `PeripheralUID` in `get_hub_data`. |

@@ -239,8 +239,9 @@ Alongside the standard cover actions, the integration provides five of its own:
   the room's blinds report in. For any other position, use the room's sliders
   ([a whole room to any position](docs/services.md#a-whole-room-to-any-position)).
 - `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports.
-- `norman.send_hub_command` — advanced: sends arbitrary fields to the hub's control call for
-  one blind, for the verbs that have no entity of their own (limits, calibration, run-to-limit).
+- `norman.send_hub_command` — advanced, admin only: sends arbitrary fields to the hub's control
+  call for one blind, for the verbs that have no entity of their own (limits, calibration,
+  run-to-limit).
 
 The nudges are relative to where the blind is **heading**, so repeated presses add up, and both
 clamp to 0–100. See [docs/services.md](docs/services.md).
