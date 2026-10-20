@@ -14,7 +14,7 @@ sees the change within a second or two.
 > not affiliated with or endorsed by Norman. The protocol has no vendor documentation and could
 > change in a hub firmware update. Use at your own risk; it may void your warranty.
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kedube&repository=ha-norman&category=integration)
 [![GitHub Release](https://img.shields.io/github/v/release/kedube/ha-norman?sort=semver)](https://github.com/kedube/ha-norman/releases)
 [![CI](https://github.com/kedube/ha-norman/actions/workflows/ci.yml/badge.svg)](https://github.com/kedube/ha-norman/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/kedube/ha-norman)](LICENSE)
@@ -64,20 +64,36 @@ to move it. It finds your blinds by itself and needs no configuration.*
 > - Home Assistant 2026.3 or newer (`hacs.json` declares this minimum; it is what the
 >   bundled brand icon needs). CI tests against the latest Home Assistant release.
 
-### Method 1: HACS custom repository
+### Method 1: HACS (recommended)
+
+Norman is in the HACS default store, so there is no repository to add.
+
+[![Open your Home Assistant instance and open the Norman repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kedube&repository=ha-norman&category=integration)
+
+1. In Home Assistant, open **HACS**, or use the button above to go straight to Norman.
+2. Search for **Norman**, open it, and click **Download**.
+3. Restart Home Assistant.
+
+After restart, add the integration from Home Assistant:
+
+[![Open your Home Assistant instance and start setting up a new Norman integration instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=norman)
+
+If you added this repository to HACS by hand before it was in the default store, you don't need
+to change anything. HACS keeps tracking the same repository and its updates.
+
+### Method 2: HACS custom repository
+
+If Norman doesn't come up in a HACS search, for example because your HACS hasn't refreshed its
+list of default repositories yet, add the repository by hand:
 
 1. In Home Assistant, open **HACS**.
 2. Open the menu in the top-right corner (**⋮**) and select **Custom repositories**.
 3. Paste this repository's URL: `https://github.com/kedube/ha-norman`
 4. Set the category to **Integration** and click **Add**.
 5. Search for **Norman** in HACS, open it, and click **Download**.
-6. Restart Home Assistant.
+6. Restart Home Assistant, then add the integration as in Method 1.
 
-After restart, add the integration from Home Assistant:
-
-[![Open your Home Assistant instance and start setting up a new Norman integration instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=norman)
-
-### Method 2: Manual installation
+### Method 3: Manual installation
 
 1. Copy `custom_components/norman` into your Home Assistant `config/custom_components` directory.
 2. Restart Home Assistant.
