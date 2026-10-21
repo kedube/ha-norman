@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.92 — 2026-10-21
 
 - **Norman is in the HACS default store.** The README now installs it from a HACS search,
   with a button that opens it in HACS. Adding it as a custom repository is the fallback.
