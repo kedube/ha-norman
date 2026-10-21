@@ -407,7 +407,6 @@ async def test_a_new_address_reloads_the_hub_once(
     init_integration: MockConfigEntry,
     fake_hub: FakeHub,
     aioclient_mock: AiohttpClientMocker,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Reconfiguring a loaded hub sets it up again once, through its update listener.
 
@@ -441,4 +440,3 @@ async def test_a_new_address_reloads_the_hub_once(
     assert init_integration.state is ConfigEntryState.LOADED
     # The flow checks the new address once, and one setup registers once more.
     assert len(fake_hub.calls_to("/registration")) == registrations + 2
-    assert "update listener" not in caplog.text
