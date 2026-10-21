@@ -213,7 +213,8 @@ rail"; a Shutter's is "Louvers"). Each rail also has a **position slider** (a `n
 0–100% in steps of 10), which is often easier to place on a dashboard than a cover's own slider.
 
 Each blind also has **buttons** for best privacy, best view, its favorite position, jog up,
-jog down and **request status** (ask a quiet blind to report in); diagnostic sensors for
+jog down and **request status** (ask a quiet blind to report in), plus, disabled by default,
+**calibration** and **find top** where the Norman app offers them; diagnostic sensors for
 **battery**, **last seen** and, disabled by default, **signal strength** and **firmware
 version**; and a **connection** sensor that turns off after a day of silence, the app's own
 "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
@@ -255,8 +256,7 @@ Alongside the standard cover actions, the integration provides five of its own:
   ([a whole room to any position](docs/services.md#a-whole-room-to-any-position)).
 - `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports.
 - `norman.send_hub_command` — advanced, admin only: sends arbitrary fields to the hub's control
-  call for one blind, for the verbs that have no entity of their own (limits, calibration,
-  run-to-limit).
+  call for one blind, for the verbs that have no entity of their own (limits, run-to-limit).
 
 The nudges are relative to where the blind is **heading**, so repeated presses add up, and both
 clamp to 0–100. See [docs/services.md](docs/services.md).
@@ -382,8 +382,8 @@ unknown-type warning or behaves differently from its row.
   **Report battery levels (may close shades)** button on the hub and each room preserves the
   app command for deliberate use. A request addressed to one shade reached others in testing,
   so there is no per-shade battery-report button.
-- **No speed, direction, or limit-setting entities.** The limit-setting and calibration verbs
-  were captured from the Norman app and can be sent with `send_hub_command` (see
+- **No speed, direction, or limit-setting entities.** The limit-setting verbs were captured
+  from the Norman app and can be sent with `send_hub_command` (see
   [docs/services.md](docs/services.md#hub-verbs)); they have no entity because they change how
   a blind travels. Motor speed and direction reversing live in the app's Engineering Settings
   screen; the hub lists both verbs, but neither has been captured from the app, so how to use

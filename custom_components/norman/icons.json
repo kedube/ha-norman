@@ -37,6 +37,12 @@
       "request_status": {
         "default": "mdi:access-point"
       },
+      "calibration": {
+        "default": "mdi:swap-vertical-circle-outline"
+      },
+      "find_top": {
+        "default": "mdi:format-vertical-align-top"
+      },
       "refresh_blinds": {
         "default": "mdi:refresh"
       },

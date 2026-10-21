@@ -119,7 +119,7 @@
     },
     "send_hub_command": {
       "name": "Hubコマンドを送信",
-      "description": "上級者向け。1台のブラインドに対してHubのcontrolエンドポイントへ任意のフィールドをPOSTし、応答を返します。リミットの設定/解除やキャリブレーションなど、専用のエンティティがないHubコマンド用です。ブラインドはHubがフィールドをどう解釈するかに従って動作します。",
+      "description": "上級者向け。1台のブラインドに対してHubのcontrolエンドポイントへ任意のフィールドをPOSTし、応答を返します。リミットの設定/解除など、専用のエンティティがないHubコマンド用です。ブラインドはHubがフィールドをどう解釈するかに従って動作します。",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
@@ -204,6 +204,12 @@
       },
       "request_status": {
         "name": "状態を要求"
+      },
+      "calibration": {
+        "name": "自動調整"
+      },
+      "find_top": {
+        "name": "上限位置を検出"
       },
       "refresh_blinds": {
         "name": "ブラインドを更新"

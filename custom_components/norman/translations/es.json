@@ -119,7 +119,7 @@
     },
     "send_hub_command": {
       "name": "Enviar comando al hub",
-      "description": "Avanzado. Envía campos arbitrarios por POST al punto de conexión control del hub para una persiana y devuelve la respuesta. Para los comandos del hub sin entidad propia, como fijar o borrar un límite y la calibración. La persiana hará lo que el hub interprete de los campos.",
+      "description": "Avanzado. Envía campos arbitrarios por POST al punto de conexión control del hub para una persiana y devuelve la respuesta. Para los comandos del hub sin entidad propia, como fijar o borrar un límite. La persiana hará lo que el hub interprete de los campos.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
@@ -204,6 +204,12 @@
       },
       "request_status": {
         "name": "Solicitar estado"
+      },
+      "calibration": {
+        "name": "Calibración"
+      },
+      "find_top": {
+        "name": "Buscar posición superior"
       },
       "refresh_blinds": {
         "name": "Actualizar persianas"

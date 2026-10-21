@@ -1,8 +1,8 @@
 # Entities
 
 Per blind the integration creates a **cover** (two for two-rail blinds), a **position slider**
-per rail, six **buttons**, four **diagnostic sensors**, and a **connection** sensor, all on one
-**device**. The hub gets a device of its own carrying four diagnostic sensors, a pairing-mode
+per rail, six to eight **buttons** depending on the product, four **diagnostic sensors**, and a
+**connection** sensor, all on one **device**. The hub gets a device of its own carrying four diagnostic sensors, a pairing-mode
 sensor, a slider per rail for every blind at once, and nine buttons. Each of the hub's
 **rooms** gets a device too, with a slider per rail and eight buttons that act on the whole room
 ([Rooms and the whole house](#rooms-and-the-whole-house)).
@@ -11,7 +11,7 @@ sensor, a slider per rail for every blind at once, and nine buttons. Each of the
 |---|---|---|---|
 | Cover | Bottom rail (Louvers on a Shutter); Middle rail on two-rail blinds | — | — |
 | Number | Bottom rail position (not on a Shutter); Middle rail position on two-rail blinds | Bottom rail position, Middle rail position, when a blind in the room has that rail | All blinds bottom rail position, All blinds middle rail position |
-| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status | Stop, Best privacy, Best view, Favorite position, Jog up, Jog down, Refresh blinds, Report battery levels (may close shades) | All blinds best privacy, All blinds best view, All blinds favorite position, All blinds stop, All blinds jog up, All blinds jog down, Refresh blinds, Report battery levels (may close shades), Start pairing |
+| Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status; Calibration\* on every type but a SmartDrape; Find top\* on dual-rail cellular shades | Stop, Best privacy, Best view, Favorite position, Jog up, Jog down, Refresh blinds, Report battery levels (may close shades) | All blinds best privacy, All blinds best view, All blinds favorite position, All blinds stop, All blinds jog up, All blinds jog down, Refresh blinds, Report battery levels (may close shades), Start pairing |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | — | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
 | Binary sensor | Connection | — | Pairing mode |
 
@@ -251,8 +251,8 @@ One press is one verb sent to the hub for that blind (see
 [docs/NORMAN_API.md](NORMAN_API.md#control-verbs)), followed by a status re-read so the cover
 catches up with the motor.
 
-The five that move or set something are **enabled** but carry Home Assistant's *configuration*
-entity category. That is a layout choice rather than a statement about how often they are used: the device page lists
+The five everyday buttons that move or set something are **enabled** but carry Home Assistant's
+*configuration* entity category. That is a layout choice rather than a statement about how often they are used: the device page lists
 uncategorised entities first, sorted by entity id, so leaving the buttons uncategorised placed
 them between a two-rail blind's two covers. With them categorised, the bottom-rail and
 middle-rail covers stay side by side at the top of the page and the buttons follow the
@@ -265,6 +265,22 @@ dashboard by hand if you want them there.
 | Favorite position | `Favorite: 0` | Moves to the favorite stored in the blind, addressed the same way. Works on both rail types. |
 | Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | One small motor step, addressed by `PeripheralUID`. The app uses it while setting limits and as the Fine-tune step of calibration, tapping it repeatedly to inch a rail into place. Independent of position targets, and the hub reports no position change until the motor settles. |
 | Request status | `StatusRequest: 0` | Asks this one blind to report in; nothing moves. Filed under **Diagnostic**, next to the sensors it refreshes. A battery blind's radio sleeps between commands and the hub stops hearing from it, so its battery, last-seen and position go stale and the Norman app eventually lists it as "Disconnect". This is the per-blind form of the app's refresh, confirmed by a live app capture; on hardware the blind answered within five seconds every time. The answer arrives as a hub notification a few seconds after the press, not in the press itself. See [Waking a blind](NORMAN_API.md#waking-a-blind). |
+| Calibration | `Calibration: 0` | **Disabled by default.** The motor runs its calibration routine. Every type but a SmartDrape, as in the app. |
+| Find top | `FindTop: 0` | **Disabled by default.** Presumably drives the shade up to find its top again. Dual-rail cellular shades (type 33) only, as in the app. |
+
+**Calibration** and **Find top** are the two motor routines on a blind's **Advanced Settings**
+page in the Norman app. Like the app's own, each sends one request addressed by
+`PeripheralUID`. They sit under **Diagnostic**, beside Request status, because they are
+maintenance rather than everyday moves. Each blind gets only the ones the app offers its type
+([Advanced Settings](NORMAN_API.md#advanced-settings)): a SmartDrape gets neither, and a type
+the app does not know gets neither.
+
+Both are **disabled by default**; enable one from the entity's settings on the blind's device
+page when you need it. The app asks you to make sure nothing is in the way before it sends
+either one. A button press does not ask, so clear the window first. The hub's reply only says it accepted the request,
+and the app waits for nothing more; the blind's position updates when it next reports in. A
+move still in flight is replaced, as a jog replaces it. Neither button has been pressed against
+a real hub yet.
 
 Errors follow the cover convention: a hub error or timeout fails the press with a message
 naming the verb and the blind.
@@ -536,11 +552,11 @@ flags.
 
 Of the hub's control verbs, fine-tune, favorite, and the two Switch positions are
 [buttons](#buttons), and stop is on the covers — and all of them, with position, also act on a
-whole room or the whole house ([Rooms and the whole house](#rooms-and-the-whole-house)). The
-ones still without an entity are the limit-setting family
-(`SetTopLimit`, `CleanTopLimit`, and their bottom and middle equivalents), `Calibration`, and
-the unconfirmed `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`,
-`SmartDialSwitch`, and the `RailSpacing` group. All can be sent with `norman.send_hub_command`;
-the limit and calibration ones change how a blind travels, so read
-[Hub verbs](services.md#hub-verbs) first. See also
+whole room or the whole house ([Rooms and the whole house](#rooms-and-the-whole-house)).
+`Calibration` and `FindTop` are buttons on one blind only, as in the app. The ones still
+without an entity are the limit-setting family (`SetTopLimit`, `CleanTopLimit`, and their
+bottom and middle equivalents) and the unconfirmed `MotorSpeedAdjust`,
+`ReverseMotorDirection`, `StopSensorSwitch`, `SmartDialSwitch`, and the `RailSpacing` group.
+All can be sent with `norman.send_hub_command`; the limit ones change how a blind travels, so
+read [Hub verbs](services.md#hub-verbs) first. See also
 [docs/NORMAN_API.md](NORMAN_API.md#observed-fields).

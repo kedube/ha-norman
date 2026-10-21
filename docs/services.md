@@ -10,7 +10,7 @@ hub verbs that have no entity of their own. All five appear in the automation ed
 picker.
 
 Several verbs that once needed `send_hub_command` now have entities — favorite position, jog up
-and down, and run to either limit are [buttons](entities.md#buttons), and stop is on the covers
+and down, calibration and find top are [buttons](entities.md#buttons), and stop is on the covers
 — so reach for the action only for what is left under [Hub verbs](#hub-verbs).
 
 ## `norman.nudge_position`
@@ -232,10 +232,10 @@ clears a setting. These were captured from the Norman app, so they are known to 
 | `{MotorFineTuneToUp: 170}` / `{MotorFineTuneToDown: 170}` | Jog a small step up or down. The **Jog** buttons. | yes |
 | `{SetMotorToTopLimit: 170}` / `{SetMotorToBottomLimit: 170}` | Drive toward the stored limit **while held** — the app repeats it every ~0.3 s inside its Shade Limit Setting screen. One call is a single pulse, so there is no button for it. | yes |
 | `{Favorite: 0}` | Go to the favorite position. The **Favorite position** button. Note the app addresses this by `RoomID` + `GroupID`, not `PeripheralUID` — pass those in `fields` to match it, or use [`norman.room_command`](#normanroom_command). | yes |
-| `{FindTop: 0}` | Re-sync to the top; the app sends it when entering and leaving limit setup. | yes |
+| `{FindTop: 0}` | Presumably drives the shade up to find its top again. The **Find top** button, on the dual-rail cellular shades the app offers it on. | yes |
 | `{SetTopLimit: 0}` / `{SetBottomLimit: 0}` | Store the **current** position as that limit. | changes the blind's travel |
 | `{CleanTopLimit: 0}` / `{CleanBottomLimit: 0}` | Clear a stored limit. | changes the blind's travel |
-| `{Calibration: 0}` | Run the motor's calibration. | changes the blind's travel |
+| `{Calibration: 0}` | Run the motor's calibration. The **Calibration** button. | changes the blind's travel |
 | `{StatusRequest: 0}` | Ask this blind to report in; nothing moves. The **Request status** button. | yes |
 
 `Switch` and `Favorite` are confirmed at blind, room, and hub scope. For one blind the app

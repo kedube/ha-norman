@@ -16,8 +16,12 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import NormanApiError, NormanConnectionError
 from .const import (
+    CALIBRATION_MODULE_TYPES,
     DOMAIN,
+    FIND_TOP_MODULE_TYPES,
+    HUB_CMD_CALIBRATION,
     HUB_CMD_FAVORITE,
+    HUB_CMD_FIND_TOP,
     HUB_CMD_JOG_DOWN,
     HUB_CMD_JOG_UP,
     HUB_CMD_REQUEST_STATUS,
@@ -55,15 +59,17 @@ class NormanButtonDescription(ButtonEntityDescription):
     addressed: bool = False
     # Whether the verb moves the blind, and so replaces any move still in flight.
     moves: bool = True
+    # The ModuleTypes the Norman app offers the verb on; None for every blind.
+    module_types: frozenset[int] | None = None
 
 
-# Every button is EntityCategory.CONFIG. That is not a claim that they are rarely used --
-# favorite and jog are everyday controls -- but a layout decision: the device page groups
-# uncategorised entities first, then configuration, then diagnostics, and sorts by entity id
-# within a group. Leaving the buttons uncategorised put them between the two covers ("Middle
-# rail" sorts after "Jog up"), which reads as though the second cover belongs to the buttons.
-# With the buttons categorised, a two-rail blind shows its bottom-rail and middle-rail covers
-# together at the top, then the divider, then every button.
+# Every button but the diagnostic ones is EntityCategory.CONFIG. That is not a claim that
+# they are rarely used -- favorite and jog are everyday controls -- but a layout decision: the
+# device page groups uncategorised entities first, then configuration, then diagnostics, and
+# sorts by entity id within a group. Leaving the buttons uncategorised put them between the
+# two covers ("Middle rail" sorts after "Jog up"), which reads as though the second cover
+# belongs to the buttons. With the buttons categorised, a two-rail blind shows its
+# bottom-rail and middle-rail covers together at the top, then the divider, then every button.
 #
 # Best privacy, Best view and Favorite are addressed by RoomID + GroupID rather than by
 # PeripheralUID -- that pair is unique per blind and is what the app's own per-blind buttons
@@ -114,6 +120,29 @@ BUTTONS: tuple[NormanButtonDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         fields={HUB_CMD_REQUEST_STATUS: HUB_COMMAND_SETTING},
         moves=False,
+    ),
+    # The motor routines on the app's Advanced Settings page, each one request by
+    # PeripheralUID, and each only on the types the app offers it on (CALIBRATION_MODULE_TYPES
+    # and FIND_TOP_MODULE_TYPES in const.py). Maintenance rather than moves, so they sit with
+    # Request status under Diagnostic. Disabled by default: the app asks the user to clear the
+    # window before either, and a button press asks nothing. The motor runs on its own and
+    # reports no target, so, like a jog, the press takes the blind over and nothing watches
+    # for it to arrive.
+    NormanButtonDescription(
+        key="calibration",
+        translation_key="calibration",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        fields={HUB_CMD_CALIBRATION: HUB_COMMAND_SETTING},
+        module_types=CALIBRATION_MODULE_TYPES,
+    ),
+    NormanButtonDescription(
+        key="find_top",
+        translation_key="find_top",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        fields={HUB_CMD_FIND_TOP: HUB_COMMAND_SETTING},
+        module_types=FIND_TOP_MODULE_TYPES,
     ),
 )
 
@@ -342,7 +371,12 @@ async def async_setup_entry(
     )
 
     def _buttons_for(device_id: int) -> list[NormanButton]:
-        return [NormanButton(coordinator, device_id, entry, description) for description in BUTTONS]
+        module_type = coordinator.data[device_id].module_type
+        return [
+            NormanButton(coordinator, device_id, entry, description)
+            for description in BUTTONS
+            if description.module_types is None or module_type in description.module_types
+        ]
 
     async_add_entities_for_new_devices(entry, async_add_entities, _buttons_for)
 
@@ -517,8 +551,8 @@ class NormanButton(NormanEntity, ButtonEntity):
             # The addressed verbs (Best Privacy, Best View, Favorite) send the blind to a
             # stored position, and the hub acks a command it never delivers, so the move is
             # supervised the way a position move is (coordinator.async_watch_preset). The
-            # rest -- jog, run-to-limit, status -- either do not move the blind or are held
-            # rather than aimed, so there is no target to chase.
+            # rest -- jog, calibration, find top, status -- either do not move the blind or
+            # run the motor without a target, so there is no target to chase.
             if description.addressed and reply is not None:
                 self.coordinator.async_watch_preset(self._device_id, send, serial)
         except (NormanApiError, NormanConnectionError) as err:

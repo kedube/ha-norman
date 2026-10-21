@@ -124,7 +124,7 @@ async def _async_send_hub_command(call: ServiceCall) -> ServiceResponse:
     """POST arbitrary fields to the hub's control endpoint for one peripheral.
 
     An advanced tool for probing commands the hub advertises but the integration does not
-    know how to send yet (limits, calibration, motor speed, ...). The hub's reply is
+    know how to send yet (limits, motor speed, ...). The hub's reply is
     returned so the outcome can be seen. The blind will do whatever the hub makes of it.
 
     Note this always addresses by ``PeripheralUID``, matching the app's per-blind motor

@@ -686,7 +686,7 @@ def test_entities_doc_lists_the_entities_that_exist() -> None:
         "button": len(BUTTONS),
         "diagnostic sensor": len(SENSORS),
     }
-    words = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+    words = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
     for noun, count in counts.items():
         assert f"{words[count]} **{noun}s**" in text, (
             f"docs/entities.md should say {words[count]} {noun}s; there are {count}"
@@ -699,14 +699,18 @@ def test_entities_doc_marks_exactly_the_disabled_entities() -> None:
     A starred entity the user can see by default (or an unstarred one they cannot find)
     sends people hunting through settings for something that is not there.
     """
+    from custom_components.norman.button import BUTTONS
     from custom_components.norman.sensor import HUB_SENSORS, SENSORS
 
     text = (REPO / "docs" / "entities.md").read_text(encoding="utf-8")
-    strings = _load(COMPONENT / "strings.json")["entity"]["sensor"]
+    strings = _load(COMPONENT / "strings.json")["entity"]
 
     wrong: list[str] = []
-    for description in (*SENSORS, *HUB_SENSORS):
-        name = strings[description.translation_key]["name"]
+    for platform, description in (
+        *(("sensor", d) for d in (*SENSORS, *HUB_SENSORS)),
+        *(("button", d) for d in BUTTONS),
+    ):
+        name = strings[platform][description.translation_key]["name"]
         disabled = description.entity_registry_enabled_default is False
         starred = f"{name}\\*" in text
         if disabled != starred:

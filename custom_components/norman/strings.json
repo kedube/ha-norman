@@ -119,7 +119,7 @@
     },
     "send_hub_command": {
       "name": "Send hub command",
-      "description": "Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. For the hub verbs that have no entity of their own, such as setting or clearing a limit and calibration. The blind will do whatever the hub makes of the fields.",
+      "description": "Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. For the hub verbs that have no entity of their own, such as setting or clearing a limit. The blind will do whatever the hub makes of the fields.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
@@ -204,6 +204,12 @@
       },
       "request_status": {
         "name": "Request status"
+      },
+      "calibration": {
+        "name": "Calibration"
+      },
+      "find_top": {
+        "name": "Find top"
       },
       "refresh_blinds": {
         "name": "Refresh blinds"

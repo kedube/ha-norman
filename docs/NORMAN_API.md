@@ -346,10 +346,10 @@ app's network library and then sent directly:
 | `SetMotorToBottomLimit` | 170 | The same, downward. Also hold-to-run, also no button. |
 | `MotorFineTuneToUp` | 170 | Jog up one small step. Sent as discrete taps (the capture shows single sends as well as short bursts as the user nudges a rail), unlike the run-to-limit verbs' steady ~0.3 s repeat while held — which is why this one suits a button. The app uses `PeripheralUID`; direct tests also confirmed room and hub scope. **Used** (Jog up button). |
 | `MotorFineTuneToDown` | 170 | Jog down a small step. **Used** (Jog down button). |
-| `FindTop` | 0 | Sent when opening the limit-setting screen and again when leaving it; presumably re-syncs the motor to its top. |
+| `FindTop` | 0 | The **Find Top** item on a blind's Advanced Settings page, which the app lists for type 33 only, the one type whose registration advertises the verb (see [Advanced Settings](#advanced-settings)). Presumably drives the shade up to find its top again. An earlier capture recorded it when the limit-setting screen was opened and closed; in ShadeAuto 0.8.33 the Find Top item is its only sender. **Used** (Find top button, type 33 only). |
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
 | `CleanTopLimit` / `CleanBottomLimit` | 0 | Clear the stored limit (the app sends this right before setting a new one). |
-| `Calibration` | 0 | Run the motor's calibration. |
+| `Calibration` | 0 | The **Calibration** item on the same page, listed for every type the app knows except the SmartDrape: 1, 32, 33, 48 and 49. Runs the motor's calibration. **Used** (Calibration button, on those types). |
 | `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`) or sweep the whole hub (unscoped). `RoomID` did not confine the sweep to one room. The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification. A live unscoped test reached all 13 blinds within two minutes without movement. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
 | `ReportBatteryLevel` | 0 | The app's battery-report request for a room (`RoomID`) or hub (unscoped). It has closed type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)) and type 33 cellular shades. Two isolated Office tests confirmed that `PeripheralUID` does not constrain it to one shade. **Used** only by the explicitly named room and hub battery-report buttons. |
 
@@ -375,6 +375,36 @@ the verb, with no extra module-information fields in the synchronous reply. Each
 blind reported a newer `Timestamp` within 10 s; no other blind reported and no position or
 target changed during the watch. It therefore works as a per-blind report request on these
 products, but what additional module information it may retrieve is still unknown.
+
+#### Advanced Settings
+
+ShadeAuto 0.8.33 (decoded 2026-10-21) builds each blind's Advanced Settings page from its
+`ModuleType`:
+
+| `ModuleType` | Items |
+|---|---|
+| 1 (Shutter) | Calibration, Backlash Compensate, Horizontal Position Setup |
+| 32, 48, 49 | Calibration, Shade Limit Setting |
+| 33 | Calibration, Find Top, Shade Limit Setting |
+| 80 (SmartDrape) | Change SmartDrape Type, Shade Limit Setting (its own screen) |
+| other | none |
+
+Calibration and Find Top work the same way. The app asks first ("Please ensure there are no
+obstructions during the calibration process", and the same for Find Top), then sends one request
+addressed by `PeripheralUID` alone, built exactly like the per-blind `StatusRequest`:
+
+```json
+{"PeripheralUID": 1001, "Timestamp": 1700000000, "TaskID": 52, "Calibration": 0}
+{"PeripheralUID": 1001, "Timestamp": 1700000000, "TaskID": 53, "FindTop": 0}
+```
+
+It shows a spinner until the hub replies, and an error ("Failed to calibrate the window
+covering.", "Failed to execute Find Top") if the reply is not a success. It does not watch
+the blind afterwards, and never reads `CalibrationState`. A Shutter's Backlash Compensate and
+Horizontal Position Setup are a separate, guided routine for its louvers, and are not modelled.
+
+The integration's Calibration and Find top buttons send the same requests, to the same types.
+Neither button has been pressed against a real hub yet.
 
 ### Room-wide and hub-wide control
 
@@ -1090,7 +1120,7 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 | `Position1`, `Position2`, `TargetPosition1`, `TargetPosition2` | status (from the app) | | not used. A split-panel pair the app's library can read and send; no product in ShadeAuto 0.8.33 shows controls for it. |
 | `Angle` | status (from the app) | | not used. Read by the app's library alongside the louvers; its meaning is unknown. |
 | `Mrs2Status` | status (type 49, from the app) | | not used; the MRS2 roller's counterpart of `MsdStatus`. |
-| `SpeedInformation`, `CalibrationState` | status, registration (type 48, issue #5) | `0`, `0` in status; `15`, `1` in registration | not used; meaning unknown. A type 48 status entry has these instead of `RssiMean`, `PacketReceiveRate` and `StallCurrent`. |
+| `SpeedInformation`, `CalibrationState` | status, registration (type 48, issue #5) | `0`, `0` in status; `15`, `1` in registration | not used. A type 48 status entry has these instead of `RssiMean`, `PacketReceiveRate` and `StallCurrent`. The app's library reads registration's `CalibrationState` as flags, bit 0 complete and bit 1 failed, so the `1` there would mean calibrated. It keeps the status value as a plain number, and the app reads neither. `SpeedInformation`'s meaning is unknown. |
 | `PacketReceiveRate` | status | `0` | not used. Has been `0` on every blind in every capture, including blinds that are plainly reachable, so it is either unimplemented in this firmware or counts something the hub never populates. |
 | `StallCurrent` | status (type 33 only) | `4100`, `1240` | not used. Despite the name it reads as a **stall threshold, not a measurement**: the current draw at which the motor decides it has hit an obstruction (or a limit) and stops. It does not vary during travel -- it holds one value through a full open and close, in both directions, and at rest. It is not fixed per blind either: two blinds read `4100` in captures a day apart and `1240` afterwards, with no setting changed in the app, so the motor appears to adapt it. A **falling** value on one blind is therefore the interesting signal (a motor deciding it needs less force to call something a stall), not the absolute number. Both blinds that changed are in one room, and one of them is the blind a `Calibration` was run against the day before -- so calibration, or the limit-setting around it, is the likeliest cause. Unconfirmed: the other blind was not calibrated. Not exposed as an entity while its meaning rests on a single observation. |
 | `Switch`, `MotorStop`, `Favorite`, `Calibration`, `ConfigToScene`, `SetToScene`, `SetMotorToTopLimit`, `SetMotorToBottomLimit`, `MotorFineTuneToUp`, `MotorFineTuneToDown`, `SetTopLimit`, `CleanTopLimit`, `SetBottomLimit`, `CleanBottomLimit`, `SetMiddleLimit`, `CleanMiddleLimit`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `StopSensorSwitch`, `FindTop`, `RailSpacing`, `RailSpacingDefault`, `RailSpacingIncrease`, `RailSpacingDecrease`, `SmartDialSwitch`, `CleanRfPairing`, `CleanAllPosition`, `CleanErrorCode`, `RequestModuleInfo` | registration only | `170`, `259`, `0`, `1` | The per-blind **command vocabulary**; the value shown is the one to send. `MotorStop` is **used** (stop). See [Control verbs](#control-verbs) for the ones confirmed from the app. The list differs by type: only type 33 advertises `StallCurrent`, `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust`, `ReverseMotorDirection`, `FindTop`, and the `RailSpacing` family (`RailSpacing: 10`); only type 32 advertises `RfFirmwareVersion`, `SetMiddleLimit`/`CleanMiddleLimit`, `CleanErrorCode`, and `SmartDialSwitch`. Both list `Switch`, `Favorite`, `Calibration`, `ConfigToScene`/`SetToScene` (`287`), `CleanAllScene`, `StopSensorSwitch`, and the top/bottom limit and fine-tune verbs. Type 48 (issue #5) lists the shared verbs except `StopSensorSwitch`, plus `CleanRfPairing`, `CleanAllPosition`, `MotorSpeedAdjust` (`259`) and `ReverseMotorDirection` like type 33, and `SetMiddleLimit`/`CleanMiddleLimit` and `SmartDialSwitch` like type 32; it has no `FindTop`, `RailSpacing` family or `CleanErrorCode`. |
@@ -1199,7 +1229,7 @@ notification stream ──(UpdateTime: room / peripheral / device)──► GetA
 periodic reconnect (300 s) / disconnect (15 s) ──► GetAllPeripheral + status
 cover / number action ──► control (both positions) ──► status (request_refresh)
 cover stop ──► control (MotorStop) ──► status (request_refresh)
-button press ──► control (Switch / Favorite by room+group; jog or StatusRequest by uid) ──► status (refresh)
+button press ──► control (Switch / Favorite by room+group; jog, Calibration, FindTop or StatusRequest by uid) ──► status (refresh)
                   (Switch / Favorite are then watched, and resent up to twice if the blind never moved)
 room / hub slider ──► control (both positions, RoomID or no address; or one per blind) ──► status
                   (each blind is then watched, and sent its own move if it never moved)

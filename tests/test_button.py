@@ -24,8 +24,26 @@ from custom_components.norman.const import (
 )
 from custom_components.norman.coordinator import NormanCoordinator
 
-from .conftest import FakeHub
-from .const import UID_BEDROOM, UID_LIVING, UID_ROLLER
+from .conftest import FakeHub, enable_buttons
+from .const import (
+    UID_BEDROOM,
+    UID_LIVING,
+    UID_ROLLER,
+    UID_ROLLER_MRS2,
+    UID_ROMAN,
+    UID_SHEER,
+    UID_SHUTTER,
+    UID_SMARTDRAPE,
+    UID_STATUS_ONLY,
+    UID_TDBU,
+)
+
+# The buttons filed under Diagnostic: the report-in, and the motor routines from the Norman
+# app's Advanced Settings page. Everything else is under Configuration.
+DIAGNOSTIC_BUTTONS = {"request_status", "calibration", "find_top"}
+# The routines are also disabled by default: the app asks the user to clear the window first,
+# and a press asks nothing.
+DISABLED_BUTTONS = {"calibration", "find_top"}
 
 
 def _button(hass: HomeAssistant, uid: int, key: str) -> er.RegistryEntry:
@@ -39,27 +57,36 @@ def _button(hass: HomeAssistant, uid: int, key: str) -> er.RegistryEntry:
 async def test_every_blind_gets_the_buttons(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """Both blind types get every button, all enabled and all in the config category.
+    """Both blind types get every button offered for their type, all but the routines enabled.
 
-    The category is a layout decision, not a claim that the buttons are rarely used: the
-    device page sorts uncategorised entities together by entity id, which interleaved
-    "Middle rail" with the buttons. Categorising every button keeps a two-rail blind's two
-    covers adjacent at the top of the page.
+    The everyday ones are in the config category. That is a layout decision, not a claim
+    that the buttons are rarely used: the device page sorts uncategorised entities together
+    by entity id, which interleaved "Middle rail" with the buttons. Categorising every button
+    keeps a two-rail blind's two covers adjacent at the top of the page.
 
     Favorite included: single-rail blinds have a stored favorite too. A hub-wide Favorite
     left them where they were in one capture, but they were already sitting at 100 -- no
     movement was not evidence of no favorite.
     """
-    for uid in (UID_LIVING, UID_BEDROOM):
+    for uid, module_type in ((UID_LIVING, 33), (UID_BEDROOM, 32)):
         for description in BUTTONS:
+            if description.module_types is not None and module_type not in (
+                description.module_types
+            ):
+                continue
             entry = _button(hass, uid, description.key)
             expected = (
                 EntityCategory.DIAGNOSTIC
-                if description.key == "request_status"
+                if description.key in DIAGNOSTIC_BUTTONS
                 else EntityCategory.CONFIG
             )
             assert entry.entity_category is expected, description.key
-            assert entry.disabled_by is None, f"{description.key} should be enabled"
+            disabled = (
+                er.RegistryEntryDisabler.INTEGRATION
+                if description.key in DISABLED_BUTTONS
+                else None
+            )
+            assert entry.disabled_by is disabled, description.key
 
     state = hass.states.get(_button(hass, UID_LIVING, "favorite").entity_id)
     assert state.attributes["friendly_name"] == "Living Drape Favorite position"
@@ -75,6 +102,10 @@ async def test_every_blind_gets_the_buttons(
         # blind answered within 5 s each time it was tried on hardware (2026-09-18). Its
         # answer comes as a notification with a read of its own, so none follows the press.
         ("request_status", "StatusRequest", HUB_COMMAND_SETTING, 0),
+        # The Advanced Settings routines, built by the app's network library exactly like the
+        # status request. The motor runs, so the hub is read after, as for a jog.
+        ("calibration", "Calibration", HUB_COMMAND_SETTING, 1),
+        ("find_top", "FindTop", HUB_COMMAND_SETTING, 1),
     ],
 )
 async def test_press_sends_the_verb_and_refreshes(
@@ -87,6 +118,8 @@ async def test_press_sends_the_verb_and_refreshes(
     reads: int,
 ) -> None:
     """A press is one control call carrying exactly the verb, then a status re-read if needed."""
+    if key in DISABLED_BUTTONS:
+        await enable_buttons(hass, init_integration, UID_LIVING, key)
     status_calls = len(fake_hub.calls_to("/status"))
 
     await hass.services.async_call(
@@ -229,6 +262,54 @@ async def test_jog_is_addressed_by_uid_not_room_and_group(
     assert [d.addressed for d in BUTTONS if d.key.startswith("jog")] == [False, False]
 
 
+@pytest.mark.parametrize(
+    ("uid", "expected"),
+    [
+        (UID_LIVING, {"calibration", "find_top"}),  # 33/3, the one type with Find Top
+        (UID_BEDROOM, {"calibration"}),  # 32/2
+        (UID_TDBU, {"calibration"}),  # 32/4
+        (UID_ROLLER, {"calibration"}),  # 48/1
+        (UID_ROMAN, {"calibration"}),  # 48/2
+        (UID_SHEER, {"calibration"}),  # 49/3
+        (UID_ROLLER_MRS2, {"calibration"}),  # 49
+        (UID_SHUTTER, {"calibration"}),  # 1
+        (UID_SMARTDRAPE, set()),  # 80: its page has the drape type and limits instead
+    ],
+)
+async def test_each_product_gets_the_routines_the_app_offers(
+    hass: HomeAssistant,
+    init_with_every_product: MockConfigEntry,
+    uid: int,
+    expected: set[str],
+) -> None:
+    """Calibration and Find top only where the Norman app's Advanced Settings lists them.
+
+    ShadeAuto 0.8.33 builds that page from the blind's ModuleType: Calibration for every
+    type but the SmartDrape, and Find Top for the dual-rail cellular shade alone.
+    """
+    registry = er.async_get(hass)
+    found = {
+        key
+        for key in ("calibration", "find_top")
+        if registry.async_get_entity_id(BUTTON_DOMAIN, DOMAIN, f"{uid}_{key}")
+    }
+    assert found == expected
+
+
+async def test_a_blind_of_unknown_type_gets_neither_routine(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The app offers neither on a type it does not know, so neither is sent to one.
+
+    This peripheral is listed only in status, without a ModuleType. It still gets every
+    other button.
+    """
+    registry = er.async_get(hass)
+    assert registry.async_get_entity_id(BUTTON_DOMAIN, DOMAIN, f"{UID_STATUS_ONLY}_jog_up")
+    for key in ("calibration", "find_top"):
+        assert not registry.async_get_entity_id(BUTTON_DOMAIN, DOMAIN, f"{UID_STATUS_ONLY}_{key}")
+
+
 def _hub_button(hass: HomeAssistant, entry: MockConfigEntry, key: str) -> er.RegistryEntry:
     registry = er.async_get(hass)
     entity_id = registry.async_get_entity_id(BUTTON_DOMAIN, DOMAIN, f"{entry.entry_id}_{key}")
@@ -343,10 +424,24 @@ async def test_refresh_blinds_reads_the_hub_only_while_the_stream_is_down(
     coordinator._listener_offline = False
 
 
-async def test_a_jog_taken_over_while_it_waits_is_not_sent(
-    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+@pytest.mark.parametrize(
+    ("key", "verb"),
+    [
+        ("jog_up", "MotorFineTuneToUp"),
+        ("calibration", "Calibration"),
+        ("find_top", "FindTop"),
+    ],
+)
+async def test_a_motor_verb_taken_over_while_it_waits_is_not_sent(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    key: str,
+    verb: str,
 ) -> None:
-    """A stop or a newer command for the blind, issued while the jog waits its turn, drops it."""
+    """A stop or a newer command for the blind, issued while the verb waits its turn, drops it."""
+    if key in DISABLED_BUTTONS:
+        await enable_buttons(hass, init_integration, UID_LIVING, key)
     coordinator: NormanCoordinator = init_integration.runtime_data
     api = coordinator.api
     await api._control_lock.acquire()
@@ -355,7 +450,7 @@ async def test_a_jog_taken_over_while_it_waits_is_not_sent(
             hass.services.async_call(
                 BUTTON_DOMAIN,
                 SERVICE_PRESS,
-                {ATTR_ENTITY_ID: _button(hass, UID_LIVING, "jog_up").entity_id},
+                {ATTR_ENTITY_ID: _button(hass, UID_LIVING, key).entity_id},
                 blocking=True,
             )
         )
@@ -366,7 +461,34 @@ async def test_a_jog_taken_over_while_it_waits_is_not_sent(
         api._control_lock.release()
     await press
 
-    assert not [call for call in fake_hub.control_calls if "MotorFineTuneToUp" in call]
+    assert not [call for call in fake_hub.control_calls if verb in call]
+
+
+@pytest.mark.parametrize("key", ["calibration", "find_top"])
+async def test_a_routine_ends_the_move_watch(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub, key: str
+) -> None:
+    """A routine runs the motor, so it replaces the move in flight, as a jog does.
+
+    Left running, the move's watch would see the blind somewhere else, take the move for one
+    that never arrived, and send it again in the middle of the routine.
+    """
+    await enable_buttons(hass, init_integration, UID_LIVING, key)
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    slider = er.async_get(hass).async_get_entity_id(
+        "number", DOMAIN, f"{UID_LIVING}_bottom_rail_position"
+    )
+    await hass.services.async_call(
+        "number", "set_value", {ATTR_ENTITY_ID: slider, "value": 10}, blocking=True
+    )
+    move_watch = coordinator._move_watchers[UID_LIVING]
+
+    await _press(hass, UID_LIVING, key)
+    await hass.async_block_till_done()
+
+    assert move_watch.cancelled()
+    assert UID_LIVING not in coordinator._move_watchers
+    assert coordinator.commanded_rails(UID_LIVING) is None
 
 
 async def test_refresh_blinds_failure_names_the_hub(

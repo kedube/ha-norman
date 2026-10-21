@@ -357,6 +357,16 @@ HUB_CMD_STOP = "MotorStop"
 # direct tests on 2026-10-10, not captured from the app.
 HUB_CMD_JOG_UP = "MotorFineTuneToUp"
 HUB_CMD_JOG_DOWN = "MotorFineTuneToDown"
+# The two motor routines on a blind's Advanced Settings page in the Norman app (ShadeAuto
+# 0.8.33, decoded 2026-10-21): each is one request by PeripheralUID with the value 0, sent
+# once the user confirms there is nothing in the way, and the app then waits only for the
+# hub's reply. The page lists them by ModuleType: Calibration for every type the app knows
+# but the SmartDrape, and Find Top for the dual-rail cellular shade alone -- also the only
+# type whose registration record advertises FindTop (docs/NORMAN_API.md, "Control verbs").
+HUB_CMD_CALIBRATION = "Calibration"
+HUB_CMD_FIND_TOP = "FindTop"
+CALIBRATION_MODULE_TYPES: frozenset[int] = frozenset({1, 32, 33, 48, 49})
+FIND_TOP_MODULE_TYPES: frozenset[int] = frozenset({33})
 # SetMotorToTopLimit / SetMotorToBottomLimit deliberately have no constant here. They are
 # hold-to-run signals, not one-shot moves (the app repeats them every ~0.3 s while its
 # control is held), so nothing in the integration sends them; send_hub_command takes the

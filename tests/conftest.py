@@ -266,6 +266,21 @@ def cover_entity_id(hass: HomeAssistant, uid: int) -> str:
     return entity_id
 
 
+async def enable_buttons(hass: HomeAssistant, entry: MockConfigEntry, uid: int, *keys: str) -> None:
+    """Enable a blind's disabled-by-default buttons, as a user would, and reload the entry.
+
+    A disabled entity is in the registry but not set up, so it cannot be pressed until the
+    entry loads again.
+    """
+    registry = er.async_get(hass)
+    for key in keys:
+        entity_id = registry.async_get_entity_id("button", DOMAIN, f"{uid}_{key}")
+        assert entity_id, f"no {key} button for peripheral {uid}"
+        registry.async_update_entity(entity_id, disabled_by=None)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
 async def settle(hass: HomeAssistant) -> None:
     """Give the background notification listener a chance to run, then block till done.
 

@@ -119,7 +119,7 @@
     },
     "send_hub_command": {
       "name": "Hub-Befehl senden",
-      "description": "Erweitert. Sendet beliebige Felder per POST an den Control-Endpunkt des Hubs für ein Rollo und gibt die Antwort zurück. Für die Hub-Befehle ohne eigene Entität, etwa das Setzen oder Löschen einer Endlage und die Kalibrierung. Das Rollo tut, was der Hub aus den Feldern macht.",
+      "description": "Erweitert. Sendet beliebige Felder per POST an den Control-Endpunkt des Hubs für ein Rollo und gibt die Antwort zurück. Für die Hub-Befehle ohne eigene Entität, etwa das Setzen oder Löschen einer Endlage. Das Rollo tut, was der Hub aus den Feldern macht.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
@@ -204,6 +204,12 @@
       },
       "request_status": {
         "name": "Status anfordern"
+      },
+      "calibration": {
+        "name": "Kalibrierung"
+      },
+      "find_top": {
+        "name": "Obere Endlage suchen"
       },
       "refresh_blinds": {
         "name": "Rollos aktualisieren"

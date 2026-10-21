@@ -9,6 +9,11 @@ version heading and publishes it as the release's Highlights.
 
 - **Releases are published by hand.** A push to `main` only runs CI; the **Release** workflow is
   started from the Actions tab, and refuses a commit whose CI run did not pass.
+- **Calibration and Find top buttons.** A blind's Advanced Settings page in the Norman app
+  offers these two motor routines, and they are now diagnostic buttons on the blind's device,
+  disabled by default. Calibration is on every type but the SmartDrape, and Find top only on
+  dual-rail cellular shades, as in the app. Each sends the app's own request. The app asks you
+  to clear the window first and a button press does not, so clear it before pressing.
 
 ## 0.92 — 2026-10-21
 
