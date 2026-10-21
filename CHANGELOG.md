@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.93 — 2026-10-21
 
 - **Releases are published by hand.** A push to `main` only runs CI; the **Release** workflow is
   started from the Actions tab, and refuses a commit whose CI run did not pass.
