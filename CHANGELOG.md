@@ -5,6 +5,11 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Releases are published by hand.** A push to `main` only runs CI; the **Release** workflow is
+  started from the Actions tab, and refuses a commit whose CI run did not pass.
+
 ## 0.92 — 2026-10-21
 
 - **Norman is in the HACS default store.** The README now installs it from a HACS search,

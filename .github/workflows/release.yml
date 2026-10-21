@@ -1,40 +1,32 @@
 name: Release
 
+# Started by hand from Actions -> Release -> Run workflow. A push to main only runs CI.
 on:
   workflow_dispatch:
     inputs:
       bump:
         description: "Version bump (none = re-release current manifest version)"
         required: true
-        default: "none"
+        default: "minor"
         type: choice
         options:
-          - none
           - minor
           - major
-  workflow_run:
-    workflows:
-      - CI
-    types:
-      - completed
+          - none
 
 permissions:
   contents: write
+  # Read CI's runs, to check the commit being released passed.
+  actions: read
 
 concurrency:
   group: release-main
-  cancel-in-progress: true
+  # A second release waits; cancelling one after its push would leave a bump with no tag.
+  cancel-in-progress: false
 
 jobs:
   release:
     name: Bump manifest and publish release
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main'
-      )
     runs-on: ubuntu-latest
 
     steps:
@@ -44,43 +36,37 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      - name: Skip stale workflow runs
-        id: head_check
+      # Nothing waits for CI before a release any more, so check it passed on this commit.
+      - name: Require a green CI run on main
+        id: head
         env:
-          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
-          EVENT_NAME: ${{ github.event_name }}
-          BUMP_INPUT: ${{ inputs.bump || 'none' }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          current_sha="$(git rev-parse origin/main)"
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if [ "$BUMP_INPUT" = "none" ]; then
-              echo "release_action=existing" >> "$GITHUB_OUTPUT"
-            else
-              echo "release_action=bump" >> "$GITHUB_OUTPUT"
-            fi
-            echo "release_target=$current_sha" >> "$GITHUB_OUTPUT"
-            exit 0
+          head_sha="$(git rev-parse HEAD)"
+          echo "sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+          tested="$head_sha"
+          # Release commits are pushed with [skip ci]; CI ran on the commit before one.
+          if [[ "$(git log -1 --format=%s "$tested")" == chore\(release\):*\ \[skip\ ci\] ]]; then
+            tested="$(git rev-parse "$tested^")"
           fi
 
-          if [ "$current_sha" = "$EXPECTED_SHA" ]; then
-            echo "release_action=bump" >> "$GITHUB_OUTPUT"
-            echo "release_target=$current_sha" >> "$GITHUB_OUTPUT"
-            exit 0
+          run="$(gh run list --workflow ci.yml --commit "$tested" --limit 1 \
+            --json conclusion,url --jq '.[0] // empty')"
+          if [ -z "$run" ]; then
+            echo "::error::No CI run found for $tested. Run CI on main, then release."
+            exit 1
           fi
-
-          previous_sha="$(git rev-parse "$current_sha^")"
-          latest_subject="$(git log -1 --format=%s "$current_sha")"
-          if [ "$previous_sha" = "$EXPECTED_SHA" ] && [[ "$latest_subject" == chore\(release\):*\ \[skip\ ci\] ]]; then
-            echo "release_action=existing" >> "$GITHUB_OUTPUT"
-            echo "release_target=$current_sha" >> "$GITHUB_OUTPUT"
-            exit 0
+          conclusion="$(jq -r '.conclusion' <<< "$run")"
+          url="$(jq -r '.url' <<< "$run")"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::CI on $tested is ${conclusion:-still running}: $url"
+            exit 1
           fi
-
-          echo "Skipping stale run for $EXPECTED_SHA because main is already at $current_sha."
-          echo "release_action=skip" >> "$GITHUB_OUTPUT"
+          echo "CI passed on $tested: $url"
 
       - name: Set up Python
-        if: steps.head_check.outputs.release_action != 'skip'
         uses: actions/setup-python@v7
         with:
           # Only runs the three stdlib-only scripts in .github/scripts, so this does not need
@@ -90,24 +76,24 @@ jobs:
           python-version: '3.14'
 
       - name: Bump manifest version and rotate changelog
-        if: steps.head_check.outputs.release_action == 'bump'
+        if: inputs.bump != 'none'
         id: bump
         env:
-          BUMP_TYPE: ${{ inputs.bump || 'minor' }}
+          BUMP_TYPE: ${{ inputs.bump }}
         run: |
           new_version="$(python .github/scripts/bump_manifest_version.py --bump "$BUMP_TYPE")"
           python .github/scripts/update_changelog.py "$new_version"
           echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
 
       - name: Read existing manifest version
-        if: steps.head_check.outputs.release_action == 'existing'
+        if: inputs.bump == 'none'
         id: current_version
         run: |
           new_version="$(python -c 'import json; print(json.load(open("custom_components/norman/manifest.json"))["version"])')"
           echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
 
       - name: Commit release version
-        if: steps.head_check.outputs.release_action == 'bump'
+        if: inputs.bump != 'none'
         id: commit_release
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
@@ -119,24 +105,22 @@ jobs:
           echo "release_target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Push release commit
-        if: steps.head_check.outputs.release_action == 'bump'
+        if: inputs.bump != 'none'
         run: git push origin HEAD:main
 
       # GitHub's auto-generated notes only list merged PRs, so direct-to-main releases came
       # out empty. Build the body ourselves: Highlights from CHANGELOG.md (rotated from its
       # Unreleased section during the bump) plus the commit list since the previous tag.
       - name: Generate release notes
-        if: steps.head_check.outputs.release_action != 'skip'
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new_version || steps.current_version.outputs.new_version }}
         run: python .github/scripts/generate_release_notes.py "$NEW_VERSION" release_notes.md
 
       - name: Create GitHub release
-        if: steps.head_check.outputs.release_action != 'skip'
         uses: actions/github-script@v9
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new_version || steps.current_version.outputs.new_version }}
-          RELEASE_TARGET: ${{ steps.commit_release.outputs.release_target || steps.head_check.outputs.release_target }}
+          RELEASE_TARGET: ${{ steps.commit_release.outputs.release_target || steps.head.outputs.sha }}
         with:
           script: |
             const fs = require('fs')

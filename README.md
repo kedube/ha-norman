@@ -101,8 +101,7 @@ list of default repositories yet, add the repository by hand:
 
 ## Upgrading
 
-Every push to `main` that passes CI publishes a release, so updates appear within a day or two
-of a change.
+Releases are published by hand, so a change on `main` reaches HACS with the next release.
 The [changelog](CHANGELOG.md) lists what each version did, and the
 [Releases page](https://github.com/kedube/ha-norman/releases) carries the same notes.
 
@@ -521,8 +520,9 @@ capturing what you need; it is verbose while blinds are moving.
 [CONTRIBUTING.md](CONTRIBUTING.md) covers setting up, running the CI checks locally, the
 [project layout](CONTRIBUTING.md#project-layout), and adding support for another Norman
 product. CI runs HACS validation, `hassfest`, Ruff, Mypy, the card check and pytest
-([ci.yml](.github/workflows/ci.yml)); every green push to `main` publishes a release
-([release.yml](.github/workflows/release.yml)) and a [changelog](CHANGELOG.md) entry. The
+([ci.yml](.github/workflows/ci.yml)); releases are started by hand
+([release.yml](.github/workflows/release.yml)) and publish the [changelog](CHANGELOG.md)'s
+Unreleased section. The
 [quality-scale target](QUALITY_SCALE.md) tracks Home Assistant's integration quality rules.
 
 ## Disclaimers

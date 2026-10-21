@@ -179,8 +179,11 @@ Please use the GitHub issue templates for bug reports and feature requests. When
 
 - Do not commit diagnostics exports or logs containing addresses from your own network.
 - The `main` branch is intended to stay stable and should be updated through pull requests.
-- Successful pushes to `main` automatically bump the manifest version in
+- A push to `main` runs CI and nothing else. To release, run **Actions → Release → Run
+  workflow**. It checks that CI passed on `main`'s latest commit, bumps the manifest version in
   `custom_components/norman/manifest.json` using `major.minor` format (two-digit minor, e.g.
-  `0.11`), commit that bump, create a matching git tag, and publish a GitHub release whose notes
-  are the rotated **Unreleased** changelog section plus the commit list. A breaking change can
-  be released as a major bump by running the **Release** workflow manually with `bump: major`.
+  `0.11`), commits that bump, creates a matching git tag, and publishes a GitHub release whose
+  notes are the rotated **Unreleased** changelog section plus the commit list. `bump: minor` is
+  the default; use `bump: major` for a breaking change, or `bump: none` to publish the current
+  manifest version again (for example, if creating the release failed after the bump was
+  pushed).
