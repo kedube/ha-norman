@@ -5,6 +5,16 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Opening a PerfectSheer's vanes lowers the shade first.** The vanes open only with the shade
+  fully down: the hub accepts a tilt sent with the shade raised, then drops it, and the vanes
+  never move ([#6](https://github.com/kedube/ha-norman/issues/6)). The tilt used to show the new
+  value briefly and go back to 0, and the shade was sent it twice more and logged as not
+  moving. A tilt that opens the vanes now goes with the shade at 0, as the hub does when sent
+  both. Raising the shade sends the vanes closed, which the hub does anyway. Closing the vanes
+  leaves the shade where it is.
+
 ## 0.93 — 2026-10-21
 
 - **Releases are published by hand.** A push to `main` only runs CI; the **Release** workflow is

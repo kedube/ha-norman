@@ -89,9 +89,10 @@ attribute says which side the drape gathers to when open (`left`, `right` or `sp
 hub's device list; Norman Shades draws it there.
 
 **A PerfectSheer is one cover.** The bottom rail is the shade and the middle rail the vanes
-between its two sheers, 0 closed to 100 open, as the tilt. They move independently, like a
-SmartDrape's. The app draws the vanes only while the shade is fully lowered, which is
-presumably the only place they open.
+between its two sheers, 0 closed to 100 open, as the tilt. The vanes open only with the shade
+fully lowered, and the app draws them only then. A tilt sent with the shade raised is accepted
+by the hub and then dropped, so a tilt that opens the vanes lowers the shade first. Raising the
+shade closes them. Closing the vanes leaves the shade where it is.
 
 **A Shutter is one cover, named Louvers.** It has no rails: the hub reports its louvers as
 `Position` 0–7 — 7 fully closed, 3 horizontal, and 0 as far as they turn the other way, which

@@ -426,11 +426,13 @@ UNRESPONSIVE_AFTER = timedelta(hours=24)
 #   33       Cellular Shade, dual (DMCS), ModuleDetail 3-5: two rails for its two fabrics.
 #   48, 49   The roller family (MRS1, MRS2), named by ModuleDetail: 1 Roller Shade and
 #            2 Roman Shade (one rail), 3 PerfectSheer (the rail plus a vane control on the
-#            middle rail). 48/1 confirmed as a roller shade in issue #2.
+#            middle rail). 48/1 confirmed as a roller shade in issue #2, 48/3 as a
+#            PerfectSheer in issue #6.
 #   80       SmartDrape (MSD), ModuleDetail 1. Bottom rail = how far the drape is drawn,
 #            middle rail = vane tilt in seven stops (MSD_VANE_STOPS). Seen in issue #2.
 # A two-rail shade's rails hang one above the other and carry each other when they would
-# cross; a drape's or a PerfectSheer's two values are independent motions.
+# cross; a drape's two values are independent motions; a PerfectSheer's vanes open only
+# with the shade fully down (rails_to_send in coordinator.py).
 # Unknown types fall back to two-rail -- the safer default, since a two-rail blind driven as
 # single-rail would leave its middle rail unreachable -- and are logged once so the hub payload
 # can be reported. The fallback is not free on a single-rail product: Best Privacy and

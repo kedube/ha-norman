@@ -354,7 +354,7 @@ sidebar entry per user). Any other language gets English.
 | Cellular Shade, top-down/bottom-up | 32 / 3–5 | The same two covers: the middle rail is the top rail. |
 | Cellular Shade | 32 / 0, 2 | Cover with position only, `shade` device class. |
 | Roller Shade, Roman Shade | 48, 49 / 1, 2 | Cover with position only, `shade` device class. |
-| PerfectSheer | 48, 49 / 3 | One `shade` cover: the shade as position, its vanes as tilt, moving independently. |
+| PerfectSheer | 48, 49 / 3 | One `shade` cover: the shade as position, its vanes as tilt. The vanes open only with the shade fully down, so opening them lowers the shade first. |
 | SmartDrape | 80 / 1 | One `curtain` cover: how far it is drawn as position, the vanes as tilt, in the app's seven stops. |
 | Shutter | 1 | One `shutter` cover, **Louvers**: how open the louvers are as tilt, in five steps; open and close turn them. |
 | Anything else | other | Treated as two-rail, and a warning asks you to report the type. |
@@ -374,8 +374,8 @@ unknown-type warning or behaves differently from its row.
 - **Use the hub from Home Assistant or from Apple Home (HomeKit), not both.** Controlling the
   same hub from both does not work well.
 - **Several products are known only from the Norman app**: the Shutter (`ModuleType` 1), the
-  MRS2 rollers (49), and the Roman Shade, PerfectSheer and top-down/bottom-up cellular details
-  (48/2, 48/3, 32/3–5). See [Supported devices](#supported-devices).
+  MRS2 rollers (49), and the Roman Shade and top-down/bottom-up cellular details (48/2,
+  32/3–5). See [Supported devices](#supported-devices).
 - **The Norman app's battery report can close shades.** Its `ReportBatteryLevel` command closed
   roller shades in [#5](https://github.com/kedube/ha-norman/issues/5) and nine two-rail cellular
   shades on another hub. **Refresh blinds** now uses `StatusRequest` instead. A separate

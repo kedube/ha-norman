@@ -2,8 +2,9 @@
 
 The table comes from the ShadeAuto app (0.8.33): six ModuleTypes, with the ModuleDetail
 deciding the product where one type covers several. Only the two cellular shades are
-verified on real hardware, and issue #2 added a roller shade and a SmartDrape; the rest are
-pinned to what the app does with them. See const.py, "Cover types".
+verified on real hardware, issue #2 added a roller shade and a SmartDrape, and issue #6 a
+PerfectSheer's vanes; the rest are pinned to what the app does with them. See const.py,
+"Cover types".
 """
 
 from __future__ import annotations
@@ -41,13 +42,14 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
 from custom_components.norman.const import (
+    COVER_TYPE_SHEER,
     DOMAIN,
     EVENT_COMMAND_FAILED,
     MOVE_ATTEMPTS,
 )
-from custom_components.norman.coordinator import NormanCoordinator
+from custom_components.norman.coordinator import NormanCoordinator, rails_to_send
 
-from .conftest import FakeHub, cover_entity_id, settle
+from .conftest import FakeHub, cover_entity_id
 from .const import (
     EVERY_NEW_PRODUCT,
     UID_BEDROOM,
@@ -348,25 +350,93 @@ async def test_smartdrape_vane_nudges_move_at_least_one_stop(
 # ---- PerfectSheer: the shade and its vanes -----------------------------------------------
 
 
-async def test_perfectsheer_vanes_are_the_tilt_and_move_on_their_own(
-    hass: HomeAssistant, init_with_every_product: MockConfigEntry, fake_hub: FakeHub
+async def test_perfectsheer_vanes_are_the_tilt(
+    hass: HomeAssistant, init_with_every_product: MockConfigEntry
 ) -> None:
-    """The middle rail is how open the vanes are (0 closed, 100 open), independent of the shade."""
+    """The middle rail is how open the vanes are, 0 closed to 100 open."""
     state = hass.states.get(cover_entity_id(hass, UID_SHEER))
     assert state.attributes[ATTR_CURRENT_POSITION] == 0
     assert state.attributes[ATTR_CURRENT_TILT_POSITION] == 40
 
-    await _call(hass, UID_SHEER, SERVICE_OPEN_COVER)
-    assert _rails_sent(fake_hub, UID_SHEER) == (100, 40), "the vanes are not carried up"
 
-    # Driven as a two-rail shade, a tilt below the shade would have pulled it down to 20. The
-    # shade reports in at 60, which ends the open's watch: the hub is where it is heading now.
-    fake_hub.set_position(UID_SHEER, bottom=60)
-    fake_hub.peripheral_status(UID_SHEER)["Timestamp"] += 30
+@pytest.mark.parametrize(
+    ("rails", "service", "data", "sent"),
+    [
+        # Down, the vanes tilt on their own and keep their tilt as the shade closes.
+        ((0, 40), SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 70}, (0, 70)),
+        ((0, 40), SERVICE_CLOSE_COVER, {}, (0, 40)),
+        # Raising the shade closes them, as the hub would.
+        ((0, 40), SERVICE_OPEN_COVER, {}, (100, 0)),
+        ((0, 40), SERVICE_SET_COVER_POSITION, {ATTR_POSITION: 50}, (50, 0)),
+        # Raised, opening them lowers the shade first; sent as (60, 20), the hub drops the tilt.
+        ((60, 0), SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 20}, (0, 20)),
+        ((60, 0), SERVICE_OPEN_COVER_TILT, {}, (0, 100)),
+        # Closing them, as they already are, leaves the shade where it is.
+        ((60, 0), SERVICE_CLOSE_COVER_TILT, {}, (60, 0)),
+    ],
+)
+async def test_perfectsheer_vanes_open_only_with_the_shade_down(
+    hass: HomeAssistant,
+    init_with_every_product: MockConfigEntry,
+    fake_hub: FakeHub,
+    rails: tuple[int, int],
+    service: str,
+    data: dict[str, Any],
+    sent: tuple[int, int],
+) -> None:
+    """The hub keeps a vane target only while the shade's is 0 (issue #6)."""
+    fake_hub.set_position(UID_SHEER, bottom=rails[0], middle=rails[1])
     await init_with_every_product.runtime_data.async_refresh()
-    await settle(hass)
-    await _call(hass, UID_SHEER, SERVICE_SET_COVER_TILT_POSITION, **{ATTR_TILT_POSITION: 20})
-    assert _rails_sent(fake_hub, UID_SHEER) == (60, 20), "the shade is not carried down"
+
+    await _call(hass, UID_SHEER, service, **data)
+
+    assert _rails_sent(fake_hub, UID_SHEER) == sent
+
+
+async def test_perfectsheer_tilt_nudge_on_a_raised_shade_lowers_it(
+    hass: HomeAssistant, init_with_every_product: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A nudge that opens the vanes is a tilt like any other."""
+    fake_hub.set_position(UID_SHEER, bottom=60, middle=0)
+    await init_with_every_product.runtime_data.async_refresh()
+
+    await _nudge(hass, UID_SHEER, "nudge_tilt", 10)
+
+    assert _rails_sent(fake_hub, UID_SHEER) == (0, 10)
+
+
+async def test_perfectsheer_closed_right_after_a_raise_keeps_its_vanes_closed(
+    hass: HomeAssistant, init_with_every_product: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The raise closed the vanes, so the shade comes back down with them closed, not at 40.
+
+    Inside the refresh debouncer's cooldown the hub's target in hand is still the one from
+    before the raise, so the close fills the vanes in from the raise's own record
+    (``async_note_move``). The raise has to record them closed for that to match the hub.
+    """
+    await _call(hass, UID_SHEER, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 50})
+    await _call(hass, UID_SHEER, SERVICE_CLOSE_COVER)
+
+    assert _rails_sent(fake_hub, UID_SHEER) == (0, 0)
+
+
+@pytest.mark.parametrize(
+    ("heading", "bottom", "middle", "sent"),
+    [
+        ((60, 0), None, 40, (0, 40)),
+        ((0, 40), 100, None, (100, 0)),
+        ((0, 40), 0, None, (0, 40)),
+        ((60, 0), None, 0, (60, 0)),
+        # Both asked, as a scene does: the shade's position wins, as it does at the hub.
+        ((0, 0), 50, 100, (50, 0)),
+        ((50, 0), 0, 100, (0, 100)),
+    ],
+)
+def test_perfectsheer_is_never_sent_open_vanes_on_a_raised_shade(
+    heading: tuple[int, int], bottom: int | None, middle: int | None, sent: tuple[int, int]
+) -> None:
+    """Every move works out its pair here: the cover, its slider, a room's, and a scene."""
+    assert rails_to_send(COVER_TYPE_SHEER, heading, bottom, middle) == sent
 
 
 # ---- Shutter: louvers ------------------------------------------------------------------

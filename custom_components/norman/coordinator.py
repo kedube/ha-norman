@@ -24,6 +24,7 @@ from .const import (
     CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
+    COVER_TYPE_SHEER,
     COVER_TYPE_SHUTTER,
     COVER_TYPE_SINGLE_RAIL,
     COVER_TYPE_TWO_RAIL,
@@ -171,6 +172,13 @@ def rails_to_send(
     rail above the middle rail takes the middle rail up. The hub is never asked for a shape
     the blind cannot make. A drape's two values are how far it is drawn and how its vanes are
     tilted, which do not constrain each other, so they are sent as asked.
+
+    A PerfectSheer's vanes open only with the shade fully down. The hub accepts a tilt sent
+    with the shade raised, then sets the vane target back to 0 by itself, and the vanes never
+    move (issue #6). So opening the vanes lowers the shade first, as the hub does when sent
+    both, and raising the shade closes them, which the hub would do anyway. Sending what the
+    hub will report also lets the move watchdog see the move arrive. Where both are asked,
+    as a scene does, the shade's position wins, as it does at the hub.
     """
     bottom_val = heading[0] if bottom is None else clamp_position(bottom)
     middle_val = heading[1] if middle is None else clamp_position(middle)
@@ -179,6 +187,11 @@ def rails_to_send(
             middle_val = max(middle_val, bottom_val)
         elif bottom is None:
             bottom_val = min(bottom_val, middle_val)
+    elif cover_type == COVER_TYPE_SHEER and bottom_val and middle_val:
+        if bottom is None:
+            bottom_val = 0
+        else:
+            middle_val = 0
     return bottom_val, middle_val
 
 

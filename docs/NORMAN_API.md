@@ -1137,7 +1137,7 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 | 33 / 4–5 | Cellular Shade (DMCS) | app only | the app accepts them like 33/3 | as 33/3 |
 | 48 / 1 | Roller Shade (MRS1) | issues [#2](https://github.com/kedube/ha-norman/issues/2) and [#5](https://github.com/kedube/ha-norman/issues/5), 2.4.1 | only the bottom rail moves; the middle rail reads 0. In #2 `Switch` recorded a middle-rail target of 100; in #5 a room `Switch` left it at 0. A hub-wide report-in closed the shades in #5 ([Waking a blind](#waking-a-blind)) | single-rail cover, position only; one position slider |
 | 48 / 2 | Roman Shade (MRS1) | app only | one slider | as 48/1 |
-| 48 / 3 | PerfectSheer (MRS1) | app only | two sliders: the shade, and its vanes on the middle rail (0 closed, 100 open), drawn only while the shade is down | one `shade` cover, shade as position and vanes as tilt, independent; one position slider |
+| 48 / 3 | PerfectSheer (MRS1) | issue [#6](https://github.com/kedube/ha-norman/issues/6), 2.4.1 | two sliders: the shade, and its vanes on the middle rail (0 closed, 100 open, values between honoured), drawn only while the shade is down. The vanes open only with the shade fully down (see below) | one `shade` cover, shade as position and vanes as tilt; opening the vanes lowers the shade, raising the shade closes them; one position slider |
 | 49 / 1–3 | as 48 (MRS2), with `Mrs2Status` | app only | a second generation of the roller module | as 48 |
 | 80 / 1 | SmartDrape (MSD) | issue [#2](https://github.com/kedube/ha-norman/issues/2), 0.2.3, with `MSDStackType` / `MsdStatus` | bottom rail = how far the drape is drawn; middle rail = vanes in seven stops (0, 17, 33, 50, 66, 83, 100), open at 50 and closed at both ends | one `curtain` cover, draw as position and vane openness as tilt, independent; one position slider |
 | other | — | | | two-rail by default, warning logged once |
@@ -1153,6 +1153,31 @@ in the reference captures and issue #2, `Switch` recorded a middle-rail target o
 privacy and Best view on every blind, and a blind with no middle rail keeps reporting 0 — so one
 that is already at the preset never matches its target, and the move watchdog asks it to report
 in, resends the preset twice, and gives up. That is how type 48 was found.
+
+**A PerfectSheer's vanes open only with the shade fully down (issue
+[#6](https://github.com/kedube/ha-norman/issues/6), 2026-10-22 and 2026-10-23).** On a hub at
+firmware 6.1.25 with five 48 / 3 PerfectSheers at firmware 2.4.1, the hub kept a vane target
+only while the bottom-rail target was 0. A tilt sent with the shade raised returned `Error: 0`
+and set `TargetMiddleRailPosition`, then the hub set that target back to 0 by itself, and the
+vanes never moved:
+
+- `{"BottomRailPosition": 50, "MiddleRailPosition": 100}` sent from 0 / 0: when the lift ended,
+  about 30 s later, one update showed the bottom rail at 50 and the middle target back to 0.
+  `MiddleRailPosition` never left 0.
+- The same tilt sent to a shade standing at 25: the middle target went to 100, then back to 0
+  9.4 s later, with no command and no motion.
+- `{"BottomRailPosition": 0, "MiddleRailPosition": 100}` sent from 50 / 0 lowered the shade and
+  then opened the vanes. Both positions arrived in one update about 28 s later.
+
+So the integration sends a tilt that opens the vanes with the bottom rail at 0, and a raise
+with the middle rail at 0 (`rails_to_send` in `coordinator.py`).
+
+The rest matched the cellular shades: `MiddleRailPosition` alone returned `Error: 2`, and
+`BottomRailPosition` alone set the middle target to 0. `MotorStop` stopped the motor, and the
+hub set the bottom-rail target to where it stopped about 35 s later. A `StatusRequest` to one
+blind brought a notification about 2.3 s later and moved its `Timestamp`, with nothing moving.
+The notification stream sent the ack, then `Status` and `PeripheralList` when a command was
+accepted and again when the move finished, for moves made in the app too.
 
 ### Notification stream, as observed
 

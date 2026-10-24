@@ -378,9 +378,10 @@ class NormanSheer(NormanBlind):
     """A PerfectSheer (ModuleType 48/49, ModuleDetail 3): the shade as position, vanes as tilt.
 
     The shade is the bottom rail, the vanes between its two sheers the middle rail, 0
-    closed to 100 open -- the app draws the vanes more see-through as the value rises. As on
-    a drape the two are independent, so neither carries the other. The app only draws the
-    vanes while the shade is fully lowered, which is presumably the only place they open.
+    closed to 100 open -- the app draws the vanes more see-through as the value rises. The
+    vanes open only with the shade fully lowered, and the app draws them only then. So a
+    tilt that opens them lowers the shade first, and raising the shade closes them
+    (``rails_to_send`` in the coordinator). Closing them leaves the shade where it is.
     """
 
     _attr_device_class = CoverDeviceClass.SHADE
