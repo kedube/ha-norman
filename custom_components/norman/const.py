@@ -379,6 +379,7 @@ HUB_CMD_FAVORITE = "Favorite"
 # Switch is the open/close verb behind the app's Best View / Best Privacy buttons. It is
 # addressed by RoomID (a room), RoomID + GroupID (one blind), or nothing at all (the whole
 # hub) -- never by PeripheralUID alone. It sets BOTH rails: close is bottom 0 / middle 100.
+# A PerfectSheer's vanes close for both: close is 0 / 0 and open 100 / 0 (issue #6).
 HUB_CMD_SWITCH = "Switch"
 HUB_SWITCH_OPEN = 1
 HUB_SWITCH_CLOSE = 0
@@ -524,7 +525,8 @@ ATTR_COMMAND = "command"
 # Switch sets BOTH rails to a fixed pair: 0 -> bottom 0 / middle 100, 1 -> both 100. That is
 # what makes "best privacy" meaningful on a day/night shade -- the middle rail goes fully up,
 # stacking away the light-filtering sheer that hangs above it, and the bottom rail fully down,
-# drawing the blackout below it across the window. Verified on hardware.
+# drawing the blackout below it across the window. Verified on hardware. A PerfectSheer gets
+# 0 / 0 and 100 / 0 instead, its vanes closed both times (verified on hardware, issue #6).
 ROOM_PRESETS: dict[str, dict[str, int]] = {
     "best_privacy": {"Switch": 0},
     "best_view": {"Switch": 1},

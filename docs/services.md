@@ -70,8 +70,8 @@ checked, and one that never moves is sent the preset on its own
 
 | Command | Sends | Effect |
 |---|---|---|
-| `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that draws the blackout, which hangs below the middle rail, across the window, with the light-filtering sheer above it stacked fully open. |
-| `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. |
+| `best_privacy` | `{"Switch": 0, "RoomID": …}` | Bottom rail to **0**, middle rail to **100**. On a day/night shade that draws the blackout, which hangs below the middle rail, across the window, with the light-filtering sheer above it stacked fully open. A PerfectSheer goes down with its vanes closed. |
+| `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. A PerfectSheer goes up with its vanes closed. |
 | `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant's cover actions have no equivalent; the room's own **Favorite position** button sends the same request. |
 | `refresh` | One `{"PeripheralUID": X, "StatusRequest": 0}` per blind; without `room`, one unscoped `{"StatusRequest": 0}` | Asks blinds to report battery, position and last-seen without moving them in live tests. Room requests are paced through the hub's command queue. An unscoped request reached all 13 blinds on one hub within two minutes. Answers arrive as notifications after the action returns. The Norman app's separate `ReportBatteryLevel` command can close shades; it is available as an explicitly named button on room and hub devices. |
 

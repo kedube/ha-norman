@@ -506,6 +506,9 @@ and the blackout below it covers the window. Reading this from a capture alone i
 `Switch` left the middle rail untouched. Stage a blind away from both rails' end positions
 before drawing conclusions.
 
+The pair depends on the product. On a PerfectSheer both buttons close the vanes: Best privacy
+sets bottom 0 / middle 0 and Best view bottom 100 / middle 0 (see [Cover types](#cover-types)).
+
 `norman.room_command` and each room's buttons send these three, and the hub's three **All
 blinds** buttons send the hub-wide form. The hub echoes `Switch` / `Favorite` and `RoomID`.
 
@@ -723,7 +726,7 @@ Response stream, as observed:
   a wake-up and calls `status`, which is authoritative and covers every peripheral.
 - Besides state changes the stream carries **structure changes** made in the app:
   `{"UpdateTime": {"room": <s>}, "Timestamp": <ms>}` after a room is renamed or re-iconed,
-  `{"UpdateTime": {"peripheral": …}}` after a blind is renamed, `{"UpdateTime": {"device": …}}`
+  `{"UpdateTime": {"peripheral": <s>}}` after a blind is renamed, `{"UpdateTime": {"device": …}}`
   after the hub is renamed, and `{"UpdateTime": {"schedule": …}}` after a schedule is added or
   deleted. The integration re-reads `GetAllPeripheral` on the first three (so names follow the
   app) and treats the fourth as a plain refresh.
@@ -1179,6 +1182,17 @@ blind brought a notification about 2.3 s later and moved its `Timestamp`, with n
 The notification stream sent the ack, then `Status` and `PeripheralList` when a command was
 accepted and again when the move finished, for moves made in the app too.
 
+**Best privacy and Best view close a PerfectSheer's vanes (issue
+[#6](https://github.com/kedube/ha-norman/issues/6), 2026-10-27).** On the same hub, `Switch` did
+not set the cellular shades' targets. Best privacy set bottom 0 / middle 0 and Best view bottom
+100 / middle 0. Both were sent to one 48 / 3 by room and group, from 0 / 50, 50 / 0 and 100 / 0,
+and both targets were already set when `Error: 0` came back. Neither changed again in the
+100 s that followed, so the hub had no vane target to clear. From 0 / 50 both closed the vanes,
+and Best view then raised the shade. Best view on a shade already at 100 / 0 left both targets
+where they were, and nothing moved. About 14 s later the blind sent one report that moved only
+its `Timestamp`. The app's own buttons for that blind set the same targets from the same three
+starting points. So the move watchdog sees every one of these presets arrive.
+
 ### Notification stream, as observed
 
 - First object: `{"Error": "Success."}` — note the **string** value; `_raise_on_error_code`
@@ -1192,6 +1206,14 @@ accepted and again when the move finished, for moves made in the app too.
   with a `StatusRequest` 30 s in, Den_1 answered within 4 s that it had already arrived, both
   ways. The move watchdog's 60 s wait and status request (const.py, `MOVE_TIMEOUT`) cover that.
   Den_2, sent to 0, stops at 18, as it did in an earlier test.
+- A command that needs no movement still brings a report. On a PerfectSheer (48 / 3, issue
+  [#6](https://github.com/kedube/ha-norman/issues/6)), Best view on a raised shade and a move to
+  where the shade already was each brought one notification about 14 s later, which moved only
+  the blind's `Timestamp`.
+- A command sent from the Norman app does not always bring a notification when the hub takes
+  it. Two of six presets pressed on a PerfectSheer's screen in the app changed the blind's target
+  with no notification; the change showed only in `status`. The report at the end of the move
+  always came (issue [#6](https://github.com/kedube/ha-norman/issues/6)).
 
 ## Error conventions
 

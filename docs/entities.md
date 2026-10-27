@@ -221,7 +221,8 @@ See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
 bottom rail at 0 and the middle rail at 100 (closed for privacy, sheer fabric still open), and
 view opens both. They send the hub's `Switch` verb addressed at the single blind by its room
 and group, exactly as the app does, so the positions are the hub's rather than this
-integration's idea of them.
+integration's idea of them. On a PerfectSheer both close the vanes: privacy lowers the shade
+and view raises it.
 
 [Norman Shades](dashboard.md), in the sidebar, puts all of this on one screen, grouped by room.
 
@@ -262,7 +263,7 @@ dashboard by hand if you want them there.
 
 | Button | Hub verb | Notes |
 |---|---|---|
-| Best privacy / Best view | `Switch: 0` / `Switch: 1` | The app's own buttons, addressed at this blind by its room and group. Privacy is bottom rail 0 with the middle rail at 100; view opens both. Blinds paired to the same remote channel move together on each one's buttons, and the integration logs a warning when it finds them. |
+| Best privacy / Best view | `Switch: 0` / `Switch: 1` | The app's own buttons, addressed at this blind by its room and group. Privacy is bottom rail 0 with the middle rail at 100; view opens both. On a PerfectSheer both close the vanes, and privacy lowers the shade and view raises it. Blinds paired to the same remote channel move together on each one's buttons, and the integration logs a warning when it finds them. |
 | Favorite position | `Favorite: 0` | Moves to the favorite stored in the blind, addressed the same way. Works on both rail types. |
 | Jog up / Jog down | `MotorFineTuneToUp` / `…Down: 170` | One small motor step, addressed by `PeripheralUID`. The app uses it while setting limits and as the Fine-tune step of calibration, tapping it repeatedly to inch a rail into place. Independent of position targets, and the hub reports no position change until the motor settles. |
 | Request status | `StatusRequest: 0` | Asks this one blind to report in; nothing moves. Filed under **Diagnostic**, next to the sensors it refreshes. A battery blind's radio sleeps between commands and the hub stops hearing from it, so its battery, last-seen and position go stale and the Norman app eventually lists it as "Disconnect". This is the per-blind form of the app's refresh, confirmed by a live app capture; on hardware the blind answered within five seconds every time. The answer arrives as a hub notification a few seconds after the press, not in the press itself. See [Waking a blind](NORMAN_API.md#waking-a-blind). |
@@ -302,7 +303,7 @@ earlier capture could not tell whether single-rail blinds honour a hub-wide `Fav
 they were already at their end position when it fired. Staged away from it, all thirteen moved
 — the single-rail blinds to 50%. Best privacy puts the bottom rail at 0 and the middle rail at
 100 (the blackout across the window, the sheer stacked open); best view opens both; favorite runs each blind
-to its own stored position.
+to its own stored position. A PerfectSheer's vanes close for both privacy and view.
 
 Blinds take 30–60 s to travel and the hub keeps reporting the old position meanwhile, so the
 entities will lag the press. The room-scoped forms are each room's own buttons

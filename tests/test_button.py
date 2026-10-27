@@ -710,6 +710,35 @@ async def test_a_preset_a_roller_shade_is_already_at_is_not_resent(
     assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
 
 
+async def test_best_view_on_a_raised_perfectsheer_is_not_resent(
+    hass: HomeAssistant,
+    init_with_every_product: MockConfigEntry,
+    fake_hub: FakeHub,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Issue #6: Best view on a PerfectSheer that is already fully up.
+
+    Verified on real hardware (48/3, 2026-10-27): the hub records Best view on a PerfectSheer
+    as bottom 100 / middle 0, not the cellular shades' middle 100, and leaves a raised shade's
+    targets where they are. So the targets already match the shade and nothing moves; the
+    watch sees it arrived rather than resending the preset and giving up.
+    """
+    coordinator: NormanCoordinator = init_with_every_product.runtime_data
+    fake_hub.set_position(UID_SHEER, bottom=100, middle=0)
+    await coordinator.async_refresh()
+
+    with (
+        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+    ):
+        await _press(hass, UID_SHEER, "best_view")
+        await _preset_watchdog_done(coordinator, UID_SHEER)
+
+    assert len(_switches(fake_hub, UID_SHEER)) == 1
+    assert not [c for c in fake_hub.control_calls if "StatusRequest" in c]
+    assert "did not move" not in caplog.text
+
+
 async def test_preset_watchdog_forgets_itself_when_it_finishes(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
