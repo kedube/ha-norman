@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.95 — 2026-10-30
 
 - **PerfectSheer presets documented.** Best privacy and Best view close a PerfectSheer's vanes:
   privacy lowers the shade and view raises it, not the cellular shades' middle rail at 100
