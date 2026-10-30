@@ -51,13 +51,15 @@ const languageOf = (hass) => {
   return LOAD_FAILED[base.toLowerCase()] ? base.toLowerCase() : "en";
 };
 
+// No background on the host: Home Assistant paints one behind every panel (from 2026.11 the
+// theme's --ha-panel-background, before that the page's --primary-background-color), and an
+// opaque host would cover a theme's gradient or image with a flat colour.
 const STYLES = `
   :host {
     display: block;
     height: 100%;
     overflow-y: auto;
     box-sizing: border-box;
-    background: var(--primary-background-color);
   }
   .page { box-sizing: border-box; max-width: 1280px; min-height: 100%; margin: 0 auto; padding: 16px; }
   /* On a phone the card is the page, edge to edge, so the page takes the card's colour. */

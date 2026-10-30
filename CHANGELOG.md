@@ -11,6 +11,11 @@ version heading and publishes it as the release's Highlights.
   privacy lowers the shade and view raises it, not the cellular shades' middle rail at 100
   ([#6](https://github.com/kedube/ha-norman/issues/6)). Best view on a shade that is already up
   sets nothing new, so it isn't resent or logged as not moving.
+- **Ready for Home Assistant 2026.11.** Verified against 2026.11.0b1: the full test suite and type
+  check pass, with no new warnings. The manifest now lists the Blinds & curtains category, so
+  Norman shows up there when browsing integrations and the Marketplace. The sidebar panel no
+  longer paints its own background, so a theme's panel background (new in 2026.11) shows behind
+  it as it does behind Home Assistant's own pages.
 
 ## 0.94 — 2026-10-24
 
