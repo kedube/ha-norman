@@ -1,0 +1,56 @@
+blueprint:
+  name: Norman blind did not move
+  description: >-
+    Runs your actions when a Norman blind ignores a command. The integration watches every
+    move, preset and scene; a blind that stays put after the command has been sent three
+    times fires the norman_command_failed event, which this listens for. A flat battery or a
+    blind out of the hub's range is the usual cause.
+
+    By default it shows a notification in Home Assistant, one per blind.
+  domain: automation
+  source_url: https://github.com/kedube/ha-norman/blob/main/blueprints/automation/norman/blind_did_not_move.yaml
+  homeassistant:
+    min_version: 2026.3.0
+  input:
+    blinds:
+      name: Blinds
+      description: Only these blinds. Leave empty for every Norman blind.
+      default: []
+      selector:
+        device:
+          integration: norman
+          multiple: true
+    actions:
+      name: Actions
+      description: >-
+        What to do. In templates, {{ blind }} is the blind's name, {{ device_id }} its
+        device and {{ attempts }} how many times the command was sent.
+      default:
+        - action: persistent_notification.create
+          data:
+            title: "{{ blind }} did not move"
+            message: >-
+              {{ blind }} stayed where it was after the command was sent {{ attempts }}
+              times. Check its battery, and that it is in range of the hub.
+            notification_id: "norman_command_failed_{{ device_id }}"
+      selector:
+        action: {}
+
+mode: queued
+max: 10
+
+variables:
+  wanted: !input blinds
+  blind: "{{ trigger.event.data.name }}"
+  device_id: "{{ trigger.event.data.device_id }}"
+  attempts: "{{ trigger.event.data.attempts }}"
+
+triggers:
+  - trigger: event
+    event_type: norman_command_failed
+
+conditions:
+  - condition: template
+    value_template: "{{ not wanted or trigger.event.data.device_id in wanted }}"
+
+actions: !input actions

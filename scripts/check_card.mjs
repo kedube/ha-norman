@@ -241,9 +241,10 @@ roomCard._cells = [];
 const fbRoom = roomCard._buildRoomControls("Front Bedroom", [fb]);
 check("room controls render 3 buttons", fbRoom.children.length === 3, String(fbRoom.children.length));
 
-// One cover per blind, so one paced hub command per blind. A two-rail blind's other rail is
-// carried by the integration (rails_to_send): open on the bottom rail takes the middle rail up,
-// close on the middle rail takes the bottom rail down, and its two rails share one stop.
+// Open and close: one cover per blind, so one paced hub command per blind. A two-rail blind's
+// other rail is carried by the integration (rails_to_send): open on the bottom rail takes the
+// middle rail up, close on the middle rail takes the bottom rail down. Stop goes to the
+// integration with the blinds shown, which stops a whole room of the hub's with one request.
 fbRoom.children[0]._on?.click?.();
 check("room open sends ONE call", calls.length === 1, JSON.stringify(calls));
 check("room open sends a two-rail blind's bottom rail only, which carries the middle rail up",
@@ -251,8 +252,9 @@ check("room open sends a two-rail blind's bottom rail only, which carries the mi
       JSON.stringify(calls[0]?.[2]));
 calls.length = 0;
 fbRoom.children[1]._on?.click?.();
-check("room stop sends a two-rail blind one stop, not one per rail",
-      calls[0]?.[1] === "stop_cover" && JSON.stringify(calls[0][2].entity_id) === '["cover.front_bedroom_1_bottom_rail"]',
+check("room stop names a two-rail blind once, not once per rail, to norman.room_command",
+      calls.length === 1 && calls[0][0] === "norman" && calls[0][1] === "room_command" &&
+      calls[0][2].command === "stop" && JSON.stringify(calls[0][2].blinds) === '["cover.front_bedroom_1_bottom_rail"]',
       JSON.stringify(calls));
 calls.length = 0;
 fbRoom.children[2]._on?.click?.();
@@ -271,10 +273,12 @@ check("room close uses close_cover", calls[0]?.[1] === "close_cover", String(cal
 calls.length = 0;
 const multi = roomCard._buildRoomControls("Everything", [fb, den]);
 multi.children[1]._on?.click?.();
-check("a room with 2 blinds sends one call, one cover per blind",
-      calls.length === 1 && JSON.stringify(calls[0][2].entity_id) === '["cover.front_bedroom_1_bottom_rail","cover.den_1_bottom_rail"]',
+check("a room's stop names every blind shown in it, in one call",
+      calls.length === 1 && JSON.stringify(calls[0][2].blinds) === '["cover.front_bedroom_1_bottom_rail","cover.den_1_bottom_rail"]',
       JSON.stringify(calls));
-check("room stop uses stop_cover", calls[0]?.[1] === "stop_cover");
+check("...as norman.room_command's stop, never a stop_cover per blind",
+      calls[0]?.[0] === "norman" && calls[0]?.[1] === "room_command" && calls[0]?.[2].command === "stop" &&
+      !("room" in calls[0][2]));
 check("room buttons are labelled with the room name",
       String(fbRoom.children[0].title).includes("Front Bedroom"), String(fbRoom.children[0].title));
 
@@ -296,7 +300,7 @@ check("hiding room headings also hides room controls",
   c._hass = { ...hass, callService: (d,s2,data) => svcCalls.push([d,s2,data]) };
   c.setConfig({ type:"custom:norman-shades-card" });
   c._hass = { ...hass, callService: (d,s2,data) => svcCalls.push([d,s2,data]) };
-  const presets = c._buildRoomPresets("Office");
+  const presets = c._buildRoomPresets("Office", [fb, den]);
   check("room presets render 3 buttons", presets.children.length === 3, String(presets.children.length));
   [...presets.children].forEach(b => b._on?.click?.());
   check("presets call norman.room_command",
@@ -304,30 +308,41 @@ check("hiding room headings also hides room controls",
   check("presets send best_privacy / best_view / favorite for the room",
         JSON.stringify(svcCalls.map(x => x[2].command)) === JSON.stringify(["best_privacy","best_view","favorite"]),
         JSON.stringify(svcCalls.map(x => x[2])));
-  check("presets pass the room name, not entity ids",
-        svcCalls.every(x => x[2].room === "Office" && !("entity_id" in x[2])),
+  // The card's rooms are areas, which need not be the hub's rooms: the presets name the blinds
+  // shown, and the integration sends a whole room of the hub's its one room-wide preset.
+  check("presets name the blinds shown, not the room",
+        svcCalls.every(x => !("room" in x[2]) &&
+          JSON.stringify(x[2].blinds) === '["cover.front_bedroom_1_bottom_rail","cover.den_1_bottom_rail"]'),
         JSON.stringify(svcCalls[0]?.[2]));
 }
 check("_build attaches presets by default", countIn({}, "room-presets") === 6,
       String(countIn({}, "room-presets")));
 check("_build drops presets when hidden", countIn({ hide_room_presets:true }, "room-presets") === 0);
 {
-  // A preset names its room to the hub, which has no room called "Unassigned": blinds in no area
-  // keep the room's open/stop/close, which go through their covers, but get no presets.
+  // Blinds in no area are grouped under "Unassigned", which is no room of the hub's. The presets
+  // name the blinds, not the room, so these get them too.
   const h = { ...hass, devices: { ...hass.devices, d2:{ name:"Den_1", area_id:null } } };
   const c = rendered({}, h);
   const section = byClass(c.shadowRoot, "room").find((r) => byClass(r, "room-name")[0]?.textContent === "Unassigned");
   check("blinds in no area are grouped under Unassigned", Boolean(section));
   check("...with the room's open/stop/close", byClass(section, "room-buttons")[0]?.children.length === 3);
-  check("...but no presets to send the hub, only the refresh in its tray",
-        !byClass(section, "room-presets").length &&
-        JSON.stringify(byClass(section, "tray")[0]?.children.map((ch) => ch.className)) === '["segmented room-refresh"]',
+  check("...and the presets and refresh in its tray",
+        JSON.stringify(byClass(section, "tray")[0]?.children.map((ch) => ch.className)) ===
+          '["segmented room-presets","segmented room-refresh"]',
         JSON.stringify(byClass(section, "tray")[0]?.children.map((ch) => ch.className)));
-  check("a room in an area keeps its presets", byClass(c.shadowRoot, "room-presets").length === 1);
+  const sent = [];
+  c._hass = { ...c._hass, callService: (d, s2, data) => sent.push([d, s2, data]) };
+  byClass(section, "room-presets")[0].children[0]._on.click();
+  check("...which go to exactly its blinds",
+        JSON.stringify(sent.map((x) => x[2])) === JSON.stringify([{ command:"best_privacy", blinds:["cover.den_1_bottom_rail"] }]),
+        JSON.stringify(sent.map((x) => x[2])));
+  check("every room gets its presets", byClass(c.shadowRoot, "room-presets").length === 2);
   // With no Request status button among them there is nothing for its refresh to press either.
   const bare = { ...h, entities: Object.fromEntries(Object.entries(h.entities).filter(([id]) => !id.endsWith("_request_status"))) };
   const plain = byClass(rendered({}, bare).shadowRoot, "room").find((r) => byClass(r, "room-name")[0]?.textContent === "Unassigned");
-  check("...and with nothing to refresh, no tray at all", !byClass(plain, "more").length && !byClass(plain, "tray").length);
+  check("...and with nothing to refresh, the tray holds the presets alone",
+        JSON.stringify(byClass(plain, "tray")[0]?.children.map((ch) => ch.className)) === '["segmented room-presets"]',
+        JSON.stringify(byClass(plain, "tray")[0]?.children.map((ch) => ch.className)));
 }
 {
   // The presets fold out of the heading: hidden until its button is pressed.
@@ -658,11 +673,13 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
   const home = scoped({ config_entry_id:"home" });
   check("the other hub's card shows the other hub",
         home._collectBlinds().length === 2 && home._hubName() === "Norman Hub", String(home._hubName()));
-  [...cabin._buildHomeControls().children, ...cabin._buildRoomPresets("Den").children].forEach(b => b._on?.click?.());
+  [...cabin._buildHomeControls().children, ...cabin._buildRoomPresets("Den", cabin._collectBlinds()).children].forEach(b => b._on?.click?.());
   check("a pinned card's presets go to its hub",
         svc.length === 6 && svc.every(x => x[1] === "room_command" && x[2].config_entry_id === "cabin"),
         JSON.stringify(svc.map(x => x[2])));
-  check("...the house ones still with no room", !("room" in svc[0][2]) && svc[3][2].room === "Den");
+  check("...the house ones naming no room or blinds, the room's naming its blinds",
+        !("room" in svc[0][2]) && !("blinds" in svc[0][2]) && JSON.stringify(svc[3][2].blinds) === '["cover.cabin_1_bottom_rail"]',
+        JSON.stringify(svc.map(x => x[2])));
 
   // With no hub configured the card shows both hubs' blinds, and the action cannot pick a hub
   // itself: each preset goes to the hubs its blinds are on, read from their devices.
@@ -690,10 +707,10 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
   svc.length = 0;
   presetsOf("Cabin")[0]._on.click();
   presetsOf("Den")[0]._on.click();
-  check("an unpinned card sends a room's presets to that room's hub",
+  check("an unpinned card sends a room's presets, naming its blinds, to their hub",
         JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([
-          { room:"Cabin", command:"best_privacy", config_entry_id:"cabin" },
-          { room:"Den", command:"best_privacy", config_entry_id:"home" }]),
+          { command:"best_privacy", blinds:["cover.cabin_1_bottom_rail"], config_entry_id:"cabin" },
+          { command:"best_privacy", blinds:["cover.den_1_bottom_rail"], config_entry_id:"home" }]),
         JSON.stringify(svc.map((x) => x[2])));
   svc.length = 0;
   byClass(both.shadowRoot, "home-buttons")[0].children[1]._on.click();
@@ -744,7 +761,8 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
   svc.length = 0;
   presetIn(half, "Cabin")._on.click();
   check("...and a room whose blinds are all unavailable still names their hub",
-        JSON.stringify(svc.map((x) => x[2])) === JSON.stringify([{ room:"Cabin", command:"best_privacy", config_entry_id:"cabin" }]),
+        JSON.stringify(svc.map((x) => x[2])) ===
+          JSON.stringify([{ command:"best_privacy", blinds:["cover.cabin_1_bottom_rail"], config_entry_id:"cabin" }]),
         JSON.stringify(svc.map((x) => x[2])));
   const down = { ...unloaded, states: { ...unloaded.states,
     "cover.front_bedroom_1_bottom_rail": { state:"unavailable", attributes:{} },
@@ -875,12 +893,14 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
     check("...and turns, rather than flashing as a preset does", chip.classList.contains("spin") && !chip.classList.contains("sent"));
   }
   {
-    // Blinds in no area are in no room of the hub's: the refresh presses each one's own button.
+    // Blinds in no area are in no room of the hub's: the presets name them, and the refresh
+    // presses each one's own button.
     const c = rendered({}, refreshHass({ devices: { d1:{ ...hass.devices.d1, area_id:null }, d2:{ ...hass.devices.d2, area_id:null } } }));
     const section = sectionOf(c, "Unassigned");
-    check("blinds in no area get a tray with only the refresh",
-          JSON.stringify(byClass(section, "tray")[0]?.children.map((ch) => ch.className)) === '["segmented room-refresh"]');
-    check("...behind a ⋯ that does not promise presets", byClass(section, "more")[0]?.title === "More for Unassigned",
+    check("blinds in no area get the presets and the refresh in their tray",
+          JSON.stringify(byClass(section, "tray")[0]?.children.map((ch) => ch.className)) ===
+            '["segmented room-presets","segmented room-refresh"]');
+    check("...behind a ⋯ named for its presets", byClass(section, "more")[0]?.title === "Presets for Unassigned",
           byClass(section, "more")[0]?.title);
     svc.length = 0;
     roomRefresh(c, "Unassigned")._on.click();
@@ -1853,8 +1873,11 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   sCalls.length = 0;
   const room = c._buildRoomControls("Study", [shutter, den]);
   room.children[1]._on?.click?.();
-  check("room stop leaves the Shutter out: it has no stop",
-        sCalls.length === 1 && JSON.stringify(sCalls[0][2].entity_id) === JSON.stringify(["cover.den_1_bottom_rail"]),
+  // Every blind shown goes: a whole room of the hub's takes one MotorStop, harmless to louvers,
+  // and the integration leaves a Shutter out of the stops it sends blind by blind.
+  check("room stop names the Shutter with the rest; the integration knows it takes no stop",
+        sCalls.length === 1 && sCalls[0][1] === "room_command" && sCalls[0][2].command === "stop" &&
+        JSON.stringify(sCalls[0][2].blinds) === JSON.stringify(["cover.study_shutter_louvers", "cover.den_1_bottom_rail"]),
         JSON.stringify(sCalls));
   sCalls.length = 0;
   room.children[0]._on?.click?.();
@@ -2073,12 +2096,15 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
 
 // ---- languages ------------------------------------------------------------------------
 {
-  // The card's words live in STRINGS, one block per language the integration ships
-  // (custom_components/norman/translations). Read both from the source so a language added to
-  // one and not the other, or a key missing from one language, fails here.
+  // The card's words live in norman-strings.js, one block per language the integration ships
+  // (custom_components/norman/translations), shared with the sidebar panel. Read both, so a
+  // language added to one and not the other, or a key missing from one language, fails here.
   const fs = await import("node:fs");
-  const block = /const STRINGS = (\{[\s\S]*?\n\});/.exec(cardSource)[1];
-  const STRINGS = new Function(`return ${block};`)();
+  const stringsUrl = new URL("./norman-strings.js", url);
+  stringsUrl.searchParams.set("v", "test");
+  const { STRINGS } = await import(stringsUrl.href);
+  check("the card imports its words at its own ?v= stamp, never unstamped",
+        /import\(\s*new URL\(`\.\/norman-strings\.js\?v=\$\{encodeURIComponent\(CARD_VERSION\)\}`/.test(cardSource));
   const shipped = fs.readdirSync(new URL("../translations/", url))
     .filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
   check("the card speaks every language the integration ships",
@@ -2157,8 +2183,12 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   console.error = () => {};
   p._fail(new Error("test"));
   console.error = error;
-  const message = byClass(p.shadowRoot, "error")[0]?.textContent || "";
-  check("the panel's load failure is translated", message.startsWith("Norman ブラインドを読み込めませんでした"), message);
+  const errorEl = byClass(p.shadowRoot, "error")[0];
+  check("the panel says the card would not load straight away, in English",
+        (errorEl?.textContent || "").startsWith("Norman Shades couldn't load"), errorEl?.textContent);
+  await p._failed;
+  check("...then in the user's language, from the card's words",
+        (errorEl?.textContent || "").startsWith("Norman ブラインドを読み込めませんでした"), errorEl?.textContent);
 }
 
 // ---- the visual editor -------------------------------------------------------------------
@@ -2218,6 +2248,58 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   check("the plain editor follows a new config",
         inputs.length === 9 && inputs[0].value === "Up" && inputs[3].checked === true,
         JSON.stringify(inputs.map((i) => i.value ?? i.checked)));
+}
+
+// ---- the sidebar panel's header, the battery, and redraws --------------------------------
+{
+  // In the panel the header stays at the top as the page scrolls (CSS), so it keeps to one line:
+  // the menu button, the hub's name and the refresh. The whole-house presets and scene groups get
+  // a row of their own beneath it. On a dashboard they stay in the header, as before.
+  const childClasses = (el) => (el?.children || []).map((child) => String(child.className));
+  const c = new Card();
+  c.setAttribute("panel", "");
+  c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c.hass = hass;
+  const [header] = byClass(c.shadowRoot, "header");
+  const [tools] = byClass(c.shadowRoot, "tools");
+  check("in the panel the header holds the menu, the name and the refresh",
+        JSON.stringify(childClasses(header)) === '["icon-btn menu","titles","icon-group home-refresh"]',
+        JSON.stringify(childClasses(header)));
+  check("...and the presets and scene groups have a row of their own",
+        JSON.stringify(childClasses(tools)) === '["segmented home-buttons","segmented home-scenes"]',
+        JSON.stringify(childClasses(tools)));
+  const dashboard = rendered();
+  check("on a dashboard the presets stay in the header",
+        !byClass(dashboard.shadowRoot, "tools").length &&
+          childClasses(byClass(dashboard.shadowRoot, "header")[0]).includes("segmented home-buttons"));
+  const plainPanel = new Card();
+  plainPanel.setAttribute("panel", "");
+  plainPanel._hass = hass; plainPanel.setConfig({ type:"custom:norman-shades-card", hide_home_controls:true }); plainPanel.hass = hass;
+  check("with the house controls hidden there is no empty row", !byClass(plainPanel.shadowRoot, "tools").length);
+
+  // The battery opens its details, so it is a button: reachable by keyboard, announced as one.
+  const [battery] = byClass(dashboard.shadowRoot, "battery");
+  check("the battery is a button", battery?.tagName === "button" && battery.type === "button" && !battery.attrs.role,
+        `${battery?.tagName} ${battery?.attrs?.role}`);
+  check("...that says what it is", /^Battery \d+%$/.test(battery?.attrs?.["aria-label"] || ""), battery?.attrs?.["aria-label"]);
+
+  // A wide card puts its rooms in columns (CSS); one section, the headings hidden, keeps the width.
+  check("the rooms' body is marked when it holds one section",
+        byClass(rendered({ hide_room_names:true }).shadowRoot, "body")[0]?.classList.contains("single") === true &&
+          byClass(rendered().shadowRoot, "body")[0]?.classList.contains("single") === false);
+
+  // Home Assistant sets hass on every state change in the house. One the card does not draw
+  // from leaves it alone: it does not regroup its blinds.
+  const quiet = rendered();
+  let regrouped = 0;
+  const collect = quiet._collectBlinds.bind(quiet);
+  quiet._collectBlinds = () => { regrouped += 1; return collect(); };
+  quiet.hass = { ...quiet._hass, states: { ...quiet._hass.states, "sensor.outdoor_temperature": { state:"21" } } };
+  check("a change elsewhere in the house does not regroup the blinds", regrouped === 0, String(regrouped));
+  quiet.hass = { ...quiet._hass, states: { ...quiet._hass.states,
+    "sensor.den_1_battery": { state:"11" } } };
+  check("...one of its own entities does", regrouped === 1, String(regrouped));
+  quiet.hass = { ...quiet._hass, entities: { ...quiet._hass.entities } };
+  check("...and so does a new entity registry", regrouped === 2, String(regrouped));
 }
 
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);

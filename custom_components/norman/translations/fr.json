@@ -51,13 +51,13 @@
         "data": {
           "poll_interval": "Intervalle d'interrogation",
           "wake_interval": "Intervalle de réveil",
-          "control_interval": "Command spacing",
+          "control_interval": "Espacement des commandes",
           "show_sidebar_panel": "Afficher Stores Norman dans la barre latérale"
         },
         "data_description": {
           "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub, au cas où une notification se serait perdue. Elle relit ce que le hub a en mémoire, sans rien demander aux stores. 0 désactive l'interrogation ; sinon de 10 à 300 secondes, puisque l'intégration relit déjà toutes les 5 minutes.",
           "wake_interval": "À quelle fréquence demander de se signaler (batterie, position, dernier contact) à chaque store dont le hub est sans nouvelles depuis 24 heures (le seuil de l'app Norman pour un store déconnecté). Les stores connectés ne sont pas sollicités, comme dans l'app. Cela rafraîchit le cache du hub pour ces stores, que l'interrogation ci-dessus ne fait que relire. 0 désactive ; sinon de 600 à 86400 secondes.",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
+          "control_interval": "Secondes à laisser entre les commandes envoyées au hub. Le hub n'a qu'une radio et ignore sans prévenir les commandes qui arrivent plus vite qu'il ne peut les transmettre ; une scène qui concerne plusieurs stores est donc mise en file d'attente et envoyée commande par commande. Augmentez cette valeur si certains stores manquent encore une commande envoyée en même temps que d'autres ; diminuez-la pour que les grandes scènes se terminent plus vite. La valeur par défaut est de 1,6 seconde.",
           "show_sidebar_panel": "Affiche la page Stores Norman, avec tous les stores par pièce, dans la barre latérale de Home Assistant. Avec plusieurs hubs, chacun a sa propre entrée. Désactivez l'option pour la retirer ; la carte Stores Norman peut toujours être ajoutée à un tableau de bord."
         }
       }
@@ -65,7 +65,7 @@
     "error": {
       "poll_interval_out_of_range": "Saisissez 0 pour désactiver l'interrogation, ou une valeur entre 10 et 300 secondes.",
       "wake_interval_out_of_range": "Saisissez 0 pour désactiver, ou une valeur entre 600 et 86400 secondes.",
-      "control_interval_out_of_range": "Enter a value between 0.3 and 5 seconds."
+      "control_interval_out_of_range": "Saisissez une valeur entre 0,3 et 5 secondes."
     }
   },
   "services": {
@@ -91,15 +91,19 @@
     },
     "room_command": {
       "name": "Commande de pièce",
-      "description": "Exécute l'un des boutons de pièce de l'application Norman sur tous les stores d'une pièce. best_privacy, best_view et favorite partent en une seule requête vers le hub ; refresh dans une pièce envoie une demande d'état à chaque store.",
+      "description": "Exécute l'un des boutons de pièce de l'application Norman sur une pièce, sur les stores choisis ou sur tous les stores. best_privacy, best_view, favorite et stop partent vers une pièce en une seule requête ; refresh envoie une demande d'état à chaque store.",
       "fields": {
         "room": {
           "name": "Pièce",
-          "description": "Le nom de la pièce tel que le hub le connaît (le nom dans l'application Norman). Laissez vide pour viser tous les stores du hub."
+          "description": "Le nom de la pièce tel que le hub le connaît (le nom dans l'application Norman). Laissez ce champ et Stores vides pour viser tous les stores du hub."
+        },
+        "blinds": {
+          "name": "Stores",
+          "description": "À la place d'une pièce, ces stores et aucun autre, quelle que soit leur zone. Une pièce entière parmi eux ne reçoit toujours qu'une seule requête."
         },
         "command": {
           "name": "Commande",
-          "description": "best_privacy ferme le rail inférieur et ouvre entièrement le rail central ; best_view ouvre entièrement les deux rails ; favorite envoie la pièce à sa position favorite enregistrée ; refresh demande à chaque store de la pièce de se signaler (rien ne bouge)."
+          "description": "best_privacy ferme le rail inférieur et ouvre entièrement le rail central ; best_view ouvre entièrement les deux rails ; favorite envoie les stores à leur position favorite enregistrée ; refresh demande à chaque store de se signaler (rien ne bouge) ; stop arrête chaque store là où il est."
         },
         "config_entry_id": {
           "name": "Hub",
@@ -109,11 +113,15 @@
     },
     "get_hub_data": {
       "name": "Lire les données du hub",
-      "description": "Lit la liste brute des appareils et l'état du hub, exactement tels que le hub les envoie. Renvoie une réponse ; utilisez-la depuis les outils de développement ou un script pour signaler un store non pris en charge.",
+      "description": "Lit la liste brute des appareils et l'état du hub, avec tous leurs champs. Renvoie une réponse ; utilisez-la depuis les outils de développement ou un script pour signaler un store non pris en charge. L'identité du hub est masquée, et les stores apparaissent comme blind_1, blind_2, etc. au lieu de leur numéro de série.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
           "description": "Quel Norman Hub lire. Facultatif si un seul est configuré."
+        },
+        "show_serial_numbers": {
+          "name": "Afficher les numéros de série",
+          "description": "Donne l'identifiant réel de chaque store, son numéro de série, au lieu de blind_1, blind_2, etc. Laissez désactivé si vous publiez la réponse dans un ticket."
         }
       }
     },
@@ -127,7 +135,7 @@
         },
         "peripheral_uid": {
           "name": "Peripheral UID",
-          "description": "L'identifiant du store tel que le hub le signale (l'identifiant unique de l'entité cover, ou PeripheralUID dans get_hub_data)."
+          "description": "L'identifiant du store, le numéro de série affiché sur sa page d'appareil. C'est aussi l'identifiant unique de l'entité cover."
         },
         "fields": {
           "name": "Champs",
@@ -162,30 +170,30 @@
         "name": "Position du rail intermédiaire"
       },
       "all_bottom_rail_position": {
-        "name": "All blinds bottom rail position"
+        "name": "Position du rail inférieur de tous les stores"
       },
       "all_middle_rail_position": {
-        "name": "All blinds middle rail position"
+        "name": "Position du rail intermédiaire de tous les stores"
       }
     },
     "button": {
       "all_best_privacy": {
-        "name": "All blinds best privacy"
+        "name": "Tous les stores en intimité maximale"
       },
       "all_best_view": {
-        "name": "All blinds best view"
+        "name": "Tous les stores en meilleure vue"
       },
       "all_favorite": {
-        "name": "All blinds favorite position"
+        "name": "Tous les stores en position favorite"
       },
       "all_stop": {
-        "name": "All blinds stop"
+        "name": "Arrêter tous les stores"
       },
       "all_jog_up": {
-        "name": "All blinds jog up"
+        "name": "Tous les stores d'un pas vers le haut"
       },
       "all_jog_down": {
-        "name": "All blinds jog down"
+        "name": "Tous les stores d'un pas vers le bas"
       },
       "best_privacy": {
         "name": "Intimité maximale"
@@ -277,6 +285,9 @@
       },
       "pairing_mode": {
         "name": "Mode appairage"
+      },
+      "push_updates": {
+        "name": "Mises à jour push"
       }
     },
     "scene": {
@@ -328,8 +339,20 @@
     "room_command_failed": {
       "message": "Le hub a rejeté {command} pour la pièce {room} : {error}"
     },
+    "blinds_command_failed": {
+      "message": "Impossible d'envoyer {command} aux stores choisis : {error}"
+    },
     "command_needs_a_room": {
       "message": "{command} nécessite une pièce ; seuls {commands} peuvent être envoyés à tout le hub."
+    },
+    "no_blinds_picked": {
+      "message": "Choisissez au moins un store, ou laissez Stores vide pour viser une pièce ou tout le hub."
+    },
+    "not_a_norman_blind": {
+      "message": "{entity} n'est pas un store Norman."
+    },
+    "blind_on_other_hub": {
+      "message": "{entity} est un store d'un autre Norman Hub, pas de {hub}."
     },
     "button_needs_room": {
       "message": "{command} nécessite la pièce et le groupe de {name} depuis le hub, qui n'ont pas encore été lus."

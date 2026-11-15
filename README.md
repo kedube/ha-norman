@@ -220,8 +220,9 @@ version**; and a **connection** sensor that turns off after a day of silence, th
 "Disconnect" rule. The hub's device has **MAC address**, **time zone**, **Wi-Fi network**
 and (disabled) **Wi-Fi signal** sensors; **all blinds** rail sliders and best privacy, best
 view, favorite, stop and jog buttons, which reach the whole house in one request where they
-can; **refresh blinds**, **report battery levels (may close shades)**, **start pairing** and a
-**pairing mode** sensor. **Each room** gets a device in its area with the same for the room: a
+can; **refresh blinds**, **report battery levels (may close shades)**, **start pairing**, a
+**pairing mode** sensor, and a **push updates** sensor that shows whether the hub's live
+updates are arriving. **Each room** gets a device in its area with the same for the room: a
 slider per rail, stop, the presets, jog, refresh and report battery levels. Scenes saved in
 the Norman app are Home Assistant **scenes**, a room's on the room's device and scene groups
 on the hub's. Full detail, including availability rules, is in
@@ -251,10 +252,12 @@ Alongside the standard cover actions, the integration provides five of its own:
 - `norman.nudge_tilt` — tilt by `step` (positive opens: a two-rail blind's middle rail, or
   a SmartDrape's, PerfectSheer's or Shutter's vanes and louvers).
 - `norman.room_command` — run a Norman app room button (`best_privacy`, `best_view`,
-  `favorite`) against every blind in a room, in one request to the hub, or `refresh` to have
-  the room's blinds report in. For any other position, use the room's sliders
+  `favorite`) or `stop` against every blind in a room, in one request to the hub, or `refresh`
+  to have the room's blinds report in. Name the hub's room, or pick exactly the blinds to act on
+  (`blinds`), whatever area they are in. For any other position, use the room's sliders
   ([a whole room to any position](docs/services.md#a-whole-room-to-any-position)).
-- `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports.
+- `norman.get_hub_data` — returns the hub's raw device list and status, for bug reports, with
+  the hub's identity and the blinds' serial numbers left out.
 - `norman.send_hub_command` — advanced, admin only: sends arbitrary fields to the hub's control
   call for one blind, for the verbs that have no entity of their own (limits, run-to-limit).
 
@@ -305,6 +308,22 @@ actions:
     data:
       message: "{{ trigger.event.data.name }} did not move after {{ trigger.event.data.attempts }} tries."
 ```
+
+### Blueprints
+
+Two automation blueprints come ready to use. Each shows a notification in Home Assistant unless
+you give it actions of your own, such as a message to your phone.
+
+| Blueprint | Runs when | Import |
+|---|---|---|
+| **Norman blind did not move** | A blind stayed put after a command was sent three times (`norman_command_failed`); optionally only for the blinds you pick | [![Import the blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fkedube%2Fha-norman%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fnorman%2Fblind_did_not_move.yaml) |
+| **Norman blind battery low** | One of the battery sensors you pick falls below a level (20% unless you choose another) | [![Import the blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fkedube%2Fha-norman%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fnorman%2Fbattery_low.yaml) |
+
+To import one by hand, go to **Settings → Automations & scenes → Blueprints → Import blueprint**
+and paste its address:
+
+- `https://github.com/kedube/ha-norman/blob/main/blueprints/automation/norman/blind_did_not_move.yaml`
+- `https://github.com/kedube/ha-norman/blob/main/blueprints/automation/norman/battery_low.yaml`
 
 ## How it works
 
@@ -471,6 +490,9 @@ services → Norman → ⋮ → Download diagnostics**. It contains:
 - the last-known state of every blind (names, positions, targets, battery percentage, signal,
   both firmware versions) and whether the last refresh succeeded;
 - the hub's options (poll interval, wake sweep, command spacing, sidebar);
+- **`hub`**: what the hub says about itself (model, firmware, an update in progress, the
+  pairing window, Wi-Fi signal) and the integration's link to it: whether the notification
+  stream is connected, whether the device list reads, and how many moves are in flight;
 - **`hub_traffic`**: a capture of the communication with the hub, taken below the parsing
   layer. `latest_raw` holds the last complete response from each endpoint (so the full device
   list and status are always there, including fields the integration does not understand), and
@@ -478,8 +500,10 @@ services → Norman → ⋮ → Download diagnostics**. It contains:
   timestamps, HTTP status, duration, and any error.
 
 The hub's address, identity (`ThingName`), location (`GeoLoc`), Wi-Fi network name, time zone,
-custom hub name, and network id are redacted everywhere, including inside the raw bodies; real
-hubs do send all of these. Everything else is blind state. Because the raw capture may contain
+custom hub name, MAC address and network id are redacted everywhere, including inside the raw
+bodies; real hubs do send all of these. A blind's id is its serial number, so each blind is
+called `blind_1`, `blind_2` and so on instead, the same everywhere in the file, so the device
+list, the scenes and the raw capture still line up. Everything else is blind state. Because the raw capture may contain
 fields nobody has seen yet, skim it before posting; then attach it to the issue. Reproduce the
 problem shortly before downloading, since the capture is the last 200 exchanges and is not kept
 across restarts.
@@ -491,7 +515,8 @@ across restarts.
 2. Download diagnostics straight away, before other activity pushes the exchanges out.
 3. For an unsupported blind type, the `norman.get_hub_data` action is quicker: run it from
    **Developer tools → Actions** and paste the response into the issue. It returns the live
-   raw device list and status.
+   raw device list and status, with the hub's identity and the blinds' serial numbers left out
+   as in a diagnostics download.
 
 ### Debug logging
 
@@ -519,8 +544,9 @@ capturing what you need; it is verbose while blinds are moving.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers setting up, running the CI checks locally, the
 [project layout](CONTRIBUTING.md#project-layout), and adding support for another Norman
-product. CI runs HACS validation, `hassfest`, Ruff, Mypy, the card check and pytest
-([ci.yml](.github/workflows/ci.yml)); releases are started by hand
+product. CI runs HACS validation, `hassfest`, Ruff, Mypy, the card check, the layout check
+(the card and the sidebar panel in a real browser, at a phone's and a desktop's size) and
+pytest ([ci.yml](.github/workflows/ci.yml)); releases are started by hand
 ([release.yml](.github/workflows/release.yml)) and publish the [changelog](CHANGELOG.md)'s
 Unreleased section. The
 [quality-scale target](QUALITY_SCALE.md) tracks Home Assistant's integration quality rules.

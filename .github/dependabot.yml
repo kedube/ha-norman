@@ -6,9 +6,9 @@
 # Dependabot rewrites the SHA and updates the accompanying comment, which restores update
 # visibility without giving up pinning.
 #
-# It also covers the versioned actions (checkout, setup-python, github-script). That
-# would have surfaced the actions/setup-node@v4 Node 20 deprecation as a PR rather than as a
-# warning annotation on a finished run.
+# It also covers the versioned actions (checkout, setup-python, setup-node, github-script,
+# upload-artifact). That would have surfaced the actions/setup-node@v4 Node 20 deprecation as a
+# PR rather than as a warning annotation on a finished run.
 #
 # Python dependencies are deliberately NOT tracked here: requirements_test.txt pins loose lower
 # bounds, and the integration's runtime requirements live in manifest.json, which Dependabot does

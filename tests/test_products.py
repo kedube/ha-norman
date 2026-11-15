@@ -47,7 +47,8 @@ from custom_components.norman.const import (
     EVENT_COMMAND_FAILED,
     MOVE_ATTEMPTS,
 )
-from custom_components.norman.coordinator import NormanCoordinator, rails_to_send
+from custom_components.norman.coordinator import NormanCoordinator
+from custom_components.norman.moves import rails_to_send
 
 from .conftest import FakeHub, cover_entity_id
 from .const import (
@@ -609,8 +610,8 @@ async def test_shutter_watchdog_resends_louvers_that_never_turned(
     coordinator: NormanCoordinator = init_with_every_product.runtime_data
     events = async_capture_events(hass, EVENT_COMMAND_FAILED)
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _call(hass, UID_SHUTTER, SERVICE_OPEN_COVER)
         await _watch_done(coordinator, UID_SHUTTER)
@@ -638,8 +639,8 @@ async def test_shutter_watchdog_is_quiet_when_the_louvers_turn(
 
     with (
         patch.object(fake_hub, "_control", _turn),
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         fake_hub.mock.clear_requests()
         fake_hub._register()

@@ -1,0 +1,183 @@
+<!doctype html>
+<!--
+  The page scripts/check_layout.mjs opens in a real browser: the Norman Shades card, or its
+  sidebar panel, against a fake Home Assistant. It serves the files that ship
+  (custom_components/norman/www) at /norman/, as Home Assistant does.
+
+  Query: mode=panel|card, narrow=1, layout=list, hide_room_names=1, theme=dark, and
+  safe_top / safe_bottom (px) for the safe-area variables Home Assistant sets on a phone.
+  The title becomes "ready" once the card has drawn; window.layout has the measuring helpers.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Home Assistant's own viewport (src/html/_meta_viewport.html.template). -->
+<meta name="viewport" content="width=device-width, user-scalable=no, viewport-fit=cover, initial-scale=1">
+<style>
+  :root {
+    --primary-color: #03a9f4; --rgb-primary-color: 3, 169, 244;
+    --primary-text-color: #212121; --rgb-primary-text-color: 33, 33, 33;
+    --secondary-text-color: #727272; --card-background-color: #fff;
+    --primary-background-color: #fafafa; --warning-color: #ffa600; --error-color: #db4437;
+    font-family: Roboto, -apple-system, "Segoe UI", sans-serif;
+  }
+  :root.dark {
+    --primary-text-color: #e1e1e1; --rgb-primary-text-color: 225, 225, 225;
+    --secondary-text-color: #9b9b9b; --card-background-color: #1c1c1c; --primary-background-color: #111;
+  }
+  html, body { margin: 0; height: 100%; background: var(--primary-background-color); color: var(--primary-text-color); }
+  /* What ha-panel-custom gives a panel: the whole content area, and no toolbar of Home Assistant's. */
+  #host { height: 100vh; }
+  #host > norman-panel { height: 100%; }
+  #host.card { padding: 8px; height: auto; }
+</style>
+<script>
+  // Stand-ins for Home Assistant's ha-card and ha-icon: their boxes, which is all layout needs.
+  customElements.define("ha-card", class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" }).innerHTML =
+        "<style>:host{display:block;background:var(--ha-card-background,var(--card-background-color));" +
+        "border-radius:12px;border:1px solid rgba(0,0,0,.12);color:var(--primary-text-color)}</style><slot></slot>";
+    }
+  });
+  customElements.define("ha-icon", class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" }).innerHTML =
+        "<style>:host{display:inline-block;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px)}</style>";
+    }
+  });
+</script>
+</head>
+<body>
+<div id="host"></div>
+<script type="module">
+const params = new URLSearchParams(location.search);
+const mode = params.get("mode") || "panel";
+if (params.get("theme") === "dark") document.documentElement.classList.add("dark");
+// Home Assistant's safe-area variables, as it sets them on a phone with a notch.
+for (const [edge, key] of [["top", "safe_top"], ["bottom", "safe_bottom"]]) {
+  if (params.has(key)) document.documentElement.style.setProperty(`--safe-area-inset-${edge}`, `${params.get(key)}px`);
+}
+
+// A house of twelve blinds, every product the card draws, under the repository's fake names.
+const now = Date.now();
+const states = {}, entities = {}, devices = {}, areas = {};
+const ENTRY = "entry1";
+for (const [id, name] of [["living", "Living Room"], ["kitchen", "Kitchen"], ["bedroom", "Bedroom"],
+  ["study", "Study"], ["guest", "Guest Room"]]) areas[id] = { area_id: id, name };
+devices.hub = { id: "hub", name: "Lakehouse Shade Hub", config_entry_id: ENTRY };
+const ent = (entity_id, device_id, translation_key, state, attributes = {}, { name, updated } = {}) => {
+  entities[entity_id] = { entity_id, platform: "norman", device_id, translation_key, ...(name ? { name } : {}) };
+  states[entity_id] = { entity_id, state: String(state), attributes,
+    last_updated: new Date(updated ?? now - 3600e3).toISOString() };
+};
+ent("sensor.lakehouse_shades_mac_address", "hub", "mac_address", "aa:bb:cc:dd:ee:ff");
+ent("button.lakehouse_shades_refresh_blinds", "hub", "refresh_blinds", "unknown");
+let count = 0;
+const blind = ({ name, area, model, kind, bottom = 0, middle, target, tilt, battery, stack, moving }) => {
+  const id = `blind${++count}`;
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  devices[id] = { id, name, area_id: area, model_id: model, config_entry_id: ENTRY };
+  const updated = moving ? now - 5000 : undefined;
+  if (kind === "shutter") {
+    ent(`cover.${slug}_louvers`, id, "louvers", tilt ? "open" : "closed",
+      { current_tilt_position: tilt, target_tilt: tilt, louver_position: 7 - Math.round(tilt / 25) }, { updated });
+  } else {
+    const attributes = { current_position: bottom, target_position: target ?? bottom };
+    if (tilt !== undefined || middle !== undefined) {
+      attributes.current_tilt_position = tilt ?? middle;
+      attributes.target_tilt = tilt ?? middle;
+    }
+    if (stack) attributes.stack = stack;
+    ent(`cover.${slug}_bottom_rail`, id, "bottom_rail", bottom ? "open" : "closed", attributes, { updated });
+    ent(`number.${slug}_bottom_rail_position`, id, "bottom_rail_position", bottom, {}, { updated });
+    if (kind === "two") {
+      ent(`cover.${slug}_middle_rail`, id, "middle_rail", middle ? "open" : "closed",
+        { current_position: middle, target_position: middle });
+      ent(`number.${slug}_middle_rail_position`, id, "middle_rail_position", middle);
+    }
+  }
+  ent(`sensor.${slug}_battery_level`, id, "battery_level", battery);
+  ent(`button.${slug}_request_status`, id, "request_status", "unknown");
+};
+blind({ name: "Living Left", area: "living", model: "33/4", kind: "two", bottom: 0, middle: 100, battery: 88 });
+blind({ name: "Living Right", area: "living", model: "33/4", kind: "two", bottom: 60, middle: 100, battery: 74 });
+blind({ name: "Living Centre", area: "living", model: "32/2", kind: "one", bottom: 100, battery: 91 });
+blind({ name: "Kitchen Sink", area: "kitchen", model: "48/1", kind: "one", bottom: 40, battery: 66 });
+blind({ name: "Kitchen Door", area: "kitchen", model: "48/2", kind: "one", bottom: 70, battery: 52 });
+blind({ name: "Bedroom East", area: "bedroom", model: "33/4", kind: "two", bottom: 20, target: 80, middle: 100, battery: 47, moving: true });
+blind({ name: "Bedroom West", area: "bedroom", model: "33/4", kind: "two", bottom: 0, middle: 0, battery: 81 });
+blind({ name: "Bedroom Drape", area: "bedroom", model: "80/1", kind: "drape", bottom: 30, tilt: 67, stack: "split", battery: 77 });
+blind({ name: "Study Sheer", area: "study", model: "48/3", kind: "sheer", bottom: 0, tilt: 100, battery: 63 });
+blind({ name: "Study Shutter", area: "study", model: "1/0", kind: "shutter", tilt: 50, battery: 58 });
+blind({ name: "Guest Window", area: "guest", model: "32/2", kind: "one", bottom: 50, battery: 12 });
+blind({ name: "Guest Skylight Over The Reading Nook", area: "guest", model: "32/2", kind: "one", bottom: 0, battery: 25 });
+devices.room_living = { id: "room_living", name: "Living Room", area_id: "living", config_entry_id: ENTRY };
+ent("scene.living_room_movie_night", "room_living", "room_scene", "unknown", { friendly_name: "Movie Night" }, { name: "Movie Night" });
+ent("scene.lakehouse_shades_bedtime", "hub", "scene_group", "unknown", { friendly_name: "Bedtime" }, { name: "Bedtime" });
+ent("scene.lakehouse_shades_good_morning", "hub", "scene_group", "unknown", { friendly_name: "Good Morning House" }, { name: "Good Morning House" });
+states["sun.sun"] = { entity_id: "sun.sun", state: "above_horizon", attributes: { elevation: 30 } };
+
+const calls = [];
+const hass = { states, entities, devices, areas, language: "en", locale: { language: "en" },
+  themes: { darkMode: params.get("theme") === "dark" }, dockedSidebar: "docked",
+  callService: (domain, service, data) => { calls.push([domain, service, data]); return Promise.resolve(); } };
+const config = {
+  ...(params.get("layout") === "list" ? { hide_picture: true } : {}),
+  ...(params.get("hide_room_names") ? { hide_room_names: true } : {}),
+};
+
+const host = document.getElementById("host");
+let root;
+let card;
+if (mode === "panel") {
+  await import("/norman/norman-panel.js?v=layout");
+  root = document.createElement("norman-panel");
+  root.hass = hass;
+  root.narrow = params.get("narrow") === "1";
+  root.panel = { url_path: "norman-shades", config };
+  host.appendChild(root);
+  for (let i = 0; i < 100 && !(card = root.shadowRoot.querySelector("norman-shades-card")); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+} else {
+  host.className = "card";
+  await import("/norman/norman-shades-card.js?v=layout");
+  card = root = document.createElement("norman-shades-card");
+  card.setConfig({ type: "custom:norman-shades-card", ...config });
+  card.hass = hass;
+  host.appendChild(card);
+}
+
+const shadow = card.shadowRoot;
+const box = (element) => {
+  const rect = element.getBoundingClientRect();
+  return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+};
+const visible = (element) => Boolean(element) && element.getClientRects().length > 0 && !element.closest("[hidden]");
+window.layout = {
+  root,
+  card,
+  calls,
+  $: (selector) => shadow.querySelector(selector),
+  $$: (selector) => [...shadow.querySelectorAll(selector)],
+  box,
+  visible,
+  style: (element, pseudo) => getComputedStyle(element, pseudo ?? null),
+  // The panel scrolls itself; a card on a dashboard scrolls with the page.
+  scroller: () => (mode === "panel" ? root : document.scrollingElement),
+  // Every element of the card's drawn past the viewport's edges.
+  overflowing: () => [...shadow.querySelectorAll("*")]
+    .filter((element) => visible(element))
+    .map((element) => [element, element.getBoundingClientRect()])
+    .filter(([, rect]) => rect.width && (rect.right > innerWidth + 0.5 || rect.left < -0.5))
+    .map(([element, rect]) => `${element.className || element.tagName} ${Math.round(rect.left)}..${Math.round(rect.right)}`),
+};
+// Let the pop-in of a moving blind's Stop button finish before anything is measured.
+await new Promise((resolve) => setTimeout(resolve, 350));
+document.title = "ready";
+</script>
+</body>
+</html>

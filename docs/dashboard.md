@@ -18,7 +18,11 @@ header, ask for fresh status.*
 
 Click **Norman Shades** in Home Assistant's sidebar (the address is <code>/norman-shades</code>).
 It fills the page; on a phone it runs edge to edge, and its header carries the usual button for
-opening the sidebar. It is there for every user of your Home Assistant, like any dashboard.
+opening the sidebar. The header stays at the top as you scroll, so that button is always to hand,
+and on a phone with a notch it keeps clear of the status bar and the home indicator, in the
+Home Assistant app and in a browser alike. On a wide screen the rooms sit side by side, each
+with its buttons beside its blinds. It is there for every user of your Home Assistant, like any
+dashboard.
 
 It speaks the integration's languages (English, German, Spanish, French, Japanese, and Simplified
 and Traditional Chinese), following each user's language in their Home Assistant profile; any
@@ -43,14 +47,15 @@ line counts the shades, how many are open, any that are moving, and any low batt
 Blinds are grouped by their Home Assistant **area**, which the integration seeds from the
 hub's own room names, so the grouping matches the Norman app out of the box. Moving a blind to
 a different area in Home Assistant moves it here too. Each room's blinds sit in a grid that
-fits as many windows across as there is room for.
+fits as many windows across as there is room for; on a wide card the rooms themselves sit side
+by side, in columns.
 
 | Element | Notes |
 |---|---|
-| Room heading | The area name, with **▲ ■ ▼** for the whole room and **⋯** for the room's presets, scenes and **Refresh**. Blinds with no area are grouped under "Unassigned", with **▲ ■ ▼** and Refresh but no presets: a preset needs a room the hub knows. |
+| Room heading | The area name, with **▲ ■ ▼** for the whole room and **⋯** for the room's presets, scenes and **Refresh**. Blinds with no area are grouped under "Unassigned", with the same. |
 | The window | The blind, drawn where the hub says each rail is. **Drag a pull tab** to move that rail; the percentage shows above it as you drag, in steps of 10, and the position is sent when you let go. |
 | Blind name | Click it to open the usual more-info dialog. |
-| Battery | Beside the status: the battery icon, filled to the level, and the percentage. Amber at 30% and below, red at 15% and below. |
+| Battery | Beside the status: the battery icon, filled to the level, and the percentage. Amber at 30% and below, red at 15% and below. Click it for the battery's history. |
 | **⟳** | Beside the battery: asks the blind to report in, through its **Request status** button. Nothing moves. Greyed out while that button is unavailable. See [Refreshing](#refreshing). |
 | Status | "Open", "Closed", "40% open"; on a two-rail blind "Privacy" for the app's preset, or both rails, e.g. "Middle 70% · Bottom 30%". |
 | While moving | The shade is drawn where it is **going**, a dashed line marks where the rail actually **is**, the status reads "Closing · 70%", and a **■ Stop** button appears on the window's corner until it arrives. |
@@ -73,9 +78,10 @@ is drawn at included: drag its rail away and back, or press ↑ then ↓.
 
 - **Mouse:** press anywhere on the window and the nearest rail follows the pointer. Where a
   two-rail blind's rails are together, press on the side of the tab you want.
-- **Touch:** start on a rail — the pull tab, or anywhere across the width of the rail. A swipe
-  that starts elsewhere on the window scrolls the page instead, so scrolling past a row of
-  windows cannot move a blind.
+- **Touch:** start on a rail's pull tab — a finger-sized area around it — or a Shutter's tilt
+  rod, or a SmartDrape's leading edge. A swipe that starts anywhere else on the window scrolls
+  the page instead, and so does one up or down a SmartDrape's edge, so scrolling past a row of
+  windows does not move a blind.
 - **Keyboard:** Tab to a rail, then ↑ / ↓ (10%), Page Up / Page Down (30%), Home (closed) and
   End (open). The position is sent once you stop pressing keys, because the hub drops commands
   that arrive closer together than about 1.6 seconds. A key held with Alt, Ctrl or ⌘ moves
@@ -123,8 +129,8 @@ other way when the hub reports them turned past horizontal. **Drag the tilt rod*
 them and down to close them, in quarters (shut, 25, 50, 75, open); the keyboard moves them a
 quarter per arrow. The status reads "Closed", "Open" or "50% open".
 
-The room's open and close turn a Shutter's louvers along with every other blind; Stop leaves it
-out, since louvers take no stop.
+The room's open and close turn a Shutter's louvers along with every other blind; Stop sends
+it none, since louvers take no stop.
 
 ### Roller shades
 
@@ -171,14 +177,23 @@ sunset, dusk, and a night sky with a moon. On a dark theme the window's trim dar
 picture is drawn entirely in CSS — no images — so it follows your theme, stays sharp on any
 screen, and scales with the window.
 
+With **reduce motion** turned on in your device's accessibility settings, a shade goes straight to
+its new place instead of sliding, and a moving rail's pull tab shows it in the accent colour
+instead of pulsing. With **reduce transparency**, the see-through fabrics are drawn without their
+soft blur.
+
 ### Whole-room control
 
 Each room heading carries **▲ ■ ▼** of its own, acting on every blind in that room at once —
-including the middle rails of two-rail blinds, so "close the bedroom" puts both rails down. It
-is one service call per press, and one command to the hub per blind, paced like any other:
-**▲** goes to each blind's bottom rail, which takes a two-rail blind's middle rail up with it,
-**▼** to a two-rail blind's middle rail, which takes its bottom rail down, and **■** to each
-blind's one motor.
+including the middle rails of two-rail blinds, so "close the bedroom" puts both rails down.
+**▲** and **▼** are one service call per press, and one command to the hub per blind, paced like
+any other: **▲** goes to each blind's bottom rail, which takes a two-rail blind's middle rail up
+with it, and **▼** to a two-rail blind's middle rail, which takes its bottom rail down.
+
+**■** cannot wait its turn blind by blind — in a room of six the last stop would go out eight
+seconds late. It goes through [`norman.room_command`](services.md#chosen-blinds) with the blinds
+under the heading: a room of the hub's that they make up gets the room's one stop, which the hub
+carries to every blind at once, and any other blind its own.
 
 On a dashboard, `hide_room_controls: true` gives plain headings instead. The buttons live in
 the heading, so `hide_room_names: true` removes them too — there is nowhere left to put them,
@@ -203,10 +218,12 @@ Refresh in it; add `hide_refresh: true` as well and there is no **⋯** at all.
 | **Favorite** | The room's stored favorite position |
 
 These send the hub's own room verbs through the
-[`norman.room_command`](services.md#normanroom_command) action — one request for the room, not
-one per blind — so they behave exactly as the app does. Favorite has no Home Assistant
-equivalent and is only reachable this way. Each button flashes when pressed, since the blinds
-take a while to answer.
+[`norman.room_command`](services.md#chosen-blinds) action, naming the blinds under the heading:
+a room of the hub's that they make up gets one request for the room, not one per blind, so it
+behaves exactly as the app does, and any other blind gets the preset on its own. So the presets
+reach exactly the blinds you see, even after an area is renamed or a blind moved to another, and
+blinds in no area get them too. Favorite has no Home Assistant equivalent and is only reachable
+this way. Each button flashes when pressed, since the blinds take a while to answer.
 
 **Scenes** saved in the Norman app for the room follow the three, one button each in name order;
 a room without scenes shows only the three. A button runs its scene: one request to the hub, then
@@ -218,9 +235,10 @@ several rooms.
 ### The whole house
 
 The same three buttons sit in the header, where they move **every** blind on the hub, followed by
-the hub's **scene groups** and preceded by the whole house's [**⟳**](#refreshing). On a narrow
-screen the three shrink to their icons. On a dashboard, `hide_home_controls: true` leaves the
-header plain.
+the hub's **scene groups** and preceded by the whole house's [**⟳**](#refreshing). In the
+sidebar they sit in a row of their own beneath the header, which stays at the top as you scroll.
+Only on a really narrow card — under about 300 pixels — do the three shrink to their icons. On a
+dashboard, `hide_home_controls: true` leaves the header plain.
 
 | Button | Does |
 |---|---|
@@ -247,15 +265,10 @@ its group: one request to the hub, then every blind its scenes move is checked
 since one scene's icon looks like another's. Like a room's scenes, a group's button is greyed out
 while the group is unavailable, and groups hidden in Home Assistant are left out.
 
-There is no house-wide **stop**: the hub's stop is per blind, so it would have to fan out over
-every cover, and a stop that lags the blinds it is stopping is worse than none. Use a room's
-stop, or the **■ Stop** on a moving blind, instead.
-
-The room presets match on the **hub's** room name while Norman Shades groups by Home Assistant
-**area**. The integration seeds areas from the hub's room names, so they agree out of the box; if
-you rename an area, the preset buttons for it will report that the room is unknown, and name the
-ones the hub does know. The house buttons carry no room at all, and a scene button runs its scene
-entity, so neither can mismatch.
+There is no house-wide **stop** here: the hub took an unscoped stop in a direct test, but
+stopping motors in several rooms at once has not been tried. Use a room's stop, or the **■ Stop**
+on a moving blind; the hub's **All blinds stop** button and `norman.room_command`'s `stop` with
+no room send the unscoped one.
 
 ### Refreshing
 

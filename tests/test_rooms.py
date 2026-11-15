@@ -469,8 +469,8 @@ async def test_a_room_move_is_watched_and_resent_blind_by_blind(
     """
     coordinator: NormanCoordinator = two_in_living_room.runtime_data
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _set(hass, _room_slider(hass, two_in_living_room, LIVING_ROOM, "bottom"), 20)
         await _watchdogs_done(coordinator, UID_LIVING, UID_SECOND)
@@ -841,8 +841,8 @@ async def test_a_room_preset_is_watched_blind_by_blind(
 
     with (
         patch.object(fake_hub, "_control", _hub),
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         fake_hub.mock.clear_requests()
         fake_hub._register()

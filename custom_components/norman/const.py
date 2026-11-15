@@ -519,6 +519,10 @@ SERVICE_SEND_HUB_COMMAND = "send_hub_command"
 SERVICE_ROOM_COMMAND = "room_command"
 ATTR_ROOM = "room"
 ATTR_COMMAND = "command"
+# norman.room_command's alternative to a room: these blinds' covers, and no others. The
+# dashboard card sends the blinds it shows under a heading, so a preset or a stop reaches
+# exactly those, whatever Home Assistant area they have been put in since.
+ATTR_BLINDS = "blinds"
 
 # The three presets the Norman app's room screen offers, and the control fields each sends.
 # Captured from the app (docs/NORMAN_API.md, "Room-wide and hub-wide control"):
@@ -533,19 +537,26 @@ ROOM_PRESETS: dict[str, dict[str, int]] = {
     "favorite": {"Favorite": HUB_COMMAND_SETTING},
 }
 
-# norman.room_command's commands: the presets, and refresh. Refresh has no fields of its own:
-# services.py hands it to coordinator.async_refresh_blinds, which sends StatusRequest -- one
-# unscoped request for the hub, or one per blind in a room. Never ReportBatteryLevel, which
-# has closed shades on real hardware and is sent only by the Report battery levels buttons.
+# norman.room_command's commands: the presets, refresh and stop. Refresh has no fields of its
+# own: services.py hands it to the coordinator, which sends StatusRequest -- one unscoped
+# request for the hub, or one per blind in a room. Never ReportBatteryLevel, which has closed
+# shades on real hardware and is sent only by the Report battery levels buttons. Stop is
+# MotorStop, as the room's and the hub's Stop buttons send it: one request for a room or for
+# the whole hub, which the hub carries to each blind.
 ROOM_COMMAND_REFRESH = "refresh"
-ROOM_COMMANDS: tuple[str, ...] = (*ROOM_PRESETS, ROOM_COMMAND_REFRESH)
+ROOM_COMMAND_STOP = "stop"
+ROOM_COMMANDS: tuple[str, ...] = (*ROOM_PRESETS, ROOM_COMMAND_REFRESH, ROOM_COMMAND_STOP)
 
-# All four commands work with no room, addressing every blind on the hub. For the three
-# presets that is the bare verb with no scope field, which is what the app's "All Rooms"
-# screen sends, captured from it; refresh without a room is one unscoped StatusRequest.
+# Every command works with no room, addressing every blind on the hub. For the three presets
+# that is the bare verb with no scope field, which is what the app's "All Rooms" screen sends,
+# captured from it; refresh without a room is one unscoped StatusRequest, and stop the
+# unscoped MotorStop the hub's All stop button sends.
 # None of the three presets is conditioned on rail count: a per-blind capture of a
 # single-rail shade shows the app sending Switch 0, Switch 1 and Favorite to it unchanged.
 HUB_WIDE_COMMANDS: frozenset[str] = frozenset(ROOM_COMMANDS)
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_PERIPHERAL_UID = "peripheral_uid"
 ATTR_FIELDS = "fields"
+# norman.get_hub_data's opt-in to the blinds' real ids, their serial numbers. Left off, each
+# is the alias a diagnostics download gives it, since the response is meant for issues.
+ATTR_SHOW_SERIAL_NUMBERS = "show_serial_numbers"

@@ -39,25 +39,38 @@ nudge_tilt:
 room_command:
   name: Room command
   description: >-
-    Run one of the Norman app's room buttons against every blind in a room. best_privacy,
-    best_view and favorite go in a single request to the hub; refresh in a room sends a
-    status request to each blind.
+    Run one of the Norman app's room buttons against a room, chosen blinds, or every blind.
+    best_privacy, best_view, favorite and stop go to a room in a single request; refresh
+    sends a status request to each blind.
   fields:
     room:
       name: Room
       description: >-
-        The room's name as the hub knows it (the Norman app's room name). Leave empty to
-        address every blind on the hub.
+        The room's name as the hub knows it (the Norman app's room name). Leave this and
+        Blinds empty to address every blind on the hub.
       example: Office
       required: false
       selector:
         text:
+    blinds:
+      name: Blinds
+      description: >-
+        Instead of a room, these blinds and no others, whatever area they are in. A whole
+        room among them still gets a single request.
+      required: false
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: norman
+              domain: cover
     command:
       name: Command
       description: >-
         best_privacy closes the bottom rail and fully opens the middle rail; best_view
-        fully opens both rails; favorite sends the room to its stored favorite;
-        refresh asks every blind in the room to report in (nothing moves).
+        fully opens both rails; favorite sends the blinds to their stored favorite;
+        refresh asks each blind to report in (nothing moves); stop stops every blind where
+        it is.
       required: true
       selector:
         select:
@@ -66,6 +79,7 @@ room_command:
             - best_view
             - favorite
             - refresh
+            - stop
     config_entry_id:
       name: Hub
       description: Which hub, when more than one is set up.
@@ -75,7 +89,7 @@ room_command:
           integration: norman
 get_hub_data:
   name: Get hub data
-  description: Read the hub's raw device list and status, exactly as the hub sends them. Returns a response; use it from Developer Tools or a script when reporting an unsupported blind.
+  description: Read the hub's raw device list and status, every field included. Returns a response; use it from Developer Tools or a script when reporting an unsupported blind. The hub's identity is blanked, and blinds are called blind_1, blind_2 and so on instead of by serial number.
   fields:
     config_entry_id:
       name: Hub
@@ -84,6 +98,13 @@ get_hub_data:
       selector:
         config_entry:
           integration: norman
+    show_serial_numbers:
+      name: Show serial numbers
+      description: Give each blind's real id, its serial number, instead of blind_1, blind_2 and so on. Leave off for a response you will post in an issue.
+      required: false
+      default: false
+      selector:
+        boolean:
 send_hub_command:
   name: Send hub command
   description: Advanced. POST arbitrary fields to the hub's control endpoint for one blind and return the reply. For the hub verbs that have no entity of their own, such as setting or clearing a limit. The blind will do whatever the hub makes of the fields.
@@ -97,7 +118,7 @@ send_hub_command:
           integration: norman
     peripheral_uid:
       name: Peripheral UID
-      description: The blind's id as the hub reports it (the cover's unique id, or PeripheralUID in get_hub_data).
+      description: The blind's id, the serial number on its device page. It is also the cover's unique id.
       required: true
       example: 1001
       selector:

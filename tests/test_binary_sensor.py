@@ -1,15 +1,18 @@
-"""Tests for the per-blind connection sensor."""
+"""Tests for the binary sensors: each blind's connection, the hub's pairing mode and push updates."""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from unittest.mock import patch
 
+import aiohttp
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import (
     ATTR_DEVICE_CLASS,
     STATE_OFF,
     STATE_ON,
+    STATE_UNAVAILABLE,
     STATE_UNKNOWN,
     EntityCategory,
 )
@@ -18,6 +21,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+from custom_components.norman.api import NormanConnectionError
 from custom_components.norman.binary_sensor import RECHECK_INTERVAL
 from custom_components.norman.const import DOMAIN, UNRESPONSIVE_AFTER
 
@@ -102,3 +106,80 @@ async def test_pairing_mode_sensor_follows_the_hub(
     await notifications.put({"UpdateTime": {"device": 1}})
     await settle(hass)
     assert hass.states.get(entity_id).state == STATE_ON
+
+
+def push_entity_id(hass: HomeAssistant, entry: MockConfigEntry) -> str:
+    """Resolve the hub's Push updates sensor from its unique id."""
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "binary_sensor", DOMAIN, f"{entry.entry_id}_push_updates"
+    )
+    assert entity_id, "no Push updates sensor"
+    return entity_id
+
+
+async def test_push_updates_follow_the_notification_stream(
+    hass: HomeAssistant, init_integration: MockConfigEntry, notifications: asyncio.Queue
+) -> None:
+    """On once the hub answers the stream, off when a connection fails, on again once back."""
+    entity_id = push_entity_id(hass, init_integration)
+    state = hass.states.get(entity_id)
+    assert state.attributes[ATTR_DEVICE_CLASS] == "connectivity"
+    # Nothing has answered yet.
+    assert state.state == STATE_UNKNOWN
+
+    await notifications.put({"PeripheralList": []})
+    await settle(hass)
+    assert hass.states.get(entity_id).state == STATE_ON
+
+    with patch("custom_components.norman.coordinator.RECONNECT_INTERVAL", 0):
+        await notifications.put(NormanConnectionError("dropped"))
+        await settle(hass)
+        assert hass.states.get(entity_id).state == STATE_OFF
+
+        # The hub answers again, and the stream runs its whole cycle.
+        await notifications.put(None)
+        await settle(hass)
+    assert hass.states.get(entity_id).state == STATE_ON
+
+
+async def test_the_streams_routine_cycle_leaves_push_updates_on(
+    hass: HomeAssistant, init_integration: MockConfigEntry, notifications: asyncio.Queue
+) -> None:
+    """The stream is re-opened every few minutes on purpose; the sensor does not flicker off."""
+    entity_id = push_entity_id(hass, init_integration)
+    await notifications.put({"PeripheralList": []})
+    await settle(hass)
+    changes: list[str] = []
+    hass.bus.async_listen(
+        "state_changed",
+        lambda event: (
+            changes.append(event.data["new_state"].state)
+            if event.data["entity_id"] == entity_id
+            else None
+        ),
+    )
+
+    await notifications.put(None)
+    await settle(hass)
+
+    assert hass.states.get(entity_id).state == STATE_ON
+    assert STATE_OFF not in changes
+
+
+async def test_push_updates_stay_available_while_the_hub_is_down(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """It reports the integration's own link to the hub, which is known with the hub down."""
+    entity_id = push_entity_id(hass, init_integration)
+    with patch("custom_components.norman.coordinator.RECONNECT_INTERVAL", 0):
+        fake_hub.status_exc = aiohttp.ClientConnectionError("unreachable")
+        await notifications.put(NormanConnectionError("unreachable"))
+        await settle(hass)
+
+    assert init_integration.runtime_data.last_update_success is False
+    assert hass.states.get(entity_id).state == STATE_OFF
+    assert hass.states.get(connection_entity_id(hass, UID_LIVING)).state == STATE_UNAVAILABLE
+    assert er.async_get(hass).async_get(entity_id).entity_category == EntityCategory.DIAGNOSTIC

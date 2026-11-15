@@ -70,7 +70,7 @@ def test_hacs_declares_a_minimum_home_assistant_version() -> None:
 
 def test_entity_translation_keys_are_translated() -> None:
     """Every entity description's translation_key needs a name (and buttons an icon)."""
-    from custom_components.norman.binary_sensor import CONNECTION, PAIRING_MODE
+    from custom_components.norman.binary_sensor import CONNECTION, PAIRING_MODE, PUSH_UPDATES
     from custom_components.norman.button import BUTTONS, HUB_BUTTONS, ROOM_BUTTONS
     from custom_components.norman.number import HUB_NUMBERS, NUMBERS, ROOM_NUMBERS
     from custom_components.norman.scene import ROOM_SCENE_KEY, SCENE_GROUP_KEY
@@ -79,9 +79,11 @@ def test_entity_translation_keys_are_translated() -> None:
     strings = _load(COMPONENT / "strings.json")["entity"]
     sensor_keys = {description.translation_key for description in (*SENSORS, *HUB_SENSORS)}
     assert sensor_keys == set(strings["sensor"])
-    assert {CONNECTION.translation_key, PAIRING_MODE.translation_key} == set(
-        strings["binary_sensor"]
-    )
+    assert {
+        CONNECTION.translation_key,
+        PAIRING_MODE.translation_key,
+        PUSH_UPDATES.translation_key,
+    } == set(strings["binary_sensor"])
     number_keys = {d.translation_key for d in (*NUMBERS, *ROOM_NUMBERS, *HUB_NUMBERS)}
     assert number_keys == set(strings["number"])
     button_keys = {
@@ -331,7 +333,7 @@ def test_card_finds_the_hub_by_keys_only_the_hub_has() -> None:
     cover either, so "the device without a cover" stopped meaning the hub once rooms became
     devices -- and a renamed hub key would leave the card titled after nothing, silently.
     """
-    from custom_components.norman.binary_sensor import PAIRING_MODE
+    from custom_components.norman.binary_sensor import PAIRING_MODE, PUSH_UPDATES
     from custom_components.norman.button import HUB_BUTTONS
     from custom_components.norman.sensor import HUB_SENSORS
 
@@ -340,7 +342,7 @@ def test_card_finds_the_hub_by_keys_only_the_hub_has() -> None:
     assert block, "no HUB_KEYS set found in the card"
     hub_keys = set(re.findall(r'"(\w+)"', block.group(1)))
 
-    hub_only = {d.translation_key for d in (*HUB_SENSORS, *HUB_BUTTONS, PAIRING_MODE)}
+    hub_only = {d.translation_key for d in (*HUB_SENSORS, *HUB_BUTTONS, PAIRING_MODE, PUSH_UPDATES)}
     assert hub_keys, "HUB_KEYS is empty"
     assert hub_keys <= hub_only, f"not hub entities: {sorted(hub_keys - hub_only)}"
 
@@ -398,6 +400,36 @@ def test_sidebar_panel_matches_its_registration() -> None:
     assert 'createElement("norman-shades-card")' in panel
     # The card hides its menu button unless the panel marks it as the panel's.
     assert 'setAttribute("panel", "")' in panel
+
+
+def test_card_words_ship_and_are_imported_at_the_version_stamp() -> None:
+    """The card and the panel share their words (www/norman-strings.js), imported at ``?v=``.
+
+    ``/norman/`` is served with long-lived cache headers, so a plain relative import of the
+    words could pair an upgraded card with the previous release's: each file stamps the import
+    with its own ``?v=``, as the panel does the card.
+    """
+    www = COMPONENT / "www"
+    assert (www / "norman-strings.js").is_file()
+    for name in ("norman-shades-card.js", "norman-panel.js"):
+        text = (www / name).read_text(encoding="utf-8")
+        assert "./norman-strings.js?v=" in text, f"{name} does not import the words"
+        unstamped = re.search(r"""^\s*import\s[^(]*?["']\./norman-strings\.js["']""", text, re.M)
+        assert not unstamped, f"{name} imports the words without the ?v= stamp"
+
+
+def test_sidebar_panel_keeps_clear_of_the_safe_areas() -> None:
+    """The panel pads itself for a phone's notch and home indicator, on every release.
+
+    Home Assistant pads a custom panel itself from 2026.8 unless it opts out, and not at all
+    before; the panel opts out (frontend.py) and reads Home Assistant's variables, with the
+    browser's to fall back on.
+    """
+    panel = (COMPONENT / "www" / "norman-panel.js").read_text(encoding="utf-8")
+    for edge in ("top", "right", "bottom", "left"):
+        assert f"--safe-area-inset-{edge}" in panel, edge
+        assert f"env(safe-area-inset-{edge}" in panel, edge
+    assert "handle_safe_area" in (COMPONENT / "frontend.py").read_text(encoding="utf-8")
 
 
 def test_probe_script_refuses_write_endpoints() -> None:
@@ -485,6 +517,44 @@ def test_translation_locales_are_complete(locale_file: str) -> None:
     extra = locale - english
     assert not missing, f"{locale_file} is missing {len(missing)} keys, e.g. {sorted(missing)[:5]}"
     assert not extra, f"{locale_file} has {len(extra)} unknown keys, e.g. {sorted(extra)[:5]}"
+
+
+# Kept in English in every language: the hub's own name in the discovery title, and the name
+# of the hub's PeripheralUID field.
+KEPT_IN_ENGLISH = frozenset(
+    {"config.flow_title", "services.send_hub_command.fields.peripheral_uid.name"}
+)
+
+
+def _texts(node: object, prefix: str = "") -> dict[str, str]:
+    """Every string in a nested dict, by its dotted key path."""
+    if isinstance(node, str):
+        return {prefix: node}
+    texts: dict[str, str] = {}
+    if isinstance(node, dict):
+        for key, value in node.items():
+            texts |= _texts(value, f"{prefix}.{key}" if prefix else str(key))
+    return texts
+
+
+@pytest.mark.parametrize(
+    "locale_file",
+    sorted(p.name for p in TRANSLATIONS.glob("*.json") if p.name != "en.json"),
+)
+def test_translation_locales_are_translated(locale_file: str) -> None:
+    """A string copied over from en.json fills its key in, and shows English all the same.
+
+    That is how the whole-house buttons and the Command spacing option went untranslated.
+    One word can be the same in both languages ("Hub"), so only longer text counts.
+    """
+    english = _texts(_load(TRANSLATIONS / "en.json"))
+    locale = _texts(_load(TRANSLATIONS / locale_file))
+    copied = sorted(
+        path
+        for path, text in locale.items()
+        if text == english.get(path) and " " in text and path not in KEPT_IN_ENGLISH
+    )
+    assert not copied, f"{locale_file} still has English at {copied}"
 
 
 def test_config_flow_errors_and_aborts_are_translated() -> None:

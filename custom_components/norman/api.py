@@ -914,12 +914,15 @@ class NormanApiClient:
             self._raise_on_error_code(data, "Room control request")
         return data
 
-    async def async_listen_notifications(self) -> AsyncIterator[dict[str, Any]]:
+    async def async_listen_notifications(
+        self, on_connect: Callable[[], None] | None = None
+    ) -> AsyncIterator[dict[str, Any]]:
         """Yield peripheral state-change notifications from the hub's long-poll.
 
         Returns normally when NOTIF_MAX_DURATION elapses (the caller should simply
         reconnect) and raises NormanConnectionError if the hub closes the stream or the
-        connection fails.
+        connection fails. ``on_connect`` is called once the hub has answered and the stream
+        is open, before anything has arrived on it.
         """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + NOTIF_MAX_DURATION
@@ -949,6 +952,8 @@ class NormanApiClient:
                         f"Notification stream refused with HTTP {response.status}"
                     )
                 self.traffic.record("stream", ENDPOINT_NOTIFICATION, status=response.status)
+                if on_connect is not None:
+                    on_connect()
                 content = response.content
                 while True:
                     remaining = deadline - loop.time()

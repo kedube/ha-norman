@@ -51,13 +51,13 @@
         "data": {
           "poll_interval": "ポーリング間隔",
           "wake_interval": "ウェイク間隔",
-          "control_interval": "Command spacing",
+          "control_interval": "コマンド間隔",
           "show_sidebar_panel": "サイドバーに Norman ブラインドを表示"
         },
         "data_description": {
           "poll_interval": "通知が届かなかった場合に備えて、各ブラインドの位置をハブから読み直す間隔です。ハブが保存している内容を読み直すだけで、ブラインドには何も問い合わせません。0 で無効、それ以外は 10〜300 秒です（統合はすでに 5 分ごとに読み直しています）。",
           "wake_interval": "ハブが 24 時間応答を受けていないブラインド（Norman アプリが切断とみなす基準）に応答（バッテリー、位置、最終受信）を求める頻度です。接続中のブラインドには、アプリと同じく何も送りません。上のポーリングが読み直すだけのハブ側キャッシュを、それらのブラインドについて更新します。0 で無効、それ以外は 600〜86400 秒。",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
+          "control_interval": "ハブに送るコマンドどうしの間隔（秒）です。ハブの無線は 1 つだけで、送信が追いつかない速さで届いたコマンドは通知なしに破棄されます。そのため、複数のブラインドを動かすシーンはキューに入れて 1 件ずつ送信します。ほかのコマンドと一緒に送られたコマンドを受け取れないブラインドがまだある場合は値を大きくし、大きなシーンを早く終わらせたい場合は小さくしてください。既定値は 1.6 秒です。",
           "show_sidebar_panel": "Norman ブラインド（すべてのブラインドを部屋ごとに表示）を Home Assistant のサイドバーに表示します。ハブが複数ある場合は、ハブごとに項目が追加されます。オフにすると項目は削除されますが、Norman ブラインドは引き続きカードとしてダッシュボードに追加できます。"
         }
       }
@@ -65,7 +65,7 @@
     "error": {
       "poll_interval_out_of_range": "ポーリングを無効にするには 0 を、それ以外は 10〜300 秒の値を入力してください。",
       "wake_interval_out_of_range": "無効にするには 0 を、または 600〜86400 秒の値を入力してください。",
-      "control_interval_out_of_range": "Enter a value between 0.3 and 5 seconds."
+      "control_interval_out_of_range": "0.3〜5 秒の値を入力してください。"
     }
   },
   "services": {
@@ -91,15 +91,19 @@
     },
     "room_command": {
       "name": "部屋コマンド",
-      "description": "Normanアプリの部屋ボタンを、部屋のすべての窓装飾に対して実行します。best_privacy、best_view、favorite は1回のハブ要求で送信されます。部屋の refresh は各ブラインドに個別に状態要求を送信します。",
+      "description": "Normanアプリの部屋ボタンを、部屋、選んだブラインド、またはすべてのブラインドに対して実行します。best_privacy、best_view、favorite、stop は部屋ごとに1回のハブ要求で送信されます。refresh は各ブラインドに個別に状態要求を送信します。",
       "fields": {
         "room": {
           "name": "部屋",
-          "description": "ハブが認識している部屋名（Normanアプリの部屋名）。空欄にするとハブのすべてのブラインドが対象になります。"
+          "description": "ハブが認識している部屋名（Normanアプリの部屋名）。この欄とブラインドを空欄にすると、ハブのすべてのブラインドが対象になります。"
+        },
+        "blinds": {
+          "name": "ブラインド",
+          "description": "部屋の代わりに、どのエリアにあってもこれらのブラインドだけが対象になります。その中に部屋全体が含まれる場合、その部屋には1回の要求で送信されます。"
         },
         "command": {
           "name": "コマンド",
-          "description": "best_privacy は下レールを閉じ、中レールを全開にします。best_view は両方のレールを全開にします。favorite は部屋を保存済みのお気に入り位置へ動かします。refresh は部屋の各ブラインドに応答を求めます（何も動きません）。"
+          "description": "best_privacy は下レールを閉じ、中レールを全開にします。best_view は両方のレールを全開にします。favorite はブラインドを保存済みのお気に入り位置へ動かします。refresh は各ブラインドに応答を求めます（何も動きません）。stop は各ブラインドをその場で停止します。"
         },
         "config_entry_id": {
           "name": "ハブ",
@@ -109,11 +113,15 @@
     },
     "get_hub_data": {
       "name": "Hubデータを取得",
-      "description": "Hubが送信するそのままの製品リストとステータスを読み取ります。応答を返します。未対応のブラインドを報告するときに開発者ツールやスクリプトから使用してください。",
+      "description": "Hubの生の製品リストとステータスを、すべてのフィールドを含めて読み取ります。応答を返します。未対応のブラインドを報告するときに開発者ツールやスクリプトから使用してください。Hubの識別情報は伏せられ、ブラインドはシリアル番号ではなく blind_1、blind_2 などと表示されます。",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
           "description": "読み取るNorman Hub。1台のみ設定されている場合は省略できます。"
+        },
+        "show_serial_numbers": {
+          "name": "シリアル番号を表示",
+          "description": "blind_1、blind_2 などではなく、各ブラインドの実際のID（シリアル番号）を返します。Issue に投稿する応答ではオフのままにしてください。"
         }
       }
     },
@@ -127,7 +135,7 @@
         },
         "peripheral_uid": {
           "name": "Peripheral UID",
-          "description": "Hubが報告するブラインドのID（カバーのユニークID、またはget_hub_dataのPeripheralUID）。"
+          "description": "ブラインドのID。デバイスページに表示されるシリアル番号で、カバーのユニークIDでもあります。"
         },
         "fields": {
           "name": "フィールド",
@@ -162,30 +170,30 @@
         "name": "ミッドレール位置"
       },
       "all_bottom_rail_position": {
-        "name": "All blinds bottom rail position"
+        "name": "すべてのブラインドのボトムレール位置"
       },
       "all_middle_rail_position": {
-        "name": "All blinds middle rail position"
+        "name": "すべてのブラインドのミッドレール位置"
       }
     },
     "button": {
       "all_best_privacy": {
-        "name": "All blinds best privacy"
+        "name": "すべてのブラインドをプライバシー重視に"
       },
       "all_best_view": {
-        "name": "All blinds best view"
+        "name": "すべてのブラインドを眺望重視に"
       },
       "all_favorite": {
-        "name": "All blinds favorite position"
+        "name": "すべてのブラインドをお気に入り位置に"
       },
       "all_stop": {
-        "name": "All blinds stop"
+        "name": "すべてのブラインドを停止"
       },
       "all_jog_up": {
-        "name": "All blinds jog up"
+        "name": "すべてのブラインドを上へ微調整"
       },
       "all_jog_down": {
-        "name": "All blinds jog down"
+        "name": "すべてのブラインドを下へ微調整"
       },
       "best_privacy": {
         "name": "プライバシー重視"
@@ -277,6 +285,9 @@
       },
       "pairing_mode": {
         "name": "ペアリングモード"
+      },
+      "push_updates": {
+        "name": "プッシュ更新"
       }
     },
     "scene": {
@@ -328,8 +339,20 @@
     "room_command_failed": {
       "message": "ハブが部屋 {room} の {command} を拒否しました: {error}"
     },
+    "blinds_command_failed": {
+      "message": "選んだブラインドに {command} を送信できませんでした: {error}"
+    },
     "command_needs_a_room": {
       "message": "{command} には部屋の指定が必要です。ハブ全体に送信できるのは {commands} のみです。"
+    },
+    "no_blinds_picked": {
+      "message": "ブラインドを1つ以上選ぶか、ブラインドを空欄にして部屋またはハブ全体を対象にしてください。"
+    },
+    "not_a_norman_blind": {
+      "message": "{entity} は Norman のブラインドではありません。"
+    },
+    "blind_on_other_hub": {
+      "message": "{entity} は {hub} ではなく、別の Norman Hub のブラインドです。"
     },
     "button_needs_room": {
       "message": "{command} にはハブから取得する {name} の部屋とグループが必要ですが、まだ読み込まれていません。"

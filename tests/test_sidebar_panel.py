@@ -118,9 +118,10 @@ def test_every_language_has_a_sidebar_title_matching_the_card() -> None:
     component = pathlib.Path(__file__).parent.parent / "custom_components" / "norman"
     shipped = sorted(path.stem for path in (component / "translations").glob("*.json"))
     assert sorted(PANEL_TITLES) == shipped
-    card = (component / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    # The card's words, shared with the panel (www/norman-strings.js).
+    words = (component / "www" / "norman-strings.js").read_text(encoding="utf-8")
     for title in PANEL_TITLES.values():
-        assert f'card_name: "{title}"' in card, title
+        assert f'card_name: "{title}"' in words, title
 
 
 def test_the_sidebar_option_names_the_page_as_the_sidebar_does() -> None:
@@ -276,3 +277,43 @@ async def test_turning_the_option_off_removes_the_entry(
 
         assert mock_config_entry.state is ConfigEntryState.LOADED
         assert _sidebar(hass) == {}
+
+
+async def test_the_panel_keeps_clear_of_the_safe_areas_itself(hass: HomeAssistant) -> None:
+    """The panel pads itself for a phone's notch and home indicator, so it opts out of
+    Home Assistant's padding (2026.8+), which painted those strips in another colour."""
+    await async_add_entry_panel(hass, _entry(hass, "a"))
+
+    panel = _sidebar(hass)[PANEL_URL_PATH]
+    assert panel.config["_panel_custom"]["handle_safe_area"] is True
+
+
+async def test_a_release_without_the_safe_area_option_still_gets_the_panel(
+    hass: HomeAssistant,
+) -> None:
+    """Before 2026.8 there is no option to pass; the panel is registered without it."""
+    registered: list[str] = []
+
+    async def register_panel_2026_7(  # the signature before handle_safe_area existed
+        hass: HomeAssistant,
+        frontend_url_path: str,
+        webcomponent_name: str,
+        sidebar_title: str | None = None,
+        sidebar_icon: str | None = None,
+        js_url: str | None = None,
+        module_url: str | None = None,
+        embed_iframe: bool = False,
+        trust_external: bool = False,
+        config: dict | None = None,
+        require_admin: bool = False,
+        config_panel_domain: str | None = None,
+    ) -> None:
+        registered.append(frontend_url_path)
+
+    with patch(
+        "custom_components.norman.frontend.panel_custom.async_register_panel",
+        register_panel_2026_7,
+    ):
+        await async_add_entry_panel(hass, _entry(hass, "a"))
+
+    assert registered == [PANEL_URL_PATH]

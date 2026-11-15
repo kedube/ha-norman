@@ -20,12 +20,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.norman.const import DOMAIN, MOVE_ATTEMPTS
 from custom_components.norman.coordinator import (
     NormanCoordinator,
-    _parse_scenes,
     hub_identifier,
     room_identifier,
 )
 from custom_components.norman.diagnostics import async_get_config_entry_diagnostics
 from custom_components.norman.models import NormanSceneTarget
+from custom_components.norman.parsing import parse_scenes
 
 from .conftest import FakeHub, loaded, settle
 from .const import UID_BEDROOM, UID_LIVING
@@ -133,7 +133,7 @@ def test_scenes_are_parsed_from_the_strings_the_hub_stores() -> None:
             ],
         }
     }
-    scenes, groups = _parse_scenes(tree)
+    scenes, groups = parse_scenes(tree)
 
     assert list(scenes) == ["29550_1"]
     scene = scenes["29550_1"]
@@ -231,8 +231,8 @@ async def test_a_blind_that_misses_a_scene_is_sent_its_own_position(
     """Not the scene again: the position the scene stored for that one blind."""
     coordinator: NormanCoordinator = with_scenes.runtime_data
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _run(hass, _entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_1"))
         if task := coordinator._move_watchers.get(UID_LIVING):
@@ -258,8 +258,8 @@ async def test_a_blind_already_at_the_scene_is_left_alone(
     await coordinator.async_refresh()
 
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _run(hass, _entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_1"))
         if task := coordinator._move_watchers.get(UID_LIVING):
@@ -430,7 +430,13 @@ async def test_diagnostics_include_the_scenes(
     hass: HomeAssistant, with_scenes: MockConfigEntry
 ) -> None:
     diagnostics = await async_get_config_entry_diagnostics(hass, with_scenes)
-    assert diagnostics["scenes"]["1_1"]["targets"][str(UID_LIVING)] == {
+    # Blinds are keyed by alias, as in the device list (a blind's id is its serial number).
+    living = next(
+        alias
+        for alias, device in diagnostics["devices"].items()
+        if device["name"] == "Living Drape"
+    )
+    assert diagnostics["scenes"]["1_1"]["targets"][living] == {
         "bottom": 0,
         "middle": 90,
         "position": 0,

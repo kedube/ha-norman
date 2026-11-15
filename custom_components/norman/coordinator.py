@@ -8,35 +8,31 @@ from datetime import datetime, timedelta
 import functools
 import logging
 import time
-from typing import Any, NamedTuple
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_call_later, async_track_time_interval
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
-    ARRIVAL_TOLERANCE,
     CONF_CONTROL_INTERVAL,
     CONF_POLL_INTERVAL,
     CONF_WAKE_INTERVAL,
-    COVER_TYPE_SHEER,
     COVER_TYPE_SHUTTER,
     COVER_TYPE_SINGLE_RAIL,
-    COVER_TYPE_TWO_RAIL,
     DEFAULT_CONTROL_INTERVAL,
-    DEFAULT_COVER_TYPE,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_WAKE_INTERVAL,
     DOMAIN,
-    EVENT_COMMAND_FAILED,
     HUB_CMD_REQUEST_STATUS,
     HUB_CMD_STOP,
     HUB_COMMAND_SETTING,
+    HUB_COMMAND_TRIGGER,
     KNOWN_HUB_FIELDS,
     KNOWN_PERIPHERAL_FIELDS,
     KNOWN_SCENE_FIELDS,
@@ -49,18 +45,11 @@ from .const import (
     MIN_CONTROL_INTERVAL,
     MIN_POLL_INTERVAL,
     MIN_WAKE_INTERVAL,
-    MODULE_DETAIL_COVER_TYPES,
     MODULE_TYPE_COVER_TYPES,
-    MOVE_ATTEMPTS,
-    MOVE_REPORT_WAIT,
-    MOVE_TIMEOUT,
-    MOVE_WINDOW,
-    MSD_STACK_SIDES,
     POLL_DISABLED,
     RECONNECT_INTERVAL,
     ROOM_MIDDLE_WITHOUT_TWO_RAIL,
     ROOM_POSITION_TYPES,
-    SHUTTER_CLOSED,
     WAKE_DISABLED,
     is_default_title,
 )
@@ -71,57 +60,14 @@ from .models import (
     NormanScene,
     NormanSceneGroup,
     NormanSceneTarget,
-    scene_key,
 )
+from .moves import MoveTracker, has_bottom_rail, has_middle_rail, rails_to_send
+from .parsing import parse_devices, parse_scenes
 
 _LOGGER = logging.getLogger(__name__)
 DEVICE_LIST_RETRY_INTERVAL = 60  # seconds after a failed configuration read
 
 type NormanConfigEntry = ConfigEntry[NormanCoordinator]
-
-# A blind's two rails, (bottom, middle); the middle is None on a single-rail blind.
-type _Rails = tuple[int | None, int | None]
-
-
-class _Sighting(NamedTuple):
-    """Where the hub last saw a blind, and when it last heard from it (its ``Timestamp``)."""
-
-    rails: _Rails
-    heard: Any
-
-
-def _rails(data: NormanPeripheralData) -> _Rails:
-    """What a blind reports it is at. A Shutter's louvers stand in for the bottom rail."""
-    if data.type == COVER_TYPE_SHUTTER:
-        return (data.position, None)
-    middle = None if data.type == COVER_TYPE_SINGLE_RAIL else data.middle_rail_position
-    return (data.bottom_rail_position, middle)
-
-
-def _targets(data: NormanPeripheralData) -> _Rails:
-    """What the hub has recorded as a blind's target, in the same shape as ``_rails``."""
-    if data.type == COVER_TYPE_SHUTTER:
-        return (data.target_position, None)
-    middle = None if data.type == COVER_TYPE_SINGLE_RAIL else data.target_middle_rail_position
-    return (data.target_bottom_rail_position, middle)
-
-
-def _distance(rails: _Rails, goal: _Rails) -> int:
-    """How far the rails are from the goal, over the rails both sides have a value for."""
-    return sum(
-        abs(rail - target)
-        for rail, target in zip(rails, goal, strict=True)
-        if rail is not None and target is not None
-    )
-
-
-def _arrived(rails: _Rails, goal: _Rails, tolerance: int) -> bool:
-    """Whether every rail with a value on both sides is within ``tolerance`` of the goal."""
-    return all(
-        abs(rail - target) <= tolerance
-        for rail, target in zip(rails, goal, strict=True)
-        if rail is not None and target is not None
-    )
 
 
 def hub_identifier(entry: ConfigEntry) -> str:
@@ -138,73 +84,11 @@ def room_identifier(entry: ConfigEntry, room_id: int) -> str:
     return f"room_{entry.entry_id}_{room_id}"
 
 
-def clamp_position(value: int) -> int:
-    """Clamp a rail position to the 0-100 range Home Assistant uses."""
-    return max(0, min(100, value))
-
-
-def has_bottom_rail(cover_type: str) -> bool:
-    """Whether a blind of this type has a bottom rail to move. A Shutter has only louvers."""
-    return cover_type != COVER_TYPE_SHUTTER
-
-
-def has_middle_rail(cover_type: str) -> bool:
-    """Whether a blind of this type has a middle rail of its own.
-
-    Only a two-rail shade does. A single-rail blind reports the field as a constant 0, and on
-    a drape or a PerfectSheer it is the vane tilt, which belongs to the cover.
-    """
-    return cover_type == COVER_TYPE_TWO_RAIL
-
-
-def rails_to_send(
-    cover_type: str | None,
-    heading: tuple[int, int],
-    bottom: int | None,
-    middle: int | None,
-) -> tuple[int, int]:
-    """The pair a move sends to one blind; ``None`` keeps a rail where it is ``heading``.
-
-    The hub's control call takes both rails, so a move of one rail has to send the other.
-    On a two-rail blind the middle rail always hangs above the bottom rail, so a rail kept
-    where it is heading is carried along when the other would pass it: lowering the middle
-    rail below the bottom rail takes the bottom rail down with it, and raising the bottom
-    rail above the middle rail takes the middle rail up. The hub is never asked for a shape
-    the blind cannot make. A drape's two values are how far it is drawn and how its vanes are
-    tilted, which do not constrain each other, so they are sent as asked.
-
-    A PerfectSheer's vanes open only with the shade fully down. The hub accepts a tilt sent
-    with the shade raised, then sets the vane target back to 0 by itself, and the vanes never
-    move (issue #6). So opening the vanes lowers the shade first, as the hub does when sent
-    both, and raising the shade closes them, which the hub would do anyway. Sending what the
-    hub will report also lets the move watchdog see the move arrive. Where both are asked,
-    as a scene does, the shade's position wins, as it does at the hub.
-    """
-    bottom_val = heading[0] if bottom is None else clamp_position(bottom)
-    middle_val = heading[1] if middle is None else clamp_position(middle)
-    if cover_type == COVER_TYPE_TWO_RAIL:
-        if middle is None:
-            middle_val = max(middle_val, bottom_val)
-        elif bottom is None:
-            bottom_val = min(bottom_val, middle_val)
-    elif cover_type == COVER_TYPE_SHEER and bottom_val and middle_val:
-        if bottom is None:
-            bottom_val = 0
-        else:
-            middle_val = 0
-    return bottom_val, middle_val
-
-
 def _reaches(cover_type: str, bottom: int | None, middle: int | None) -> bool:
     """Whether a move of these rails has anything to move on a blind of this type."""
     return (bottom is not None and has_bottom_rail(cover_type)) or (
         middle is not None and has_middle_rail(cover_type)
     )
-
-
-def _first_known(*values: int | None) -> int:
-    """The first of ``values`` that is known, or 100 (fully open) if none is."""
-    return next((value for value in values if value is not None), 100)
 
 
 def rooms_of(devices: NormanDevices) -> dict[int, str]:
@@ -214,6 +98,14 @@ def rooms_of(devices: NormanDevices) -> dict[int, str]:
         if device.room_id is not None and device.room_id not in rooms:
             rooms[device.room_id] = device.room_name or f"Room {device.room_id}"
     return rooms
+
+
+def _describe(value: Any) -> str:
+    """What a value is, without the value: its type, and its size where it has one."""
+    kind = type(value).__name__
+    if isinstance(value, str | bytes | list | dict):
+        return f"{kind} of length {len(value)}"
+    return kind
 
 
 def _poll_interval(entry: NormanConfigEntry) -> timedelta | None:
@@ -270,7 +162,7 @@ def _wake_interval(entry: NormanConfigEntry) -> timedelta | None:
     return None if seconds == WAKE_DISABLED else timedelta(seconds=seconds)
 
 
-class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
+class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
     """Norman data update coordinator.
 
     The hub pushes state changes over a long-poll (see ``listen_notifications``): every
@@ -317,31 +209,17 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         # True while the notification stream is known to be down, so that the outage is
         # logged once at error level rather than on every reconnect attempt.
         self._listener_offline = False
-        # One move watchdog per blind (see async_watch_move); a new move replaces it.
-        self._move_watchers: dict[int, asyncio.Task[None]] = {}
-        # The rails each blind's move in flight was sent to, keyed by blind, with the serial
-        # of the move that recorded them (see async_note_move).
-        self._moves: dict[int, tuple[int, tuple[int, int]]] = {}
-        self._move_serial = 0
-        # The serial of the last command to take each blind over: a move (async_note_move)
-        # or a stop, jog, preset or scene (async_supersede). A command that waited its turn
-        # in the control queue is sent and watched only while it still holds its blind, so
-        # a stop or a newer command issued meanwhile is not undone.
-        self._claims: dict[int, int] = {}
-        # Blinds taken over by something other than a move, whose next move reads the hub
-        # first (async_settle): where each was when it was taken over, and whether the
-        # command aimed it at a target the hub records (a preset) or halted it (a stop).
-        self._unsettled: dict[int, tuple[_Sighting, bool]] = {}
-        # The scenes and scene groups saved on the hub, from its device list (_parse_scenes).
+        # Whether the hub's notification stream is connected, for the Push updates sensor:
+        # None until the first attempt has an answer, True once the hub answers, False once
+        # a connection fails. The stream's routine cycle (NOTIF_MAX_DURATION) leaves it on,
+        # so the sensor does not flicker off every five minutes.
+        self._push_connected: bool | None = None
+        # The move records and the watchdog's state (moves.py).
+        self._init_move_tracking(entry)
+        # The scenes and scene groups saved on the hub, from its device list (parse_scenes).
         # Kept from the last good read while the hub cannot read its configuration.
         self.scenes: dict[str, NormanScene] = {}
         self.scene_groups: dict[str, NormanSceneGroup] = {}
-        # Each blind heading for a target it has not reached, with the target and when it set
-        # off, for the covers' opening and closing states (travelling). One timer redraws
-        # them when the next of these runs out of MOVE_WINDOW.
-        self._headings: dict[int, tuple[_Rails, datetime]] = {}
-        self._heading_timer: CALLBACK_TYPE | None = None
-        entry.async_on_unload(self._async_cancel_heading_timer)
         # Remote-control channels found holding more than one blind, warned about once each.
         self._shared_groups: set[tuple[int, int, frozenset[int]]] = set()
 
@@ -434,152 +312,116 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         )
         await self.api.async_send_room_control(room_id, fields, still_wanted=still_wanted)
 
-    def _still_holds(self, device_ids: Iterable[int], serial: int) -> Callable[[], bool]:
-        """The check a command for these blinds, taken over as ``serial``, is sent under."""
-        claims: dict[int, int | None] = dict.fromkeys(device_ids, serial)
-        return lambda: self._holds_all(claims)
+    def _whole_rooms(self, device_ids: Iterable[int]) -> tuple[list[int], list[int]]:
+        """Split blinds into the hub's rooms they fill completely, and the rest of them.
+
+        A room-wide request reaches every blind in the room, so it can stand in for a command
+        to some of them only when they are all of them: then one request does, rather than
+        one paced send per blind. Blinds the hub no longer reports are left out.
+        """
+        devices = self.data or {}
+        by_room: dict[int | None, set[int]] = {}
+        for device_id in set(device_ids):
+            if (device := devices.get(device_id)) is not None:
+                by_room.setdefault(device.room_id, set()).add(device_id)
+        rooms: list[int] = []
+        rest: list[int] = []
+        for room_id, members in by_room.items():
+            if room_id is not None and members == set(self.blinds_in(room_id)):
+                rooms.append(room_id)
+            else:
+                rest.extend(members)
+        return sorted(rooms), sorted(rest)
+
+    async def async_send_presets(self, device_ids: Iterable[int], fields: dict[str, Any]) -> None:
+        """Send a preset to exactly these blinds, and watch each of them as a preset is.
+
+        A room they fill completely gets the room-wide preset, one request
+        (``async_send_room_preset``); every other blind gets its own, addressed by its room
+        and group as its own button sends it (``_async_preset_each``). A blind without a room
+        and group to address it by is left out.
+        """
+        rooms, rest = self._whole_rooms(device_ids)
+        # Read before anything is awaited: a refresh meanwhile replaces the data.
+        devices = self.data or {}
+        blinds = {device_id: devices[device_id] for device_id in rest}
+        for room_id in rooms:
+            await self.async_send_room_preset(room_id, fields)
+        if blinds:
+            serial = self.async_supersede(blinds, aimed=True)
+            await self._async_preset_each(blinds, fields, serial)
+
+    async def async_stop_blinds(self, device_ids: Iterable[int]) -> None:
+        """Stop exactly these blinds, as fast as the hub allows.
+
+        A room they fill completely gets one room-wide stop (``async_send_room_verb``), which
+        the hub carries to each blind at once. Every other blind gets its own stop, and a
+        Shutter none: its louvers turn in a moment and take no stop. Stops are served ahead
+        of every other command waiting its turn (api._ControlQueue).
+        """
+        rooms, rest = self._whole_rooms(device_ids)
+        # Read before anything is awaited: a refresh meanwhile replaces the data.
+        devices = self.data or {}
+        stops = [device_id for device_id in rest if devices[device_id].type != COVER_TYPE_SHUTTER]
+        for room_id in rooms:
+            await self.async_send_room_verb(room_id, {HUB_CMD_STOP: HUB_COMMAND_TRIGGER})
+        if stops:
+            self.async_supersede(stops)
+            for device_id in stops:
+                await self.api.async_stop(device_id)
+
+    async def async_request_status_of(self, device_ids: Iterable[int]) -> None:
+        """Ask each of these blinds to report in, one status request each; nothing moves.
+
+        The per-blind form of the room refresh (``async_refresh_blinds``): a ``RoomID`` does
+        not confine ``StatusRequest``, so each blind is asked on its own.
+        """
+        devices = self.data or {}
+        for device_id in sorted(set(device_ids)):
+            if device_id in devices:
+                await self.api.async_request_status(device_id)
 
     @property
     def has_device_list(self) -> bool:
         """Whether the hub's device list has been read, so its rooms and scenes are known."""
         return bool(self._device_info)
 
-    def travelling(self, device_id: int) -> bool:
-        """Whether a blind is on its way to a target it has not reached yet.
-
-        From when the hub first shows the target until the blind reports it is there, or
-        ``MOVE_WINDOW`` passes: a blind that missed the command leaves the hub showing the
-        target, unreached, until it next reports in, which can be hours.
-        """
-        heading = self._headings.get(device_id)
-        if heading is None:
-            return False
-        return (dt_util.utcnow() - heading[1]).total_seconds() < MOVE_WINDOW
+    @property
+    def push_connected(self) -> bool | None:
+        """Whether the hub's notification stream is connected; None before the first answer."""
+        return self._push_connected
 
     @callback
-    def _track_headings(self, devices: NormanDevices) -> None:
-        """Note when each blind set off for a target it has not reached (``travelling``)."""
-        now = dt_util.utcnow()
-        for device_id, data in devices.items():
-            targets = _targets(data)
-            heading = any(
-                target is not None and target != rail
-                for rail, target in zip(_rails(data), targets, strict=True)
-            )
-            if not heading:
-                self._headings.pop(device_id, None)
-            elif (known := self._headings.get(device_id)) is None or known[0] != targets:
-                self._headings[device_id] = (targets, now)
-        for device_id in set(self._headings) - set(devices):
-            del self._headings[device_id]
-        self._async_schedule_heading_expiry(now)
-
-    @callback
-    def _async_schedule_heading_expiry(self, now: datetime) -> None:
-        """Redraw the covers when the next blind's ``MOVE_WINDOW`` runs out."""
-        self._async_cancel_heading_timer()
-        ends = [
-            seconds
-            for _, since in self._headings.values()
-            if (seconds := MOVE_WINDOW - (now - since).total_seconds()) > 0
-        ]
-        if not ends:
+    def _async_set_push_connected(self, connected: bool) -> None:
+        """Note the stream connecting or failing, and redraw the Push updates sensor."""
+        if self._push_connected is connected:
             return
+        self._push_connected = connected
+        self.async_update_listeners()
 
-        @callback
-        def _expired(_now: datetime) -> None:
-            self._heading_timer = None
-            self.async_update_listeners()
-            self._async_schedule_heading_expiry(dt_util.utcnow())
-
-        self._heading_timer = async_call_later(self.hass, min(ends), _expired)
-
-    @callback
-    def _async_cancel_heading_timer(self) -> None:
-        if self._heading_timer is not None:
-            self._heading_timer()
-            self._heading_timer = None
+    def diagnostics_state(self) -> dict[str, Any]:
+        """The coordinator's own state, for the diagnostics download."""
+        return {
+            "push_connected": self._push_connected,
+            "listening": self.listening,
+            "has_device_list": self.has_device_list,
+            "device_list_failing": self._device_info_error_logged,
+            "control_interval": self.api.control_interval,
+            "poll_interval": self.update_interval.total_seconds() if self.update_interval else None,
+            "wake_interval": interval.total_seconds()
+            if (interval := _wake_interval(self.config_entry))
+            else None,
+            "moves_in_flight": len(self._moves),
+            "move_watches": len(self._move_watchers),
+            "blinds_travelling": len(self._headings),
+            "scenes": len(self.scenes),
+            "scene_groups": len(self.scene_groups),
+        }
 
     @property
     def listening(self) -> bool:
         """Whether the notification stream is up, so the blinds' reports arrive as they come."""
         return not self._listener_offline
-
-    def commanded_rails(self, device_id: int) -> tuple[int, int] | None:
-        """The rails this blind's move in flight was sent to, or None when there is none."""
-        move = self._moves.get(device_id)
-        return None if move is None else move[1]
-
-    @callback
-    def async_note_move(self, device_id: int, bottom: int, middle: int) -> int:
-        """Record a move the moment it is worked out, before it waits its turn to be sent.
-
-        A command that moves one rail sends the other where it is heading, and until the hub
-        has been re-read its target still shows where the blind was heading before. Moves
-        issued together -- a scene applies its entities at once -- or inside the refresh
-        debouncer's ten-second cooldown would each fill the other rail in from that stale
-        target, and the second would undo the first. Reading this record first lets each
-        see the one before it. It lasts until the move's watch ends, the move fails to send,
-        or another command supersedes it (``async_supersede``). Returns the move's serial,
-        which ends the record only while it is still this move's, and which holds the blind
-        until another command takes it over (``holds``).
-
-        The move in flight before it loses its watch now, not once this one is sent: left
-        running, that watch would read the blind heading here as its own move never arriving
-        and send it again -- and this move may never be sent, or never be watched.
-        """
-        self.async_cancel_move_watch(device_id)
-        self._move_serial += 1
-        self._moves[device_id] = (self._move_serial, (bottom, middle))
-        self._claims[device_id] = self._move_serial
-        self._unsettled.pop(device_id, None)
-        return self._move_serial
-
-    def holds(self, device_id: int, serial: int) -> bool:
-        """Whether command ``serial`` is still the last to have taken this blind over."""
-        return self._claims.get(device_id) == serial
-
-    def _holds_all(self, claims: dict[int, int | None]) -> bool:
-        """Whether no command has taken any of these blinds over since ``claims`` was read.
-
-        One request reaches all of them, so a busy hub's retry is dropped once any has been
-        taken over: it would undo that blind's newer command. The rest are still watched,
-        and sent their move on their own if they never went.
-        """
-        return all(self._claims.get(device_id) == claim for device_id, claim in claims.items())
-
-    @callback
-    def async_forget_move(self, device_id: int, serial: int | None = None) -> None:
-        """Drop a blind's move record: only while it is still move ``serial``, if given."""
-        move = self._moves.get(device_id)
-        if move is not None and (serial is None or move[0] == serial):
-            del self._moves[device_id]
-
-    @callback
-    def async_supersede(
-        self, device_ids: Iterable[int] | None = None, *, aimed: bool = False
-    ) -> int:
-        """Another command has taken these blinds over (every blind, for None).
-
-        A stop, a jog or a preset replaces whatever move was in flight, so its watch has to
-        go too: left running, it would read the blind heading somewhere else as a move that
-        never arrived and send the old one again, undoing the new command. The move record
-        goes with it, and the next move reads the hub before it fills its other rail in
-        (``async_settle``). ``aimed`` says the command sends the blinds to targets the hub
-        records on accepting it -- a preset, a scene -- rather than halting them somewhere
-        only their report will tell. A command still waiting its turn loses the blinds too:
-        it is not sent, or watched, once it has lost them (``holds``). Returns the new
-        command's serial, which holds the blinds until something else takes them over.
-        """
-        self._move_serial += 1
-        if device_ids is None:
-            device_ids = set(self.data or {}) | set(self._moves) | set(self._move_watchers)
-        for device_id in list(device_ids):
-            self.async_cancel_move_watch(device_id)
-            self.async_forget_move(device_id)
-            self._claims[device_id] = self._move_serial
-            self._unsettled[device_id] = (self._sighting(device_id), aimed)
-        return self._move_serial
 
     @callback
     def async_supersede_room(self, room_id: int | None, *, aimed: bool = False) -> int:
@@ -587,57 +429,6 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
         if room_id is None:
             return self.async_supersede(aimed=aimed)
         return self.async_supersede(self.blinds_in(room_id), aimed=aimed)
-
-    async def async_settle(self, device_ids: Iterable[int]) -> None:
-        """Before a move works out where these blinds' other rails are heading: read the hub.
-
-        A blind taken over by a stop, a jog or a preset (``async_supersede``) has no move
-        record to fill its other rail in from, and the hub's target in hand is still the one
-        from before: the read the command asked for waits out the refresh debouncer's
-        cooldown, which the move before it started. A one-rail move made then would send the
-        stopped rail on to the target the stop abandoned. So the hub is read straight away.
-
-        A halted blind may still be on its way to report where it stopped: one not heard
-        from since, while the hub holds a target it has not reached, is given up to
-        ``MOVE_REPORT_WAIT`` to report. The hub replaces the target with the blind's
-        position when it does. A preset's target is the hub's from the moment it accepts
-        it, so an aimed blind is only read. Each takeover is settled once.
-        """
-        marks = {
-            device_id: self._unsettled[device_id]
-            for device_id in device_ids
-            if device_id in self._unsettled
-        }
-        if not marks:
-            return
-        await self._async_watch_read()
-        waiting = {
-            device_id: before
-            for device_id, (before, aimed) in marks.items()
-            if not aimed and self._halted_on_the_way(device_id, before)
-        }
-        if waiting and not await self._async_wait_until(
-            lambda: all(
-                self._heard_since(device_id, before) for device_id, before in waiting.items()
-            ),
-            MOVE_REPORT_WAIT,
-        ):
-            # The report normally arrives as a notification that refreshes the data;
-            # re-read in case it did not.
-            await self._async_watch_read()
-        for device_id, mark in marks.items():
-            if self._unsettled.get(device_id) is mark:
-                del self._unsettled[device_id]
-
-    def _halted_on_the_way(self, device_id: int, before: _Sighting) -> bool:
-        """Whether a halted blind has not reported since, with the hub's target not reached."""
-        data = (self.data or {}).get(device_id)
-        if data is None or self._heard_since(device_id, before):
-            return False
-        return any(
-            target is not None and target != rail
-            for rail, target in zip(_rails(data), _targets(data), strict=True)
-        )
 
     def room_name(self, room_id: int) -> str | None:
         """The hub's name for one of its rooms: from a blind in it, else from a scene saved in it.
@@ -659,22 +450,6 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             for device_id, device in (self.data or {}).items()
             if room_id is None or device.room_id == room_id
         }
-
-    def heading_rails(self, device_id: int) -> tuple[int, int]:
-        """Where a blind's rails are heading, for a move that leaves one of them alone.
-
-        The last move sent from here while it is in flight (``async_note_move``), otherwise
-        the hub's target, falling back to where the rail is and then to fully open.
-        """
-        if (commanded := self.commanded_rails(device_id)) is not None:
-            return commanded
-        data = (self.data or {}).get(device_id)
-        if data is None:
-            return (100, 100)
-        return (
-            _first_known(data.target_bottom_rail_position, data.bottom_rail_position),
-            _first_known(data.target_middle_rail_position, data.middle_rail_position),
-        )
 
     async def async_move_blind(
         self, device_id: int, bottom: int | None, middle: int | None
@@ -845,50 +620,6 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             for device_id, serial in pending.items():
                 self.async_forget_move(device_id, serial)
 
-    @callback
-    def async_watch_move(
-        self, device_id: int, bottom: int, middle: int, serial: int | None = None
-    ) -> None:
-        """After a move, make sure the blind actually went -- without holding anything up.
-
-        The hub acks a move it never transmits, so the only proof a blind acted is it
-        reporting a new position (const.py, ``MOVE_TIMEOUT``). The watch runs in the
-        background and costs nothing while it waits: it listens to the updates the hub pushes
-        anyway and ends as soon as the blind reports it moved. Only a blind that stays silent
-        is asked to report in, and only one that then shows it never moved is sent the move
-        again (``_async_supervise``). A new move for the same blind replaces the watch; a
-        stop cancels it. ``serial`` is the move's record (``async_note_move``), which ends
-        with the watch; a move that lost its blind while it waited to be sent is not watched.
-        """
-
-        async def resend() -> None:
-            await self.api.async_set_position(device_id, bottom, middle)
-
-        self._async_start_watch(device_id, (bottom, middle), resend, "move", serial)
-
-    @callback
-    def async_watch_louvers(self, device_id: int, position: int, serial: int | None = None) -> None:
-        """``async_watch_move`` for a Shutter: its louvers take the bottom rail's place."""
-
-        async def resend() -> None:
-            await self.api.async_set_louvers(device_id, position)
-
-        self._async_start_watch(device_id, (position, None), resend, "louver", serial)
-
-    @callback
-    def async_watch_preset(
-        self, device_id: int, resend: Callable[[], Awaitable[Any]], serial: int | None = None
-    ) -> None:
-        """After a preset verb (Best Privacy, Best View, Favorite), make sure it arrived.
-
-        A preset has no position for the caller to aim at: the blind resolves it to its own
-        stored one. The hub records that in its target fields as soon as it accepts the
-        command -- for a command it then drops, too -- so the watch reads its goal from there
-        first and then supervises it exactly like a move. ``serial`` is the one that took the
-        blind over for the preset (``async_supersede``), if any.
-        """
-        self._async_start_watch(device_id, None, resend, "preset", serial)
-
     async def async_send_room_preset(self, room_id: int | None, fields: dict[str, Any]) -> None:
         """Send a preset to every blind in a room (every blind on the hub, for None).
 
@@ -1042,157 +773,6 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             else:
                 self.async_watch_move(device_id, *rails, serials[device_id])
 
-    @callback
-    def _async_start_watch(
-        self,
-        device_id: int,
-        goal: _Rails | None,
-        resend: Callable[[], Awaitable[Any]],
-        kind: str,
-        serial: int | None = None,
-        targets_read: Awaitable[None] | None = None,
-    ) -> None:
-        if serial is not None and not self.holds(device_id, serial):
-            # A stop or a newer command took the blind over while this one waited to be
-            # sent. Its watch would read the new heading as a command that never arrived.
-            return
-        self.async_cancel_move_watch(device_id)
-        start = self._sighting(device_id)
-        self._move_watchers[device_id] = self.config_entry.async_create_background_task(
-            self.hass,
-            self._async_supervise(device_id, start, goal, resend, serial, targets_read),
-            name=f"norman-{kind}-watch-{device_id}",
-        )
-
-    @callback
-    def async_cancel_move_watch(self, device_id: int) -> None:
-        """Drop the watchdog for a blind (a stop means there is no target to reach)."""
-        if task := self._move_watchers.pop(device_id, None):
-            task.cancel()
-
-    def _forget_move_watch(self, device_id: int) -> None:
-        """Drop this blind's watcher entry, but only if it is still *this* task's.
-
-        A replacement watcher (a second move while the first is pending) cancels its
-        predecessor and takes the slot. The cancelled task's ``finally`` runs afterwards, so
-        an unconditional ``pop`` would delete the replacement's entry and leave the live
-        watcher untracked -- ``async_cancel_move_watch`` would then no longer be able to
-        stop it. Comparing against the running task makes the cleanup order-independent.
-        """
-        try:
-            current = asyncio.current_task()
-        except RuntimeError:  # pragma: no cover - only outside a running loop
-            current = None
-        if self._move_watchers.get(device_id) in (current, None):
-            self._move_watchers.pop(device_id, None)
-
-    async def _async_supervise(
-        self,
-        device_id: int,
-        start: _Sighting,
-        goal: _Rails | None,
-        resend: Callable[[], Awaitable[Any]],
-        serial: int | None = None,
-        targets_read: Awaitable[None] | None = None,
-    ) -> None:
-        """Confirm a command reached the blind, resending it only while the blind is silent.
-
-        Each attempt waits up to ``MOVE_TIMEOUT`` for the blind to report that it moved. A
-        blind that stays quiet is asked to report in (one ``StatusRequest``); if its answer
-        shows it never moved, the command goes again. After ``MOVE_ATTEMPTS`` sends the blind
-        is reported as not responding, with a warning in the log and a ``norman_command_failed``
-        event. Nothing here holds up other commands: the requests it does send queue with
-        everything else, paced like any other.
-        """
-        name = self._blind_name(device_id)
-        try:
-            if goal is None:
-                # A preset: read the position the hub resolved it to, now. The hub replaces
-                # its target with the blind's actual position whenever the blind reports in,
-                # so a target read after asking the blind to report in always matches -- which
-                # is how a dropped preset used to go unnoticed (2026-09-21). A
-                # room- or hub-wide preset shares one read among its blinds; shielded, so a
-                # watch replaced meanwhile does not cancel it for the rest.
-                if targets_read is None:
-                    await self._async_watch_read()
-                else:
-                    await asyncio.shield(targets_read)
-                goal = self._hub_target(device_id)
-                if goal is None:
-                    return
-            for attempt in range(1, MOVE_ATTEMPTS + 1):
-                if await self._async_wait_for_progress(device_id, start, goal):
-                    return
-                # Silent for the whole travel time: ask the blind where it is.
-                asked = self._sighting(device_id)
-                await self.api.async_request_status(device_id)
-                await self._async_wait_for_report(device_id, asked)
-                if self._made_progress(device_id, start, goal):
-                    return
-                if attempt == MOVE_ATTEMPTS:
-                    break
-                _LOGGER.warning(
-                    "%s reports it has not moved %.0f s after the command; sending it again "
-                    "(attempt %s of %s)",
-                    name,
-                    MOVE_TIMEOUT + MOVE_REPORT_WAIT,
-                    attempt + 1,
-                    MOVE_ATTEMPTS,
-                )
-                # Measure the next attempt from where the blind has just said it is.
-                start = self._sighting(device_id)
-                await resend()
-            self._async_command_failed(device_id, name, goal)
-        except (NormanApiError, NormanConnectionError) as err:
-            _LOGGER.warning("Could not confirm the command to %s: %s", name, err)
-        finally:
-            self._forget_move_watch(device_id)
-            if serial is not None:
-                self.async_forget_move(device_id, serial)
-
-    async def _async_wait_for_progress(
-        self, device_id: int, start: _Sighting, goal: _Rails
-    ) -> bool:
-        """Wait up to ``MOVE_TIMEOUT`` for the blind to report it moved towards ``goal``.
-
-        Only a report made since the command counts early on: a blind still finishing an
-        earlier move can be sitting on the new goal in the hub's cache without having heard
-        the new command. Once the time is up, being at the goal is enough -- a blind that was
-        already there has nothing to report.
-        """
-        if await self._async_wait_until(
-            lambda: (
-                self._heard_since(device_id, start) and self._made_progress(device_id, start, goal)
-            ),
-            MOVE_TIMEOUT,
-        ):
-            return True
-        return self._made_progress(device_id, start, goal)
-
-    async def _async_wait_for_report(self, device_id: int, asked: _Sighting) -> None:
-        """Wait up to ``MOVE_REPORT_WAIT`` for the blind to answer a status request."""
-        if not await self._async_wait_until(
-            lambda: self._heard_since(device_id, asked), MOVE_REPORT_WAIT
-        ):
-            # The answer normally arrives as a notification that refreshes the data;
-            # re-read in case it did not.
-            await self._async_watch_read()
-
-    async def _async_watch_read(self) -> None:
-        """Re-read the hub for a watch, in a task of its own that the watch only waits on.
-
-        A watch is cancelled whenever a stop or a newer command takes its blind over, and
-        cancelling a task inside ``async_refresh`` marks the update failed: every entity of
-        the hub would read unavailable, and Home Assistant would drop commands to them, until
-        the next good read. Shielded, the read finishes whatever happens to the watch; a
-        background task, it is cancelled when the entry unloads rather than waited for.
-        """
-        await asyncio.shield(
-            self.config_entry.async_create_background_task(
-                self.hass, self.async_refresh(), name="norman-watch-read"
-            )
-        )
-
     async def async_request_refresh(self) -> None:
         """Ask for a refresh, debounced, that its caller being cancelled cannot fail.
 
@@ -1206,119 +786,6 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             )
         )
 
-    async def _async_wait_until(self, condition: Callable[[], bool], timeout: float) -> bool:
-        """Wait until an update makes ``condition`` true, or ``timeout`` passes.
-
-        Nothing is polled: the check runs on the refreshes the hub's notifications trigger
-        anyway.
-        """
-        if condition():
-            return True
-        met = asyncio.Event()
-
-        @callback
-        def _check() -> None:
-            if condition():
-                met.set()
-
-        remove = self.async_add_listener(_check)
-        try:
-            async with asyncio.timeout(timeout):
-                await met.wait()
-        except TimeoutError:
-            return False
-        finally:
-            remove()
-        return True
-
-    def _sighting(self, device_id: int) -> _Sighting:
-        """Where the hub last saw this blind, and when it last heard from it."""
-        data = (self.data or {}).get(device_id)
-        if data is None:
-            return _Sighting((None, None), None)
-        return _Sighting(_rails(data), data.last_update)
-
-    def _heard_since(self, device_id: int, before: _Sighting) -> bool:
-        """Whether the blind has reported in since ``before`` was taken.
-
-        The hub's ``Timestamp`` moves on every report, moved or not. A hub that leaves it
-        out falls back to the position changing.
-        """
-        now = self._sighting(device_id)
-        if now.heard is not None and before.heard is not None:
-            return now.heard != before.heard
-        return now.rails != before.rails
-
-    def _made_progress(self, device_id: int, start: _Sighting, goal: _Rails) -> bool:
-        """At the goal, or nearer to it than when the command went out.
-
-        Any movement towards the goal proves the blind received the command. One that stopped
-        short -- an obstruction, a stall -- is not helped by being sent it again.
-        """
-        data = (self.data or {}).get(device_id)
-        if data is None or _rails(data)[0] is None:
-            return True  # gone from the hub, or no position to judge by; nothing to chase
-        rails = _rails(data)
-        # A rail that lands a point short is there: a blind sent to 25 has reported 24, and
-        # one sent there again has nothing to move. A Shutter's louvers have eight steps, so
-        # theirs must match.
-        tolerance = 0 if data.type == COVER_TYPE_SHUTTER else ARRIVAL_TOLERANCE
-        if _arrived(rails, goal, tolerance):
-            return True
-        return _distance(rails, goal) < _distance(start.rails, goal)
-
-    def _hub_target(self, device_id: int) -> _Rails | None:
-        """The position the hub has recorded as this blind's target, if any."""
-        data = (self.data or {}).get(device_id)
-        if data is None:
-            return None
-        targets = _targets(data)
-        return None if targets[0] is None else targets
-
-    def _blind_name(self, device_id: int) -> str:
-        data = (self.data or {}).get(device_id)
-        return data.name if data is not None else str(device_id)
-
-    @callback
-    def _async_command_failed(self, device_id: int, name: str, goal: _Rails) -> None:
-        """Log, and tell any automation listening, that a blind ignored every send.
-
-        A log line rather than a repair issue: one command going unanswered is not a
-        condition the user has to fix, and a flat battery already shows on the blind's
-        battery sensor.
-        """
-        _LOGGER.warning(
-            "%s did not move after %s attempts; giving up. Check its battery and that it is "
-            "in range of the hub",
-            name,
-            MOVE_ATTEMPTS,
-        )
-        data = (self.data or {}).get(device_id)
-        # A Shutter's goal is its louvers, not a rail (see _rails).
-        louvers = data is not None and data.type == COVER_TYPE_SHUTTER
-        self.hass.bus.async_fire(
-            EVENT_COMMAND_FAILED,
-            {
-                "device_id": self._registry_device_id(device_id),
-                "peripheral_uid": device_id,
-                "name": name,
-                "attempts": MOVE_ATTEMPTS,
-                "bottom_rail_position": None if louvers else goal[0],
-                "middle_rail_position": goal[1],
-                "louver_position": goal[0] if louvers else None,
-            },
-        )
-
-    def _registry_device_id(self, device_id: int) -> str | None:
-        """The Home Assistant device id for a blind, for automations to match on."""
-        registry = dr.async_get(self.hass)
-        # Looked up through the entry: identifiers are no longer unique across config
-        # entries in Home Assistant 2026.9 (see _sync_device_names).
-        for device in dr.async_entries_for_config_entry(registry, self.config_entry.entry_id):
-            if (DOMAIN, str(device_id)) in device.identifiers:
-                return device.id
-        return None
-
     async def listen_notifications(self) -> None:
         """Continuously listen for hub notifications and refresh data on change.
 
@@ -1330,7 +797,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
             # list is large, and the hub's reader for it is the part that fails.
             reread = True
             try:
-                async for notification in self.api.async_listen_notifications():
+                async for notification in self.api.async_listen_notifications(
+                    on_connect=functools.partial(self._async_set_push_connected, True)
+                ):
                     _LOGGER.debug("Received notification: %s", notification)
                     if self._listener_offline:
                         self._listener_offline = False
@@ -1350,6 +819,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     # first notification still refreshes at once and the rest coalesce.
                     await self.async_request_refresh()
             except NormanConnectionError as err:
+                self._async_set_push_connected(False)
                 if not self._listener_offline:
                     self._listener_offline = True
                     _LOGGER.error(
@@ -1362,6 +832,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                     reread = False
                 await asyncio.sleep(RECONNECT_INTERVAL)
             except Exception:  # noqa: BLE001 - the listener must outlive any single failure
+                self._async_set_push_connected(False)
                 # A poll, if one is set, would keep state moving, but at a fraction of the
                 # push path's responsiveness, and none is set by default. Letting an
                 # unexpected error escape the loop would leave the integration loaded and
@@ -1438,7 +909,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                         self._device_info_error_logged = False
                     # The scenes live in the device list, so they change only when it does.
                     if self._device_info:
-                        self.scenes, self.scene_groups = _parse_scenes(self._device_info)
+                        self.scenes, self.scene_groups = parse_scenes(self._device_info)
 
             # Status is the lightweight call that carries positions
             status_data = await self.api.async_get_status()
@@ -1457,7 +928,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
 
         self._log_unknown_fields(self._device_info, status_data)
         self._update_hub_data(self._device_info, status_data)
-        devices = self._process_data(self._device_info, status_data)
+        devices = parse_devices(self._device_info, status_data)
         if not self._device_info:
             self._keep_registry_names(devices)
         self._warn_about_unknown_module_types(devices)
@@ -1671,17 +1142,25 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                             self._note_unknown("peripheral", KNOWN_PERIPHERAL_FIELDS, peripheral)
 
     def _note_unknown(self, scope: str, known: frozenset[str], payload: dict[str, Any]) -> None:
-        """Log each field in ``payload`` that is not in ``known``, once per name."""
+        """Log each field in ``payload`` that is not in ``known``, once per name.
+
+        A hub-level field's value is left out, and only its type and size logged: the message
+        asks for it to be pasted into a public issue, and the hub's own fields are where its
+        identity, network and location live (SENSITIVE_HUB_KEYS), so a new one could be
+        another. A blind's or a scene's field is logged with its value, which is what it
+        takes to work out what the field means.
+        """
         for field in payload:
             if field in known or (scope, field) in self._unknown_fields:
                 continue
             self._unknown_fields.add((scope, field))
+            value = payload[field]
             _LOGGER.debug(
-                "Norman hub sent an undocumented %s field %r (value %r). Please open an issue "
+                "Norman hub sent an undocumented %s field %r (%s). Please open an issue "
                 "at https://github.com/kedube/ha-norman/issues so it can be documented",
                 scope,
                 field,
-                payload[field],
+                f"value withheld: {_describe(value)}" if scope == "hub" else f"value {value!r}",
             )
 
     def _warn_about_unknown_module_types(self, devices: NormanDevices) -> None:
@@ -1702,212 +1181,3 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices]):
                 device.module_type,
                 device.module_detail,
             )
-
-    @staticmethod
-    def _process_data(device_info: dict[str, Any], status_data: dict[str, Any]) -> NormanDevices:
-        """Process and combine data from GetAllPeripheral and status endpoints.
-
-        Args:
-            device_info: Data from GetAllPeripheral endpoint
-            status_data: Data from status endpoint
-
-        Returns:
-            Combined data keyed by device ID
-
-        """
-        devices: NormanDevices = {}
-
-        # Process device information (names, room, group)
-        results = device_info.get("results")
-        room_list = results.get("RoomList") if isinstance(results, dict) else None
-        for room in _dicts(room_list):
-            room_id = room.get("RoomID")
-            room_name = room.get("RoomName", "")
-
-            for group in _dicts(room.get("GroupList")):
-                group_id = group.get("GroupID")
-                group_name = group.get("GroupName", "")
-
-                for peripheral in _dicts(group.get("PeripheralList")):
-                    peripheral_uid = _parse_uid(peripheral.get("PeripheralUID"))
-                    if peripheral_uid is None:
-                        continue
-
-                    module_type = _parse_int(peripheral.get("ModuleType"))
-                    module_detail = _parse_int(peripheral.get("ModuleDetail"))
-                    devices[peripheral_uid] = NormanPeripheralData(
-                        id=peripheral_uid,
-                        name=peripheral.get("PeripheralName") or f"Norman {peripheral_uid}",
-                        type=cover_type(module_type, module_detail),
-                        room_id=_parse_int(room_id),
-                        room_name=room_name,
-                        group_id=_parse_int(group_id),
-                        group_name=group_name,
-                        module_type=module_type,
-                        module_detail=module_detail,
-                        stack=_parse_stack(peripheral.get("MSDStackType")),
-                    )
-
-        # Add status information
-        for peripheral in _dicts(status_data.get("Peripherals")):
-            peripheral_uid = _parse_uid(peripheral.get("PeripheralUID"))
-            if peripheral_uid is None:
-                continue
-
-            if peripheral_uid not in devices:
-                # Create minimal device if not found in device_info
-                module_type = _parse_int(peripheral.get("ModuleType"))
-                module_detail = _parse_int(peripheral.get("ModuleDetail"))
-                devices[peripheral_uid] = NormanPeripheralData(
-                    id=peripheral_uid,
-                    name=f"Norman {peripheral_uid}",
-                    type=cover_type(module_type, module_detail),
-                    room_id=_parse_int(peripheral.get("RoomID")),
-                    group_id=_parse_int(peripheral.get("GroupID")),
-                    module_type=module_type,
-                    module_detail=module_detail,
-                )
-
-            device = devices[peripheral_uid]
-            device.bottom_rail_position = _parse_position(peripheral.get("BottomRailPosition"))
-            device.middle_rail_position = _parse_position(peripheral.get("MiddleRailPosition"))
-            device.target_bottom_rail_position = _parse_position(
-                peripheral.get("TargetBottomRailPosition")
-            )
-            device.target_middle_rail_position = _parse_position(
-                peripheral.get("TargetMiddleRailPosition")
-            )
-            device.position = _parse_louvers(peripheral.get("Position"))
-            device.target_position = _parse_louvers(peripheral.get("TargetPosition"))
-            # Despite its name the field is a 0-100 level on every hub seen so far
-            device.battery_level = _parse_position(peripheral.get("BatteryVoltage"))
-            device.signal_strength = _parse_int(peripheral.get("RssiMean"))
-            device.firmware_version = peripheral.get("FirmwareVersion") or None
-            device.rf_firmware_version = peripheral.get("RfFirmwareVersion") or None
-            device.last_update = peripheral.get("Timestamp")
-
-        return devices
-
-
-def cover_type(module_type: int | None, module_detail: int | None = None) -> str:
-    """The cover type for a ModuleType/ModuleDetail, defaulting when the type is unknown."""
-    if module_type is None:
-        return DEFAULT_COVER_TYPE
-    if module_detail is not None and (module_type, module_detail) in MODULE_DETAIL_COVER_TYPES:
-        return MODULE_DETAIL_COVER_TYPES[(module_type, module_detail)]
-    return MODULE_TYPE_COVER_TYPES.get(module_type, DEFAULT_COVER_TYPE)
-
-
-def _dicts(raw: Any) -> list[dict[str, Any]]:
-    """The dict entries of ``raw``, or an empty list if it is not a list of dicts.
-
-    The hub's payloads are reverse-engineered and unvalidated, so a firmware change (or a
-    partial write) can put a string, a null, or a scalar where a list of objects belongs.
-    Reaching ``.get()`` on one of those raises AttributeError out of ``_async_update_data``,
-    which Home Assistant catches -- but only by logging a stack trace and marking EVERY
-    entity on the hub unavailable, for what may be one malformed record among twenty.
-    Skipping what cannot be read keeps the rest of the house working, and matches the
-    isinstance guards ``_log_unknown_fields`` already applies to the same structures.
-    """
-    if not isinstance(raw, list):
-        return []
-    return [item for item in raw if isinstance(item, dict)]
-
-
-def _parse_scenes(
-    device_info: dict[str, Any],
-) -> tuple[dict[str, NormanScene], dict[str, NormanSceneGroup]]:
-    """The scenes and scene groups saved on the hub, from ``GetAllPeripheral``.
-
-    Each room's ``SceneList`` holds its scenes, each sending some of the room's blinds to
-    stored positions, and ``SceneGroupList`` holds groups of room scenes. The hub stores
-    every value in them as a string, ids and positions included (docs/NORMAN_API.md). A
-    scene whose id is not a number is left out, since ``SetToScene`` takes the id as one,
-    and so is a group without an id. A missing name is left empty: the scene entity is then
-    called what its kind is called, translated.
-    """
-    results = device_info.get("results")
-    if not isinstance(results, dict):
-        return {}, {}
-    scenes: dict[str, NormanScene] = {}
-    for room in _dicts(results.get("RoomList")):
-        room_id = _parse_int(room.get("RoomID"))
-        if room_id is None:
-            continue
-        for raw in _dicts(room.get("SceneList")):
-            scene_id = _parse_int(raw.get("SceneID"))
-            if scene_id is None:
-                continue
-            targets: dict[int, NormanSceneTarget] = {}
-            for target in _dicts(raw.get("PeripheralList")):
-                device_id = _parse_uid(target.get("PeripheralUID"))
-                if device_id is None:
-                    continue
-                targets[device_id] = NormanSceneTarget(
-                    bottom=_parse_position(target.get("BottomRailPosition")),
-                    middle=_parse_position(target.get("MiddleRailPosition")),
-                    position=_parse_louvers(target.get("Position")),
-                )
-            scene = NormanScene(
-                room_id=room_id,
-                scene_id=scene_id,
-                name=str(raw.get("SceneName") or ""),
-                targets=targets,
-                room_name=str(room.get("RoomName") or ""),
-            )
-            scenes[scene.key] = scene
-    groups: dict[str, NormanSceneGroup] = {}
-    for raw in _dicts(results.get("SceneGroupList")):
-        group_id = raw.get("SceneGroupID")
-        if not isinstance(group_id, str) or not group_id:
-            continue
-        members = []
-        for item in _dicts(raw.get("SceneList")):
-            room_id = _parse_int(item.get("RoomID"))
-            scene_id = _parse_int(item.get("SceneID"))
-            if room_id is not None and scene_id is not None:
-                members.append(scene_key(room_id, scene_id))
-        groups[group_id] = NormanSceneGroup(
-            group_id=group_id,
-            name=str(raw.get("SceneGroupName") or ""),
-            scene_keys=members,
-        )
-    return scenes, groups
-
-
-def _parse_int(raw: Any) -> int | None:
-    """Coerce a value the hub sends as int in one payload and str in another.
-
-    ``bool`` is rejected explicitly: it is an ``int`` subclass, so a stray ``true`` would
-    otherwise become 1 and read as a real id or position.
-    """
-    if raw is None or isinstance(raw, bool):
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
-
-
-# A PeripheralUID parses exactly like any other hub int; the alias keeps the call sites
-# reading as what they are without a second identical implementation to keep in step.
-_parse_uid = _parse_int
-
-
-def _parse_position(raw: Any) -> int | None:
-    """Coerce a rail position to an int clamped to 0-100, or None if unusable."""
-    value = _parse_int(raw)
-    return None if value is None else max(0, min(100, value))
-
-
-def _parse_stack(raw: Any) -> str | None:
-    """A SmartDrape's stack side from ``MSDStackType``, by name or the app's number."""
-    if raw is None:
-        return None
-    return MSD_STACK_SIDES.get(str(raw).strip().lower())
-
-
-def _parse_louvers(raw: Any) -> int | None:
-    """Coerce a Shutter's louver position to an int clamped to 0-7, or None if unusable."""
-    value = _parse_int(raw)
-    return None if value is None else max(0, min(SHUTTER_CLOSED, value))

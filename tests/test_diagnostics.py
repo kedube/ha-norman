@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 import aiohttp
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -17,10 +20,21 @@ from custom_components.norman.const import (
     CONF_WAKE_INTERVAL,
     DOMAIN,
 )
-from custom_components.norman.diagnostics import redact_raw_body
+from custom_components.norman.diagnostics import BlindAliases, redact_raw_body
 
-from .conftest import FakeHub, loaded
-from .const import HUB_HOST, HUB_LATITUDE, HUB_SSID, HUB_THING_NAME, MOCK_CONFIG, UID_LIVING
+from .conftest import FakeHub, cover_entity_id, loaded
+from .const import (
+    HUB_FIRMWARE,
+    HUB_HOST,
+    HUB_LATITUDE,
+    HUB_MODEL,
+    HUB_SSID,
+    HUB_THING_NAME,
+    MOCK_CONFIG,
+    UID_BEDROOM,
+    UID_LIVING,
+    UID_STATUS_ONLY,
+)
 
 
 async def test_diagnostics_redacts_network_details(
@@ -37,8 +51,8 @@ async def test_diagnostics_redacts_network_details(
     assert HUB_THING_NAME not in str(diagnostics)
 
     assert diagnostics["last_update_success"] is True
-    living = diagnostics["devices"][str(UID_LIVING)]
-    assert living["name"] == "Living Drape"
+    living = next(d for d in diagnostics["devices"].values() if d["name"] == "Living Drape")
+    assert living["id"].startswith("blind_")
     assert living["bottom_rail_position"] == 40
     assert living["battery_level"] == 73
 
@@ -171,3 +185,72 @@ def test_text_cut_mid_value_loses_its_identifying_fields() -> None:
     redacted = redact_raw_body(text, [])
 
     assert redacted == ('{"results":{"CustomDeviceName":"**REDACTED**","GeoLoc":"**REDACTED**"')
+
+
+async def test_diagnostics_alias_every_blind_id(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+) -> None:
+    """A blind's id is its serial number; the export calls each blind by an alias instead.
+
+    The same alias everywhere, so the device list, the scenes and the raw traffic -- request
+    payloads and reply bodies alike -- still line up with each other.
+    """
+    await hass.services.async_call(
+        DOMAIN,
+        "room_command",
+        {"blinds": [cover_entity_id(hass, UID_BEDROOM)], "command": "refresh"},
+        blocking=True,
+    )
+
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, init_integration)
+    export = json.dumps(diagnostics, ensure_ascii=False)
+    for uid in (UID_LIVING, UID_BEDROOM, UID_STATUS_ONLY):
+        assert not re.search(rf"(?<![\w.]){uid}(?![\w.])", export), f"{uid} left in the export"
+
+    alias = {device["name"]: key for key, device in diagnostics["devices"].items()}
+    bedroom = alias["Bedroom Shade"]
+    assert diagnostics["devices"][bedroom]["id"] == bedroom
+    raw_status = diagnostics["hub_traffic"]["latest_raw"]["/NM/v1/status"]
+    assert f'"PeripheralUID":"{bedroom}"' in raw_status
+    request = next(
+        exchange["request"]
+        for exchange in reversed(diagnostics["hub_traffic"]["exchanges"])
+        if exchange["endpoint"] == "/NM/v1/control"
+    )
+    assert request["PeripheralUID"] == bedroom
+    # A blind the device list does not name is called after its id, so the name is aliased.
+    assert any(name.startswith("Norman blind_") for name in alias)
+
+
+def test_ids_in_text_that_does_not_parse_are_aliased() -> None:
+    """A clipped body or a piece of the stream still loses its blind ids, key by key."""
+    aliases = BlindAliases([1001, 1002])
+    text = '{"Status":1788827049448,"PeripheralList":[1001,1002]}{"PeripheralUID":"1001","Bottom'
+
+    assert redact_raw_body(text, [], aliases) == (
+        '{"Status":1788827049448,"PeripheralList":["blind_1","blind_2"]}'
+        '{"PeripheralUID":"blind_1","Bottom'
+    )
+
+
+async def test_diagnostics_describe_the_hub_and_its_link(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    init_integration: MockConfigEntry,
+) -> None:
+    """The hub's own state is in the report, less what identifies it or its network."""
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, init_integration)
+    hub = diagnostics["hub"]
+
+    assert hub["model"] == HUB_MODEL
+    assert hub["firmware_version"] == HUB_FIRMWARE
+    for field in ("custom_name", "wifi_ssid", "mac_address", "time_zone"):
+        assert hub[field] in (None, "**REDACTED**"), field
+    assert hub["mac_address"] == "**REDACTED**"
+    assert hub["has_device_list"] is True
+    assert hub["device_list_failing"] is False
+    assert {"push_connected", "listening", "control_interval", "moves_in_flight"} <= set(hub)
+    assert HUB_SSID not in str(hub)

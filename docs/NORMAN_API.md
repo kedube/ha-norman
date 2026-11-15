@@ -1289,7 +1289,7 @@ hub refresh ──► control (unscoped StatusRequest)
 room / hub battery report ──► control (ReportBatteryLevel, RoomID or no address)
 move watchdog ──► control (StatusRequest by uid, 60 s after a silent move; then the move again)
 wake sweep (timer, off by default) ──► control (StatusRequest per disconnected blind)
-get_hub_data action ──► GetAllPeripheral + status (redacted, returned as the response)
+get_hub_data action ──► GetAllPeripheral + status (redacted, blinds aliased, returned as the response)
 send_hub_command action ──► control (caller's fields) ──► status
 mDNS announcement ──► config flow ──► registration (identity) ──► offer, or refresh the address
 ```
@@ -1391,10 +1391,14 @@ before any parsing happens, and the last complete response per endpoint is kept 
 unique id, and every key in `SENSITIVE_HUB_KEYS` (`ThingName`, `GeoLoc`, `Latitude`,
 `Longitude`, `WiFiSSID`, `NetworkID`, `TimeZone`, `CustomDeviceName`) are removed by key inside
 JSON bodies, and the host and `ThingName` are additionally replaced by value anywhere they
-appear in text. The export also carries the entry's options and a `frontend` block with the
+appear in text. A `PeripheralUID` is the blind's serial number, so each becomes an alias
+(`blind_1`, `blind_2`, …, `BlindAliases` in `diagnostics.py`), the same for a blind throughout
+the export: in its device and scene entries, in `PeripheralList`s, and in requests and replies.
+The export also carries the entry's options and a `frontend` block with the
 card's expected and registered versions. The `norman.get_hub_data` action returns live
 `GetAllPeripheral` and `status` payloads for the same purpose, with the same sensitive keys
-removed. When someone reports a new blind type, ask for either of these; the parsed model in
+removed and the same aliases (`show_serial_numbers: true` keeps the real ids). When someone
+reports a new blind type, ask for either of these; the parsed model in
 `NormanPeripheralData` drops unknown fields and is not enough.
 
 Debug logging (`custom_components.norman.api: debug`) prints every exchange with the same keys

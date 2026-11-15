@@ -91,15 +91,19 @@
     },
     "room_command": {
       "name": "Room command",
-      "description": "Run one of the Norman app's room buttons against every blind in a room. best_privacy, best_view and favorite go in a single request to the hub; refresh in a room sends a status request to each blind.",
+      "description": "Run one of the Norman app's room buttons against a room, chosen blinds, or every blind. best_privacy, best_view, favorite and stop go to a room in a single request; refresh sends a status request to each blind.",
       "fields": {
         "room": {
           "name": "Room",
-          "description": "The room's name as the hub knows it (the Norman app's room name). Leave empty to address every blind on the hub."
+          "description": "The room's name as the hub knows it (the Norman app's room name). Leave this and Blinds empty to address every blind on the hub."
+        },
+        "blinds": {
+          "name": "Blinds",
+          "description": "Instead of a room, these blinds and no others, whatever area they are in. A whole room among them still gets a single request."
         },
         "command": {
           "name": "Command",
-          "description": "best_privacy closes the bottom rail and fully opens the middle rail; best_view fully opens both rails; favorite sends the room to its stored favorite; refresh asks every blind in the room to report in (nothing moves)."
+          "description": "best_privacy closes the bottom rail and fully opens the middle rail; best_view fully opens both rails; favorite sends the blinds to their stored favorite; refresh asks each blind to report in (nothing moves); stop stops every blind where it is."
         },
         "config_entry_id": {
           "name": "Hub",
@@ -109,11 +113,15 @@
     },
     "get_hub_data": {
       "name": "Get hub data",
-      "description": "Read the hub's raw device list and status, exactly as the hub sends them. Returns a response; use it from Developer Tools or a script when reporting an unsupported blind.",
+      "description": "Read the hub's raw device list and status, every field included. Returns a response; use it from Developer Tools or a script when reporting an unsupported blind. The hub's identity is blanked, and blinds are called blind_1, blind_2 and so on instead of by serial number.",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
           "description": "Which Norman hub to read. Optional when only one is configured."
+        },
+        "show_serial_numbers": {
+          "name": "Show serial numbers",
+          "description": "Give each blind's real id, its serial number, instead of blind_1, blind_2 and so on. Leave off for a response you will post in an issue."
         }
       }
     },
@@ -127,7 +135,7 @@
         },
         "peripheral_uid": {
           "name": "Peripheral UID",
-          "description": "The blind's id as the hub reports it (the cover's unique id, or PeripheralUID in get_hub_data)."
+          "description": "The blind's id, the serial number on its device page. It is also the cover's unique id."
         },
         "fields": {
           "name": "Fields",
@@ -277,6 +285,9 @@
       },
       "pairing_mode": {
         "name": "Pairing mode"
+      },
+      "push_updates": {
+        "name": "Push updates"
       }
     },
     "scene": {
@@ -328,8 +339,20 @@
     "room_command_failed": {
       "message": "The hub rejected {command} for room {room}: {error}"
     },
+    "blinds_command_failed": {
+      "message": "Failed to send {command} to the chosen blinds: {error}"
+    },
     "command_needs_a_room": {
       "message": "{command} needs a room; only {commands} can be sent to the whole hub."
+    },
+    "no_blinds_picked": {
+      "message": "Pick at least one blind, or leave Blinds out to address a room or the whole hub."
+    },
+    "not_a_norman_blind": {
+      "message": "{entity} is not a Norman blind."
+    },
+    "blind_on_other_hub": {
+      "message": "{entity} is a blind on another Norman hub, not {hub}."
     },
     "button_needs_room": {
       "message": "{command} needs {name}'s room and group from the hub, which have not been read yet."

@@ -12,7 +12,7 @@ finite body, so integration tests replace the listener with a queue-fed fake
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 import copy
 import json
@@ -197,16 +197,26 @@ def notifications() -> AsyncGenerator[asyncio.Queue]:
 
     Put a dict to deliver a notification, an exception to simulate the stream dropping,
     or ``None`` to simulate the periodic reconnect (the listener returning normally).
+
+    The stream counts as connected (``on_connect``) once the first dict or ``None`` arrives,
+    as the real one does once the hub answers; an exception before that is a connection that
+    never opened.
     """
     queue: asyncio.Queue = asyncio.Queue()
 
-    async def fake_listen(self: NormanApiClient) -> AsyncIterator[dict[str, Any]]:
+    async def fake_listen(
+        self: NormanApiClient, on_connect: Callable[[], None] | None = None
+    ) -> AsyncIterator[dict[str, Any]]:
+        connected = False
         while True:
             item = await queue.get()
-            if item is None:
-                return
             if isinstance(item, Exception):
                 raise item
+            if not connected and on_connect is not None:
+                connected = True
+                on_connect()
+            if item is None:
+                return
             yield item
 
     with patch.object(NormanApiClient, "async_listen_notifications", fake_listen):

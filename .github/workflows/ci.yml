@@ -129,6 +129,36 @@ jobs:
       - name: Run the card checks
         run: node scripts/check_card.mjs
 
+  layout:
+    name: Layout
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      # The Card job runs the card against stand-ins for the DOM, which cannot see layout. This
+      # opens the card and the sidebar panel in a real browser -- the Google Chrome that GitHub's
+      # Ubuntu runners come with -- at a phone's and a desktop's size, with touch, a notch and
+      # reduced motion emulated, and measures what it draws.
+      - name: Run the layout checks
+        run: node scripts/check_layout.mjs --screenshots layout-screenshots
+
+      # What the checks saw, to look at when one fails.
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: layout-screenshots
+          path: layout-screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
+
   pytest:
     name: Pytest
     runs-on: ubuntu-latest
@@ -161,7 +191,7 @@ jobs:
   report-scheduled-failure:
     name: Report scheduled failure
     if: ${{ failure() && github.event_name == 'schedule' }}
-    needs: [hacs, hassfest, ruff, mypy, card, pytest]
+    needs: [hacs, hassfest, ruff, mypy, card, layout, pytest]
     runs-on: ubuntu-latest
     permissions:
       issues: write

@@ -654,8 +654,8 @@ async def test_move_watchdog_chases_a_blind_that_never_moved(
     """
     coordinator: NormanCoordinator = init_integration.runtime_data
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
         await _watchdog_done(coordinator, UID_LIVING)
@@ -685,8 +685,8 @@ async def test_a_blind_that_ignores_every_attempt_is_logged_and_fires_an_event(
     coordinator: NormanCoordinator = init_integration.runtime_data
     events = async_capture_events(hass, EVENT_COMMAND_FAILED)
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _call(hass, COVER_DOMAIN, SERVICE_SET_COVER_POSITION, **{ATTR_POSITION: 10})
         await _watchdog_done(coordinator, UID_LIVING)
@@ -764,8 +764,8 @@ async def test_move_watchdog_is_quiet_when_the_blind_arrives(
 
     with (
         patch.object(fake_hub, "_control", _arrive),
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         fake_hub.mock.clear_requests()
         fake_hub._register()
@@ -795,8 +795,8 @@ async def test_a_resend_the_blind_acts_on_ends_the_chase(
     events = async_capture_events(hass, EVENT_COMMAND_FAILED)
     with (
         patch.object(fake_hub, "_control", _second_lands),
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         fake_hub.mock.clear_requests()
         fake_hub._register()
@@ -833,8 +833,8 @@ async def test_a_stop_while_the_move_waits_its_turn_is_not_undone(
     coordinator: NormanCoordinator = init_integration.runtime_data
     api = coordinator.api
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         # Another command is being sent, so the move waits its turn.
         await api._control_lock.acquire()
@@ -1303,7 +1303,7 @@ async def test_a_move_after_a_stop_goes_ahead_if_the_blind_never_reports(
 
     await _slide(hass, "bottom", 0)
     await _stop(hass)
-    with patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0):
+    with patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0):
         await _slide(hass, "middle", 70)
 
     assert _rails_sent(fake_hub) == [(0, 60), (0, 70)]
@@ -1372,8 +1372,8 @@ async def test_a_blind_a_point_short_of_its_goal_has_arrived(
     events = async_capture_events(hass, EVENT_COMMAND_FAILED)
 
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await coordinator.async_move_blind(UID_LIVING, 25, None)
         await _watchdog_done(coordinator, UID_LIVING)

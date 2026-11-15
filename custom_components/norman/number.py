@@ -28,13 +28,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import NormanApiError, NormanConnectionError
 from .const import DOMAIN
-from .coordinator import (
-    NormanConfigEntry,
-    NormanCoordinator,
-    has_bottom_rail,
-    has_middle_rail,
-    rooms_of,
-)
+from .coordinator import NormanConfigEntry, NormanCoordinator, rooms_of
 from .entity import (
     NormanRailMixin,
     NormanScopeEntity,
@@ -43,6 +37,7 @@ from .entity import (
     async_remove_entity,
 )
 from .models import NormanDevices, NormanPeripheralData
+from .moves import has_bottom_rail, has_middle_rail
 
 _LOGGER = logging.getLogger(__name__)
 

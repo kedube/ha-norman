@@ -613,8 +613,8 @@ async def test_preset_watchdog_resends_a_preset_the_blind_ignored(
     await coordinator.async_refresh()
 
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _press(hass, UID_LIVING, "best_privacy")
         await _preset_watchdog_done(coordinator, UID_LIVING)
@@ -656,8 +656,8 @@ async def test_preset_watchdog_is_not_fooled_when_the_hub_overwrites_its_target(
 
     with (
         patch.object(fake_hub, "_control", _hub),
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         fake_hub.mock.clear_requests()
         fake_hub._register()
@@ -677,8 +677,8 @@ async def test_preset_watchdog_is_quiet_when_the_blind_arrives(
     await coordinator.async_refresh()
 
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _press(hass, UID_LIVING, "best_privacy")
         await _preset_watchdog_done(coordinator, UID_LIVING)
@@ -700,8 +700,8 @@ async def test_a_preset_a_roller_shade_is_already_at_is_not_resent(
     coordinator: NormanCoordinator = init_with_every_product.runtime_data
 
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _press(hass, UID_ROLLER, "best_privacy")
         await _preset_watchdog_done(coordinator, UID_ROLLER)
@@ -728,8 +728,8 @@ async def test_best_view_on_a_raised_perfectsheer_is_not_resent(
     await coordinator.async_refresh()
 
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _press(hass, UID_SHEER, "best_view")
         await _preset_watchdog_done(coordinator, UID_SHEER)
@@ -752,8 +752,8 @@ async def test_preset_watchdog_forgets_itself_when_it_finishes(
     await coordinator.async_refresh()
 
     with (
-        patch("custom_components.norman.coordinator.MOVE_TIMEOUT", 0),
-        patch("custom_components.norman.coordinator.MOVE_REPORT_WAIT", 0),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
     ):
         await _press(hass, UID_LIVING, "best_privacy")
         assert UID_LIVING in coordinator._move_watchers, "scheduled while it runs"

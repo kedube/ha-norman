@@ -51,13 +51,13 @@
         "data": {
           "poll_interval": "輪詢間隔",
           "wake_interval": "喚醒掃描間隔",
-          "control_interval": "Command spacing",
+          "control_interval": "指令間隔",
           "show_sidebar_panel": "在側邊欄顯示 Norman 窗簾"
         },
         "data_description": {
           "poll_interval": "從中樞重新讀取每個窗簾位置的頻率，以防漏掉通知。它只重新讀取中樞已儲存的內容，不會詢問窗簾。0 為關閉；否則為 10 到 300 秒，因為整合本已每 5 分鐘重新讀取一次。",
           "wake_interval": "多久讓中樞 24 小時未收到回報的每個窗簾（Norman 應用程式判定為已中斷連線的標準）回報一次（電量、位置、最後回報）。與應用程式一樣，已連線的窗簾不會被打擾。這會更新中樞本身對這些窗簾的快取，而上面的輪詢只是重新讀取快取。0 為關閉；否則為 600 到 86400 秒。",
-          "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
+          "control_interval": "傳送給中樞的相鄰兩道指令之間間隔的秒數。中樞只有一個無線模組，到達速度超過其傳送能力的指令會被靜默捨棄，因此涉及多個窗簾的場景會排入佇列逐一傳送。如果仍有窗簾漏收與其他指令一同傳送的指令，請調大此值；想讓大型場景更快完成，請調小此值。預設值為 1.6 秒。",
           "show_sidebar_panel": "在 Home Assistant 側邊欄顯示 Norman 窗簾，依房間列出所有窗簾。有多個中樞時，每個中樞各有一個項目。關閉即可移除該項目；Norman 窗簾仍可作為卡片新增至儀表板。"
         }
       }
@@ -65,7 +65,7 @@
     "error": {
       "poll_interval_out_of_range": "輸入 0 可關閉輪詢，或輸入 10 至 300 秒之間的值。",
       "wake_interval_out_of_range": "輸入 0 關閉喚醒掃描，或輸入 600 到 86400 秒之間的值。",
-      "control_interval_out_of_range": "Enter a value between 0.3 and 5 seconds."
+      "control_interval_out_of_range": "輸入 0.3 至 5 秒之間的值。"
     }
   },
   "services": {
@@ -91,15 +91,19 @@
     },
     "room_command": {
       "name": "房間命令",
-      "description": "對房間內所有窗飾執行 Norman 應用程式的房間按鈕。best_privacy、best_view 和 favorite 只需向中樞發送一次請求；房間的 refresh 會向每個窗簾分別發送狀態請求。",
+      "description": "對一個房間、所選窗簾或所有窗簾執行 Norman 應用程式的房間按鈕。best_privacy、best_view、favorite 和 stop 對一個房間只需向中樞發送一次請求；refresh 會向每個窗簾分別發送狀態請求。",
       "fields": {
         "room": {
           "name": "房間",
-          "description": "中樞所知的房間名稱（Norman 應用程式中的房間名稱）。留空則作用於中樞上的所有窗簾。"
+          "description": "中樞所知的房間名稱（Norman 應用程式中的房間名稱）。此項和窗簾都留空則作用於中樞上的所有窗簾。"
+        },
+        "blinds": {
+          "name": "窗簾",
+          "description": "不依房間，而是只作用於這些窗簾，無論它們位於哪個區域。其中包含整個房間時，該房間仍只發送一次請求。"
         },
         "command": {
           "name": "命令",
-          "description": "best_privacy 關閉下軌並將中軌完全打開；best_view 將兩條軌道完全打開；favorite 將房間移至已儲存的最愛位置；refresh 要求房間內每個窗簾回報狀態（不會移動）。"
+          "description": "best_privacy 關閉下軌並將中軌完全打開；best_view 將兩條軌道完全打開；favorite 將窗簾移至已儲存的最愛位置；refresh 要求每個窗簾回報狀態（不會移動）；stop 讓每個窗簾停在原處。"
         },
         "config_entry_id": {
           "name": "中樞",
@@ -109,11 +113,15 @@
     },
     "get_hub_data": {
       "name": "取得 Hub 資料",
-      "description": "讀取 Hub 原始的裝置清單與狀態，與 Hub 傳送的內容完全相同。會回傳回應；回報不支援的窗簾時，請從開發者工具或指令碼使用。",
+      "description": "讀取 Hub 原始的裝置清單與狀態，包含所有欄位。會回傳回應；回報不支援的窗簾時，請從開發者工具或指令碼使用。Hub 的識別資訊會被隱去，窗簾顯示為 blind_1、blind_2 等，而非序號。",
       "fields": {
         "config_entry_id": {
           "name": "Hub",
           "description": "要讀取的 Norman Hub。只設定一台時可省略。"
+        },
+        "show_serial_numbers": {
+          "name": "顯示序號",
+          "description": "回傳每個窗簾的真實 ID（即序號），而非 blind_1、blind_2 等。要將回應發布到 Issue 時，請保持關閉。"
         }
       }
     },
@@ -127,7 +135,7 @@
         },
         "peripheral_uid": {
           "name": "Peripheral UID",
-          "description": "Hub 回報的窗簾 ID（窗簾實體的唯一 ID，或 get_hub_data 中的 PeripheralUID）。"
+          "description": "窗簾的 ID，即其裝置頁面上的序號，也是窗簾實體的唯一 ID。"
         },
         "fields": {
           "name": "欄位",
@@ -162,30 +170,30 @@
         "name": "中樑位置"
       },
       "all_bottom_rail_position": {
-        "name": "All blinds bottom rail position"
+        "name": "所有窗簾下樑位置"
       },
       "all_middle_rail_position": {
-        "name": "All blinds middle rail position"
+        "name": "所有窗簾中樑位置"
       }
     },
     "button": {
       "all_best_privacy": {
-        "name": "All blinds best privacy"
+        "name": "所有窗簾調至最佳隱私"
       },
       "all_best_view": {
-        "name": "All blinds best view"
+        "name": "所有窗簾調至最佳視野"
       },
       "all_favorite": {
-        "name": "All blinds favorite position"
+        "name": "所有窗簾調至我的最愛位置"
       },
       "all_stop": {
-        "name": "All blinds stop"
+        "name": "停止所有窗簾"
       },
       "all_jog_up": {
-        "name": "All blinds jog up"
+        "name": "所有窗簾向上微調"
       },
       "all_jog_down": {
-        "name": "All blinds jog down"
+        "name": "所有窗簾向下微調"
       },
       "best_privacy": {
         "name": "最佳隱私"
@@ -277,6 +285,9 @@
       },
       "pairing_mode": {
         "name": "配對模式"
+      },
+      "push_updates": {
+        "name": "推送更新"
       }
     },
     "scene": {
@@ -328,8 +339,20 @@
     "room_command_failed": {
       "message": "中樞拒絕了房間 {room} 的 {command}：{error}"
     },
+    "blinds_command_failed": {
+      "message": "無法將 {command} 傳送至所選窗簾：{error}"
+    },
     "command_needs_a_room": {
       "message": "{command} 需要指定房間；只有 {commands} 可以傳送到整個中樞。"
+    },
+    "no_blinds_picked": {
+      "message": "請至少選擇一個窗簾，或將窗簾留空以作用於一個房間或整個中樞。"
+    },
+    "not_a_norman_blind": {
+      "message": "{entity} 不是 Norman 窗簾。"
+    },
+    "blind_on_other_hub": {
+      "message": "{entity} 是另一個 Norman 中樞上的窗簾，不在 {hub} 上。"
     },
     "button_needs_room": {
       "message": "{command} 需要從中樞取得 {name} 的房間和群組，但尚未讀取。"

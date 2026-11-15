@@ -41,10 +41,10 @@ from custom_components.norman.coordinator import (
     NormanCoordinator,
     _poll_interval,
     _wake_interval,
-    cover_type,
     room_identifier,
 )
 from custom_components.norman.entity import hub_identifier
+from custom_components.norman.parsing import cover_type, parse_devices
 
 from .conftest import HUB_MAC, FakeHub, cover_entity_id, loaded, settle
 from .const import (
@@ -61,7 +61,7 @@ from .const import (
     status_payload,
 )
 
-process = NormanCoordinator._process_data
+process = parse_devices
 
 
 def test_process_data_merges_devices_and_status() -> None:
@@ -384,6 +384,33 @@ async def test_undocumented_fields_are_logged_once_each(
         for record in caplog.records
         if "undocumented" in record.getMessage()
     )
+
+
+async def test_an_undocumented_hub_field_is_logged_without_its_value(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A new hub-level field could identify the home, so only its type and size are logged.
+
+    The message asks for it to be pasted into a public issue. A blind's field keeps its value,
+    which is what it takes to work out what the field means.
+    """
+    fake_hub.status["HomeLookingField"] = "Lakehouse-Net-5G"
+    fake_hub.peripheral_status(UID_LIVING)["VaneAngle"] = 17
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.norman.coordinator"):
+        await notifications.put({"PeripheralList": [UID_LIVING]})
+        await settle(hass)
+
+    messages = [r.getMessage() for r in caplog.records if "undocumented" in r.getMessage()]
+    hub = next(message for message in messages if "HomeLookingField" in message)
+    assert "Lakehouse-Net-5G" not in hub
+    assert "value withheld: str of length 16" in hub
+    blind = next(message for message in messages if "VaneAngle" in message)
+    assert "value 17" in blind
 
 
 async def test_saved_scene_and_group_unknown_fields_are_logged_once(

@@ -148,7 +148,19 @@ BUTTONS: tuple[NormanButtonDescription, ...] = (
 
 
 @dataclass(frozen=True, kw_only=True)
-class NormanHubButtonDescription(ButtonEntityDescription):
+class NormanScopeButtonDescription(ButtonEntityDescription):
+    """A hub-wide or room-wide button: whether a read of the hub has to follow its press."""
+
+    # Whether the action re-reads the hub itself -- a preset's watches read it for their
+    # targets at once -- so no refresh need follow the press.
+    reads_hub: bool = False
+    # Whether the blinds answer the action one by one, each answer a notification with a
+    # read of its own, so no refresh need follow the press while the stream is up.
+    answered: bool = False
+
+
+@dataclass(frozen=True, kw_only=True)
+class NormanHubButtonDescription(NormanScopeButtonDescription):
     """A button on the hub device and what pressing it does.
 
     ``press_fn`` may return the hub's reply; nothing here reads it, so the type is left
@@ -156,12 +168,6 @@ class NormanHubButtonDescription(ButtonEntityDescription):
     """
 
     press_fn: Callable[[NormanCoordinator], Awaitable[Any]]
-    # Whether the action re-reads the hub itself -- a preset's watches read it for their
-    # targets at once -- so no refresh need follow the press.
-    reads_hub: bool = False
-    # Whether the blinds answer the action one by one, each answer a notification with a
-    # read of its own, so no refresh need follow the press while the stream is up.
-    answered: bool = False
 
 
 # Refresh blinds uses StatusRequest, which did not move shades in live tests. The app's separate
@@ -255,16 +261,10 @@ HUB_BUTTONS: tuple[NormanHubButtonDescription, ...] = (
 
 
 @dataclass(frozen=True, kw_only=True)
-class NormanRoomButtonDescription(ButtonEntityDescription):
+class NormanRoomButtonDescription(NormanScopeButtonDescription):
     """A button on a room's device that acts on its blinds."""
 
     press_fn: Callable[[NormanCoordinator, int | None], Awaitable[Any]]
-    # Whether the action re-reads the hub itself -- a preset's watches read it for their
-    # targets at once -- so no refresh need follow the press.
-    reads_hub: bool = False
-    # Whether the blinds answer the action one by one, each answer a notification with a
-    # read of its own, so no refresh need follow the press while the stream is up.
-    answered: bool = False
 
 
 # The room's own buttons. Most send one request with the room's RoomID; Refresh blinds
@@ -388,10 +388,7 @@ async def async_setup_entry(
     async_add_scope_entities(entry, async_add_entities, _room_buttons, _room_button)
 
 
-def _reads_after(
-    description: NormanHubButtonDescription | NormanRoomButtonDescription,
-    coordinator: NormanCoordinator,
-) -> bool:
+def _reads_after(description: NormanScopeButtonDescription, coordinator: NormanCoordinator) -> bool:
     """Whether the hub is read once the action is sent (see the ``reads_hub`` and ``answered`` flags).
 
     An answered action's first answer is seconds away, so a read straight after the press

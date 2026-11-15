@@ -20,14 +20,21 @@ pytest -q
 
 ## Running the CI checks locally
 
-CI runs four jobs; the two hosted actions (HACS validation and hassfest) cannot be reproduced
-without Docker, the other two can. Running these before pushing avoids a round-trip:
+CI runs seven jobs; the two hosted actions (HACS validation and hassfest) cannot be reproduced
+without Docker, the rest can. Running these before pushing avoids a round-trip:
 
 ```bash
-ruff check .              # lint
-ruff format --check .     # formatting (enforced -- run `ruff format .` to fix)
-pytest -q                 # Python test suite
+ruff check .                                         # lint
+ruff format --check .                                # formatting (run `ruff format .` to fix)
+mypy custom_components/norman --ignore-missing-imports  # types
+pytest -q                                            # Python test suite
+node scripts/check_card.mjs                          # the card, under Node
+node scripts/check_layout.mjs                        # the card's layout, in a real browser
 ```
+
+The layout check needs Google Chrome or Chromium: it finds one on the `PATH` or in the usual
+macOS place, or at `CHROME_PATH`. Add `--screenshots <dir>` to keep a picture of every view it
+measures.
 
 Formatting is enforced, so run `ruff format .` before committing rather than hand-aligning code.
 
@@ -36,8 +43,13 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
 - `custom_components/norman/` contains the integration code:
   - `api.py` — the hub client and the notification stream parser. Every request goes through
     `_async_request`, which is where transport and protocol errors are normalised.
-  - `coordinator.py` — merges the hub's device list and status into `NormanPeripheralData`
-    and runs the notification listener loop.
+  - `coordinator.py` — reads the hub, runs the notification listener loop, keeps the device
+    registry in step, and sends the room, scene and blind commands.
+  - `parsing.py` — turns the hub's device list and status into `NormanPeripheralData` and its
+    saved scenes into `NormanScene`: pure functions, no Home Assistant state.
+  - `moves.py` — where each blind is heading and making sure a command arrived: the move
+    records, the claims that keep a queued command from undoing a newer one, the move
+    watchdog, and the rail arithmetic every move shares. Mixed into the coordinator.
   - `entity.py` — the base entity (device info, availability), the `NormanRailMixin` that
     holds the both-rails-in-every-command rule, and the dynamic-add helper every platform
     uses. A platform that moves a blind should use the mixin rather than calling the API
@@ -48,8 +60,8 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   - `sensor.py` — the diagnostic sensors (battery, last seen, signal, firmware) and the
     hub's own (MAC address, time zone, Wi-Fi network and signal).
   - `config_flow.py` — user, zeroconf discovery, and reconfigure steps.
-  - `services.py` — the integration-level `get_hub_data` and `send_hub_command` actions; the
-    nudge actions live with the covers.
+  - `services.py` — the integration-level `room_command`, `get_hub_data` and
+    `send_hub_command` actions; the nudge actions live with the covers.
   - `frontend.py` — serves `www/`, adds the Norman Shades sidebar panel for each hub whose
     option is on, and registers the card as a dashboard resource, repointing stale entries after
     an upgrade. Every failure here is logged and swallowed: none of it may block setup.
@@ -59,8 +71,13 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
     card's JS is not executed by the test suite; `tests/test_repo_consistency.py` pins its
     structure (picker registration, element names) and `tests/test_frontend.py` covers
     serving and resource registration.
-  - `www/norman-panel.js` — the sidebar panel. It hosts the card full screen and passes it
-    Home Assistant's `narrow` and the panel's config (`config_entry_id`, with several hubs).
+  - `www/norman-strings.js` — the card's words in every language, shared with the panel. Both
+    import it at their own `?v=` stamp, never with a plain relative import: `/norman/` is
+    served with long-lived cache headers, so an unstamped URL could pair an upgraded card with
+    the previous release's words.
+  - `www/norman-panel.js` — the sidebar panel. It hosts the card full screen, passes it Home
+    Assistant's `narrow` and the panel's config (`config_entry_id`, with several hubs), and
+    keeps clear of a phone's safe areas itself (it registers with `handle_safe_area`).
   - `diagnostics.py` — the export, including the raw `hub_traffic` capture.
 - `tests/` contains the pytest suite. Integration tests drive the real code against a fake hub
   registered on `aioclient_mock` (`tests/conftest.py`), so request payloads and error handling
@@ -82,8 +99,16 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   object (`node scripts/check_card.mjs`). The card reads the **frontend** entity registry,
   which does not carry `unique_id` — only `translation_key` and a handful of display fields —
   so a wrong field name there fails silently rather than erroring. Run it after touching
-  `www/norman-shades-card.js`; CI has no Node, so `tests/test_repo_consistency.py` pins the
-  same contract.
+  `www/norman-shades-card.js`; CI runs it in the Card job, and `tests/test_repo_consistency.py`
+  pins the same contract.
+- `scripts/check_layout.mjs` opens the card and the sidebar panel in a real browser, served from
+  `scripts/layout/harness.html` against a fake Home Assistant, at a phone's and a desktop's
+  size with touch, a notch and reduced motion emulated, and measures what they draw: nothing
+  past the screen's edges, finger-sized targets, rooms side by side on a wide screen, the
+  header staying put. `check_card.mjs` uses stand-ins for the DOM and cannot see any of that.
+  Run it after touching the card's styles; CI runs it in the Layout job.
+- `blueprints/automation/norman/` holds the automation blueprints the README offers.
+  `tests/test_blueprints.py` sets each one up as an automation and drives it.
 - `custom_components/norman/translations/` holds one file per language. `en.json` is the
   source of truth and must match `strings.json` exactly. Japanese and both Chinese files use
   the vocabulary of the Norman app itself (its language tables ship unencrypted in the app

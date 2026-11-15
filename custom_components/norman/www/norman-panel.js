@@ -8,7 +8,8 @@
  * Home Assistant hands a panel element `hass`, `narrow`, `route` and `panel`; `panel.config`
  * carries the card's config (`config_entry_id` when there is more than one hub). The panel
  * hosts one norman-shades-card and passes them on. The card fills the page and, where Home
- * Assistant hides its sidebar (phones), shows the button that opens it.
+ * Assistant hides its sidebar (phones), shows the button that opens it, in a header that stays
+ * at the top as the page scrolls.
  *
  * Like the card, a plain custom element with no build step.
  */
@@ -26,46 +27,45 @@ const cardReady = customElements.get("norman-shades-card")
       },
     );
 
-// The one thing the panel says itself: that the card would not load. It cannot borrow the
-// card's words for that, so it keeps its own, in the integration's languages.
-const LOAD_FAILED = {
-  en: "Norman Shades couldn't load. Reload the page; if it keeps happening, check the browser console.",
-  de: "Norman-Rollos konnten nicht geladen werden. Lade die Seite neu; wenn das wieder passiert, sieh in der Browserkonsole nach.",
-  es: "No se pudo cargar Persianas Norman. Recarga la página; si sigue ocurriendo, revisa la consola del navegador.",
-  fr: "Impossible de charger Stores Norman. Rechargez la page ; si le problème persiste, consultez la console du navigateur.",
-  ja: "Norman ブラインドを読み込めませんでした。ページを再読み込みしてください。繰り返し発生する場合は、ブラウザのコンソールを確認してください。",
-  "zh-Hans": "无法加载 Norman 窗帘。请重新加载页面；如果问题持续，请查看浏览器控制台。",
-  "zh-Hant": "無法載入 Norman 窗簾。請重新載入頁面；若問題持續發生，請檢查瀏覽器主控台。",
-};
-
-// The user's language, as the card picks it (norman-shades-card.js, languageOf).
-const languageOf = (hass) => {
-  const wanted = String(
-    hass?.locale?.language || hass?.language || globalThis.document?.documentElement?.lang || "en",
-  );
-  if (LOAD_FAILED[wanted]) return wanted;
-  const [base, ...rest] = wanted.split(/[-_]/);
-  if (base.toLowerCase() === "zh") {
-    return rest.some((part) => /^(hant|tw|hk|mo)$/i.test(part)) ? "zh-Hant" : "zh-Hans";
-  }
-  return LOAD_FAILED[base.toLowerCase()] ? base.toLowerCase() : "en";
-};
+// The one thing the panel says itself: that the card would not load. It says it in the card's
+// words (norman-strings.js, the module the card imports at the same stamp), in the user's
+// language, with English to fall back on should those not load either.
+const LOAD_FAILED = "Norman Shades couldn't load. Reload the page; if it keeps happening, check the browser console.";
+const stringsReady = import(
+  new URL(`./norman-strings.js?v=${encodeURIComponent(PANEL_VERSION)}`, import.meta.url).href
+).catch(() => null);
 
 // No background on the host: Home Assistant paints one behind every panel (from 2026.11 the
 // theme's --ha-panel-background, before that the page's --primary-background-color), and an
 // opaque host would cover a theme's gradient or image with a flat colour.
+//
+// The safe areas -- a phone's notch, status bar and home indicator -- are the panel's own: it
+// registers with handle_safe_area (frontend.py), so Home Assistant does not pad around it. Its
+// own variables where it sets them, the browser's otherwise. The card's header pads itself by
+// the top one (--n-safe-top), so its colour reaches under the status bar as it stays put; the
+// page keeps clear of the rest.
 const STYLES = `
   :host {
+    --n-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    --n-safe-right: var(--safe-area-content-inset-right, var(--safe-area-inset-right, env(safe-area-inset-right, 0px)));
+    --n-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+    --n-safe-left: var(--safe-area-content-inset-left, var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
     display: block;
     height: 100%;
     overflow-y: auto;
     box-sizing: border-box;
   }
-  .page { box-sizing: border-box; max-width: 1280px; min-height: 100%; margin: 0 auto; padding: 16px; }
+  .page {
+    box-sizing: border-box;
+    max-width: 1280px;
+    min-height: 100%;
+    margin: 0 auto;
+    padding: 16px calc(16px + var(--n-safe-right)) calc(16px + var(--n-safe-bottom)) calc(16px + var(--n-safe-left));
+  }
   /* On a phone the card is the page, edge to edge, so the page takes the card's colour. */
   :host([narrow]) { background: var(--ha-card-background, var(--card-background-color, var(--primary-background-color))); }
-  :host([narrow]) .page { padding: 0; }
-  .error { padding: 32px 16px; color: var(--error-color, #db4437); }
+  :host([narrow]) .page { padding: 0 var(--n-safe-right) var(--n-safe-bottom) var(--n-safe-left); }
+  .error { padding: calc(32px + var(--n-safe-top)) 16px 32px; color: var(--error-color, #db4437); }
 `;
 
 class NormanPanel extends HTMLElement {
@@ -140,10 +140,14 @@ class NormanPanel extends HTMLElement {
   _fail(err) {
     const message = document.createElement("div");
     message.className = "error";
-    message.textContent = LOAD_FAILED[languageOf(this._hass)];
+    message.textContent = LOAD_FAILED;
     this._page.append(message);
     // eslint-disable-next-line no-console
     console.error("norman: the sidebar panel could not load the card", err);
+    // In the user's language once the words are here; settled, for anyone waiting on it.
+    this._failed = stringsReady.then((strings) => {
+      if (strings) message.textContent = strings.translate(strings.languageOf(this._hass), "panel_load_failed");
+    });
   }
 }
 

@@ -83,6 +83,12 @@
         "state": {
           "on": "mdi:link-plus"
         }
+      },
+      "push_updates": {
+        "default": "mdi:lan-connect",
+        "state": {
+          "off": "mdi:lan-disconnect"
+        }
       }
     },
     "sensor": {

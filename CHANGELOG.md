@@ -5,6 +5,53 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Norman Shades uses a wide screen.** On a desktop, a tablet or a phone held sideways, the
+  rooms sit side by side in columns, each with its buttons beside its blinds, and the windows
+  grow. Each room's windows used to sit in a narrow strip at the left with its buttons at the
+  far right, and statuses wrapped onto two lines. On a dashboard, the buttons wrap before the
+  hub's name is cut short.
+- **The sidebar page on a phone.** Its header, with the button that opens Home Assistant's
+  sidebar, stays at the top as you scroll. It keeps clear of the notch, the status bar and the
+  home indicator itself, in the Home Assistant app and in a browser, on releases before and
+  after 2026.8. The whole-house presets keep their words, and buttons are finger-sized on a
+  touch screen.
+- **Scrolling no longer moves a blind.** On a touch screen a drag starts only on a rail's pull
+  tab, in a finger-sized area around it, or on a Shutter's tilt rod, and a swipe up or down a
+  SmartDrape's edge scrolls. A swipe to scroll that began anywhere across a rail used to drag
+  it, and moved the blind when the finger lifted.
+- **A room's presets reach exactly the blinds under its heading.** They were sent by the area's
+  name, so renaming an area made them fail, and a blind moved to another area was still moved by
+  its old room's presets and not its new one's. Blinds in no area get presets too.
+- **A room's Stop stops every blind at once.** It sent a stop per blind, 1.6 seconds apart, so
+  the last of six blinds stopped eight seconds late. A whole room of the hub's now gets the
+  room's one stop.
+- **`norman.room_command` takes `blinds` and `stop`.** Pick blinds instead of naming a room and
+  the command reaches exactly those, with one request for any whole room among them. `stop`
+  stops a room, chosen blinds, or every blind.
+- **Push updates sensor.** A diagnostic sensor on the hub shows whether its notification stream
+  is connected. While it is off, a change at a remote or in the Norman app reaches Home Assistant
+  only once the stream reconnects.
+- **Two automation blueprints:** a notification when a blind ignores a command, and when a
+  battery runs low ([Blueprints](README.md#blueprints)).
+- **Diagnostics describe the hub, and leave serial numbers out.** A new `hub` section has its
+  model, firmware, update and pairing state, and the integration's link to it. A blind's id is
+  its serial number, so each blind is called `blind_1`, `blind_2` and so on throughout the file.
+  A hub-level field the integration does not know is logged without its value.
+- **`norman.get_hub_data` leaves serial numbers out too.** Its blinds are called what a
+  diagnostics download calls them, so the response can go straight into an issue. A script that
+  needs the real ids can ask with `show_serial_numbers: true`. To find one blind's id for
+  `norman.send_hub_command`, read the serial number on its device page.
+- **Every language is complete.** The whole-house buttons and sliders and the Command spacing
+  option showed in English in German, Spanish, French, Japanese and Chinese.
+- **Reduced motion and transparency, and a battery you can reach by keyboard.** The card follows
+  the device's reduce-motion and reduce-transparency settings, and the battery level is a button.
+- **Under the hood.** The payload parsing moved to `parsing.py` and the move tracking to
+  `moves.py`; the card's words to `www/norman-strings.js`, shared with the sidebar panel. CI
+  opens the card in a real browser at a phone's and a desktop's size
+  (`scripts/check_layout.mjs`).
+
 ## 0.95 — 2026-10-30
 
 - **PerfectSheer presets documented.** Best privacy and Best view close a PerfectSheer's vanes:

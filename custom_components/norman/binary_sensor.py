@@ -1,4 +1,4 @@
-"""Whether the hub has heard from each blind recently."""
+"""Whether the hub has heard from each blind recently, and whether the hub's pushes arrive."""
 
 from __future__ import annotations
 
@@ -44,6 +44,17 @@ PAIRING_MODE = BinarySensorEntityDescription(
 )
 
 
+# On the hub: whether its notification stream is connected. Every change at a remote, in the
+# Norman app or from here reaches Home Assistant through it at once; while it is down nothing
+# does until it reconnects (every RECONNECT_INTERVAL) or a poll, which is off by default.
+PUSH_UPDATES = BinarySensorEntityDescription(
+    key="push_updates",
+    translation_key="push_updates",
+    device_class=BinarySensorDeviceClass.CONNECTIVITY,
+    entity_category=EntityCategory.DIAGNOSTIC,
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: NormanConfigEntry,
@@ -52,7 +63,9 @@ async def async_setup_entry(
     """Set up a connection sensor for every blind, including ones paired later."""
     coordinator = entry.runtime_data
 
-    async_add_entities([NormanPairingModeSensor(coordinator, entry)])
+    async_add_entities(
+        [NormanPairingModeSensor(coordinator, entry), NormanPushUpdatesSensor(coordinator, entry)]
+    )
 
     def _sensors_for(device_id: int) -> list[NormanConnectionSensor]:
         return [NormanConnectionSensor(coordinator, device_id, entry)]
@@ -75,6 +88,33 @@ class NormanPairingModeSensor(NormanHubEntity, BinarySensorEntity):
         """True when status reports a non-zero PairingMode; None if the hub never said."""
         mode = self.coordinator.hub.pairing_mode
         return None if mode is None else mode != 0
+
+
+class NormanPushUpdatesSensor(NormanHubEntity, BinarySensorEntity):
+    """On while the hub's notification stream is connected, so changes arrive as they happen.
+
+    Off from the moment a connection fails until the hub answers again. The stream is
+    re-opened every NOTIF_MAX_DURATION on purpose, which leaves it on. Always available: it
+    reports the integration's own link to the hub, which is known even when the hub is not
+    answering -- that is when it matters.
+    """
+
+    entity_description = PUSH_UPDATES
+
+    def __init__(self, coordinator: NormanCoordinator, entry: NormanConfigEntry) -> None:
+        """Attach the sensor to the hub device."""
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_{PUSH_UPDATES.key}"
+
+    @property
+    def available(self) -> bool:
+        """Always: the stream's state is the integration's own, known with the hub down."""
+        return True
+
+    @property
+    def is_on(self) -> bool | None:
+        """Whether the stream is connected; None until the first attempt has an answer."""
+        return self.coordinator.push_connected
 
 
 class NormanConnectionSensor(NormanEntity, BinarySensorEntity):

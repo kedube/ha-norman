@@ -1,0 +1,65 @@
+blueprint:
+  name: Norman blind battery low
+  description: >-
+    Runs your actions when a Norman blind's battery falls below the level you choose. Each
+    blind has a Battery level sensor; pick the ones to watch.
+
+    By default it shows a notification in Home Assistant, one per blind.
+  domain: automation
+  source_url: https://github.com/kedube/ha-norman/blob/main/blueprints/automation/norman/battery_low.yaml
+  homeassistant:
+    min_version: 2026.3.0
+  input:
+    batteries:
+      name: Batteries
+      description: The blinds' Battery level sensors to watch.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: norman
+              domain: sensor
+              device_class: battery
+    level:
+      name: Level
+      description: Act when a battery falls below this.
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 50
+          step: 5
+          unit_of_measurement: "%"
+    actions:
+      name: Actions
+      description: >-
+        What to do. In templates, {{ blind }} is the blind's name, {{ battery }} its level
+        in percent and {{ sensor }} the battery sensor.
+      default:
+        - action: persistent_notification.create
+          data:
+            title: "{{ blind }}'s battery is low"
+            message: >-
+              {{ blind }}'s battery is down to {{ battery }}%. Recharge or replace it before
+              the blind stops answering.
+            notification_id: "norman_battery_low_{{ sensor }}"
+      selector:
+        action: {}
+
+mode: queued
+max: 25
+
+variables:
+  sensor: "{{ trigger.entity_id }}"
+  blind: >-
+    {{ device_attr(device_id(trigger.entity_id), 'name_by_user')
+       or device_attr(device_id(trigger.entity_id), 'name')
+       or state_attr(trigger.entity_id, 'friendly_name') }}
+  battery: "{{ trigger.to_state.state | int(0) }}"
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input batteries
+    below: !input level
+
+actions: !input actions

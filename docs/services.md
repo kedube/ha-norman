@@ -54,19 +54,22 @@ data:
 
 ## `norman.room_command`
 
-Run a room command against every blind in a room. The three presets use one hub request with
-`RoomID`; `refresh` sends one status request per blind because `RoomID` does not constrain
-`StatusRequest`. Each room's device has
-the same four as buttons ([Rooms and the whole house](entities.md#rooms-and-the-whole-house));
-this action is for naming the room in a script. After a preset, every blind it reached is
-checked, and one that never moves is sent the preset on its own
-([Data updates](entities.md#data-updates)).
+Run a room command against every blind in a room, against blinds you pick, or against every
+blind on the hub. The three presets and `stop` use one hub request with `RoomID`; `refresh`
+sends one status request per blind because `RoomID` does not constrain `StatusRequest`. Each
+room's device has the same commands as buttons
+([Rooms and the whole house](entities.md#rooms-and-the-whole-house)); this action is for naming
+the room, or the blinds, in a script. After a preset, every blind it reached is checked, and one
+that never moves is sent the preset on its own ([Data updates](entities.md#data-updates)).
 
 | Field | Required | Values | Meaning |
 |---|---|---|---|
-| `room` | no | a room name | As the **hub** knows it (the Norman app's room name), matched case-insensitively. Not the Home Assistant area, which may have been renamed. **Omit it to address every blind on the hub.** |
-| `command` | yes | `best_privacy`, `best_view`, `favorite`, `refresh` | Which of the app's buttons to press. |
-| `config_entry_id` | no | | Which hub, when more than one is set up. |
+| `room` | no | a room name | As the **hub** knows it (the Norman app's room name), matched case-insensitively. Not the Home Assistant area, which may have been renamed. |
+| `blinds` | no | cover entities | Instead of `room`: exactly these blinds, whatever Home Assistant area they are in. Any of a blind's Norman entities names it. Not with `room`. |
+| `command` | yes | `best_privacy`, `best_view`, `favorite`, `refresh`, `stop` | Which of the app's buttons to press. |
+| `config_entry_id` | no | | Which hub, when more than one is set up. With `blinds`, they must all be on it. |
+
+**Leave out both `room` and `blinds` to address every blind on the hub.**
 
 | Command | Sends | Effect |
 |---|---|---|
@@ -74,6 +77,7 @@ checked, and one that never moves is sent the preset on its own
 | `best_view` | `{"Switch": 1, "RoomID": …}` | Both rails to **100** — fully open. A PerfectSheer goes up with its vanes closed. |
 | `favorite` | `{"Favorite": 0, "RoomID": …}` | Sends the room to its stored favorite position — the same one the physical remote's favorite button uses. Home Assistant's cover actions have no equivalent; the room's own **Favorite position** button sends the same request. |
 | `refresh` | One `{"PeripheralUID": X, "StatusRequest": 0}` per blind; without `room`, one unscoped `{"StatusRequest": 0}` | Asks blinds to report battery, position and last-seen without moving them in live tests. Room requests are paced through the hub's command queue. An unscoped request reached all 13 blinds on one hub within two minutes. Answers arrive as notifications after the action returns. The Norman app's separate `ReportBatteryLevel` command can close shades; it is available as an explicitly named button on room and hub devices. |
+| `stop` | `{"MotorStop": 170, "RoomID": …}`; without `room`, one unscoped `{"MotorStop": 170}` | Stops every blind in the room where it is, in one request the hub carries to each blind, as the room's own **Stop** button does. A stop is sent ahead of every other command waiting its turn. |
 
 ```yaml
 action: norman.room_command
@@ -91,7 +95,28 @@ data:
   command: best_view      # every blind in the house, in one request
 ```
 
-All four commands work without a room — the first three are what the app's **All Rooms** screen sends, and `refresh` without a room is one unscoped `StatusRequest`, which reaches every blind on the hub.
+Every command works without a room — the presets are what the app's **All Rooms** screen sends, `refresh` without a room is one unscoped `StatusRequest`, which reaches every blind on the hub, and `stop` is the unscoped `MotorStop` of the hub's **All blinds stop** button.
+
+### Chosen blinds
+
+`blinds` names blinds rather than a room, and the command reaches exactly those. A room of the
+hub's that they make up completely still gets its one room request; every other blind gets its
+own, as its own button sends it — a preset by its room and group, a stop by its id, and none
+for a Shutter, whose louvers take no stop. The Norman Shades card sends its presets and its
+room **Stop** this way, with the blinds it shows under the heading, so they reach exactly
+those blinds even when an area has been renamed or a blind moved to another one.
+
+```yaml
+action: norman.room_command
+data:
+  blinds:
+    - cover.office_office_left_bottom_rail
+    - cover.office_office_right_bottom_rail
+  command: stop
+```
+
+A blind the hub has not placed in a room and group (its device list has not been read) cannot
+take a preset; with none that can, the action says so and sends nothing.
 
 `Switch` sets both rails to fixed positions; it is not a relative move.
 
@@ -160,13 +185,14 @@ spacing.
 
 ## `norman.get_hub_data`
 
-Read the hub's raw device list and status, exactly as the hub sends them, and return them as a
+Read the hub's raw device list and status as the hub sends them, and return them as a
 response. Not tied to an entity. Meant for bug reports and for mapping new blind types: the
 response includes every field, including ones the integration does not understand.
 
 | Field | Required | Meaning |
 |---|---|---|
 | `config_entry_id` | only with several hubs | Which hub to read. With one hub set up it can be omitted; a hub that is ignored, disabled or not set up does not count. |
+| `show_serial_numbers` | no | `true` gives each blind's real id, its serial number, instead of `blind_1`, `blind_2` and so on. Leave it off for a response you will post. |
 
 Response:
 
@@ -188,9 +214,11 @@ response_variable: hub
 ```
 
 The hub's identity, location (`GeoLoc`), Wi-Fi name, time zone, and custom name are blanked in
-the response, the same as in a diagnostics download; everything about the blinds is left as the
-hub sent it. Skim it before posting all the same, since the hub may send fields nobody has seen
-yet. See the README's [Diagnostics](../README.md#diagnostics).
+the response, the same as in a diagnostics download. A blind's id is its serial number, so each
+`PeripheralUID` is the alias a diagnostics download gives that blind (`blind_1`, `blind_2`, …),
+the same in the device list and the status, so the two still line up. Everything else about the
+blinds is left as the hub sent it. Skim it before posting all the same, since the hub may send
+fields nobody has seen yet. See the README's [Diagnostics](../README.md#diagnostics).
 
 ## `norman.send_hub_command`
 
@@ -205,7 +233,7 @@ script that user started. Automations still run it.
 
 | Field | Required | Meaning |
 |---|---|---|
-| `peripheral_uid` | yes | The blind's id: the cover entity's unique id, or `PeripheralUID` in `get_hub_data`. |
+| `peripheral_uid` | yes | The blind's id: the serial number on its device page, which is also its cover entity's unique id. |
 | `fields` | yes | A flat object of extra fields (numbers, strings, booleans). |
 | `config_entry_id` | only with several hubs | Which hub. |
 

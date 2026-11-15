@@ -2,8 +2,9 @@
 
 Per blind the integration creates a **cover** (two for two-rail blinds), a **position slider**
 per rail, six to eight **buttons** depending on the product, four **diagnostic sensors**, and a
-**connection** sensor, all on one **device**. The hub gets a device of its own carrying four diagnostic sensors, a pairing-mode
-sensor, a slider per rail for every blind at once, and nine buttons. Each of the hub's
+**connection** sensor, all on one **device**. The hub gets a device of its own carrying four
+diagnostic sensors, a pairing-mode sensor, a push-updates sensor, a slider per rail for every
+blind at once, and nine buttons. Each of the hub's
 **rooms** gets a device too, with a slider per rail and eight buttons that act on the whole room
 ([Rooms and the whole house](#rooms-and-the-whole-house)).
 
@@ -13,7 +14,7 @@ sensor, a slider per rail for every blind at once, and nine buttons. Each of the
 | Number | Bottom rail position (not on a Shutter); Middle rail position on two-rail blinds | Bottom rail position, Middle rail position, when a blind in the room has that rail | All blinds bottom rail position, All blinds middle rail position |
 | Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status; Calibration\* on every type but a SmartDrape; Find top\* on dual-rail cellular shades | Stop, Best privacy, Best view, Favorite position, Jog up, Jog down, Refresh blinds, Report battery levels (may close shades) | All blinds best privacy, All blinds best view, All blinds favorite position, All blinds stop, All blinds jog up, All blinds jog down, Refresh blinds, Report battery levels (may close shades), Start pairing |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | — | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
-| Binary sensor | Connection | — | Pairing mode |
+| Binary sensor | Connection | — | Pairing mode, Push updates |
 
 \* disabled by default; enable from the entity's settings.
 
@@ -529,11 +530,12 @@ The hub device has its own diagnostic sensors:
 | Wi-Fi network | `WiFiSSID` in the registration reply | enabled | The network the hub is joined to. Diagnostics downloads still redact it. |
 | Wi-Fi signal | `WiFiRSSI` in status | disabled | dBm. |
 
-And one binary sensor:
+And two binary sensors:
 
 | Binary sensor | Source | Notes |
 |---|---|---|
 | Pairing mode | `PairingMode` in status | **On** while the hub's pairing window is open (status reports `5`; it lasts ten minutes after **Start pairing** or the app opens it), **off** at `0`. |
+| Push updates | the hub's notification stream | Connectivity. **On** while the stream is connected, so a move at a remote, in the Norman app or from Home Assistant shows at once; **off** from a failed connection until the hub answers again, when nothing arrives until it reconnects (every 15 seconds) or a poll, which is off by default ([Data updates](#data-updates)). Unknown until the first connection has an answer. The stream is re-opened every five minutes on purpose, which leaves it on. Available while the hub is not answering, which is when it matters. |
 
 ## Removing a blind
 

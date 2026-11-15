@@ -18,9 +18,11 @@ is on, so the card is there without building a dashboard at all.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
 import re
+from typing import Any
 
 from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
@@ -267,6 +269,21 @@ def panel_title(language: str | None) -> str:
     return PANEL_TITLES.get(base.lower(), PANEL_TITLE)
 
 
+def _safe_area_kwargs() -> dict[str, Any]:
+    """Tell Home Assistant the panel keeps clear of a phone's notch and home indicator itself.
+
+    From 2026.8 Home Assistant pads a custom panel for the screen's safe areas unless it opts
+    out, so the strips under the status bar and the home indicator showed its background
+    rather than the card's. Before 2026.8 nothing padded it at all, and the panel's header
+    could sit under the status bar. The panel now pads itself (www/norman-panel.js), so it
+    opts out wherever Home Assistant has the option; on older releases there is nothing to
+    opt out of.
+    """
+    if "handle_safe_area" in inspect.signature(panel_custom.async_register_panel).parameters:
+        return {"handle_safe_area": True}
+    return {}
+
+
 def _wanted_panels(entries: list[ConfigEntry], language: str | None) -> dict[str, _PanelSpec]:
     """The sidebar panels these set-up entries call for: url path -> (title, config items).
 
@@ -328,6 +345,7 @@ async def _async_sync_panels(hass: HomeAssistant) -> None:
                 module_url=panel_module_url(hass),
                 config=dict(config),
                 require_admin=False,
+                **_safe_area_kwargs(),
             )
         except Exception:  # noqa: BLE001 - the sidebar is best-effort
             _LOGGER.exception("Norman could not add its sidebar panel at /%s", url_path)
