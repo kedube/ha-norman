@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 0.96 — 2026-11-15
 
 - **Norman Shades uses a wide screen.** On a desktop, a tablet or a phone held sideways, the
   rooms sit side by side in columns, each with its buttons beside its blinds, and the windows
