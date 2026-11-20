@@ -1,0 +1,1216 @@
+{
+ "coast-dawn": {
+  "place": "coast",
+  "when": "dawn",
+  "title": "Morning haze off Bixby Creek",
+  "where": "Big Sur, California",
+  "by": "Ian Schneider",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Bixby_Creek_Bridge%2C_Monterey%2C_United_States_%28Unsplash%29.jpg",
+  "tone": "",
+  "aspect": 1.4977,
+  "strip": [
+   0.0,
+   0.07535,
+   1.0,
+   0.74883
+  ],
+  "colours": [
+   "#c2d6e1",
+   "#83adc3",
+   "#527d91"
+  ],
+  "rev": "b1c0bd1fe7",
+  "motion": {
+   "horizon": 0.304,
+   "water_top": 0.304,
+   "sky_color": [
+    0.813,
+    0.876,
+    0.914
+   ],
+   "sky": [
+    0.005,
+    0,
+    5.5
+   ],
+   "water": [
+    -0.007,
+    0.0028,
+    2.6
+   ],
+   "birds": [
+    "gull",
+    "gull",
+    "swallow"
+   ],
+   "light": "morning"
+  }
+ },
+ "coast-day": {
+  "place": "coast",
+  "when": "day",
+  "title": "Clear afternoon on the headlands",
+  "where": "Big Sur, California",
+  "by": "Jakub Gorajek",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Big_Sur%2C_United_States_%28Unsplash_dpRTXG_n8qk%29.jpg",
+  "tone": "",
+  "aspect": 1.6631,
+  "strip": [
+   0.0,
+   0.06739,
+   1.0,
+   0.83153
+  ],
+  "colours": [
+   "#7ec0d6",
+   "#207797",
+   "#1b5c70"
+  ],
+  "rev": "1347343f87",
+  "motion": {
+   "horizon": 0.251,
+   "water_top": 0.435,
+   "sky_color": [
+    0.507,
+    0.755,
+    0.839
+   ],
+   "sky": [
+    0.0055,
+    0,
+    5.5
+   ],
+   "water": [
+    -0.0065,
+    0.0024,
+    2.6
+   ],
+   "glare": 1,
+   "birds": [
+    "gull",
+    "gull",
+    "hawk",
+    "crow"
+   ],
+   "light": "day"
+  }
+ },
+ "coast-partly": {
+  "place": "coast",
+  "when": "partly",
+  "title": "Fog lifting off the cliffs",
+  "where": "Big Sur, California",
+  "by": "U.S. Fish and Wildlife Service",
+  "license": "Public domain",
+  "source": "https://commons.wikimedia.org/wiki/File:Fog_rises_in_Big_Sur_%2815362982985%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.15,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#74a6d6",
+   "#a1aab8",
+   "#63798e"
+  ],
+  "rev": "b8f39d4442",
+  "motion": {
+   "horizon": 0.611,
+   "water_top": 0.662,
+   "sky_color": [
+    0.595,
+    0.693,
+    0.809
+   ],
+   "sky": [
+    0.006,
+    0,
+    5.5
+   ],
+   "water": [
+    -0.005,
+    0.0028,
+    2.6
+   ],
+   "glare": 0.6,
+   "birds": [
+    "gull",
+    "gull",
+    "crow"
+   ],
+   "light": "day"
+  }
+ },
+ "coast-cloudy": {
+  "place": "coast",
+  "when": "cloudy",
+  "title": "Overcast over the coves",
+  "where": "Big Sur, California",
+  "by": "Thomas Marban",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Rocky_coastline_at_Big_Sur%2C_CA_%28Unsplash%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.0875,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#7889aa",
+   "#445f7c",
+   "#134160"
+  ],
+  "rev": "c30521bfe9",
+  "motion": {
+   "horizon": 0.365,
+   "water_top": 0.365,
+   "sky_color": [
+    0.615,
+    0.65,
+    0.77
+   ],
+   "sky": [
+    0.005,
+    0,
+    5.5
+   ],
+   "water": [
+    -0.0065,
+    0.0028,
+    2.6
+   ],
+   "birds": [
+    "gull",
+    "crow"
+   ],
+   "light": "overcast"
+  }
+ },
+ "coast-fog": {
+  "place": "coast",
+  "when": "fog",
+  "title": "Sea of fog at golden hour",
+  "where": "Big Sur, California",
+  "by": "Jesse Collins",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Big_Sur%2C_United_States_%28Unsplash_znekTMMoBrM%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.0625,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#e8dac0",
+   "#d3ad8d",
+   "#c8a17c"
+  ],
+  "rev": "78f5799ea9",
+  "motion": {
+   "horizon": 0.47,
+   "water_top": 1.0,
+   "sky_color": [
+    0.867,
+    0.791,
+    0.699
+   ],
+   "sky": [
+    0.0085,
+    0.0005,
+    5
+   ],
+   "water": [
+    0,
+    0,
+    0
+   ],
+   "fog": 0.6,
+   "birds": [
+    "gull",
+    "hawk"
+   ],
+   "light": "golden"
+  }
+ },
+ "coast-rain": {
+  "place": "coast",
+  "when": "rain",
+  "title": "Rain falling at sunset",
+  "where": "",
+  "by": "Andrew Ruiz",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Andrew_Ruiz_2015-09-18_%28Unsplash%29.jpg",
+  "tone": "",
+  "aspect": 1.5023,
+  "strip": [
+   0.0,
+   0.12441,
+   1.0,
+   0.75117
+  ],
+  "colours": [
+   "#4d4468",
+   "#e6a68b",
+   "#b5795e"
+  ],
+  "rev": "122205c546",
+  "motion": {
+   "horizon": 0.679,
+   "water_top": 0.75,
+   "sky_color": [
+    0.557,
+    0.448,
+    0.483
+   ],
+   "sky": [
+    0.0035,
+    0,
+    6
+   ],
+   "water": [
+    0.0018,
+    0,
+    3.4
+   ],
+   "fall": [
+    0.34,
+    0.43,
+    1.02,
+    0.665,
+    0.0075,
+    2.2,
+    -0.04,
+    0.06
+   ],
+   "rain": 0.45,
+   "fog": 0.1,
+   "ambient": [
+    0.8,
+    0.72,
+    0.74
+   ]
+  }
+ },
+ "coast-storm": {
+  "place": "coast",
+  "when": "storm",
+  "title": "Lightning over the lagoon",
+  "where": "Dee Why, New South Wales",
+  "by": "Jeremy Bishop",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Purple_Lightning_Dee_Why_%28Unsplash%29.jpg",
+  "tone": "night",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.175,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#85709f",
+   "#9a87bc",
+   "#69577b"
+  ],
+  "rev": "22dcf16918",
+  "motion": {
+   "horizon": 0.639,
+   "water_top": 0.658,
+   "sky_color": [
+    0.444,
+    0.377,
+    0.472
+   ],
+   "sky": [
+    0.0065,
+    0,
+    5
+   ],
+   "water": [
+    0.002,
+    0,
+    3.2
+   ],
+   "rain": 0.5,
+   "storm": 1,
+   "ambient": [
+    0.46,
+    0.44,
+    0.56
+   ]
+  }
+ },
+ "coast-golden": {
+  "place": "coast",
+  "when": "golden",
+  "title": "Late sun through the canyon",
+  "where": "Bixby Bridge, Big Sur",
+  "by": "Dave Lastovskiy",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Bixby_Bridge_%28Unsplash_lsOy-suy2-g%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.0875,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#b08d61",
+   "#625956",
+   "#303c3b"
+  ],
+  "rev": "a8304d5ae6",
+  "motion": {
+   "horizon": 0.22,
+   "water_top": 0.426,
+   "sky_color": [
+    0.919,
+    0.932,
+    0.946
+   ],
+   "sky": [
+    0.0042,
+    0,
+    6
+   ],
+   "water": [
+    -0.005,
+    0.0045,
+    2.6
+   ],
+   "birds": [
+    "gull",
+    "crow",
+    "swallow"
+   ],
+   "light": "golden"
+  }
+ },
+ "coast-sunset": {
+  "place": "coast",
+  "when": "sunset",
+  "title": "Sunset behind the sea stack",
+  "where": "Pfeiffer Beach, Big Sur",
+  "by": "Vashishtha Jogi",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Ocean_rock_%28Unsplash%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.1125,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#d0e2dc",
+   "#eac68c",
+   "#4c79ac"
+  ],
+  "rev": "bd8a117e10",
+  "motion": {
+   "horizon": 0.572,
+   "water_top": 0.572,
+   "sky_color": [
+    0.816,
+    0.841,
+    0.786
+   ],
+   "sky": [
+    0.0055,
+    0,
+    5.5
+   ],
+   "water": [
+    -0.008,
+    0.0036,
+    2.6
+   ],
+   "birds": [
+    "gull",
+    "gull",
+    "gull",
+    "goose"
+   ],
+   "light": "sunset"
+  }
+ },
+ "coast-dusk": {
+  "place": "coast",
+  "when": "dusk",
+  "title": "Blue hour above the fog bank",
+  "where": "Big Sur, California",
+  "by": "Robson Hatsukami Morgan",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Winding_road_near_the_seaside_in_Big_Sur_%28Unsplash%29.jpg",
+  "tone": "",
+  "aspect": 1.4081,
+  "strip": [
+   0.0,
+   0.08878,
+   1.0,
+   0.70407
+  ],
+  "colours": [
+   "#e0e1e8",
+   "#3178a4",
+   "#1f709b"
+  ],
+  "rev": "72911826f0",
+  "motion": {
+   "horizon": 0.316,
+   "water_top": 0.417,
+   "sky_color": [
+    0.914,
+    0.915,
+    0.944
+   ],
+   "sky": [
+    0.006,
+    0,
+    5.5
+   ],
+   "water": [
+    -0.0035,
+    0.0018,
+    3
+   ],
+   "fog": 0.12,
+   "moon": true,
+   "birds": [
+    "gull",
+    "bat"
+   ],
+   "light": "dusk"
+  }
+ },
+ "coast-twilight": {
+  "place": "coast",
+  "when": "twilight",
+  "title": "Last light at Bixby Creek",
+  "where": "Big Sur, California",
+  "by": "James Donovan",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Big_Sur%2C_Bixby_Creek_Bridge_%28Unsplash_lbln7chS6g%29.jpg",
+  "tone": "night",
+  "aspect": 1.606,
+  "strip": [
+   0.2,
+   0.16092,
+   0.8,
+   0.64241
+  ],
+  "colours": [
+   "#646cbe",
+   "#897fb8",
+   "#45496d"
+  ],
+  "rev": "fd786be66b",
+  "motion": {
+   "horizon": 0.421,
+   "water_top": 0.412,
+   "sky_color": [
+    0.426,
+    0.418,
+    0.665
+   ],
+   "sky": [
+    0.0026,
+    0,
+    6
+   ],
+   "water": [
+    -0.0024,
+    0.0014,
+    3
+   ],
+   "stars": 0.5,
+   "moon": true,
+   "birds": [
+    "bat"
+   ],
+   "light": "dusk"
+  }
+ },
+ "coast-night": {
+  "place": "coast",
+  "when": "night",
+  "title": "The Milky Way over the coast",
+  "where": "Big Sur, California",
+  "by": "Robson Hatsukami Morgan",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Milky_Way_Big_Sur_%28Unsplash%29.jpg",
+  "tone": "night",
+  "aspect": 1.5,
+  "strip": [
+   0.15,
+   0.145,
+   0.85,
+   0.6375
+  ],
+  "colours": [
+   "#374559",
+   "#2f627b",
+   "#9f9c83"
+  ],
+  "rev": "c2126e94b0",
+  "motion": {
+   "horizon": 0.732,
+   "water_top": 0.732,
+   "sky_color": [
+    0.24,
+    0.297,
+    0.331
+   ],
+   "sky": [
+    0,
+    0,
+    0
+   ],
+   "water": [
+    -0.0018,
+    0,
+    3.4
+   ],
+   "stars": 1,
+   "moon": true
+  }
+ },
+ "lake-dawn": {
+  "place": "lake",
+  "when": "dawn",
+  "title": "Pink light on the boulders",
+  "where": "Lake Tahoe, Nevada",
+  "by": "Felix Stahlberg",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lake_Tahoe_Sunset_%2839995495833%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.0625,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#ee9f85",
+   "#8a604c",
+   "#7e5b4e"
+  ],
+  "rev": "24a02a22b5",
+  "motion": {
+   "horizon": 0.268,
+   "water_top": 0.312,
+   "sky_color": [
+    0.905,
+    0.624,
+    0.565
+   ],
+   "sky": [
+    0.0042,
+    0,
+    6
+   ],
+   "water": [
+    0.0052,
+    0.0014,
+    2.6
+   ],
+   "birds": [
+    "swallow",
+    "gull",
+    "goose"
+   ],
+   "light": "golden"
+  }
+ },
+ "lake-day": {
+  "place": "lake",
+  "when": "day",
+  "title": "Clear water at the boulders",
+  "where": "Lake Tahoe",
+  "by": "Clara Marie",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lake_Tahoe%2C_United_States_%28Unsplash%29.jpg",
+  "tone": "",
+  "aspect": 1.5111,
+  "strip": [
+   0.0,
+   0.11,
+   1.0,
+   0.75556
+  ],
+  "colours": [
+   "#9cb0d1",
+   "#686967",
+   "#66838c"
+  ],
+  "rev": "4e8f03b634",
+  "motion": {
+   "horizon": 0.346,
+   "water_top": 0.484,
+   "sky_color": [
+    0.759,
+    0.781,
+    0.844
+   ],
+   "sky": [
+    0.0055,
+    0,
+    5.5
+   ],
+   "water": [
+    0.0048,
+    0.0014,
+    2.6
+   ],
+   "glare": 1,
+   "birds": [
+    "gull",
+    "swallow",
+    "hawk",
+    "songbird"
+   ],
+   "light": "day"
+  }
+ },
+ "lake-partly": {
+  "place": "lake",
+  "when": "partly",
+  "title": "Clouds building over the Sierra",
+  "where": "Lake Tahoe",
+  "by": "Artur Westergren",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lake_Tahoe%2C_United_States_%28Unsplash_U9U7wvIm0gY%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.2,
+   0.14,
+   0.8,
+   0.6
+  ],
+  "colours": [
+   "#82a5e1",
+   "#3864aa",
+   "#5f94b8"
+  ],
+  "rev": "24255a9fa1",
+  "motion": {
+   "horizon": 0.391,
+   "water_top": 0.568,
+   "sky_color": [
+    0.625,
+    0.672,
+    0.854
+   ],
+   "sky": [
+    0.0062,
+    0,
+    5.5
+   ],
+   "water": [
+    0.0052,
+    0.0012,
+    2.6
+   ],
+   "glare": 0.5,
+   "birds": [
+    "gull",
+    "goose",
+    "hawk"
+   ],
+   "light": "day"
+  }
+ },
+ "lake-cloudy": {
+  "place": "lake",
+  "when": "cloudy",
+  "title": "Bright overcast on Emerald Bay",
+  "where": "Lake Tahoe, California",
+  "by": "Jad Limcaco",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Emerald_Bay_State_Park%2C_South_Lake_Tahoe%2C_United_States_%28Unsplash_sY6X04d--VY%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.125,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#ebf3fc",
+   "#5a6d81",
+   "#e7eef7"
+  ],
+  "rev": "78d8889c98",
+  "motion": {
+   "horizon": 0.297,
+   "water_top": 0.395,
+   "sky_color": [
+    0.995,
+    0.996,
+    0.999
+   ],
+   "sky": [
+    0.0042,
+    0,
+    6
+   ],
+   "water": [
+    0.0018,
+    0.0005,
+    3.6
+   ],
+   "birds": [
+    "goose",
+    "gull"
+   ],
+   "light": "overcast"
+  }
+ },
+ "lake-fog": {
+  "place": "lake",
+  "when": "fog",
+  "title": "Fannette Island in fog",
+  "where": "Emerald Bay, Lake Tahoe",
+  "by": "Etienne Desclides",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Foggy_Mountain_Weather_%28Unsplash%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.1,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#bcc5c9",
+   "#bdcad3",
+   "#afbec5"
+  ],
+  "rev": "927f2a5de3",
+  "motion": {
+   "horizon": 0.62,
+   "water_top": 1.0,
+   "sky_color": [
+    0.804,
+    0.833,
+    0.848
+   ],
+   "sky": [
+    0.009,
+    0.0006,
+    5
+   ],
+   "water": [
+    0,
+    0,
+    0
+   ],
+   "fog": 0.8
+  }
+ },
+ "lake-rain": {
+  "place": "lake",
+  "when": "rain",
+  "title": "Rain coming down across the lake",
+  "where": "Yellowstone Lake, Wyoming",
+  "by": "National Park Service, Diane Renkin",
+  "license": "Public domain",
+  "source": "https://commons.wikimedia.org/wiki/File:Rain_coming_down_on_north_end_of_Yellowstone_Lake_%2824801b31-44ef-4142-92cc-b6068cd7e010%29.jpg",
+  "tone": "",
+  "aspect": 1.5088,
+  "strip": [
+   0.0,
+   0.09823,
+   1.0,
+   0.75442
+  ],
+  "colours": [
+   "#4b70c0",
+   "#5471ae",
+   "#4d6a94"
+  ],
+  "rev": "dcae78369c",
+  "motion": {
+   "horizon": 0.415,
+   "water_top": 0.446,
+   "sky_color": [
+    0.488,
+    0.587,
+    0.811
+   ],
+   "sky": [
+    0.0045,
+    0,
+    5.5
+   ],
+   "water": [
+    0.007,
+    0.0018,
+    2.3
+   ],
+   "fall": [
+    0.16,
+    0.225,
+    0.82,
+    0.405,
+    0.0075,
+    2.2,
+    -0.02,
+    0.045
+   ],
+   "rain": 0.8,
+   "fog": 0.08,
+   "ambient": [
+    0.72,
+    0.78,
+    0.9
+   ]
+  }
+ },
+ "lake-storm": {
+  "place": "lake",
+  "when": "storm",
+  "title": "Lightning behind the ridge",
+  "where": "Lake Chelan, Washington",
+  "by": "National Park Service",
+  "license": "Public domain",
+  "source": "https://commons.wikimedia.org/wiki/File:Lightning_over_south_Lake_Chelan_%28664bc3189da54f0cbf113b2b14e294c7%29.JPG",
+  "tone": "night",
+  "aspect": 1.3333,
+  "strip": [
+   0.12,
+   0.4,
+   0.7,
+   0.46667
+  ],
+  "colours": [
+   "#413b49",
+   "#ceadb6",
+   "#5d4d57"
+  ],
+  "rev": "685590ddf5",
+  "motion": {
+   "horizon": 0.665,
+   "water_top": 0.816,
+   "sky_color": [
+    0.196,
+    0.177,
+    0.202
+   ],
+   "sky": [
+    0.0065,
+    0,
+    5
+   ],
+   "water": [
+    0.0024,
+    0.0014,
+    2.8
+   ],
+   "rain": 0.7,
+   "storm": 1,
+   "ambient": [
+    0.42,
+    0.4,
+    0.52
+   ]
+  }
+ },
+ "lake-snow": {
+  "place": "lake",
+  "when": "snow",
+  "title": "Snow on the beach",
+  "where": "Camp Richardson, Lake Tahoe",
+  "by": "Blake Everett",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Camp_Richardson_Beach%2C_Lake_Tahoe.jpg",
+  "tone": "",
+  "aspect": 1.5041,
+  "strip": [
+   0.0,
+   0.08678,
+   1.0,
+   0.75206
+  ],
+  "colours": [
+   "#a9b9cc",
+   "#304765",
+   "#5e78a4"
+  ],
+  "rev": "87fb0472eb",
+  "motion": {
+   "horizon": 0.262,
+   "water_top": 0.499,
+   "sky_color": [
+    0.825,
+    0.857,
+    0.897
+   ],
+   "sky": [
+    0.0035,
+    0,
+    6
+   ],
+   "water": [
+    0.007,
+    0.0028,
+    2.4
+   ],
+   "snow": 1,
+   "fog": 0.1,
+   "ambient": [
+    0.93,
+    0.95,
+    1.0
+   ]
+  }
+ },
+ "lake-golden": {
+  "place": "lake",
+  "when": "golden",
+  "title": "Golden hour from the east shore",
+  "where": "Lake Tahoe, Nevada",
+  "by": "Felix Stahlberg",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lake_Tahoe_Sunset_%2846907880112%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.13475,
+   0.82,
+   0.615
+  ],
+  "colours": [
+   "#faa862",
+   "#976456",
+   "#694a3e"
+  ],
+  "rev": "4360cf8000",
+  "motion": {
+   "horizon": 0.275,
+   "water_top": 0.375,
+   "sky_color": [
+    0.777,
+    0.548,
+    0.465
+   ],
+   "sky": [
+    0.0042,
+    0,
+    6
+   ],
+   "water": [
+    0.0056,
+    0.0018,
+    2.6
+   ],
+   "birds": [
+    "gull",
+    "swallow",
+    "goose"
+   ],
+   "light": "golden"
+  }
+ },
+ "lake-sunset": {
+  "place": "lake",
+  "when": "sunset",
+  "title": "Sunset over the Sierra crest",
+  "where": "Lakeside Beach, Lake Tahoe",
+  "by": "Blake Everett",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lakeside_Beach%2C_Lake_Tahoe_03.jpg",
+  "tone": "",
+  "aspect": 1.5041,
+  "strip": [
+   0.0,
+   0.09918,
+   1.0,
+   0.75206
+  ],
+  "colours": [
+   "#cfa59e",
+   "#384361",
+   "#646a7e"
+  ],
+  "rev": "64f3098e4c",
+  "motion": {
+   "horizon": 0.391,
+   "water_top": 0.526,
+   "sky_color": [
+    0.762,
+    0.711,
+    0.747
+   ],
+   "sky": [
+    0.0058,
+    0,
+    5.5
+   ],
+   "water": [
+    0.0014,
+    0.01,
+    2.4
+   ],
+   "birds": [
+    "goose",
+    "gull",
+    "gull"
+   ],
+   "light": "sunset"
+  }
+ },
+ "lake-dusk": {
+  "place": "lake",
+  "when": "dusk",
+  "title": "Blue hour at Bonsai Rock",
+  "where": "Lake Tahoe, Nevada",
+  "by": "Joseph Albanese",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lake_Tahoe%2C_United_States_%28Unsplash_jtLxG4HDaLM%29.jpg",
+  "tone": "",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.1125,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#5c81ad",
+   "#293c4f",
+   "#203e59"
+  ],
+  "rev": "1eef52018e",
+  "motion": {
+   "horizon": 0.359,
+   "water_top": 0.531,
+   "sky_color": [
+    0.562,
+    0.658,
+    0.775
+   ],
+   "sky": [
+    0.0026,
+    0,
+    6
+   ],
+   "water": [
+    0.0014,
+    0.0005,
+    4
+   ],
+   "moon": true,
+   "birds": [
+    "bat"
+   ],
+   "light": "dusk"
+  }
+ },
+ "lake-twilight": {
+  "place": "lake",
+  "when": "twilight",
+  "title": "Last light on Emerald Bay",
+  "where": "Lake Tahoe, California",
+  "by": "Levi Bare",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Calm_lake_at_Emerald_Bay_%28Unsplash%29.jpg",
+  "tone": "night",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.1,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#575e6d",
+   "#b5a89a",
+   "#3a3b3f"
+  ],
+  "rev": "05068f40a9",
+  "motion": {
+   "horizon": 0.461,
+   "water_top": 0.494,
+   "sky_color": [
+    0.436,
+    0.443,
+    0.473
+   ],
+   "sky": [
+    0.0026,
+    0,
+    6
+   ],
+   "water": [
+    0.0012,
+    0.0005,
+    4
+   ],
+   "stars": 0.5,
+   "moon": true,
+   "light": "dusk"
+  }
+ },
+ "lake-night": {
+  "place": "lake",
+  "when": "night",
+  "title": "Stars in the lake",
+  "where": "",
+  "by": "Wil Stewart",
+  "license": "CC0",
+  "source": "https://commons.wikimedia.org/wiki/File:Stars_in_a_lake_%28Unsplash%29.jpg",
+  "tone": "night",
+  "aspect": 1.5,
+  "strip": [
+   0.0,
+   0.1125,
+   1.0,
+   0.75
+  ],
+  "colours": [
+   "#113458",
+   "#26517a",
+   "#383736"
+  ],
+  "rev": "9a681e3233",
+  "motion": {
+   "horizon": 0.65,
+   "water_top": 0.738,
+   "sky_color": [
+    0.123,
+    0.238,
+    0.354
+   ],
+   "sky": [
+    0,
+    0,
+    0
+   ],
+   "water": [
+    0.001,
+    0,
+    4
+   ],
+   "stars": 1,
+   "moon": true
+  }
+ }
+}

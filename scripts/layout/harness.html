@@ -6,7 +6,16 @@
 
   Query: mode=panel|card, narrow=1, layout=list, hide_room_names=1, theme=dark, and
   safe_top / safe_bottom (px) for the safe-area variables Home Assistant sets on a phone.
-  The title becomes "ready" once the card has drawn; window.layout has the measuring helpers.
+  For the sidebar page's view: view=coast|lake puts the page over it, motion=0 holds it still,
+  weather=<a Home Assistant weather state> (sunny, rainy, snowy...) and temperature=<number>
+  set the weather entity (weather=none leaves the house without one), and elevation=<degrees>,
+  azimuth=<degrees> and rising=1 place the sun. forecast=daily|none gives the weather entity a
+  daily forecast, or none, in place of the hourly one. colors=default leaves every blind in its
+  default color, and colors=none leaves the blinds without the color entity; lights=none leaves
+  them without their divided lights.
+  The title becomes "ready" once the card has drawn, and over the view once its windows show
+  their photograph; window.layout has the measuring helpers, and layout.setTheme(dark) switches
+  the theme as Home Assistant does.
 -->
 <html>
 <head>
@@ -76,7 +85,11 @@ const ent = (entity_id, device_id, translation_key, state, attributes = {}, { na
 ent("sensor.lakehouse_shades_mac_address", "hub", "mac_address", "aa:bb:cc:dd:ee:ff");
 ent("button.lakehouse_shades_refresh_blinds", "hub", "refresh_blinds", "unknown");
 let count = 0;
-const blind = ({ name, area, model, kind, bottom = 0, middle, target, tilt, battery, stack, moving }) => {
+// Each blind's color and its window's divided lights, as the integration keeps them on selects
+// (select.py).
+const colors = params.get("colors");
+const lightsShown = params.get("lights") !== "none";
+const blind = ({ name, area, model, kind, bottom = 0, middle, target, tilt, battery, stack, moving, color, lights }) => {
   const id = `blind${++count}`;
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
   devices[id] = { id, name, area_id: area, model_id: model, config_entry_id: ENTRY };
@@ -101,33 +114,87 @@ const blind = ({ name, area, model, kind, bottom = 0, middle, target, tilt, batt
   }
   ent(`sensor.${slug}_battery_level`, id, "battery_level", battery);
   ent(`button.${slug}_request_status`, id, "request_status", "unknown");
+  if (colors !== "none") {
+    const key = kind === "shutter" ? "shutter_color" : "shade_color";
+    const fallback = kind === "shutter" ? "white" : "ivory";
+    ent(`select.${slug}_${key}`, id, key, colors === "default" ? fallback : color ?? fallback);
+  }
+  if (lightsShown) ent(`select.${slug}_divided_lights`, id, "window_lights", lights ?? "two_over_two");
 };
-blind({ name: "Living Left", area: "living", model: "33/4", kind: "two", bottom: 0, middle: 100, battery: 88 });
-blind({ name: "Living Right", area: "living", model: "33/4", kind: "two", bottom: 60, middle: 100, battery: 74 });
-blind({ name: "Living Centre", area: "living", model: "32/2", kind: "one", bottom: 100, battery: 91 });
-blind({ name: "Kitchen Sink", area: "kitchen", model: "48/1", kind: "one", bottom: 40, battery: 66 });
-blind({ name: "Kitchen Door", area: "kitchen", model: "48/2", kind: "one", bottom: 70, battery: 52 });
-blind({ name: "Bedroom East", area: "bedroom", model: "33/4", kind: "two", bottom: 20, target: 80, middle: 100, battery: 47, moving: true });
-blind({ name: "Bedroom West", area: "bedroom", model: "33/4", kind: "two", bottom: 0, middle: 0, battery: 81 });
-blind({ name: "Bedroom Drape", area: "bedroom", model: "80/1", kind: "drape", bottom: 30, tilt: 67, stack: "split", battery: 77 });
-blind({ name: "Study Sheer", area: "study", model: "48/3", kind: "sheer", bottom: 0, tilt: 100, battery: 63 });
-blind({ name: "Study Shutter", area: "study", model: "1/0", kind: "shutter", tilt: 50, battery: 58 });
-blind({ name: "Guest Window", area: "guest", model: "32/2", kind: "one", bottom: 50, battery: 12 });
-blind({ name: "Guest Skylight Over The Reading Nook", area: "guest", model: "32/2", kind: "one", bottom: 0, battery: 25 });
+blind({ name: "Living Left", area: "living", model: "33/4", kind: "two", bottom: 0, middle: 100, battery: 88, color: "linen" });
+blind({ name: "Living Right", area: "living", model: "33/4", kind: "two", bottom: 60, middle: 100, battery: 74, color: "linen" });
+blind({ name: "Living Centre", area: "living", model: "32/2", kind: "one", bottom: 100, battery: 91, color: "linen", lights: "six_over_six" });
+blind({ name: "Kitchen Sink", area: "kitchen", model: "48/1", kind: "one", bottom: 40, battery: 66, color: "white" });
+blind({ name: "Kitchen Door", area: "kitchen", model: "48/2", kind: "one", bottom: 70, battery: 52, color: "sage", lights: "prairie" });
+blind({ name: "Bedroom East", area: "bedroom", model: "33/4", kind: "two", bottom: 20, target: 80, middle: 100, battery: 47, moving: true, color: "navy" });
+blind({ name: "Bedroom West", area: "bedroom", model: "33/4", kind: "two", bottom: 0, middle: 0, battery: 81, color: "navy" });
+blind({ name: "Bedroom Drape", area: "bedroom", model: "80/1", kind: "drape", bottom: 30, tilt: 67, stack: "split", battery: 77, color: "sand" });
+blind({ name: "Study Sheer", area: "study", model: "48/3", kind: "sheer", bottom: 0, tilt: 100, battery: 63, color: "gray" });
+blind({ name: "Study Shutter", area: "study", model: "1/0", kind: "shutter", tilt: 50, battery: 58, color: "oak" });
+blind({ name: "Guest Window", area: "guest", model: "32/2", kind: "one", bottom: 50, battery: 12, color: "terracotta" });
+blind({ name: "Guest Skylight Over The Reading Nook", area: "guest", model: "32/2", kind: "one", bottom: 0, battery: 25, lights: "none" });
 devices.room_living = { id: "room_living", name: "Living Room", area_id: "living", config_entry_id: ENTRY };
 ent("scene.living_room_movie_night", "room_living", "room_scene", "unknown", { friendly_name: "Movie Night" }, { name: "Movie Night" });
 ent("scene.lakehouse_shades_bedtime", "hub", "scene_group", "unknown", { friendly_name: "Bedtime" }, { name: "Bedtime" });
 ent("scene.lakehouse_shades_good_morning", "hub", "scene_group", "unknown", { friendly_name: "Good Morning House" }, { name: "Good Morning House" });
-states["sun.sun"] = { entity_id: "sun.sun", state: "above_horizon", attributes: { elevation: 30 } };
+const elevation = Number(params.get("elevation") ?? 30);
+states["sun.sun"] = { entity_id: "sun.sun", state: elevation > 0 ? "above_horizon" : "below_horizon",
+  attributes: { elevation, azimuth: Number(params.get("azimuth") ?? 225), rising: params.get("rising") === "1" } };
+// The weather the view follows, as Home Assistant's own forecast entity has it.
+const weather = params.get("weather") ?? "sunny";
+const forecastType = params.get("forecast") ?? "hourly";
+// What it offers, as Home Assistant's supported features say: hourly and daily, or daily alone.
+const FEATURES = { hourly: 3, daily: 1, none: 0 };
+if (weather !== "none") {
+  states["weather.forecast_home"] = { entity_id: "weather.forecast_home", state: weather,
+    attributes: { temperature: Number(params.get("temperature") ?? 67), temperature_unit: "°F", friendly_name: "Forecast Home",
+      supported_features: FEATURES[forecastType] ?? 3 } };
+}
+// The forecast that weather/subscribe_forecast sends: the next twelve hours, or the next five
+// days, the weather changing on the way and a chance of rain in it.
+const hour = 3600e3;
+const nextHour = Math.ceil(now / hour) * hour;
+const HOURS = ["sunny", "sunny", "partlycloudy", "partlycloudy", "cloudy", "rainy", "rainy", "cloudy", "partlycloudy", "sunny", "sunny", "sunny"];
+const forecasts = {
+  hourly: HOURS.map((condition, i) => ({ datetime: new Date(nextHour + i * hour).toISOString(), condition,
+    temperature: Number(params.get("temperature") ?? 67) - Math.round(i * 1.4), precipitation_probability: [0, 0, 5, 10, 20, 60, 70, 35, 10, 0, 0, 0][i] })),
+  daily: ["sunny", "partlycloudy", "rainy", "cloudy", "sunny", "sunny"].map((condition, i) => ({
+    datetime: new Date(now + i * 24 * hour).toISOString(), condition, temperature: 70 - i * 2, templow: 48 - i,
+    precipitation_probability: condition === "rainy" ? 80 : 0 })),
+};
+const connection = {
+  subscribeMessage(callback, message) {
+    if (message.type === "weather/subscribe_forecast" && forecasts[message.forecast_type]) {
+      setTimeout(() => callback({ type: message.forecast_type, forecast: forecasts[message.forecast_type] }), 30);
+    }
+    return Promise.resolve(() => Promise.resolve());
+  },
+};
+// Home Assistant's own words for a weather state, as hass.formatEntityState gives them.
+const WEATHER_WORDS = { sunny: "Sunny", "clear-night": "Clear, night", partlycloudy: "Partly cloudy", cloudy: "Cloudy",
+  fog: "Fog", rainy: "Rainy", pouring: "Pouring", lightning: "Lightning", "lightning-rainy": "Lightning, rainy",
+  snowy: "Snowy", "snowy-rainy": "Snowy, rainy", hail: "Hail", windy: "Windy", "windy-variant": "Windy, cloudy",
+  exceptional: "Exceptional" };
 
 const calls = [];
-const hass = { states, entities, devices, areas, language: "en", locale: { language: "en" },
+const hass = { states, entities, devices, areas, language: "en", locale: { language: "en" }, connection,
   themes: { darkMode: params.get("theme") === "dark" }, dockedSidebar: "docked",
+  // Big Sur, where the coast's photographs were taken.
+  config: { latitude: 36.27, longitude: -121.81 },
+  formatEntityState: (state, value) => WEATHER_WORDS[value ?? state.state] ?? value ?? state.state,
   callService: (domain, service, data) => { calls.push([domain, service, data]); return Promise.resolve(); } };
 const config = {
   ...(params.get("layout") === "list" ? { hide_picture: true } : {}),
   ...(params.get("hide_room_names") ? { hide_room_names: true } : {}),
 };
+// What the integration's view options put in the panel's config (frontend.py).
+const viewConfig = params.get("view")
+  ? {
+      view: params.get("view"),
+      view_motion: params.get("motion") !== "0",
+      ...(params.get("hide_weather") === "1" ? { hide_weather: true } : {}),
+    }
+  : {};
 
 const host = document.getElementById("host");
 let root;
@@ -137,9 +204,21 @@ if (mode === "panel") {
   root = document.createElement("norman-panel");
   root.hass = hass;
   root.narrow = params.get("narrow") === "1";
-  root.panel = { url_path: "norman-shades", config };
+  root.panel = { url_path: "norman-shades", config: { ...config, ...viewConfig } };
   host.appendChild(root);
   for (let i = 0; i < 100 && !(card = root.shadowRoot.querySelector("norman-shades-card")); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  // Over the view, wait for the view itself, and for its windows to show their photograph:
+  // moving, or still.
+  const photographShows = () => Boolean(card.view && (card.view._drawing || card.view._paneStill));
+  for (let i = 0; viewConfig.view && i < 400 && root.hasAttribute("view") && !photographShows(); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  // ...and for the forecast beside the weather, where there is one to come.
+  const forecastShows = () => card.shadowRoot.querySelector(".hours:not([hidden])");
+  const forecastDue = viewConfig.view && weather !== "none" && forecastType !== "none";
+  for (let i = 0; forecastDue && i < 100 && !forecastShows(); i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 } else {
@@ -161,19 +240,33 @@ window.layout = {
   root,
   card,
   calls,
+  hass,
+  // The panel's own parts (its stage and scroll box); null for a card on a dashboard.
+  panel: (selector) => (mode === "panel" ? root.shadowRoot.querySelector(selector) : null),
   $: (selector) => shadow.querySelector(selector),
   $$: (selector) => [...shadow.querySelectorAll(selector)],
   box,
   visible,
   style: (element, pseudo) => getComputedStyle(element, pseudo ?? null),
-  // The panel scrolls itself; a card on a dashboard scrolls with the page.
-  scroller: () => (mode === "panel" ? root : document.scrollingElement),
-  // Every element of the card's drawn past the viewport's edges.
+  // The panel scrolls itself, or over its view a box inside it; a card on a dashboard scrolls
+  // with the page.
+  scroller: () =>
+    mode !== "panel" ? document.scrollingElement : root.hasAttribute("view") ? root.shadowRoot.querySelector(".scroll") : root,
+  // Every element of the card's drawn past the viewport's edges. The rooms bar scrolls sideways
+  // itself, so what is inside it is cut off at its edges, not the screen's: the bar alone counts.
   overflowing: () => [...shadow.querySelectorAll("*")]
-    .filter((element) => visible(element))
+    .filter((element) => visible(element) && !element.parentElement?.closest(".rooms-bar"))
     .map((element) => [element, element.getBoundingClientRect()])
     .filter(([, rect]) => rect.width && (rect.right > innerWidth + 0.5 || rect.left < -0.5))
     .map(([element, rect]) => `${element.className || element.tagName} ${Math.round(rect.left)}..${Math.round(rect.right)}`),
+  // Home Assistant switching between its light and dark theme, from the profile or, with an
+  // automatic theme, as the device's own setting changes: the theme's colours, and a new hass
+  // that says so.
+  setTheme: (dark) => {
+    document.documentElement.classList.toggle("dark", dark);
+    window.layout.hass = { ...window.layout.hass, themes: { ...window.layout.hass.themes, darkMode: dark } };
+    root.hass = window.layout.hass;
+  },
 };
 // Let the pop-in of a moving blind's Stop button finish before anything is measured.
 await new Promise((resolve) => setTimeout(resolve, 350));

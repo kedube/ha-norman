@@ -13,7 +13,10 @@ without the card.
 
 It also puts a **Norman Shades** entry in the sidebar: a custom panel (``www/norman-panel.js``)
 that shows the card full screen, one per hub whose "Show Norman Shades in the sidebar" option
-is on, so the card is there without building a dashboard at all.
+is on, so the card is there without building a dashboard at all. The panel's config carries
+the hub's view options with it: which place's photographs fill the page behind the card
+(``www/norman-view.js``, ``www/view/``), whether they move, the weather entity they follow,
+and whether the page shows that entity's forecast.
 """
 
 from __future__ import annotations
@@ -30,7 +33,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import IntegrationNotLoaded, async_get_loaded_integration
 
-from .const import CONF_SHOW_SIDEBAR_PANEL, DEFAULT_SHOW_SIDEBAR_PANEL, DOMAIN
+from .const import (
+    CONF_SHOW_SIDEBAR_PANEL,
+    CONF_SIDEBAR_VIEW,
+    CONF_SIDEBAR_VIEW_FORECAST,
+    CONF_SIDEBAR_VIEW_MOTION,
+    CONF_SIDEBAR_VIEW_WEATHER,
+    DEFAULT_SHOW_SIDEBAR_PANEL,
+    DEFAULT_SIDEBAR_VIEW,
+    DEFAULT_SIDEBAR_VIEW_FORECAST,
+    DEFAULT_SIDEBAR_VIEW_MOTION,
+    DOMAIN,
+    SIDEBAR_VIEWS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,8 +82,9 @@ PANEL_ICON = "mdi:blinds-horizontal"
 _PANEL_ENTRIES_KEY = f"{DOMAIN}_panel_entries"
 _PANELS_KEY = f"{DOMAIN}_panels"
 
-# A sidebar panel as registered: its title and the card config it carries.
-type _PanelSpec = tuple[str, tuple[tuple[str, str], ...]]
+# A sidebar panel as registered: its title and the config it carries, the card's and the view's.
+type _PanelConfig = tuple[tuple[str, str | bool], ...]
+type _PanelSpec = tuple[str, _PanelConfig]
 
 
 def integration_version(hass: HomeAssistant) -> str:
@@ -284,6 +300,28 @@ def _safe_area_kwargs() -> dict[str, Any]:
     return {}
 
 
+def _view_config(entry: ConfigEntry) -> _PanelConfig:
+    """What an entry's view options put in its panel's config, for the page to read.
+
+    ``view`` names the place and is left out for "none", or for a place a later release no
+    longer has, which leaves the page the plain card. ``view_motion`` says whether the
+    photograph moves, and ``weather_entity`` is there only when one was chosen: without it
+    the page finds a weather entity itself. ``hide_weather`` is there only when the weather is
+    turned off; it is the card's own option, so the panel hands it to the card, which then
+    draws the page with no temperature, conditions or forecast, only the house's counts.
+    """
+    view = entry.options.get(CONF_SIDEBAR_VIEW, DEFAULT_SIDEBAR_VIEW)
+    if view not in SIDEBAR_VIEWS:
+        return ()
+    motion = bool(entry.options.get(CONF_SIDEBAR_VIEW_MOTION, DEFAULT_SIDEBAR_VIEW_MOTION))
+    config: list[tuple[str, str | bool]] = [("view", str(view)), ("view_motion", motion)]
+    if weather := entry.options.get(CONF_SIDEBAR_VIEW_WEATHER):
+        config.append(("weather_entity", str(weather)))
+    if not entry.options.get(CONF_SIDEBAR_VIEW_FORECAST, DEFAULT_SIDEBAR_VIEW_FORECAST):
+        config.append(("hide_weather", True))
+    return tuple(config)
+
+
 def _wanted_panels(entries: list[ConfigEntry], language: str | None) -> dict[str, _PanelSpec]:
     """The sidebar panels these set-up entries call for: url path -> (title, config items).
 
@@ -291,6 +329,7 @@ def _wanted_panels(entries: list[ConfigEntry], language: str | None) -> dict[str
     with no hub pinned, which shows the same blinds as a card added to a dashboard. With several
     hubs each panel is titled after its entry and pins its hub, since the card otherwise shows
     every hub's blinds together and its whole-house buttons would not know which hub to send to.
+    Each panel also carries its hub's view options (_view_config).
     """
     several = len(entries) > 1
     default = panel_title(language)
@@ -307,8 +346,8 @@ def _wanted_panels(entries: list[ConfigEntry], language: str | None) -> dict[str
         if title in titles:
             title = f"{title} {number}"
         titles.add(title)
-        config = (("config_entry_id", entry.entry_id),) if several else ()
-        wanted[url_path] = (title, config)
+        pinned: _PanelConfig = (("config_entry_id", entry.entry_id),) if several else ()
+        wanted[url_path] = (title, (*pinned, *_view_config(entry)))
     return wanted
 
 

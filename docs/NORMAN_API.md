@@ -350,7 +350,7 @@ app's network library and then sent directly:
 | `SetTopLimit` / `SetBottomLimit` | 0 | Store the current position as that limit. |
 | `CleanTopLimit` / `CleanBottomLimit` | 0 | Clear the stored limit (the app sends this right before setting a new one). |
 | `Calibration` | 0 | The **Calibration** item on the same page, listed for every type the app knows except the SmartDrape: 1, 32, 33, 48 and 49. Runs the motor's calibration. **Used** (Calibration button, on those types). |
-| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`) or sweep the whole hub (unscoped). `RoomID` did not confine the sweep to one room. The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification. A live unscoped test reached all 13 blinds within two minutes without movement. **Used** (Request status button, Refresh blinds, the move watchdog, the wake sweep). See [Waking a blind](#waking-a-blind). |
+| `StatusRequest` | 0 | Ask **one blind** to report in (with `PeripheralUID`) or sweep the whole hub (unscoped). `RoomID` did not confine the sweep to one room. The blind's `Timestamp` in `status` moves and the hub pushes a `PeripheralList` notification. A live unscoped test reached all 13 blinds within two minutes without movement. **Used** (Request status button, Refresh blinds, the move watchdog). See [Waking a blind](#waking-a-blind). |
 | `ReportBatteryLevel` | 0 | The app's battery-report request for a room (`RoomID`) or hub (unscoped). It has closed type 48 roller shades ([#5](https://github.com/kedube/ha-norman/issues/5)) and type 33 cellular shades. Two isolated Office tests confirmed that `PeripheralUID` does not constrain it to one shade. **Used** only by the explicitly named room and hub battery-report buttons. |
 
 ```json
@@ -639,8 +639,8 @@ unanswered (the shade's `Timestamp` stayed put for over two minutes), and nothin
 So the hub-wide request was the likely trigger there. Later, a separate hub of type 33 cellular
 shades closed nine two-rail blinds after `ReportBatteryLevel`; the only individual
 `StatusRequest`s in that trace targeted four other blinds. The app also closed shades when the
-battery report was used. The wake sweep and Refresh blinds now use `StatusRequest`; the battery
-report has its own explicitly named buttons on room and hub devices.
+battery report was used. Refresh blinds now uses `StatusRequest`, as the wake sweep did until it
+was retired; the battery report has its own explicitly named buttons on room and hub devices.
 
 **Isolated `StatusRequest` tests on 2026-10-14.** On a 6.1.25 hub with thirteen shades, a
 no-command baseline produced no reports in 60 s. One unscoped `StatusRequest` brought reports
@@ -682,9 +682,8 @@ showed `MiddleRailPosition: 0, TargetMiddleRailPosition: 100` until a room-wide
 Neither `status` nor the notification stream reveals either case on its own. The
 integration's move watchdog covers the second case: a `StatusRequest` 60 s after any move the
 blind has not reported, then a resend if it still has not moved, up to three sends in all. For
-the first, Request status and Refresh blinds ask on demand. The optional wake sweep asks only
-blinds the hub has not heard from for 24 hours, so it no longer corrects a connected blind's
-stale cache. The report-in also **overwrites the target** with the
+the first, Request status and Refresh blinds ask on demand. The report-in also **overwrites
+the target** with the
 blind's actual position, so a check that compares position with target after asking the blind
 to report in always passes; the watchdog keeps the target it read when the command was sent.
 
@@ -1288,7 +1287,6 @@ room refresh ──► control (StatusRequest by uid, once per blind in room)
 hub refresh ──► control (unscoped StatusRequest)
 room / hub battery report ──► control (ReportBatteryLevel, RoomID or no address)
 move watchdog ──► control (StatusRequest by uid, 60 s after a silent move; then the move again)
-wake sweep (timer, off by default) ──► control (StatusRequest per disconnected blind)
 get_hub_data action ──► GetAllPeripheral + status (redacted, blinds aliased, returned as the response)
 send_hub_command action ──► control (caller's fields) ──► status
 mDNS announcement ──► config flow ──► registration (identity) ──► offer, or refresh the address
@@ -1310,12 +1308,11 @@ The rail sliders (`number`) and the covers share one code path, so both send the
 both-rails `control` call; a room's and the hub's sliders work each blind's move out the same
 way. Apart from `MotorStop`, the integration sends [control verbs](#control-verbs) only from its
 buttons (a blind's, a room's and the hub's), its scenes and `norman.room_command`, plus a
-`StatusRequest` from the move watchdog and the wake sweep, and the watchdog's resend of the
+`StatusRequest` from the move watchdog, and the watchdog's resend of the
 command it watches. Anything else needs `send_hub_command`.
 
-`status` is also re-read every time the stream is cycled or reconnected, and can be re-read
-on a timer (off by default; see the poll interval option). Neither catches a blind the hub has
-not heard from: the hub only notifies when it hears from a blind, a battery blind's radio
+`status` is also re-read every time the stream is cycled or reconnected. That does not catch a
+blind the hub has not heard from: the hub only notifies when it hears from a blind, a battery blind's radio
 sleeps (after a day of silence the Norman app's rule counts it as disconnected), and until
 it wakes `status` returns the same stale cache however often it is read. The report-in verbs
 ([Waking a blind](#waking-a-blind)) end that on demand. What a re-read does catch is a

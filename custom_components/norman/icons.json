@@ -95,6 +95,17 @@
       "signal_strength": {
         "default": "mdi:signal"
       }
+    },
+    "select": {
+      "shade_color": {
+        "default": "mdi:palette-swatch-outline"
+      },
+      "shutter_color": {
+        "default": "mdi:palette-swatch-outline"
+      },
+      "window_lights": {
+        "default": "mdi:window-closed-variant"
+      }
     }
   },
   "services": {

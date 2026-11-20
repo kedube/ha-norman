@@ -1,48 +1,16 @@
 # Options
 
-**Settings → Devices & services → Norman → ⋮ → Configure.** All four options are per hub.
-Changing the poll or wake sweep interval reloads the entry; command spacing and the sidebar
-switch take effect straight away, without a reload.
+**Settings → Devices & services → Norman → ⋮ → Configure.** All six options are per hub, and
+each takes effect straight away, without a reload.
 
 | Option | Default | Range | What it does |
 |---|---|---|---|
-| Poll interval | 0 (off) | 10–300 s | Re-reads every blind's position from the hub on a timer. |
-| Wake sweep interval | 0 (off) | 600–86400 s | Has each disconnected blind report in, refreshing the hub's own cache for it. |
 | Command spacing | 1.6 s | 0.3–5 s | Seconds to leave between commands sent to the hub. |
 | Show Norman Shades in the sidebar | on | on / off | Puts Norman Shades in Home Assistant's sidebar. |
-
-## Poll interval
-
-Updates are pushed by the hub over its notification stream, and every time the integration
-reconnects to the stream (every 5 minutes) it re-reads every blind as well. So polling is off
-by default and rarely needed: all it adds is a shorter wait when a notification goes missing.
-It is also why the longest interval is 300 seconds: each of those re-reads restarts the poll's
-timer, so a longer one would never fire. Earlier releases accepted up to 3600; a saved value
-over 300 now counts as off, which is what it amounted to, and the form shows it as 0.
-
-The poll re-reads the hub's **cache**; it does not ask the blinds anything, so a position the
-hub itself has wrong (a sleeping blind's) stays wrong until the blind reports in. **Request
-status** or the wake sweep below has it report in. The cost of a poll is one small request to
-the hub per interval, with nothing sent to the blinds. The form used to fill in 60 the first
-time it was opened, so saving the form for any other reason turned polling on; it no longer
-suggests a value. If yours shows 60 and you never chose it, set it to 0.
-
-## Wake sweep interval
-
-Asks each blind the hub has not heard from for **24 hours** to report in: battery, position,
-last seen. That is the Connection sensor's rule, and the threshold the Norman app's code uses
-for "disconnected", though the app's own list can differ
-([Connection](entities.md#connection)). Unlike the poll, this refreshes the hub's cache rather
-than re-reading it. Connected blinds are left alone, as the app leaves them: it offers a
-refresh only for a blind it lists as disconnected. While every blind is connected, a sweep
-sends nothing.
-
-It used to ask every blind on the hub, connected or not, and on a hub of type 48 roller shades
-that closed every shade each time it ran
-([#5](https://github.com/kedube/ha-norman/issues/5)). The options form also used to fill in
-3600 the first time it was opened, so saving the form for any other reason switched the sweep
-on; it no longer suggests a value. Each sweep can wake a sleeping blind's radio, so the floor is
-ten minutes; once an hour is plenty.
+| View from the windows | Big Sur coast | Big Sur coast / Lake Tahoe / None | The photograph the sidebar page's windows look out on. |
+| Moving view | on | on / off | Sets that photograph moving. |
+| Show the weather | on | on / off | Shows the temperature, conditions and forecast at the top of that page. |
+| Weather for the view | empty | a weather entity | The weather the view follows and the page shows. |
 
 ## Command spacing
 
@@ -85,3 +53,65 @@ Puts [Norman Shades](dashboard.md) in Home Assistant's sidebar. It is on by defa
 for hubs set up before the option existed. Turn it off to remove the entry; Norman Shades can
 still [go on a dashboard](dashboard.md#on-a-dashboard) as a card. With more than one hub, each
 hub's switch controls its own entry.
+
+## View from the windows
+
+The photograph the windows on the sidebar page look out on
+([the view](dashboard.md#the-view-from-the-windows)): the **Big Sur coast** or **Lake Tahoe**,
+each a set of photographs for every part of the day and every kind of weather. A room's windows
+share one view, and the page behind the rooms takes its colors, deep in Home Assistant's dark
+theme and pale in its light one. It is on, at the coast, by default, including for hubs set up
+before the option existed. Choose **None** for the plain page, drawn as a dashboard card is;
+either way the page follows Home Assistant's light or dark theme. With more than one hub, each
+hub's page has its own view.
+
+The option only changes the sidebar page. A card on a dashboard always draws its own sky.
+
+The photographs are CC0 or in the public domain, so the page carries no credit. The
+repository's [`NOTICE`](../NOTICE) file credits each photographer, and this option's description
+in the form links to it.
+
+## Moving view
+
+Sets the photograph in the windows moving: its clouds and water drift, rain and snow fall,
+stars twinkle, and birds, a moon and shooting stars cross the sky. Turn it off to show the
+photograph still, which asks less of a phone or an old tablet. It is shown still as well on a
+device set to reduce motion, and in a browser without WebGL 2, whatever this is set to.
+
+## Show the weather
+
+Shows the weather at the top of the sidebar page, under the hub's name: the temperature and
+conditions, and the forecast beside them, or under them on a phone. The forecast is now and the
+hours ahead, each with its weather, its temperature and, at 30% or more, its chance of rain or
+snow ([the forecast](dashboard.md#the-view-from-the-windows)); a weather entity that forecasts
+only by the day shows the days ahead instead. All of it is the
+[weather entity's](#weather-for-the-view). Turn it off to leave the weather off the page: under
+the hub's name there are then only the house's counts, how many shades are open or moving and
+any low batteries, and the page asks Home Assistant for no forecast at all. The photograph in
+the windows still follows the weather either way.
+
+With the view set to **None** the page shows no weather, whatever this is set to.
+
+## Weather for the view
+
+The weather entity the view follows: rain shows the photograph of rain, with rain falling. The
+page also shows that entity's temperature and conditions under the hub's name, and its
+forecast beside them ([Show the weather](#show-the-weather)). Leave it empty
+and the page uses Home Assistant's own forecast (`weather.forecast_home`, or `weather.home`),
+or failing that the first weather entity there is. With no weather entity at all, the view
+follows the sun alone and the page shows no weather.
+
+## Polling and wake sweeps
+
+Earlier releases had two more options here, both off by default: a **poll interval** and a
+**wake sweep interval**. Neither is needed. The hub pushes every change it hears of, and the
+integration re-reads every blind each time it reconnects to the hub, every 5 minutes, so a
+notification that goes missing leaves a blind out of date for 5 minutes at most. A hub that had
+either set keeps working as before, without them.
+
+To re-read the hub more often, use Home Assistant's own way to
+[poll on a schedule](https://www.home-assistant.io/common-tasks/general/#defining-a-custom-polling-interval):
+an automation that calls `homeassistant.update_entity` for one of a hub's covers re-reads every
+blind on that hub. A re-read only reads what the hub has stored, though; to have blinds report
+in, an automation can press a blind's **Request status**, or **Refresh blinds** on a room or
+the hub ([Buttons](entities.md#buttons)).

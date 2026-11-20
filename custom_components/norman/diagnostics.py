@@ -173,7 +173,7 @@ async def async_get_config_entry_diagnostics(
     traffic = async_redact_data(traffic, TO_REDACT)
 
     return {
-        # The options say whether the poll and the wake sweep run, and the command spacing.
+        # The options say the command spacing and how the sidebar page is drawn.
         "entry": async_redact_data(
             {
                 "data": dict(entry.data),

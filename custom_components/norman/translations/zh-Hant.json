@@ -47,25 +47,35 @@
     "step": {
       "init": {
         "title": "Norman 選項",
-        "description": "更新由中樞推送；整合每次重新連線至中樞時（每 5 分鐘一次）也會重新讀取所有窗簾。",
         "data": {
-          "poll_interval": "輪詢間隔",
-          "wake_interval": "喚醒掃描間隔",
           "control_interval": "指令間隔",
-          "show_sidebar_panel": "在側邊欄顯示 Norman 窗簾"
+          "show_sidebar_panel": "在側邊欄顯示 Norman 窗簾",
+          "sidebar_view": "窗外的景色",
+          "sidebar_view_motion": "動態景色",
+          "sidebar_view_forecast": "顯示天氣",
+          "sidebar_view_weather": "景色使用的天氣"
         },
         "data_description": {
-          "poll_interval": "從中樞重新讀取每個窗簾位置的頻率，以防漏掉通知。它只重新讀取中樞已儲存的內容，不會詢問窗簾。0 為關閉；否則為 10 到 300 秒，因為整合本已每 5 分鐘重新讀取一次。",
-          "wake_interval": "多久讓中樞 24 小時未收到回報的每個窗簾（Norman 應用程式判定為已中斷連線的標準）回報一次（電量、位置、最後回報）。與應用程式一樣，已連線的窗簾不會被打擾。這會更新中樞本身對這些窗簾的快取，而上面的輪詢只是重新讀取快取。0 為關閉；否則為 600 到 86400 秒。",
           "control_interval": "傳送給中樞的相鄰兩道指令之間間隔的秒數。中樞只有一個無線模組，到達速度超過其傳送能力的指令會被靜默捨棄，因此涉及多個窗簾的場景會排入佇列逐一傳送。如果仍有窗簾漏收與其他指令一同傳送的指令，請調大此值；想讓大型場景更快完成，請調小此值。預設值為 1.6 秒。",
-          "show_sidebar_panel": "在 Home Assistant 側邊欄顯示 Norman 窗簾，依房間列出所有窗簾。有多個中樞時，每個中樞各有一個項目。關閉即可移除該項目；Norman 窗簾仍可作為卡片新增至儀表板。"
+          "show_sidebar_panel": "在 Home Assistant 側邊欄顯示 Norman 窗簾，依房間列出所有窗簾。有多個中樞時，每個中樞各有一個項目。關閉即可移除該項目；Norman 窗簾仍可作為卡片新增至儀表板。",
+          "sidebar_view": "側邊欄 Norman 窗簾頁面中各扇窗外的景色：一張隨時間和天氣更換的照片，同一房間的窗共享一片景色，頁面背景取其色彩。可選擇大蘇爾海岸或太浩湖，選「無」則使用簡潔頁面。照片為 CC0 或公有領域（[照片出處]({credits})）。",
+          "sidebar_view_motion": "讓照片動起來：雲和水面緩緩流動，雨雪飄落，星光閃爍，飛鳥、月亮和流星劃過天空。關閉後顯示靜態照片。在設定了減少動態效果的裝置上也顯示靜態照片。",
+          "sidebar_view_forecast": "在 Norman 窗簾頁面頂部顯示天氣：氣溫、天氣狀況和天氣預報（接下來幾個小時的天氣、氣溫和降雨或降雪機率；若天氣實體只提供每日預報，則顯示接下來幾天）。關閉後不顯示天氣，頁面仍會顯示有多少窗簾打開。景色設為「無」時，頁面不顯示天氣。",
+          "sidebar_view_weather": "景色所跟隨的天氣實體，頁面會顯示它的氣溫、天氣狀況和天氣預報。留空則使用 Home Assistant 內建的天氣預報，或找到的第一個天氣實體。"
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "輸入 0 可關閉輪詢，或輸入 10 至 300 秒之間的值。",
-      "wake_interval_out_of_range": "輸入 0 關閉喚醒掃描，或輸入 600 到 86400 秒之間的值。",
       "control_interval_out_of_range": "輸入 0.3 至 5 秒之間的值。"
+    }
+  },
+  "selector": {
+    "sidebar_view": {
+      "options": {
+        "coast": "大蘇爾海岸",
+        "lake": "太浩湖",
+        "none": "無"
+      }
     }
   },
   "services": {
@@ -296,6 +306,51 @@
       },
       "scene_group": {
         "name": "場景群組"
+      }
+    },
+    "select": {
+      "shade_color": {
+        "name": "窗簾顏色",
+        "state": {
+          "white": "白色",
+          "ivory": "象牙白",
+          "linen": "亞麻色",
+          "sand": "沙色",
+          "taupe": "灰褐色",
+          "gray": "灰色",
+          "slate": "石板灰",
+          "charcoal": "炭灰色",
+          "navy": "海軍藍",
+          "sage": "鼠尾草綠",
+          "terracotta": "赤陶色"
+        }
+      },
+      "shutter_color": {
+        "name": "百葉窗顏色",
+        "state": {
+          "white": "白色",
+          "ivory": "象牙白",
+          "gray": "灰色",
+          "black": "黑色",
+          "oak": "橡木色",
+          "walnut": "胡桃木色"
+        }
+      },
+      "window_lights": {
+        "name": "窗格",
+        "state": {
+          "none": "無",
+          "one_over_one": "一道橫格",
+          "side_by_side": "一道豎格",
+          "two_over_none": "僅上半兩格",
+          "two_over_two": "十字格",
+          "three_over_none": "僅上半三格",
+          "four_over_none": "僅上半四格",
+          "four_over_four": "八格",
+          "six_over_none": "僅上半六格",
+          "six_over_six": "十二格",
+          "prairie": "草原式"
+        }
       }
     }
   },

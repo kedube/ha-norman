@@ -47,25 +47,35 @@
     "step": {
       "init": {
         "title": "Norman options",
-        "description": "Updates are pushed by the hub, and every blind is re-read each time the integration reconnects to the hub, which it does every 5 minutes.",
         "data": {
-          "poll_interval": "Poll interval",
-          "wake_interval": "Wake sweep interval",
           "control_interval": "Command spacing",
-          "show_sidebar_panel": "Show Norman Shades in the sidebar"
+          "show_sidebar_panel": "Show Norman Shades in the sidebar",
+          "sidebar_view": "View from the windows",
+          "sidebar_view_motion": "Moving view",
+          "sidebar_view_forecast": "Show the weather",
+          "sidebar_view_weather": "Weather for the view"
         },
         "data_description": {
-          "poll_interval": "How often to re-read every blind's position from the hub, in case a notification was missed. This re-reads what the hub has stored and asks the blinds nothing. 0 turns polling off; otherwise 10 to 300 seconds, as the integration already re-reads every 5 minutes.",
-          "wake_interval": "How often to ask each blind the hub has not heard from for 24 hours (the Norman app's threshold for disconnected) to report in: battery, position, last seen. Connected blinds are left alone, as the app leaves them. This refreshes the hub's own cache for those blinds, which the poll above only re-reads. 0 turns it off; otherwise 600 to 86400 seconds.",
           "control_interval": "Seconds to leave between commands sent to the hub. The hub has one radio and silently drops commands that arrive faster than it can transmit them, so a scene covering several blinds is queued and sent one at a time. Raise this if some blinds still miss a command they were sent alongside others; lower it to make large scenes finish sooner. The default is 1.6 seconds.",
-          "show_sidebar_panel": "Show Norman Shades, every blind by room, in the Home Assistant sidebar. With more than one hub, each gets its own entry. Turn off to remove it; Norman Shades can still be added to a dashboard as a card."
+          "show_sidebar_panel": "Show Norman Shades, every blind by room, in the Home Assistant sidebar. With more than one hub, each gets its own entry. Turn off to remove it; Norman Shades can still be added to a dashboard as a card.",
+          "sidebar_view": "What the windows on the Norman Shades page in the sidebar look out on: a photograph chosen by the time of day and the weather. A room's windows share one view, and the page behind takes its colors. Choose the Big Sur coast or Lake Tahoe, or None for the plain page. The photographs are CC0 or in the public domain ([photo credits]({credits})).",
+          "sidebar_view_motion": "Sets the photograph moving: its clouds and water drift, rain and snow fall, stars twinkle, and birds, a moon and shooting stars cross the sky. Turn off to show it still. It is also shown still on a device set to reduce motion.",
+          "sidebar_view_forecast": "Shows the weather at the top of the Norman Shades page: the temperature, the conditions and the forecast, the hours ahead with each one's weather, temperature and chance of rain or snow, or the days ahead from a weather entity that forecasts only by the day. Turn off to leave the weather out; the page still shows how many shades are open. With the view set to None the page shows no weather at all.",
+          "sidebar_view_weather": "The weather entity the view follows, and whose temperature, conditions and forecast the page shows. Leave empty to use Home Assistant's own forecast, or the first weather entity there is."
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "Enter 0 to turn polling off, or a value between 10 and 300 seconds.",
-      "wake_interval_out_of_range": "Enter 0 to turn the wake sweep off, or a value between 600 and 86400 seconds.",
       "control_interval_out_of_range": "Enter a value between 0.3 and 5 seconds."
+    }
+  },
+  "selector": {
+    "sidebar_view": {
+      "options": {
+        "coast": "Big Sur coast",
+        "lake": "Lake Tahoe",
+        "none": "None"
+      }
     }
   },
   "services": {
@@ -296,6 +306,51 @@
       },
       "scene_group": {
         "name": "Scene group"
+      }
+    },
+    "select": {
+      "shade_color": {
+        "name": "Shade color",
+        "state": {
+          "white": "White",
+          "ivory": "Ivory",
+          "linen": "Linen",
+          "sand": "Sand",
+          "taupe": "Taupe",
+          "gray": "Gray",
+          "slate": "Slate",
+          "charcoal": "Charcoal",
+          "navy": "Navy",
+          "sage": "Sage",
+          "terracotta": "Terracotta"
+        }
+      },
+      "shutter_color": {
+        "name": "Shutter color",
+        "state": {
+          "white": "White",
+          "ivory": "Ivory",
+          "gray": "Gray",
+          "black": "Black",
+          "oak": "Oak",
+          "walnut": "Walnut"
+        }
+      },
+      "window_lights": {
+        "name": "Divided lights",
+        "state": {
+          "none": "None",
+          "one_over_one": "One over one",
+          "side_by_side": "Two side by side",
+          "two_over_none": "Two over none",
+          "two_over_two": "Two over two",
+          "three_over_none": "Three over none",
+          "four_over_none": "Four over none",
+          "four_over_four": "Four over four",
+          "six_over_none": "Six over none",
+          "six_over_six": "Six over six",
+          "prairie": "Prairie"
+        }
       }
     }
   },

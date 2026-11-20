@@ -1,0 +1,376 @@
+# The photographs the sidebar page's windows look out on, and how each one moves.
+#
+# scripts/build_view.py reads this table, fetches each photograph from Wikimedia Commons, cuts
+# the strip of it that ships (custom_components/norman/www/view) and writes their index,
+# scenes.json. Nothing is retouched: a photograph is only cropped and resized.
+#
+# Every photograph is CC0 or in the public domain. Keep it that way: a photograph that needs
+# attribution in a particular form, or forbids changes, cannot be cut and set moving here.
+#
+# One table per scene, named <place>-<when>. The page shows the scene whose <when> matches the
+# weather first, then the height of the sun: dawn, day, partly, cloudy, fog, rain, storm, snow,
+# golden, sunset, dusk, twilight or night. A place without one borrows the other place's.
+#
+#   source    the file's title on Wikimedia Commons
+#   author    who to credit, as the page shows it
+#   license   "CC0" or "Public domain"
+#   title     what the photograph shows, in English (documentation and the NOTICE file)
+#   where     where it was taken, as the page shows it; "" when the source does not say
+#   tone      "night" for a photograph taken after dark (it is not dimmed again once the sun
+#             is down)
+#   trim      optional: left, top, right, bottom of the part to keep, as shares of the original
+#   strip     the part the windows look out on, two wide by one high: where it sits, as x%, y%
+#             the way CSS object-position places a picture, and optionally its width as a share
+#             of the picture's (all of it when not given). A room's row of windows looks out on
+#             the whole strip, each window on the part behind it.
+#
+# How it moves. Speeds are picture-widths a second, across then down; the third number is how
+# many seconds one blend of the picture with itself takes. Positions (horizon, fall) are shares
+# of the whole photograph, not of the strip.
+#
+#   sky       the drift of the clouds
+#   water     the drift of the water
+#   horizon   where the sky meets the water (0 top, 1 bottom) when the map of the sky gets it
+#             wrong, as it does in fog
+#   fall      a curtain of rain that is in the photograph: its box (left, top, right, bottom),
+#             then speed, seconds, lean and soft edge
+#   rain, snow, fog, storm, stars
+#             how much of each: rain and snow fall through the air, fog drifts across, a storm's
+#             own lightning flickers, the photograph's own stars twinkle
+#   ambient   the light that rain and snow catch: red, green, blue
+#   moon      true where the moon may hang
+#   glare     the sun's glare from above the picture in the middle of the day
+#   birds     the kinds that cross this sky; a kind listed twice comes twice as often
+#   light     how those birds are lit: day, morning, golden, sunset, dusk or overcast
+
+
+# ---- The coast: Big Sur, California ------------------------------------------------
+
+[coast-dawn]
+source = "Bixby Creek Bridge, Monterey, United States (Unsplash).jpg"
+author = "Ian Schneider"
+license = "CC0"
+title = "Morning haze off Bixby Creek"
+where = "Big Sur, California"
+strip = [50, 30]
+sky = [0.005, 0, 5.5]
+water = [-0.007, 0.0028, 2.6]
+birds = ["gull", "gull", "swallow"]
+light = "morning"
+
+[coast-day]
+source = "Big Sur, United States (Unsplash dpRTXG n8qk).jpg"
+author = "Jakub Gorajek"
+license = "CC0"
+title = "Clear afternoon on the headlands"
+where = "Big Sur, California"
+strip = [50, 40]
+sky = [0.0055, 0, 5.5]
+water = [-0.0065, 0.0024, 2.6]
+glare = 1
+birds = ["gull", "gull", "hawk", "crow"]
+light = "day"
+
+[coast-partly]
+source = "Fog rises in Big Sur (15362982985).jpg"
+author = "U.S. Fish and Wildlife Service"
+license = "Public domain"
+title = "Fog lifting off the cliffs"
+where = "Big Sur, California"
+strip = [50, 60]
+sky = [0.006, 0, 5.5]
+water = [-0.005, 0.0028, 2.6]
+glare = 0.6
+birds = ["gull", "gull", "crow"]
+light = "day"
+
+[coast-cloudy]
+source = "Rocky coastline at Big Sur, CA (Unsplash).jpg"
+author = "Thomas Marban"
+license = "CC0"
+title = "Overcast over the coves"
+where = "Big Sur, California"
+strip = [50, 35]
+sky = [0.005, 0, 5.5]
+water = [-0.0065, 0.0028, 2.6]
+birds = ["gull", "crow"]
+light = "overcast"
+
+[coast-fog]
+source = "Big Sur, United States (Unsplash znekTMMoBrM).jpg"
+author = "Jesse Collins"
+license = "CC0"
+title = "Sea of fog at golden hour"
+where = "Big Sur, California"
+strip = [50, 25]
+sky = [0.0085, 0.0005, 5]
+water = [0, 0, 0]
+horizon = 0.47
+fog = 0.6
+birds = ["gull", "hawk"]
+light = "golden"
+
+[coast-rain]
+source = "Andrew Ruiz 2015-09-18 (Unsplash).jpg"
+author = "Andrew Ruiz"
+license = "CC0"
+title = "Rain falling at sunset"
+where = ""
+strip = [50, 50]
+sky = [0.0035, 0, 6]
+water = [0.0018, 0, 3.4]
+fall = [0.34, 0.43, 1.02, 0.665, 0.0075, 2.2, -0.04, 0.06]
+rain = 0.45
+fog = 0.1
+ambient = [0.8, 0.72, 0.74]
+
+[coast-storm]
+source = "Purple Lightning Dee Why (Unsplash).jpg"
+author = "Jeremy Bishop"
+license = "CC0"
+title = "Lightning over the lagoon"
+where = "Dee Why, New South Wales"
+tone = "night"
+strip = [50, 70]
+sky = [0.0065, 0, 5]
+water = [0.002, 0, 3.2]
+rain = 0.5
+storm = 1
+ambient = [0.46, 0.44, 0.56]
+
+[coast-golden]
+source = "Bixby Bridge (Unsplash lsOy-suy2-g).jpg"
+author = "Dave Lastovskiy"
+license = "CC0"
+title = "Late sun through the canyon"
+where = "Bixby Bridge, Big Sur"
+strip = [50, 35]
+sky = [0.0042, 0, 6]
+water = [-0.005, 0.0045, 2.6]
+birds = ["gull", "crow", "swallow"]
+light = "golden"
+
+[coast-sunset]
+source = "Ocean rock (Unsplash).jpg"
+author = "Vashishtha Jogi"
+license = "CC0"
+title = "Sunset behind the sea stack"
+where = "Pfeiffer Beach, Big Sur"
+strip = [50, 45]
+sky = [0.0055, 0, 5.5]
+water = [-0.008, 0.0036, 2.6]
+birds = ["gull", "gull", "gull", "goose"]
+light = "sunset"
+
+[coast-dusk]
+source = "Winding road near the seaside in Big Sur (Unsplash).jpg"
+author = "Robson Hatsukami Morgan"
+license = "CC0"
+title = "Blue hour above the fog bank"
+where = "Big Sur, California"
+strip = [50, 30]
+sky = [0.006, 0, 5.5]
+water = [-0.0035, 0.0018, 3]
+fog = 0.12
+moon = true
+birds = ["gull", "bat"]
+light = "dusk"
+
+[coast-twilight]
+source = "Big Sur, Bixby Creek Bridge (Unsplash lbln7chS6g).jpg"
+author = "James Donovan"
+license = "CC0"
+title = "Last light at Bixby Creek"
+where = "Big Sur, California"
+tone = "night"
+strip = [100, 45, 0.8]
+sky = [0.0026, 0, 6]
+water = [-0.0024, 0.0014, 3]
+stars = 0.5
+moon = true
+birds = ["bat"]
+light = "dusk"
+
+[coast-night]
+source = "Milky Way Big Sur (Unsplash).jpg"
+author = "Robson Hatsukami Morgan"
+license = "CC0"
+title = "The Milky Way over the coast"
+where = "Big Sur, California"
+tone = "night"
+strip = [100, 40, 0.85]
+sky = [0, 0, 0]
+water = [-0.0018, 0, 3.4]
+stars = 1
+moon = true
+
+
+# ---- The lake: Lake Tahoe, California and Nevada -----------------------------------
+
+[lake-dawn]
+source = "Lake Tahoe Sunset (39995495833).jpg"
+author = "Felix Stahlberg"
+license = "CC0"
+title = "Pink light on the boulders"
+where = "Lake Tahoe, Nevada"
+strip = [50, 25]
+sky = [0.0042, 0, 6]
+water = [0.0052, 0.0014, 2.6]
+birds = ["swallow", "gull", "goose"]
+light = "golden"
+
+[lake-day]
+source = "Lake Tahoe, United States (Unsplash).jpg"
+author = "Clara Marie"
+license = "CC0"
+title = "Clear water at the boulders"
+where = "Lake Tahoe"
+trim = [0.15, 0, 1, 1]
+strip = [50, 45]
+sky = [0.0055, 0, 5.5]
+water = [0.0048, 0.0014, 2.6]
+glare = 1
+birds = ["gull", "swallow", "hawk", "songbird"]
+light = "day"
+
+[lake-partly]
+source = "Lake Tahoe, United States (Unsplash U9U7wvIm0gY).jpg"
+author = "Artur Westergren"
+license = "CC0"
+title = "Clouds building over the Sierra"
+where = "Lake Tahoe"
+strip = [100, 35, 0.8]
+sky = [0.0062, 0, 5.5]
+water = [0.0052, 0.0012, 2.6]
+glare = 0.5
+birds = ["gull", "goose", "hawk"]
+light = "day"
+
+[lake-cloudy]
+source = "Emerald Bay State Park, South Lake Tahoe, United States (Unsplash sY6X04d--VY).jpg"
+author = "Jad Limcaco"
+license = "CC0"
+title = "Bright overcast on Emerald Bay"
+where = "Lake Tahoe, California"
+strip = [50, 50]
+sky = [0.0042, 0, 6]
+water = [0.0018, 0.0005, 3.6]
+birds = ["goose", "gull"]
+light = "overcast"
+
+[lake-fog]
+source = "Foggy Mountain Weather (Unsplash).jpg"
+author = "Etienne Desclides"
+license = "CC0"
+title = "Fannette Island in fog"
+where = "Emerald Bay, Lake Tahoe"
+strip = [50, 40]
+sky = [0.009, 0.0006, 5]
+water = [0, 0, 0]
+horizon = 0.62
+fog = 0.8
+
+[lake-rain]
+source = "Rain coming down on north end of Yellowstone Lake (24801b31-44ef-4142-92cc-b6068cd7e010).jpg"
+author = "National Park Service, Diane Renkin"
+license = "Public domain"
+title = "Rain coming down across the lake"
+where = "Yellowstone Lake, Wyoming"
+strip = [50, 40]
+sky = [0.0045, 0, 5.5]
+water = [0.007, 0.0018, 2.3]
+fall = [0.16, 0.225, 0.82, 0.405, 0.0075, 2.2, -0.02, 0.045]
+rain = 0.8
+fog = 0.08
+ambient = [0.72, 0.78, 0.9]
+
+[lake-storm]
+source = "Lightning over south Lake Chelan (664bc3189da54f0cbf113b2b14e294c7).JPG"
+author = "National Park Service"
+license = "Public domain"
+title = "Lightning behind the ridge"
+where = "Lake Chelan, Washington"
+tone = "night"
+strip = [40, 75, 0.7]
+sky = [0.0065, 0, 5]
+water = [0.0024, 0.0014, 2.8]
+rain = 0.7
+storm = 1
+ambient = [0.42, 0.4, 0.52]
+
+[lake-snow]
+source = "Camp Richardson Beach, Lake Tahoe.jpg"
+author = "Blake Everett"
+license = "CC0"
+title = "Snow on the beach"
+where = "Camp Richardson, Lake Tahoe"
+strip = [50, 35]
+sky = [0.0035, 0, 6]
+water = [0.007, 0.0028, 2.4]
+snow = 1
+fog = 0.1
+ambient = [0.93, 0.95, 1.0]
+
+[lake-golden]
+source = "Lake Tahoe Sunset (46907880112).jpg"
+author = "Felix Stahlberg"
+license = "CC0"
+title = "Golden hour from the east shore"
+where = "Lake Tahoe, Nevada"
+strip = [0, 35, 0.82]
+sky = [0.0042, 0, 6]
+water = [0.0056, 0.0018, 2.6]
+birds = ["gull", "swallow", "goose"]
+light = "golden"
+
+[lake-sunset]
+source = "Lakeside Beach, Lake Tahoe 03.jpg"
+author = "Blake Everett"
+license = "CC0"
+title = "Sunset over the Sierra crest"
+where = "Lakeside Beach, Lake Tahoe"
+strip = [50, 40]
+sky = [0.0058, 0, 5.5]
+water = [0.0014, 0.01, 2.4]
+birds = ["goose", "gull", "gull"]
+light = "sunset"
+
+[lake-dusk]
+source = "Lake Tahoe, United States (Unsplash jtLxG4HDaLM).jpg"
+author = "Joseph Albanese"
+license = "CC0"
+title = "Blue hour at Bonsai Rock"
+where = "Lake Tahoe, Nevada"
+strip = [50, 45]
+sky = [0.0026, 0, 6]
+water = [0.0014, 0.0005, 4]
+moon = true
+birds = ["bat"]
+light = "dusk"
+
+[lake-twilight]
+source = "Calm lake at Emerald Bay (Unsplash).jpg"
+author = "Levi Bare"
+license = "CC0"
+title = "Last light on Emerald Bay"
+where = "Lake Tahoe, California"
+tone = "night"
+strip = [50, 40]
+sky = [0.0026, 0, 6]
+water = [0.0012, 0.0005, 4]
+stars = 0.5
+moon = true
+light = "dusk"
+
+[lake-night]
+source = "Stars in a lake (Unsplash).jpg"
+author = "Wil Stewart"
+license = "CC0"
+title = "Stars in the lake"
+where = ""
+tone = "night"
+strip = [50, 45]
+sky = [0, 0, 0]
+water = [0.001, 0, 4]
+stars = 1
+moon = true

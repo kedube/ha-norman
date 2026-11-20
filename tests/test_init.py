@@ -19,9 +19,8 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 
 from custom_components.norman.const import (
     CONF_CONTROL_INTERVAL,
-    CONF_POLL_INTERVAL,
     CONF_SHOW_SIDEBAR_PANEL,
-    CONF_WAKE_INTERVAL,
+    CONF_SIDEBAR_VIEW_FORECAST,
     DOMAIN,
 )
 from custom_components.norman.frontend import PANEL_URL_PATH, async_register_card
@@ -82,7 +81,14 @@ async def test_setup_creates_devices_and_unloads_cleanly(
     # middle-rail cover as well
     assert covers == ["1001", "1001_middle", "1002", "1003", "1003_middle"]
     assert f"{entry.entry_id}_wifi_rssi" in {e.unique_id for e in entries}
-    assert {e.domain for e in entries} == {"binary_sensor", "button", "cover", "number", "sensor"}
+    assert {e.domain for e in entries} == {
+        "binary_sensor",
+        "button",
+        "cover",
+        "number",
+        "select",
+        "sensor",
+    }
     living = cover_entity_id(hass, UID_LIVING)
     assert hass.states.get(living).attributes["friendly_name"] == "Living Drape Bottom rail"
 
@@ -254,28 +260,25 @@ async def test_the_card_resource_goes_with_the_last_hub_that_is_set_up(
 
 
 @pytest.mark.parametrize(
-    ("changes", "reloads"),
+    "changes",
     [
-        ({CONF_SHOW_SIDEBAR_PANEL: False}, False),
-        ({CONF_CONTROL_INTERVAL: 2.5}, False),
-        ({CONF_POLL_INTERVAL: 30}, True),
-        ({CONF_WAKE_INTERVAL: 3600}, True),
+        {CONF_SHOW_SIDEBAR_PANEL: False},
+        {CONF_SIDEBAR_VIEW_FORECAST: False},
+        {CONF_CONTROL_INTERVAL: 2.5},
     ],
-    ids=["sidebar", "command-spacing", "poll", "wake-sweep"],
+    ids=["sidebar", "weather", "command-spacing"],
 )
-async def test_saving_the_options_reloads_only_for_an_interval(
+async def test_saving_the_options_applies_them_without_a_reload(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,
     fake_hub: FakeHub,
     changes: dict,
-    reloads: bool,
 ) -> None:
-    """The poll and the wake sweep are read at setup; the rest is applied to the running hub.
+    """Every option is applied to the running hub; none is read only at setup.
 
     A reload registers with the hub again, re-reads its device list, reconnects its stream
-    and drops every move watch in flight, which a sidebar switch has no need of. The form
-    stores every field the first time it is saved, and the intervals it leaves at their
-    defaults do not count as a change.
+    and drops every move watch in flight, which none of the options has need of. The form
+    stores every field the first time it is saved.
     """
     coordinator = init_integration.runtime_data
     registrations = len(fake_hub.calls_to("/registration"))
@@ -285,8 +288,8 @@ async def test_saving_the_options_reloads_only_for_an_interval(
     await hass.async_block_till_done()
 
     assert init_integration.state is ConfigEntryState.LOADED
-    assert (init_integration.runtime_data is not coordinator) is reloads
-    assert len(fake_hub.calls_to("/registration")) == registrations + reloads
+    assert init_integration.runtime_data is coordinator
+    assert len(fake_hub.calls_to("/registration")) == registrations
     shown = changes.get(CONF_SHOW_SIDEBAR_PANEL, True)
     assert (PANEL_URL_PATH in hass.data.get(frontend.DATA_PANELS, {})) is shown
 

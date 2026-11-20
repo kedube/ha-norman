@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
-from datetime import datetime, timedelta
 import functools
 import logging
 import time
@@ -14,20 +13,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util import dt as dt_util
 
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
     CONF_CONTROL_INTERVAL,
-    CONF_POLL_INTERVAL,
-    CONF_WAKE_INTERVAL,
     COVER_TYPE_SHUTTER,
     COVER_TYPE_SINGLE_RAIL,
     DEFAULT_CONTROL_INTERVAL,
-    DEFAULT_POLL_INTERVAL,
-    DEFAULT_WAKE_INTERVAL,
     DOMAIN,
     HUB_CMD_REQUEST_STATUS,
     HUB_CMD_STOP,
@@ -40,17 +33,11 @@ from .const import (
     KNOWN_SCENE_GROUP_ITEM_FIELDS,
     KNOWN_SCENE_TARGET_FIELDS,
     MAX_CONTROL_INTERVAL,
-    MAX_POLL_INTERVAL,
-    MAX_WAKE_INTERVAL,
     MIN_CONTROL_INTERVAL,
-    MIN_POLL_INTERVAL,
-    MIN_WAKE_INTERVAL,
     MODULE_TYPE_COVER_TYPES,
-    POLL_DISABLED,
     RECONNECT_INTERVAL,
     ROOM_MIDDLE_WITHOUT_TWO_RAIL,
     ROOM_POSITION_TYPES,
-    WAKE_DISABLED,
     is_default_title,
 )
 from .models import (
@@ -108,27 +95,6 @@ def _describe(value: Any) -> str:
     return kind
 
 
-def _poll_interval(entry: NormanConfigEntry) -> timedelta | None:
-    """The configured poll interval, or None when polling is switched off.
-
-    ``POLL_DISABLED`` (0) means "push only": returning None leaves the coordinator without
-    an ``update_interval``, so it refreshes solely on notifications and commands.
-
-    A value that is missing, non-numeric, or out of range falls back to the default rather
-    than raising: options are user input, and a bad one should not stop the integration from
-    loading. 0 is the one value outside the supported range that is honoured rather than
-    corrected, and it is also the default -- so an unconfigured entry polls not at all.
-    """
-    raw = entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
-    try:
-        seconds = int(raw)
-    except (TypeError, ValueError):
-        seconds = DEFAULT_POLL_INTERVAL
-    if seconds != POLL_DISABLED and not MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
-        seconds = DEFAULT_POLL_INTERVAL
-    return None if seconds == POLL_DISABLED else timedelta(seconds=seconds)
-
-
 def _control_interval(entry: NormanConfigEntry) -> float:
     """Seconds to leave between control sends.
 
@@ -146,31 +112,13 @@ def _control_interval(entry: NormanConfigEntry) -> float:
     return seconds
 
 
-def _wake_interval(entry: NormanConfigEntry) -> timedelta | None:
-    """The configured wake sweep interval, or None when the sweep is off.
-
-    Same rules as ``_poll_interval``: 0 (the default) means off, an unusable value falls
-    back to the default rather than stopping the entry from loading.
-    """
-    raw = entry.options.get(CONF_WAKE_INTERVAL, DEFAULT_WAKE_INTERVAL)
-    try:
-        seconds = int(raw)
-    except (TypeError, ValueError):
-        seconds = DEFAULT_WAKE_INTERVAL
-    if seconds != WAKE_DISABLED and not MIN_WAKE_INTERVAL <= seconds <= MAX_WAKE_INTERVAL:
-        seconds = DEFAULT_WAKE_INTERVAL
-    return None if seconds == WAKE_DISABLED else timedelta(seconds=seconds)
-
-
 class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
     """Norman data update coordinator.
 
     The hub pushes state changes over a long-poll (see ``listen_notifications``): every
     notification, reconnect, and command triggers a refresh, and the stream is cycled every
-    NOTIF_MAX_DURATION, so a missed notification is caught within five minutes. An optional
-    poll (off by default) shortens that; it re-reads the same cache, so it cannot correct a
-    sleeping blind's position (const.py). The interval is configurable in the integration's
-    options; the entry is reloaded when it changes.
+    NOTIF_MAX_DURATION, so a missed notification is caught within five minutes. There is no
+    poll (const.py).
     """
 
     config_entry: NormanConfigEntry
@@ -182,7 +130,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
             _LOGGER,
             config_entry=entry,
             name=f"{DOMAIN} {entry.data.get('host', '')}".strip(),
-            update_interval=_poll_interval(entry),
+            # Push only: it refreshes on notifications, reconnects and commands.
+            update_interval=None,
         )
         self.api = api
         # The hub drops control commands sent faster than its radio can transmit them, so
@@ -222,50 +171,6 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         self.scene_groups: dict[str, NormanSceneGroup] = {}
         # Remote-control channels found holding more than one blind, warned about once each.
         self._shared_groups: set[tuple[int, int, frozenset[int]]] = set()
-
-    @callback
-    def async_start_wake_sweep(self) -> None:
-        """Schedule the wake sweep at the configured interval, if any.
-
-        Called once from setup; the timer is removed when the entry unloads. A changed
-        interval is applied by reloading the entry, like the poll interval.
-        """
-        interval = _wake_interval(self.config_entry)
-        if interval is None:
-            return
-
-        async def _async_sweep() -> None:
-            try:
-                await self.async_wake_disconnected_blinds()
-            except (NormanApiError, NormanConnectionError) as err:
-                _LOGGER.warning("Wake sweep failed: %s", err)
-
-        @callback
-        def _sweep(_now: datetime) -> None:
-            # A task of the entry's, so unloading it stops a sweep part-way through: one left
-            # running would send through the old client, unpaced against the new one.
-            self.config_entry.async_create_background_task(
-                self.hass, _async_sweep(), name="norman-wake-sweep"
-            )
-
-        self.config_entry.async_on_unload(
-            async_track_time_interval(self.hass, _sweep, interval, name="norman-wake-sweep")
-        )
-
-    async def async_wake_disconnected_blinds(self) -> None:
-        """Ask each blind the hub has not heard from for ``UNRESPONSIVE_AFTER`` to report in.
-
-        This is the wake sweep. The app offers a refresh only for a blind it lists as
-        disconnected, never for a connected one, so the sweep does the same: one
-        ``StatusRequest`` per disconnected blind, and nothing at all while every blind is
-        connected. It used to send every blind
-        the hub-wide ``ReportBatteryLevel`` and a ``StatusRequest`` each, and on a hub of
-        type 48 roller shades that closed them every time it ran (issue #5).
-        """
-        now = dt_util.utcnow()
-        for device_id, device in (self.data or {}).items():
-            if device.disconnected(now):
-                await self.api.async_request_status(device_id)
 
     async def async_refresh_blinds(self, room_id: int | None = None) -> None:
         """Ask every blind on the hub, or each blind in a room, for fresh status.
@@ -407,10 +312,6 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
             "has_device_list": self.has_device_list,
             "device_list_failing": self._device_info_error_logged,
             "control_interval": self.api.control_interval,
-            "poll_interval": self.update_interval.total_seconds() if self.update_interval else None,
-            "wake_interval": interval.total_seconds()
-            if (interval := _wake_interval(self.config_entry))
-            else None,
             "moves_in_flight": len(self._moves),
             "move_watches": len(self._move_watchers),
             "blinds_travelling": len(self._headings),

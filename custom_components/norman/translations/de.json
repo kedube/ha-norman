@@ -47,25 +47,35 @@
     "step": {
       "init": {
         "title": "Norman-Optionen",
-        "description": "Aktualisierungen werden vom Hub gesendet, und jedes Rollo wird neu gelesen, sobald sich die Integration neu mit dem Hub verbindet, was alle 5 Minuten geschieht.",
         "data": {
-          "poll_interval": "Abfrageintervall",
-          "wake_interval": "Weck-Intervall",
           "control_interval": "Befehlsabstand",
-          "show_sidebar_panel": "Norman-Rollos in der Seitenleiste anzeigen"
+          "show_sidebar_panel": "Norman-Rollos in der Seitenleiste anzeigen",
+          "sidebar_view": "Aussicht aus den Fenstern",
+          "sidebar_view_motion": "Bewegte Aussicht",
+          "sidebar_view_forecast": "Wetter anzeigen",
+          "sidebar_view_weather": "Wetter für die Aussicht"
         },
         "data_description": {
-          "poll_interval": "Wie oft die Position jedes Rollos vom Hub neu gelesen wird, falls eine Benachrichtigung verloren ging. Dabei wird nur gelesen, was der Hub gespeichert hat; die Rollos selbst werden nicht gefragt. 0 deaktiviert die Abfrage; sonst 10 bis 300 Sekunden, da die Integration ohnehin alle 5 Minuten neu liest.",
-          "wake_interval": "Wie oft jedes Rollo, von dem der Hub seit 24 Stunden nichts gehört hat (die Grenze, ab der die Norman-App es als getrennt zählt), gebeten wird, sich zu melden: Batterie, Position, zuletzt gesehen. Verbundene Rollos bleiben unberührt, wie in der App. Das erneuert den Zwischenspeicher des Hubs für diese Rollos, den die Abfrage oben nur ausliest. 0 schaltet es aus; sonst 600 bis 86400 Sekunden.",
           "control_interval": "Sekunden zwischen zwei Befehlen an den Hub. Der Hub hat nur ein Funkmodul und verwirft ohne Meldung Befehle, die schneller eintreffen, als er sie senden kann; deshalb wird eine Szene mit mehreren Rollos in eine Warteschlange gestellt und Befehl für Befehl gesendet. Erhöhen, wenn einzelne Rollos weiterhin einen Befehl verpassen, der zusammen mit anderen gesendet wurde; verringern, damit große Szenen schneller fertig sind. Standard sind 1,6 Sekunden.",
-          "show_sidebar_panel": "Zeigt die Seite Norman-Rollos, die alle Rollos nach Raum ordnet, in der Seitenleiste von Home Assistant an. Bei mehreren Hubs erhält jeder einen eigenen Eintrag. Ausschalten, um ihn zu entfernen; die Karte Norman-Rollos lässt sich weiterhin einem Dashboard hinzufügen."
+          "show_sidebar_panel": "Zeigt die Seite Norman-Rollos, die alle Rollos nach Raum ordnet, in der Seitenleiste von Home Assistant an. Bei mehreren Hubs erhält jeder einen eigenen Eintrag. Ausschalten, um ihn zu entfernen; die Karte Norman-Rollos lässt sich weiterhin einem Dashboard hinzufügen.",
+          "sidebar_view": "Worauf die Fenster der Seite Norman-Rollos in der Seitenleiste blicken: ein Foto, passend zu Tageszeit und Wetter. Die Fenster eines Raums teilen sich eine Aussicht, und die Seite dahinter nimmt ihre Farben an. Die Küste bei Big Sur oder den Lake Tahoe wählen, oder „Keine“ für die schlichte Seite. Die Fotos sind CC0 oder gemeinfrei ([Bildnachweise]({credits})).",
+          "sidebar_view_motion": "Setzt das Foto in Bewegung: Wolken und Wasser ziehen, Regen und Schnee fallen, Sterne funkeln, und Vögel, ein Mond und Sternschnuppen ziehen über den Himmel. Ausschalten, um das Foto unbewegt zu zeigen. Auf einem Gerät, das Bewegungen reduziert, bleibt es ebenfalls unbewegt.",
+          "sidebar_view_forecast": "Zeigt oben auf der Seite Norman-Rollos das Wetter: Temperatur, Wetterlage und Vorhersage, die nächsten Stunden mit Wetter, Temperatur und Regen- oder Schneewahrscheinlichkeit, oder die nächsten Tage bei einer Wetter-Entität, die nur tageweise vorhersagt. Ausschalten, um das Wetter wegzulassen; die Seite zeigt weiterhin, wie viele Rollos offen sind. Mit „Keine“ als Aussicht zeigt die Seite gar kein Wetter.",
+          "sidebar_view_weather": "Die Wetter-Entität, der die Aussicht folgt und deren Temperatur, Wetterlage und Vorhersage die Seite anzeigt. Leer lassen, um die Vorhersage von Home Assistant oder die erste vorhandene Wetter-Entität zu verwenden."
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "Geben Sie 0 ein, um die Abfrage zu deaktivieren, oder einen Wert zwischen 10 und 300 Sekunden.",
-      "wake_interval_out_of_range": "0 zum Ausschalten eingeben, oder einen Wert zwischen 600 und 86400 Sekunden.",
       "control_interval_out_of_range": "Geben Sie einen Wert zwischen 0,3 und 5 Sekunden ein."
+    }
+  },
+  "selector": {
+    "sidebar_view": {
+      "options": {
+        "coast": "Küste bei Big Sur",
+        "lake": "Lake Tahoe",
+        "none": "Keine"
+      }
     }
   },
   "services": {
@@ -296,6 +306,51 @@
       },
       "scene_group": {
         "name": "Szenengruppe"
+      }
+    },
+    "select": {
+      "shade_color": {
+        "name": "Rollofarbe",
+        "state": {
+          "white": "Weiß",
+          "ivory": "Elfenbein",
+          "linen": "Leinen",
+          "sand": "Sand",
+          "taupe": "Taupe",
+          "gray": "Grau",
+          "slate": "Schiefer",
+          "charcoal": "Anthrazit",
+          "navy": "Marineblau",
+          "sage": "Salbei",
+          "terracotta": "Terrakotta"
+        }
+      },
+      "shutter_color": {
+        "name": "Farbe des Fensterladens",
+        "state": {
+          "white": "Weiß",
+          "ivory": "Elfenbein",
+          "gray": "Grau",
+          "black": "Schwarz",
+          "oak": "Eiche",
+          "walnut": "Nussbaum"
+        }
+      },
+      "window_lights": {
+        "name": "Fenstersprossen",
+        "state": {
+          "none": "Keine",
+          "one_over_one": "Quer geteilt",
+          "side_by_side": "Senkrecht geteilt",
+          "two_over_none": "Oben zwei Felder",
+          "two_over_two": "Sprossenkreuz",
+          "three_over_none": "Oben drei Felder",
+          "four_over_none": "Oben vier Felder",
+          "four_over_four": "Acht Felder",
+          "six_over_none": "Oben sechs Felder",
+          "six_over_six": "Zwölf Felder",
+          "prairie": "Randsprossen"
+        }
       }
     }
   },

@@ -75,8 +75,7 @@ class NormanPeripheralData:
         """Whether the hub has not heard from this blind for ``UNRESPONSIVE_AFTER``.
 
         None when undated. The threshold is the Norman app's for "Disconnect", applied to the
-        hub's own last-heard time. The connection sensor shows it, and the wake sweep asks
-        only these blinds to report in.
+        hub's own last-heard time. The connection sensor shows it.
         """
         last_seen = parse_last_update(self.last_update)
         if last_seen is None:

@@ -47,25 +47,35 @@
     "step": {
       "init": {
         "title": "Norman 选项",
-        "description": "更新由中枢推送；集成每次重新连接中枢时（每 5 分钟一次）也会重新读取所有窗帘。",
         "data": {
-          "poll_interval": "轮询间隔",
-          "wake_interval": "唤醒扫描间隔",
           "control_interval": "命令间隔",
-          "show_sidebar_panel": "在侧边栏中显示 Norman 窗帘"
+          "show_sidebar_panel": "在侧边栏中显示 Norman 窗帘",
+          "sidebar_view": "窗外的景色",
+          "sidebar_view_motion": "动态景色",
+          "sidebar_view_forecast": "显示天气",
+          "sidebar_view_weather": "景色所用的天气"
         },
         "data_description": {
-          "poll_interval": "从中枢重新读取每个窗帘位置的频率，以防漏掉通知。它只重新读取中枢已保存的内容，不会询问窗帘。0 为关闭；否则为 10 到 300 秒，因为集成本已每 5 分钟重新读取一次。",
-          "wake_interval": "多久让中枢 24 小时未收到上报的每个窗帘（Norman 应用判定为已断开的标准）上报一次（电量、位置、最后上报）。与应用一样，已连接的窗帘不会被打扰。这会更新中枢自身对这些窗帘的缓存，而上面的轮询只是重新读取缓存。0 为关闭；否则为 600 到 86400 秒。",
           "control_interval": "发送给中枢的相邻两条命令之间间隔的秒数。中枢只有一个无线模块，到达速度超过其发送能力的命令会被静默丢弃，因此涉及多个窗帘的场景会排队逐条发送。如果仍有窗帘漏收与其他命令一同发送的命令，请调大此值；想让大型场景更快完成，请调小此值。默认值为 1.6 秒。",
-          "show_sidebar_panel": "在 Home Assistant 侧边栏中显示 Norman 窗帘，按房间列出所有窗帘。有多个中枢时，每个中枢各有一个入口。关闭即可移除该入口；Norman 窗帘仍可作为卡片添加到仪表盘。"
+          "show_sidebar_panel": "在 Home Assistant 侧边栏中显示 Norman 窗帘，按房间列出所有窗帘。有多个中枢时，每个中枢各有一个入口。关闭即可移除该入口；Norman 窗帘仍可作为卡片添加到仪表盘。",
+          "sidebar_view": "侧边栏 Norman 窗帘页面中各扇窗外的景色：一张随时间和天气更换的照片，同一房间的窗共享一片景色，页面背景取其色彩。可选择大苏尔海岸或太浩湖，选“无”则使用简洁页面。照片为 CC0 或公有领域（[照片署名]({credits})）。",
+          "sidebar_view_motion": "让照片动起来：云和水面缓缓流动，雨雪飘落，星光闪烁，飞鸟、月亮和流星划过天空。关闭后显示静态照片。在设置了减弱动态效果的设备上也显示静态照片。",
+          "sidebar_view_forecast": "在 Norman 窗帘页面顶部显示天气：气温、天气状况和天气预报（接下来几个小时的天气、气温和降雨或降雪概率；若天气实体只提供每日预报，则显示接下来几天）。关闭后不显示天气，页面仍会显示有多少窗帘打开。景色设为“无”时，页面不显示天气。",
+          "sidebar_view_weather": "景色所跟随的天气实体，页面会显示它的气温、天气状况和天气预报。留空则使用 Home Assistant 自带的天气预报，或找到的第一个天气实体。"
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "输入 0 可关闭轮询，或输入 10 至 300 秒之间的值。",
-      "wake_interval_out_of_range": "输入 0 关闭唤醒扫描，或输入 600 到 86400 秒之间的值。",
       "control_interval_out_of_range": "输入 0.3 至 5 秒之间的值。"
+    }
+  },
+  "selector": {
+    "sidebar_view": {
+      "options": {
+        "coast": "大苏尔海岸",
+        "lake": "太浩湖",
+        "none": "无"
+      }
     }
   },
   "services": {
@@ -296,6 +306,51 @@
       },
       "scene_group": {
         "name": "场景组"
+      }
+    },
+    "select": {
+      "shade_color": {
+        "name": "窗帘颜色",
+        "state": {
+          "white": "白色",
+          "ivory": "象牙白",
+          "linen": "亚麻色",
+          "sand": "沙色",
+          "taupe": "灰褐色",
+          "gray": "灰色",
+          "slate": "石板灰",
+          "charcoal": "炭灰色",
+          "navy": "海军蓝",
+          "sage": "鼠尾草绿",
+          "terracotta": "赤陶色"
+        }
+      },
+      "shutter_color": {
+        "name": "百叶窗颜色",
+        "state": {
+          "white": "白色",
+          "ivory": "象牙白",
+          "gray": "灰色",
+          "black": "黑色",
+          "oak": "橡木色",
+          "walnut": "胡桃木色"
+        }
+      },
+      "window_lights": {
+        "name": "窗格",
+        "state": {
+          "none": "无",
+          "one_over_one": "一道横格",
+          "side_by_side": "一道竖格",
+          "two_over_none": "仅上半两格",
+          "two_over_two": "十字格",
+          "three_over_none": "仅上半三格",
+          "four_over_none": "仅上半四格",
+          "four_over_four": "八格",
+          "six_over_none": "仅上半六格",
+          "six_over_six": "十二格",
+          "prairie": "草原式"
+        }
       }
     }
   },

@@ -29,11 +29,11 @@ from . import coordinator as norman_coordinator
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
     CONF_CONTROL_INTERVAL,
-    CONF_POLL_INTERVAL,
     CONF_SHOW_SIDEBAR_PANEL,
-    CONF_WAKE_INTERVAL,
-    DEFAULT_POLL_INTERVAL,
-    DEFAULT_WAKE_INTERVAL,
+    CONF_SIDEBAR_VIEW,
+    CONF_SIDEBAR_VIEW_FORECAST,
+    CONF_SIDEBAR_VIEW_MOTION,
+    CONF_SIDEBAR_VIEW_WEATHER,
     DOMAIN,
     MANUFACTURER,
     PLATFORMS,
@@ -69,6 +69,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bool:
     """Set up Norman from a config entry."""
+    # Before the coordinator notes the options it was set up with, and before the update
+    # listener is added, so dropping them reloads nothing.
+    if retired := _RETIRED_OPTIONS & set(entry.options):
+        hass.config_entries.async_update_entry(
+            entry,
+            options={key: value for key, value in entry.options.items() if key not in retired},
+        )
     api = NormanApiClient(entry.data[CONF_HOST], async_get_clientsession(hass))
 
     try:
@@ -112,9 +119,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
     entry.async_create_background_task(
         hass, coordinator.listen_notifications(), "norman-notification-listener"
     )
-
-    # The optional wake sweep (have every blind report in on a timer) runs alongside.
-    coordinator.async_start_wake_sweep()
 
     # A changed poll or wake interval is applied by reloading: both are read from the
     # options at construction / setup.
@@ -180,31 +184,36 @@ async def _async_resolve_mac(hass: HomeAssistant, host: str) -> str | None:
 
 # Options applied to the running hub by the update listener. Every other option, and the
 # entry's data, is read at setup and reloads the entry when it changes.
-_LIVE_OPTIONS = frozenset({CONF_CONTROL_INTERVAL, CONF_SHOW_SIDEBAR_PANEL})
-# What an option the entry does not store yet amounts to, so that saving the options form for
-# the first time does not count as a change to an interval it leaves at its default.
-_SETUP_OPTION_DEFAULTS = {
-    CONF_POLL_INTERVAL: DEFAULT_POLL_INTERVAL,
-    CONF_WAKE_INTERVAL: DEFAULT_WAKE_INTERVAL,
-}
+_LIVE_OPTIONS = frozenset(
+    {
+        CONF_CONTROL_INTERVAL,
+        CONF_SHOW_SIDEBAR_PANEL,
+        CONF_SIDEBAR_VIEW,
+        CONF_SIDEBAR_VIEW_MOTION,
+        CONF_SIDEBAR_VIEW_FORECAST,
+        CONF_SIDEBAR_VIEW_WEATHER,
+    }
+)
+# Options earlier releases offered and this one no longer has: the poll and wake sweep
+# intervals, since retired (const.py). Setup drops them, so that the stored options, and the
+# diagnostics that show them, hold only what applies.
+_RETIRED_OPTIONS = frozenset({"poll_interval", "wake_interval"})
 
 
 def _read_at_setup(
     data: Mapping[str, Any], options: Mapping[str, Any]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """The part of an entry's data and options that only a setup reads."""
-    options = {**_SETUP_OPTION_DEFAULTS, **options}
     return dict(data), {key: value for key, value in options.items() if key not in _LIVE_OPTIONS}
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: NormanConfigEntry) -> None:
-    """Reload when the hub's address or an interval changed; apply anything else live.
+    """Reload when the hub's address changed; apply every option live.
 
-    The poll and wake sweep intervals are read at setup, so a change to either reloads the
-    entry. Command spacing is set on the running client, derived as setup derives it, and the
-    sidebar is brought in line with its switch and with the title, which only the sidebar
-    shows (with more than one hub). Reloading for those would reconnect the hub's stream and
-    drop every move watch in flight for nothing.
+    Command spacing is set on the running client, derived as setup derives it, and the sidebar
+    is brought in line with its switch, with its view options and with the title, which only
+    the sidebar shows (with more than one hub). Reloading for those would reconnect the hub's
+    stream and drop every move watch in flight for nothing.
     """
     coordinator = entry.runtime_data
     if _read_at_setup(entry.data, entry.options) != _read_at_setup(*coordinator.config_at_setup):

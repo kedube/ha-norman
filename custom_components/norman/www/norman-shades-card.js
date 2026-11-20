@@ -19,6 +19,18 @@
  * The integration also shows this card full screen as a sidebar panel (norman-panel.js).
  * There it carries a `panel` attribute and a `narrow` property from Home Assistant: on phones
  * it runs edge to edge and its header gains the button that opens Home Assistant's sidebar.
+ *
+ * With the integration's view option on, the panel also gives it a `view` attribute and a
+ * `view` property (norman-view.js): each window then looks out on a photograph for the hour
+ * and the weather, a room's windows on one view between them, and the page behind takes the
+ * photograph's colours. The card lies over them as dark glass and says the temperature and the
+ * weather under its heading, with the forecast for the hours ahead beside it. The shades
+ * themselves are drawn in CSS exactly as on a dashboard.
+ *
+ * Each shade is drawn in its own color, which the integration keeps on the blind as a select
+ * entity: a fabric for a shade, a paint or a stain for a Shutter. In the sidebar panel the
+ * header's color button lets each window's color be chosen against the view, and on a phone a
+ * bar at the foot of the screen goes to each room.
  */
 
 // The integration stamps its release version onto the resource URL as ?v= (the cache-bust),
@@ -72,6 +84,121 @@ const KEY_ROOM_SCENE = "room_scene";
 const KEY_SCENE_GROUP = "scene_group";
 // Home Assistant's own icon for a scene.
 const SCENE_ICON = "mdi:palette";
+// A blind's color (select.py): a fabric for a shade, a paint or a stain for a Shutter. The card
+// draws the colors below, in the same order the select offers them; a blind with no color
+// entity, or a color this card does not know, is drawn in the default.
+const KEY_SHADE_COLOR = "shade_color";
+const KEY_SHUTTER_COLOR = "shutter_color";
+const COLOR_ICON = "mdi:palette-swatch-outline";
+// Each fabric's four tones, as the cloth tokens take them: the lit face of a pleat, the cloth,
+// its shaded underside and the crease. Ivory is the cloth the card has always drawn, so it is
+// left to the CSS (and its dark-theme tones); the warm fabrics shade warm, as ivory does, and
+// the cool ones keep their hue.
+const SHADE_COLORS = {
+  white: ["#fcfbf9", "#f6f4ef", "#e2ddd2", "#c2b9aa"],
+  ivory: null,
+  linen: ["#f2ede5", "#e5dccc", "#d3c7b4", "#b5a791"],
+  sand: ["#e3d7c3", "#d3c09f", "#c2ae8c", "#a79271"],
+  taupe: ["#c3b8ab", "#ae9f8d", "#a0907c", "#897964"],
+  gray: ["#cccfd0", "#b3b7b8", "#a1a5a6", "#858888"],
+  slate: ["#868f99", "#6b7682", "#606a75", "#4f5760"],
+  charcoal: ["#5b5f64", "#3f4349", "#393c42", "#2f3236"],
+  navy: ["#4b576f", "#2c3a56", "#28344d", "#212b40"],
+  sage: ["#b8c1ac", "#9daa8c", "#8d997e", "#747e68"],
+  terracotta: ["#ca9f88", "#bb8366", "#ac775a", "#946448"],
+};
+const DEFAULT_SHADE_COLOR = "ivory";
+// A Shutter's paint or stain, as the trim tokens take it: lit, flat and shaded, and the edge.
+// White is the trim the card has always drawn it in, so it too is left to the CSS.
+const SHUTTER_COLORS = {
+  white: null,
+  ivory: ["#f5f1e9", "#ebe2d0", "#d4c9b3", "rgba(92, 78, 58, 0.24)"],
+  gray: ["#cccece", "#b5b8b8", "#a3a49e", "rgba(40, 44, 48, 0.3)"],
+  black: ["#4a4c50", "#2e3034", "#26282b", "rgba(0, 0, 0, 0.5)"],
+  oak: ["#c9a47e", "#b8895a", "#9d7148", "rgba(70, 45, 20, 0.4)"],
+  walnut: ["#80644f", "#6a4a35", "#563a28", "rgba(30, 18, 10, 0.5)"],
+};
+const DEFAULT_SHUTTER_COLOR = "white";
+// The color a swatch shows for each: the cloth itself, or the paint.
+const swatchOf = (shutter, color) =>
+  (shutter ? SHUTTER_COLORS[color]?.[1] ?? "#f3f0ea" : SHADE_COLORS[color]?.[1] ?? "#f0ebe2");
+// A window's divided lights (select.py): the glazing bars across its glass, each upright (`down`)
+// or `across`, centred at a share of the glass's width or height, as thick as a share of it, and
+// reaching from and to a share of the other way (the whole of it unless given). The heavier bar
+// across the middle of a double-hung window is its meeting rail; "over none" divides only the
+// upper sash, above it. Two over two is the glass the card has always drawn, so a window nobody
+// has chosen for looks as it did.
+const KEY_WINDOW_LIGHTS = "window_lights";
+const LIGHTS_ICON = "mdi:window-closed-variant";
+const MEETING_RAIL = ["across", 50, 2.8];
+const UPPER_SASH = [0, 50];
+const WINDOW_LIGHTS = {
+  none: [],
+  one_over_one: [MEETING_RAIL],
+  side_by_side: [["down", 50, 3.2]],
+  two_over_none: [["down", 50, 2.2, ...UPPER_SASH], MEETING_RAIL],
+  two_over_two: [["down", 50, 3.2], MEETING_RAIL],
+  three_over_none: [["down", 33.33, 2.2, ...UPPER_SASH], ["down", 66.67, 2.2, ...UPPER_SASH], MEETING_RAIL],
+  four_over_none: [["down", 50, 2.2, ...UPPER_SASH], ["across", 25, 2], MEETING_RAIL],
+  four_over_four: [["down", 50, 2.2], ["across", 25, 2], MEETING_RAIL, ["across", 75, 2]],
+  six_over_none: [["down", 33.33, 2.2, ...UPPER_SASH], ["down", 66.67, 2.2, ...UPPER_SASH], ["across", 25, 2], MEETING_RAIL],
+  six_over_six: [["down", 33.33, 2.2], ["down", 66.67, 2.2], ["across", 25, 2], MEETING_RAIL, ["across", 75, 2]],
+  prairie: [["down", 13, 2.2], ["down", 87, 2.2], ["across", 12, 2], ["across", 88, 2]],
+};
+const DEFAULT_WINDOW_LIGHTS = "two_over_two";
+// The page's settings, in the sidebar panel: a button beside the refresh at the top.
+const SETTINGS_ICON = "mdi:cog-outline";
+// What the sidebar page has each window choose (_setChoosing): its shade's color, or its glass's
+// divided lights. Each is an item in the settings menu, with its words, and the mode the card is
+// in while it is chosen.
+const CHOICES = {
+  colors: {
+    icon: COLOR_ICON,
+    mode: "coloring",
+    words: { button: "colors", title: "colors_title", hint: "colors_hint", every: "color_every", of: "color_of", option: "color_" },
+  },
+  lights: {
+    icon: LIGHTS_ICON,
+    mode: "lighting",
+    words: { button: "lights", title: "lights_title", hint: "lights_hint", every: "lights_every", of: "lights_of", option: "lights_" },
+  },
+};
+// How long a color or divided lights chosen here is drawn before Home Assistant must have taken
+// it up.
+const CHOICE_PENDING_MS = 5000;
+
+// The forecast beside the weather over the view: Home Assistant's weather icons, by state, and
+// the night's for a clear or partly cloudy hour with the sun down. A weather entity offers its
+// forecast as a subscription, hourly, twice a day or daily by its supported features; the
+// card asks for the finest it has.
+const WEATHER_ICONS = {
+  "clear-night": "mdi:weather-night",
+  cloudy: "mdi:weather-cloudy",
+  exceptional: "mdi:alert-circle-outline",
+  fog: "mdi:weather-fog",
+  hail: "mdi:weather-hail",
+  lightning: "mdi:weather-lightning",
+  "lightning-rainy": "mdi:weather-lightning-rainy",
+  partlycloudy: "mdi:weather-partly-cloudy",
+  pouring: "mdi:weather-pouring",
+  rainy: "mdi:weather-rainy",
+  snowy: "mdi:weather-snowy",
+  "snowy-rainy": "mdi:weather-snowy-rainy",
+  sunny: "mdi:weather-sunny",
+  windy: "mdi:weather-windy",
+  "windy-variant": "mdi:weather-windy-variant",
+};
+const NIGHT_ICONS = { sunny: "mdi:weather-night", partlycloudy: "mdi:weather-night-partly-cloudy" };
+const FORECAST_TYPES = [
+  ["hourly", 2],
+  ["twice_daily", 4],
+  ["daily", 1],
+];
+// Now and the hours after it. A wide page shows them all; a phone the first FORECAST_NARROW.
+const FORECAST_CELLS = 8;
+const FORECAST_NARROW = 6;
+// A chance of rain or snow worth saying under the hour's icon, in percent.
+const FORECAST_WET = 30;
 // A blind's Request status button, found by its translation key like the KEY_* entities: it
 // asks the blind to report in, and nothing moves. The hub's and rooms' Report battery levels
 // buttons can close shades, so the card offers none of them.
@@ -97,6 +224,17 @@ const HUB_KEYS = new Set([
   "start_pairing",
   "push_updates",
 ]);
+
+// The hub's name as the Norman app has it. The integration keeps the hub device's own name in
+// step with the app (coordinator._sync_device_names), and the card names the hub by it even
+// where the device has been renamed in Home Assistant: the hub is named where it is set up.
+// Until the hub has said its name, the device has the entry's placeholder, "Norman Hub
+// (<address>)" (const.py, default_title), and a name given in Home Assistant is the better one.
+const hubNameOf = (device) => {
+  const own = device.name?.trim();
+  if (own && !(own.startsWith("Norman Hub (") && own.endsWith(")"))) return own;
+  return device.name_by_user?.trim() || own || null;
+};
 
 // The card's words, in every language the integration ships (norman-strings.js), imported at
 // this file's own ?v= stamp: /norman/ is served with long-lived cache headers, so a plain relative
@@ -220,6 +358,24 @@ const batteryClass = (level) => {
   if (level <= 30) return "low";
   return "ok";
 };
+
+// The CSS that draws each blind in its color: the cloth's tokens on a shade's window, a
+// Shutter's trim tokens on its panel. The default colors have none, and are drawn as before.
+const colorRules = () =>
+  [
+    ...Object.entries(SHADE_COLORS)
+      .filter(([, tones]) => tones)
+      .map(
+        ([color, [hi, cloth, lo, crease]]) =>
+          `.win[data-color="${color}"] { --n-cloth-hi: ${hi}; --n-cloth: ${cloth}; --n-cloth-lo: ${lo}; --n-cloth-crease: ${crease}; }`,
+      ),
+    ...Object.entries(SHUTTER_COLORS)
+      .filter(([, tones]) => tones)
+      .map(
+        ([color, [hi, trim, lo, edge]]) =>
+          `.win.shutter[data-color="${color}"] .panel { --n-trim-hi: ${hi}; --n-trim: ${trim}; --n-trim-lo: ${lo}; --n-trim-edge: ${edge}; }`,
+      ),
+  ].join("\n  ");
 
 // The view through the window follows the sun, so the picture reads like the real window.
 const skyOf = (sun) => {
@@ -497,6 +653,44 @@ const STYLES = `
   @keyframes n-spin { to { transform: rotate(360deg); } }
   .home-refresh { border-radius: 12px; background: rgba(var(--n-fg-rgb), 0.06); }
   .home-refresh .icon-btn { width: 36px; height: 36px; border-radius: 12px; }
+  /* The page's settings, in the sidebar panel: a button beside the refresh, and the menu it
+     opens beneath it, of what can be chosen for each window (_buildSettings). */
+  .home-settings { position: relative; border-radius: 12px; background: rgba(var(--n-fg-rgb), 0.06); }
+  .home-refresh + .home-settings { margin-left: -10px; }
+  .home-settings .icon-btn { width: 36px; height: 36px; border-radius: 12px; }
+  .home-settings .icon-btn.open { background: rgba(var(--n-accent-rgb), 0.14); color: var(--n-accent); }
+  .settings-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    padding: 6px;
+    border-radius: 16px;
+    background: var(--ha-card-background, var(--card-background-color, #fff));
+    box-shadow: 0 0 0 1px rgba(var(--n-fg-rgb), 0.08), 0 14px 32px -12px rgba(0, 0, 0, 0.45);
+  }
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 11px;
+    background: transparent;
+    color: var(--primary-text-color);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: start;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .menu-item:hover, .menu-item:focus-visible { background: rgba(var(--n-accent-rgb), 0.12); outline: none; }
+  .menu-item ha-icon { --mdc-icon-size: 20px; color: var(--n-accent); }
   .meta-bottom { display: flex; align-items: flex-start; gap: 6px; min-height: 18px; }
   .status {
     flex: 1;
@@ -619,13 +813,16 @@ const STYLES = `
       radial-gradient(70% 100% at 22% 100%, #8fb09a 0 60%, transparent 61%),
       radial-gradient(80% 85% at 82% 100%, #a9c4ae 0 60%, transparent 61%);
   }
+  /* The glazing bars, laid for the window's divided lights (_layBars): each placed and sized
+     from WINDOW_LIGHTS in the script. */
+  .bars { position: absolute; inset: 0; }
   .mullion, .transom {
     position: absolute;
     background: var(--n-trim);
     box-shadow: 0 0 0 0.5px var(--n-trim-edge), 0 1px 2px rgba(0, 0, 0, 0.18);
   }
-  .mullion { top: 0; bottom: 0; left: 50%; width: 3.2%; transform: translateX(-50%); }
-  .transom { left: 0; right: 0; top: 48%; height: 2.8%; }
+  .mullion { transform: translateX(-50%); }
+  .transom { transform: translateY(-50%); }
   .glint {
     position: absolute;
     inset: 0;
@@ -1141,6 +1338,106 @@ const STYLES = `
   .win.dragging .louver, .win.dragging .rod { transition: none; }
   ha-card[data-theme="dark"] .win.shutter .panel { filter: brightness(0.88); }
 
+  /* ---- each blind's color ------------------------------------------------------------------
+     A blind's color (its select entity) sets the cloth's tokens on its window -- the fabric, a
+     roll, a Roman shade's head and hem, a PerfectSheer's or a SmartDrape's vanes, a two-rail
+     shade's blackout, its sheer keeping its own white -- or a Shutter's trim tokens on its
+     panel. From SHADE_COLORS and SHUTTER_COLORS in the script. */
+  ${colorRules()}
+
+  /* Choosing for each window, in the sidebar panel: its shade's color (the whole-house row's
+     colors button) or its glass's divided lights (the lights button). Each window becomes one
+     button: a native select laid over it, so a phone shows its own picker, with the choice's name
+     beneath and a color on a swatch at the window's corner. While the divided lights are chosen
+     the shades are drawn away, so that each window shows its glass. The whole-house row gives way
+     to a bar that chooses for every window at once and ends the choosing; a rail is not dragged
+     meanwhile. */
+  .pick, .color-badge, .choice-name, .choice-bar { display: none; }
+  ha-card.coloring .pick.colors, ha-card.lighting .pick.lights {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 9;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    color: transparent;
+    /* A phone zooms into a smaller one when it takes the focus. */
+    font-size: 16px;
+    cursor: pointer;
+  }
+  ha-card.choosing .pick option { color: #10151d; background: #fff; }
+  ha-card.choosing .pick:focus-visible { outline: 2px solid var(--n-accent); outline-offset: 3px; }
+  ha-card.choosing .win { cursor: pointer; }
+  ha-card.choosing .frame { box-shadow: 0 0 0 2px rgba(var(--n-accent-rgb), 0.7), 0 8px 18px -10px rgba(40, 30, 20, 0.45); }
+  ha-card.lighting .opening > :not(.view) { visibility: hidden; }
+  ha-card.coloring .color-badge {
+    display: block;
+    position: absolute;
+    top: 2%;
+    right: 0;
+    z-index: 8;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--n-swatch, #f0ebe2);
+    box-shadow: 0 0 0 2px #fff, 0 2px 6px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+  }
+  ha-card.coloring .meta-bottom > :not(.choice-name.colors),
+  ha-card.lighting .meta-bottom > :not(.choice-name.lights),
+  ha-card.choosing .tile > .stop { display: none !important; }
+  ha-card.coloring .choice-name.colors, ha-card.lighting .choice-name.lights {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: var(--n-muted);
+  }
+  .choice-name i {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--n-swatch, #f0ebe2);
+    box-shadow: 0 0 0 1px rgba(var(--n-fg-rgb), 0.35);
+  }
+  .choice-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ha-card.choosing .tools { display: none; }
+  ha-card.coloring .choice-bar.colors, ha-card.lighting .choice-bar.lights {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    margin-top: 4px;
+  }
+  .choice-text { flex: 1 1 220px; min-width: 0; }
+  .choice-title { font-size: 15px; font-weight: 600; }
+  .choice-hint { margin-top: 2px; font-size: 13px; color: var(--n-muted); }
+  .choice-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* Every window at once: a select over a chip, as each window has one over it. */
+  .choice-every { position: relative; }
+  .choice-every select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    opacity: 0;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .choice-every:focus-within { outline: 2px solid var(--n-accent); outline-offset: 1px; }
+
   /* ---- list layout (hide_picture) --------------------------------------------------- */
   .list { display: flex; flex-direction: column; gap: 12px; }
   /* One line per blind: the name, then its status (while moving), Stop and battery. */
@@ -1213,6 +1510,9 @@ const STYLES = `
     background: var(--ha-card-background, var(--card-background-color, #fff));
   }
   :host([panel][narrow]) .header { border-radius: 0; }
+  /* On a phone the hub's name has the room its buttons leave it, so they stand a little closer. */
+  :host([panel][narrow]) .header { column-gap: 10px; }
+  :host([panel][narrow]) .home-refresh + .home-settings { margin-left: -4px; }
   .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 4px; }
 
   /* ---- a wide card -----------------------------------------------------------------------
@@ -1234,7 +1534,7 @@ const STYLES = `
      its edge scrolls too. */
   @media (pointer: coarse) {
     .icon-btn { width: 44px; height: 40px; }
-    .home-refresh .icon-btn { width: 40px; height: 40px; }
+    .home-refresh .icon-btn, .home-settings .icon-btn { width: 40px; height: 40px; }
     .chip { height: 38px; }
     .tile > .stop { top: -10px; right: -6px; width: 38px; height: 38px; }
     .refresh::after { inset: -12px -10px; }
@@ -1268,6 +1568,434 @@ const STYLES = `
     .fabric.sheer, .win.perfectsheer .cloth, .win.drape .sheer {
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
+    }
+  }
+
+  /* ---- the sidebar page with its view ---------------------------------------------------------
+     With the integration's view option on, each window looks out on a real photograph, drawn
+     by the panel's view (norman-view.js) on a canvas (.photo), so the drawn sky and hills go.
+     The page behind takes the photograph's colours (norman-panel.js) and the card is laid over
+     them: no card of its own, its heading and the weather straight on the colours, and the
+     whole-house buttons and each room on glass. In Home Assistant's dark theme the colours are
+     deep, the glass dark and the words white; in its light theme ([light], from the panel) the
+     colours are pale, the glass light and the words dark, every colour below a token of one set
+     or the other. Everything here is under :host([panel][view]); a card on a dashboard never
+     matches. */
+  :host([panel][view]) {
+    --n-fg: #fff;
+    --n-fg-rgb: 255, 255, 255;
+    --n-accent: #93d5ff;
+    --n-accent-rgb: 147, 213, 255;
+    --n-muted: rgba(255, 255, 255, 0.76);
+    --n-faint: rgba(255, 255, 255, 0.66);
+    --n-glass: rgba(13, 17, 25, 0.44);
+    --n-glass-strong: rgba(13, 17, 25, 0.68);
+    --n-glass-solid: rgba(13, 17, 25, 0.9);
+    --n-glass-line: rgba(255, 255, 255, 0.15);
+    --n-glass-fill: rgba(255, 255, 255, 0.09);
+    --n-glass-hover: rgba(255, 255, 255, 0.18);
+    --n-glass-blur: blur(22px) saturate(1.4);
+    --n-glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 20px 40px -26px rgba(0, 0, 0, 0.6);
+    --n-float-shadow: 0 20px 40px -18px rgba(0, 0, 0, 0.75);
+    --n-frame-shadow: 0 14px 22px -12px rgba(0, 0, 0, 0.7);
+    /* What is pressed or chosen: a chip whose preset was sent, an open tray, the room in view. */
+    --n-pressed: rgba(255, 255, 255, 0.92);
+    --n-pressed-fg: #10151d;
+    --n-pressed-accent: #0b6ea6;
+    /* Words straight on the colours keep a shadow, a deep ground being bright in places. */
+    --n-on-photo: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 16px rgba(0, 0, 0, 0.4);
+    --n-on-ground: 0 1px 12px rgba(0, 0, 0, 0.45);
+    --n-on-ground-soft: 0 1px 18px rgba(0, 0, 0, 0.3);
+    --n-on-ground-small: 0 1px 3px rgba(0, 0, 0, 0.6);
+    --primary-text-color: #fff;
+    --secondary-text-color: rgba(255, 255, 255, 0.76);
+    --text-primary-color: #10151d;
+    --card-background-color: #1b222d;
+    --ha-card-header-color: #fff;
+    --warning-color: #ffc56e;
+    --error-color: #ff9b8f;
+    color: var(--n-fg);
+  }
+  /* The light theme's: words dark enough on every pale ground, a shadow needed nowhere. */
+  :host([panel][view][light]) {
+    --n-fg: #141a24;
+    --n-fg-rgb: 20, 26, 36;
+    --n-accent: #0a6496;
+    --n-accent-rgb: 10, 100, 150;
+    --n-muted: rgba(20, 26, 36, 0.72);
+    --n-faint: rgba(20, 26, 36, 0.72);
+    --n-glass: rgba(255, 255, 255, 0.5);
+    --n-glass-strong: rgba(248, 250, 252, 0.8);
+    --n-glass-solid: rgba(248, 250, 252, 0.95);
+    --n-glass-line: rgba(20, 26, 36, 0.09);
+    --n-glass-fill: rgba(20, 26, 36, 0.05);
+    --n-glass-hover: rgba(20, 26, 36, 0.1);
+    --n-glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 1px 2px rgba(20, 26, 36, 0.05),
+      0 18px 36px -24px rgba(20, 26, 36, 0.32);
+    --n-float-shadow: 0 14px 32px -14px rgba(20, 26, 36, 0.38);
+    --n-frame-shadow: 0 12px 20px -12px rgba(20, 26, 36, 0.4);
+    --n-pressed: rgba(20, 26, 36, 0.88);
+    --n-pressed-fg: #fff;
+    --n-pressed-accent: #93d5ff;
+    --n-on-photo: none;
+    --n-on-ground: none;
+    --n-on-ground-soft: none;
+    --n-on-ground-small: none;
+    --primary-text-color: #141a24;
+    --secondary-text-color: rgba(20, 26, 36, 0.72);
+    --text-primary-color: #fff;
+    --card-background-color: #fff;
+    --ha-card-header-color: #141a24;
+    --warning-color: #8f5300;
+    --error-color: #a8231c;
+  }
+  /* White trim and ivory cloth, as by day in the light theme, whatever the theme is. */
+  :host([panel][view]) ha-card,
+  :host([panel][view]) ha-card[data-theme="dark"] {
+    --n-trim: #f3f1ec;
+    --n-trim-hi: #fdfcfa;
+    --n-trim-lo: #d8d3ca;
+    --n-trim-edge: rgba(0, 0, 0, 0.3);
+    --n-rail-hi: #ffffff;
+    --n-rail-face: #eeebe5;
+    --n-rail-lo: #cbc5ba;
+    --n-cloth-hi: #fbf9f4;
+    --n-cloth: #f0ebe2;
+    --n-cloth-lo: #ddd5c7;
+    --n-cloth-crease: #bdb2a0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+    color: var(--n-fg);
+  }
+  /* The windows darken with the light outside, not with the theme: the trim by its colours, so
+     the view through the glass is left alone, and the shade by a filter of its own. */
+  :host([panel][view]) ha-card[data-sky="dusk"] {
+    --n-trim: #d3d0ca;
+    --n-trim-hi: #e2e0db;
+    --n-trim-lo: #b7b3aa;
+  }
+  :host([panel][view]) ha-card[data-sky="night"] {
+    --n-trim: #a9a8a5;
+    --n-trim-hi: #bbbab7;
+    --n-trim-lo: #8e8c87;
+  }
+  :host([panel][view]) ha-card .fabric,
+  :host([panel][view]) ha-card .rail,
+  :host([panel][view]) ha-card .headrail,
+  :host([panel][view]) ha-card .roll,
+  :host([panel][view]) ha-card .hanging,
+  :host([panel][view]) ha-card .win.perfectsheer .vane,
+  :host([panel][view]) ha-card .win.shutter .panel { filter: none; }
+  :host([panel][view]) ha-card[data-sky="dusk"] .fabric,
+  :host([panel][view]) ha-card[data-sky="dusk"] .rail,
+  :host([panel][view]) ha-card[data-sky="dusk"] .headrail,
+  :host([panel][view]) ha-card[data-sky="dusk"] .roll,
+  :host([panel][view]) ha-card[data-sky="dusk"] .hanging,
+  :host([panel][view]) ha-card[data-sky="dusk"] .win.perfectsheer .vane,
+  :host([panel][view]) ha-card[data-sky="dusk"] .win.shutter .panel { filter: brightness(0.88); }
+  :host([panel][view]) ha-card[data-sky="night"] .fabric,
+  :host([panel][view]) ha-card[data-sky="night"] .rail,
+  :host([panel][view]) ha-card[data-sky="night"] .headrail,
+  :host([panel][view]) ha-card[data-sky="night"] .roll,
+  :host([panel][view]) ha-card[data-sky="night"] .hanging,
+  :host([panel][view]) ha-card[data-sky="night"] .win.perfectsheer .vane,
+  :host([panel][view]) ha-card[data-sky="night"] .win.shutter .panel { filter: brightness(0.74); }
+
+  /* The header: straight on the page's colours at the top, and on frosted glass once the page
+     has scrolled under it (the panel marks the card as scrolled). */
+  :host([panel][view]) .header {
+    margin: 0 -8px;
+    padding: calc(12px + var(--n-safe-top, 0px)) 12px 12px;
+    border: 1px solid transparent;
+    border-top: 0;
+    border-radius: 0 0 22px 22px;
+    background: none;
+    transition: background-color 0.25s, border-color 0.25s;
+  }
+  :host([panel][view][scrolled]) .header {
+    border-color: var(--n-glass-line);
+    background: var(--n-glass-strong);
+    -webkit-backdrop-filter: var(--n-glass-blur);
+    backdrop-filter: var(--n-glass-blur);
+  }
+  :host([panel][view]) .header-text { text-shadow: var(--n-on-ground); }
+  :host([panel][view]) .icon-btn.menu { margin: 0; }
+  :host([panel][view]) .home-refresh, :host([panel][view]) .home-settings { background: none; }
+  :host([panel][view]) .icon-btn.menu,
+  :host([panel][view]) .home-refresh .icon-btn,
+  :host([panel][view]) .home-settings .icon-btn {
+    width: 44px;
+    height: 44px;
+    background: var(--n-glass);
+  }
+  :host([panel][view]) .home-settings .icon-btn.open { background: rgba(var(--n-accent-rgb), 0.24); color: var(--n-accent); }
+  /* Over the view the settings menu is solid glass, so its words read over any photograph. */
+  :host([panel][view]) .settings-menu {
+    border: 1px solid var(--n-glass-line);
+    background: var(--n-glass-solid);
+    box-shadow: var(--n-float-shadow);
+  }
+  :host([panel][view]) .menu-item { color: var(--n-fg); }
+
+  /* The weather, large, with the house's counts beneath, and the forecast for the hours ahead:
+     beside it where there is room, beneath it on a phone. */
+  .hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 18px 28px;
+    padding: 10px 6px 0;
+    margin-bottom: 26px;
+    text-shadow: var(--n-on-ground-soft);
+  }
+  .hero .now { flex: 1 1 260px; min-width: 0; }
+  .hours {
+    flex: 0 1 540px;
+    display: flex;
+    min-width: 0;
+    margin: 0 0 0 auto;
+    padding: 10px 4px;
+    list-style: none;
+    border: 1px solid var(--n-glass-line);
+    border-radius: 22px;
+    background: var(--n-glass);
+    box-shadow: var(--n-glass-shadow);
+    text-shadow: none;
+  }
+  .hours li {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--n-muted);
+    white-space: nowrap;
+  }
+  /* Now and the first hours on a phone; the rest where the forecast sits beside the weather. */
+  .hours li:nth-child(n + ${FORECAST_NARROW + 1}) { display: none; }
+  .hours ha-icon { --mdc-icon-size: 24px; color: var(--n-fg); }
+  .hours .wet { min-height: 14px; font-size: 11px; line-height: 14px; color: var(--n-accent); font-variant-numeric: tabular-nums; }
+  .hours .deg { color: var(--n-fg); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* A day's low, under its high. */
+  .hours .low { display: block; margin-top: 1px; color: var(--n-muted); font-size: 13px; font-weight: 500; text-align: center; }
+  /* Words for a screen reader, not shown. */
+  .said { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hero .temp {
+    font-size: 92px;
+    font-weight: 300;
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+  }
+  .hero .cond { margin-top: 8px; font-size: 17px; font-weight: 500; text-shadow: var(--n-on-photo); }
+  .hero .summary { margin-top: 4px; font-size: 14px; color: var(--n-fg); text-shadow: var(--n-on-photo); }
+  .hero .summary .live, .hero .summary .warn { color: var(--n-fg); font-weight: 600; }
+
+  /* Dark glass: the whole-house row, and each room. Behind them is only the page's gradient,
+     which a blur would not change, so they are not blurred: on a phone a blur is work for every
+     frame of a scroll. Only the header blurs, once the page scrolls under it. */
+  :host([panel][view]) .tools,
+  :host([panel][view]) .body > .room {
+    border: 1px solid var(--n-glass-line);
+    border-radius: 26px;
+    background: var(--n-glass);
+    box-shadow: var(--n-glass-shadow);
+  }
+  :host([panel][view]) .tools { gap: 8px; margin: 0; padding: 12px; }
+  :host([panel][view]) .segmented { gap: 8px; padding: 0; border-radius: 0; background: none; }
+  :host([panel][view]) .home-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex: 1 1 320px;
+    max-width: 560px;
+  }
+  :host([panel][view]) .chip {
+    justify-content: center;
+    height: 40px;
+    padding: 0 14px 0 12px;
+    border: 1px solid var(--n-glass-line);
+    border-radius: 999px;
+    background: var(--n-glass-fill);
+    color: var(--n-fg);
+    font-weight: 600;
+  }
+  :host([panel][view]) .chip ha-icon { color: var(--n-accent); }
+  :host([panel][view]) .chip:hover { background: var(--n-glass-hover); box-shadow: none; }
+  :host([panel][view]) .chip.sent { background: var(--n-pressed); color: var(--n-pressed-fg); }
+  :host([panel][view]) .chip.sent ha-icon { color: var(--n-pressed-accent); }
+
+  /* The rooms sit side by side wherever there is room for two, each on its own pane; a grid,
+     not the plain card's columns, which split a pane of glass badly. */
+  :host([panel][view]) .body,
+  :host([panel][view]) .body:not(.single) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
+    align-items: start;
+    gap: 14px;
+    columns: auto;
+    margin-top: 14px;
+    padding-top: 0;
+  }
+  :host([panel][view]) .body.single { grid-template-columns: minmax(0, 1fr); }
+  :host([panel][view]) .body > .room,
+  :host([panel][view]) .body > .room:first-child,
+  :host([panel][view]) .body:not(.single) > .room,
+  :host([panel][view]) .body:not(.single) > .room:first-child { margin: 0; padding: 16px 14px 18px; }
+  :host([panel][view]) .room-head { min-height: 44px; margin-bottom: 14px; padding-left: 4px; }
+  .room-titles { flex: 1; min-width: 0; }
+  :host([panel][view]) .room-name { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .room-line {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--n-muted);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The house's line starts with a count; a room's starts with a word, so it takes a capital. */
+  .room-line::first-letter { text-transform: uppercase; }
+  .room-line .live { color: var(--n-accent); }
+  :host([panel][view]) .icon-group { gap: 6px; background: none; }
+  :host([panel][view]) .icon-btn {
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--n-glass-line);
+    border-radius: 50%;
+    background: var(--n-glass-fill);
+    color: var(--n-fg);
+  }
+  :host([panel][view]) .icon-btn:hover { background: var(--n-glass-hover); }
+  :host([panel][view]) .icon-btn.more.open { background: var(--n-pressed); color: var(--n-pressed-fg); }
+  :host([panel][view]) .tray { margin: -2px 0 14px; }
+
+  /* Three windows across, on a phone as on a desktop; a name too long for its window takes a
+     second line, and the battery and refresh go under the state. */
+  :host([panel][view]) .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 12px; padding: 0 2px; }
+  :host([panel][view]) .name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  :host([panel][view]) .meta-bottom { flex-wrap: wrap; gap: 3px 6px; }
+  :host([panel][view]) .tile .status { flex: 1 1 100%; font-size: 12px; }
+  :host([panel][view]) .tile .battery { margin-left: 0; }
+  :host([panel][view]) .frame { box-shadow: 0 0 0 1px var(--n-trim-edge), var(--n-frame-shadow); }
+
+  /* The view through each window: the photograph, drawn by the panel's view on a canvas. A
+     room's windows look out on one strip of it, each on the part behind it. */
+  .photo { position: absolute; inset: 0; width: 100%; height: 100%; }
+  :host([panel][view]) .view,
+  :host([panel][view]) ha-card[data-sky] .view { background: #0b1220; }
+  :host([panel][view]) .sun, :host([panel][view]) .hills { display: none; }
+
+  @container (min-width: 700px) {
+    .hero .temp { font-size: 112px; }
+    .hours li:nth-child(n + ${FORECAST_NARROW + 1}) { display: flex; }
+    /* On a wide screen the whole-house row is only as wide as its buttons, the presets no
+       wider than their words need, so what follows them stays on their line where it fits. */
+    :host([panel][view]) .tools { box-sizing: border-box; width: fit-content; max-width: 100%; }
+    :host([panel][view]) .home-buttons { flex: 0 1 auto; }
+  }
+
+  /* Over the view the choosing bar is a pane of glass, as the whole-house row it stands in for. */
+  :host([panel][view]) ha-card.choosing .choice-bar {
+    margin: 0;
+    padding: 12px 12px 12px 18px;
+    border: 1px solid var(--n-glass-line);
+    border-radius: 26px;
+    background: var(--n-glass);
+    box-shadow: var(--n-glass-shadow);
+  }
+  :host([panel][view]) .choice-hint { color: var(--n-muted); }
+
+  /* ---- the rooms bar: the sidebar panel on a phone ------------------------------------------
+     A bar at the foot of the screen with a button for each room, and one for the top of the
+     page, the part in view marked. Sticky at the bottom of the panel's scroll box, so it stays
+     put as the page scrolls, and it scrolls sideways itself when the rooms will not fit. A dot
+     says a room has a shade moving, or one with a low battery. */
+  .rooms-bar { display: none; }
+  :host([panel][narrow]) .rooms-bar:not([hidden]) {
+    position: sticky;
+    bottom: calc(12px + var(--n-safe-bottom, 0px));
+    z-index: 9;
+    display: flex;
+    gap: 4px;
+    margin: 18px 0 0;
+    padding: 5px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    border-radius: 999px;
+    background: var(--ha-card-background, var(--card-background-color, #fff));
+    box-shadow: 0 0 0 1px rgba(var(--n-fg-rgb), 0.1), 0 10px 28px -8px rgba(0, 0, 0, 0.4);
+  }
+  .rooms-bar::-webkit-scrollbar { display: none; }
+  .room-tab {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 15px;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    color: var(--primary-text-color);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .room-tab ha-icon { --mdc-icon-size: 18px; }
+  .room-tab[aria-current="true"] { background: var(--n-accent); color: var(--text-primary-color, #fff); }
+  .room-tab:focus-visible { outline: 2px solid var(--n-accent); outline-offset: -2px; }
+  .room-tab .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+  .room-tab .dot.live { background: var(--n-accent); }
+  .room-tab .dot.warn { background: var(--warning-color, #e39700); }
+  .room-tab[aria-current="true"] .dot.live { background: currentColor; }
+  :host([panel][view][narrow]) .rooms-bar:not([hidden]) {
+    border: 1px solid var(--n-glass-line);
+    background: var(--n-glass-strong);
+    -webkit-backdrop-filter: var(--n-glass-blur);
+    backdrop-filter: var(--n-glass-blur);
+    box-shadow: var(--n-float-shadow);
+  }
+  :host([panel][view]) .room-tab { color: var(--n-fg); }
+  :host([panel][view]) .room-tab[aria-current="true"] { background: var(--n-pressed); color: var(--n-pressed-fg); }
+  :host([panel][view]) .room-tab[aria-current="true"] .dot.live { background: var(--n-pressed-accent); }
+  @media (pointer: coarse) {
+    :host([panel][view]) .icon-btn { width: 44px; height: 44px; }
+    :host([panel][view]) .chip { height: 44px; }
+    /* A name's finger-sized reach is above it only: a third line would show in room beneath. */
+    :host([panel][view]) .name { margin-block: -6px 0; padding-block: 6px 0; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    :host([panel][view]) .tools,
+    :host([panel][view]) .body > .room,
+    :host([panel][view][scrolled]) .header,
+    :host([panel][view]) .icon-btn.menu,
+    :host([panel][view]) .home-refresh .icon-btn,
+    :host([panel][view]) .home-settings .icon-btn,
+    :host([panel][view]) .hours,
+    :host([panel][view]) ha-card.choosing .choice-bar,
+    :host([panel][view][narrow]) .rooms-bar:not([hidden]) {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      background: var(--n-glass-solid);
     }
   }
 `;
@@ -1314,6 +2042,54 @@ class NormanShadesCard extends HTMLElement {
     // Set by the sidebar panel: Home Assistant hides its sidebar on phones (see narrow).
     this._narrow = false;
     this._menuButton = null;
+    // The panel's view, when the integration's view option is on (see view), the way to stop
+    // hearing from it, and what the card draws over it: the weather under the heading, each
+    // room's line of counts and each window's canvas. The photographs are credited in NOTICE,
+    // which the view option's description links to, not on the page.
+    this._view = null;
+    this._viewOff = null;
+    this._hero = null;
+    this._roomLines = [];
+    this._panes = [];
+    // The forecast beside the weather over the view (_syncForecast): its list, and the
+    // subscription it comes by.
+    this._hours = null;
+    this._forecast = null;
+    // Choosing for each window in the sidebar panel (_setChoosing): what the page is choosing
+    // ("colors", "lights" or null); the settings button at the top, its menu and each kind's item
+    // in it (_buildSettings); each kind's bar that stands in for the whole-house row meanwhile,
+    // with its "every" chip and Done; and the choices made here that Home Assistant has yet to
+    // take up, by entity ({ value, at }).
+    this._choosing = null;
+    this._settings = null;
+    this._settingsButton = null;
+    this._settingsMenu = null;
+    this._choiceItems = {};
+    this._choiceBars = {};
+    this._choiceEvery = {};
+    this._choiceDone = {};
+    this._choicePending = new Map();
+    // The rooms bar on a phone (_buildDock): its buttons, the scroll box it follows, and how long
+    // a press on it holds the marking still while the page scrolls to the room.
+    this._dock = null;
+    this._tabs = [];
+    this._scroller = null;
+    this._spyHeld = 0;
+    this._connected = false;
+  }
+
+  connectedCallback() {
+    this._connected = true;
+    if (!this._rendered) return;
+    this._syncForecast();
+    this._watchScroll();
+  }
+
+  disconnectedCallback() {
+    this._connected = false;
+    this._stopForecast();
+    this._unwatchScroll();
+    this._toggleSettings(false);
   }
 
   setConfig(config) {
@@ -1372,6 +2148,47 @@ class NormanShadesCard extends HTMLElement {
 
   get narrow() {
     return this._narrow;
+  }
+
+  /**
+   * The panel's view (norman-view.js), or null. The panel marks the card with a `view` attribute
+   * before the card first draws, since over the view it is built differently; the view itself
+   * arrives here once its photographs' index has loaded.
+   */
+  set view(view) {
+    this._viewOff?.();
+    this._view = view || null;
+    this._viewOff = this._view ? this._view.subscribe(() => this._viewChanged()) : null;
+    this._viewChanged();
+  }
+
+  get view() {
+    return this._view;
+  }
+
+  /** Whether the card is drawn over the panel's view. */
+  _overView() {
+    return this.hasAttribute("panel") && this.hasAttribute("view");
+  }
+
+  // The view has a new photograph, or follows another weather entity: hand it the windows, and
+  // draw the weather again.
+  _viewChanged() {
+    if (!this._rendered) return;
+    this._syncPanes();
+    this._inputs = null;
+    this._update();
+  }
+
+  /**
+   * Give the view each window's canvas, and the room it is in: a room's windows look out on
+   * one view between them, each on the part behind it.
+   */
+  _syncPanes() {
+    if (!this._view) return;
+    this._view.setPanes(
+      this._roomLines.flatMap(({ photos }, group) => photos.map((canvas) => ({ canvas, group }))),
+    );
   }
 
   // In the sidebar panel, wherever Home Assistant isn't showing its sidebar (the same test its
@@ -1486,6 +2303,10 @@ class NormanShadesCard extends HTMLElement {
           battery: null,
           // The blind's Request status button, or null when it has none on the card.
           refresh: null,
+          // The blind's color (select.py), or null: drawn in the default then.
+          color: null,
+          // Its window's divided lights (select.py), or null: drawn with the default then.
+          lights: null,
         });
       }
       return blinds.get(deviceId);
@@ -1494,8 +2315,12 @@ class NormanShadesCard extends HTMLElement {
     for (const [entityId, entry] of Object.entries(registry)) {
       if (entry.platform !== DOMAIN || !entry.device_id) continue;
       // The frontend's registry marks a hidden entity `hidden: true` and leaves disabled ones
-      // out; `hidden_by` and `disabled_by` are the backend's names for the same.
-      if (entry.hidden || entry.hidden_by || entry.disabled_by) continue;
+      // out; `hidden_by` and `disabled_by` are the backend's names for the same. A hidden color
+      // still colors its shade, and hidden divided lights still divide its glass: hiding them
+      // tidies the device page, it does not undo the choice.
+      if (entry.disabled_by) continue;
+      const drawn = [KEY_SHADE_COLOR, KEY_SHUTTER_COLOR, KEY_WINDOW_LIGHTS].includes(entry.translation_key);
+      if ((entry.hidden || entry.hidden_by) && !drawn) continue;
       if (!this._inScope(entry.device_id)) continue;
 
       const [domain] = entityId.split(".");
@@ -1531,6 +2356,10 @@ class NormanShadesCard extends HTMLElement {
         blind.battery = entityId;
       } else if (domain === "button" && key === BUTTON_REQUEST_STATUS) {
         blind.refresh = entityId;
+      } else if (domain === "select" && (key === KEY_SHADE_COLOR || key === KEY_SHUTTER_COLOR)) {
+        blind.color = entityId;
+      } else if (domain === "select" && key === KEY_WINDOW_LIGHTS) {
+        blind.lights = entityId;
       }
     }
 
@@ -1615,13 +2444,12 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /**
-   * The hub's name, as Home Assistant has it.
+   * The hub's name, as the Norman app has it (hubNameOf).
    *
    * The hub is the Norman device carrying the hub's own entities (`HUB_KEYS`): its MAC
    * address, Wi-Fi and time-zone sensors, pairing and refresh. Not just any device without a
-   * cover -- each of the hub's rooms is one of those too. `name_by_user` wins, matching how
-   * Home Assistant shows the device everywhere else. Returns null when there is no hub to
-   * name.
+   * cover -- each of the hub's rooms is one of those too. Returns null when there is no hub
+   * to name.
    *
    * A card with no `config_entry_id` shows every hub's blinds. Showing one hub's, it names
    * that hub, not another one set up beside it; showing several hubs', it names none of them.
@@ -1647,7 +2475,7 @@ class NormanShadesCard extends HTMLElement {
         if (!this._inScope(entry.device_id)) continue;
         if (hubs && !hubs.has(this._entryOf(entry.device_id))) continue;
         const device = devices[entry.device_id];
-        const name = device && (device.name_by_user || device.name);
+        const name = device && hubNameOf(device);
         if (name) return name;
       }
       return null;
@@ -1801,12 +2629,17 @@ class NormanShadesCard extends HTMLElement {
     // Kept so the heading can follow a hub rename, or fill in once the device registry has
     // loaded -- _render() runs once, but the hub's name can arrive or change later.
     this._headerText = text;
+    this._header = header;
     this._summary = el("div", "summary");
-    titles.append(text, this._summary);
+    // Over the view the counts go under the weather, large at the top of the page, not in the header.
+    const overView = this._overView();
+    titles.append(text, ...(overView ? [] : [this._summary]));
     header.appendChild(titles);
+    const panel = this.hasAttribute("panel");
     // In the sidebar panel the header stays at the top as the page scrolls, so it keeps to one
     // line: the whole-house presets and scene groups go in a row of their own beneath it.
-    const tools = this.hasAttribute("panel") ? el("div", "tools") : header;
+    const tools = panel ? el("div", "tools") : header;
+    this._tools = panel ? tools : null;
     this._homeScenes = null;
     if (!this._config.hide_home_controls) {
       if (!this._config.hide_refresh) header.appendChild(this._buildHomeRefresh());
@@ -1816,14 +2649,65 @@ class NormanShadesCard extends HTMLElement {
       this._homeScenes.hidden = true;
       tools.appendChild(this._homeScenes);
     }
+    // In the sidebar panel, beside the refresh at the top: the page's settings, whose menu turns
+    // the page to choosing each window's color or its divided lights (_setChoosing).
+    this._toggleSettings(false);
+    this._settings = null;
+    this._settingsButton = null;
+    this._settingsMenu = null;
+    this._choiceItems = {};
+    this._choiceBars = {};
+    if (panel) header.appendChild(this._buildSettings());
     card.appendChild(header);
-    if (tools !== header && tools.children.length) card.appendChild(tools);
+    this._hero = null;
+    this._stopForecast();
+    this._hours = null;
+    if (overView) {
+      // The temperature and the weather, from the weather entity the view follows; hidden
+      // until there is one (_patchHero). Beside them the forecast, hidden until it comes
+      // (_patchForecast). The house's counts go beneath. With the integration's weather option
+      // off the panel passes `hide_weather` (frontend.py): only the counts are built, and with
+      // no forecast list the forecast is never asked for.
+      const hero = el("div", "hero");
+      const now = el("div", "now");
+      if (!this._config.hide_weather) {
+        this._hero = { temp: el("div", "temp"), cond: el("div", "cond") };
+        this._hero.temp.hidden = true;
+        this._hero.cond.hidden = true;
+        now.append(this._hero.temp, this._hero.cond);
+      }
+      now.append(this._summary);
+      hero.appendChild(now);
+      if (this._hero) {
+        this._hours = el("ol", "hours");
+        this._hours.setAttribute("aria-label", this._t("forecast"));
+        this._hours.hidden = true;
+        hero.appendChild(this._hours);
+      }
+      card.appendChild(hero);
+    }
+    if (tools !== header) card.appendChild(tools);
+    for (const kind of Object.keys(this._choiceItems)) {
+      this._choiceBars[kind] = this._buildChoiceBar(kind);
+      card.appendChild(this._choiceBars[kind]);
+    }
 
     this._body = el("div", "body");
     card.appendChild(this._body);
+    // On a phone, the bar that goes to each room (_buildDock); filled with the rooms.
+    this._unwatchScroll();
+    this._tabs = [];
+    this._dock = null;
+    if (panel) {
+      this._dock = el("nav", "rooms-bar");
+      this._dock.setAttribute("aria-label", this._t("rooms"));
+      this._dock.hidden = true;
+      card.appendChild(this._dock);
+    }
     // A new body has no rooms in it yet, so _update builds them whatever it last built.
     this._signature = undefined;
     this._inputs = null;
+    this._markChoosing(card);
 
     this.shadowRoot.innerHTML = "";
     this.shadowRoot.appendChild(card);
@@ -1838,8 +2722,10 @@ class NormanShadesCard extends HTMLElement {
     // card's own entities (state objects are replaced, never mutated) -- there is nothing to do,
     // and it returns before regrouping its blinds.
     const hass = this._hass;
+    // Over the view the card also says the weather, from the entity the view follows.
+    const weather = this._hero && this._view?.weatherEntity ? hass.states[this._view.weatherEntity] : undefined;
     const inputs = [hass.entities, hass.devices, hass.areas, hass.states["sun.sun"], hass.themes?.darkMode,
-      hass.dockedSidebar, this._language];
+      hass.dockedSidebar, this._language, weather];
     if (
       this._inputs &&
       this._seen &&
@@ -1862,6 +2748,7 @@ class NormanShadesCard extends HTMLElement {
     }
     // The user can hide the sidebar from their profile, which arrives as a new hass.
     this._syncMenuButton();
+    this._patchHero(weather);
 
     const rooms = this._roomsOf(this._collectBlinds());
     this._scenes = this._collectScenes();
@@ -1873,7 +2760,7 @@ class NormanShadesCard extends HTMLElement {
     // changed by "Recreate entity IDs", or an entity disabled or enabled, has to rebind it.
     const blindKey = (b) =>
       [b.deviceId, b.name, b.area, b.product, b.stack, b.louvers, b.bottomCover, b.middleCover,
-        b.bottomNumber, b.middleNumber, b.battery, b.refresh].join("/");
+        b.bottomNumber, b.middleNumber, b.battery, b.refresh, b.color, b.lights].join("/");
     const signature = rooms
       .map(
         ([room, list]) =>
@@ -1900,6 +2787,7 @@ class NormanShadesCard extends HTMLElement {
     this._body.innerHTML = "";
     this._cells = [];
     this._sceneChips = [];
+    this._roomLines = [];
     this._seen = null;
     this._watched = [
       ...rooms.flatMap(([, list]) =>
@@ -1911,6 +2799,9 @@ class NormanShadesCard extends HTMLElement {
           blind.battery,
           // Its refresh button is greyed out while the Request status button is unavailable.
           blind.refresh,
+          // Its color and its divided lights are drawn from their selects' states.
+          blind.color,
+          blind.lights,
         ]),
       ),
       // A scene's chip is greyed out while the scene is unavailable.
@@ -1921,6 +2812,9 @@ class NormanShadesCard extends HTMLElement {
 
     if (!rooms.length) {
       this._body.appendChild(el("div", "empty", this._t("empty")));
+      this._syncPanes();
+      this._syncChoosing();
+      this._buildDock();
       return;
     }
 
@@ -1933,13 +2827,20 @@ class NormanShadesCard extends HTMLElement {
 
     for (const [roomName, list] of sections) {
       const room = el("section", "room");
-      if (roomName !== null) this._buildRoomHead(room, roomName, list);
+      const line = roomName !== null ? this._buildRoomHead(room, roomName, list) : null;
 
       const grid = el("div", this._config.hide_picture ? "list" : "grid");
+      // The windows built from here on are this room's (_buildView).
+      this._panes = [];
+      const first = this._cells.length;
       for (const blind of list) grid.appendChild(this._buildBlind(blind));
+      this._roomLines.push({ name: roomName, section: room, line, cells: this._cells.slice(first), photos: this._panes });
       room.appendChild(grid);
       this._body.appendChild(room);
     }
+    this._syncPanes();
+    this._syncChoosing();
+    this._buildDock();
   }
 
   /**
@@ -1956,7 +2857,17 @@ class NormanShadesCard extends HTMLElement {
    */
   _buildRoomHead(room, roomName, blinds) {
     const head = el("div", "room-head");
-    head.appendChild(el("div", "room-name", roomName));
+    // Over the view each room is a pane of glass of its own, and says under its name how many
+    // of its shades are open (_patchRoomLines).
+    let line = null;
+    if (this._overView()) {
+      line = el("div", "room-line");
+      const titles = el("div", "room-titles");
+      titles.append(el("div", "room-name", roomName), line);
+      head.appendChild(titles);
+    } else {
+      head.appendChild(el("div", "room-name", roomName));
+    }
     room.appendChild(head);
 
     if (!this._config.hide_room_controls) {
@@ -1966,7 +2877,7 @@ class NormanShadesCard extends HTMLElement {
     const presets = runs ? this._buildRoomPresets(roomName, blinds) : null;
     const scenes = runs ? this._buildRoomScenes(roomName) : null;
     const refresh = this._config.hide_refresh ? null : this._buildRoomRefresh(roomName, blinds);
-    if (!presets && !scenes && !refresh) return;
+    if (!presets && !scenes && !refresh) return line;
     const tray = el("div", "tray");
     tray.hidden = true;
     for (const part of [presets, scenes, refresh]) if (part) tray.appendChild(part);
@@ -1980,6 +2891,7 @@ class NormanShadesCard extends HTMLElement {
     more.setAttribute("aria-expanded", "false");
     head.appendChild(more);
     room.appendChild(tray);
+    return line;
   }
 
   /**
@@ -2295,8 +3207,59 @@ class NormanShadesCard extends HTMLElement {
     const sliders = list ? [...rails].reverse().map((rail) => this._buildSlider(blind, rails, rail)) : [];
     for (const slider of sliders) tile.appendChild(slider.row);
 
-    this._cells.push({ blind, rails, tile, shade, batteryEl, refreshEl, status, stop, sliders });
+    const cell = { blind, rails, tile, shade, batteryEl, refreshEl, status, stop, sliders };
+    // In the sidebar panel a window gets what choosing shows (_setChoosing), for each kind it
+    // has to choose: a select over the window and the choice's name in place of its state, and
+    // for a color a swatch at its corner. Hidden until then.
+    cell.picks = {};
+    cell.choiceNames = {};
+    cell.colorBadge = null;
+    if (shade && this._settings) {
+      for (const [kind, { words }] of Object.entries(CHOICES)) {
+        if (!this._choiceEntity(kind, blind)) continue;
+        const pick = el("select", `pick ${kind}`);
+        pick.setAttribute("aria-label", this._t(words.of, { name: blind.name }));
+        for (const value of Object.keys(this._choicesOf(kind, blind))) {
+          const option = el("option", null, this._t(`${words.option}${value}`));
+          option.value = value;
+          pick.appendChild(option);
+        }
+        pick.addEventListener("change", () => this._choose(cell, kind, pick.value));
+        shade.element.appendChild(pick);
+        const name = el("span", `choice-name ${kind}`);
+        if (kind === "colors") name.appendChild(el("i"));
+        name.appendChild(el("span"));
+        bottom.appendChild(name);
+        cell.picks[kind] = pick;
+        cell.choiceNames[kind] = name;
+      }
+      if (cell.picks.colors) {
+        cell.colorBadge = el("span", "color-badge");
+        shade.element.appendChild(cell.colorBadge);
+      }
+    }
+    this._cells.push(cell);
     return tile;
+  }
+
+  /**
+   * The view through a blind's window: the sky, a line of hills, the glazing bars of its
+   * divided lights and a glint on the glass. Over the panel's view (norman-view.js) the sky and
+   * hills give way to a canvas, on which the view draws its photograph, moving. Returns the
+   * view and the box its bars are laid in (_layBars).
+   */
+  _buildView(blind) {
+    const view = el("div", "view");
+    if (this._overView()) {
+      const photo = el("canvas", "photo");
+      photo.setAttribute("aria-hidden", "true");
+      this._panes.push(photo);
+      view.append(photo);
+    }
+    const bars = el("div", "bars");
+    this._layBars(bars, this._lightsOf(blind));
+    view.append(el("div", "sun"), el("div", "hills"), bars, el("div", "glint"));
+    return { view, bars };
   }
 
   /**
@@ -2326,8 +3289,7 @@ class NormanShadesCard extends HTMLElement {
 
     const frame = el("div", "frame");
     const opening = el("div", "opening");
-    const view = el("div", "view");
-    view.append(el("div", "sun"), el("div", "hills"), el("div", "mullion"), el("div", "transom"), el("div", "glint"));
+    const { view, bars } = this._buildView(blind);
 
     const twoRail = rails.length > 1;
     const single = roller || product === "roman" ? product : "single";
@@ -2387,6 +3349,7 @@ class NormanShadesCard extends HTMLElement {
     const shade = {
       element,
       opening,
+      bars,
       bands,
       markers,
       railEls,
@@ -2421,8 +3384,7 @@ class NormanShadesCard extends HTMLElement {
 
     const frame = el("div", "frame");
     const opening = el("div", "opening");
-    const view = el("div", "view");
-    view.append(el("div", "sun"), el("div", "hills"), el("div", "mullion"), el("div", "transom"), el("div", "glint"));
+    const { view, bars } = this._buildView(blind);
 
     const panel = el("div", "panel");
     const louverBox = el("div", "louvers");
@@ -2449,6 +3411,7 @@ class NormanShadesCard extends HTMLElement {
     const shade = {
       element,
       opening,
+      bars,
       bands: [],
       markers: [marker],
       railEls: [rod],
@@ -2479,8 +3442,7 @@ class NormanShadesCard extends HTMLElement {
 
     const frame = el("div", "frame");
     const opening = el("div", "opening");
-    const view = el("div", "view");
-    view.append(el("div", "sun"), el("div", "hills"), el("div", "mullion"), el("div", "transom"), el("div", "glint"));
+    const { view, bars } = this._buildView(blind);
 
     const sides = STACK_SIDES[blind.stack] || STACK_SIDES.left;
     const hanging = el("div", "hanging");
@@ -2519,6 +3481,7 @@ class NormanShadesCard extends HTMLElement {
     const shade = {
       element,
       opening,
+      bars,
       bands: [],
       markers: parts.map((part) => part.marker),
       railEls: parts.map((part) => part.lead),
@@ -2572,7 +3535,8 @@ class NormanShadesCard extends HTMLElement {
     };
 
     element.addEventListener("pointerdown", (event) => {
-      if (shade.disabled || press) return;
+      // While choosing, a press on the window is for its choice (_setChoosing).
+      if (shade.disabled || press || this._choosing) return;
       if (event.pointerType === "mouse" && event.button !== 0) return;
       const onZone = event.target?.classList?.contains("zone");
       if (event.pointerType !== "mouse" && !onZone) return;
@@ -2599,7 +3563,7 @@ class NormanShadesCard extends HTMLElement {
 
     element.addEventListener("pointermove", (event) => {
       if (!press) {
-        if (event.pointerType === "mouse" && !shade.disabled) setHot(pick(event));
+        if (event.pointerType === "mouse" && !shade.disabled && !this._choosing) setHot(pick(event));
         return;
       }
       if (event.pointerId !== press.id) return;
@@ -3231,7 +4195,11 @@ class NormanShadesCard extends HTMLElement {
         };
       });
 
-      if (shade) this._patchShade(shade, states, unavailable);
+      if (shade) {
+        this._patchShade(shade, states, unavailable);
+        this._paintColor(cell);
+        this._paintLights(cell);
+      }
       for (const slider of cell.sliders) this._patchSlider(slider, unavailable);
 
       setText(cell.status, this._statusOf(rails, states, unavailable));
@@ -3243,6 +4211,7 @@ class NormanShadesCard extends HTMLElement {
       const noStop = !isMoving || Boolean(blind.louvers);
       if (cell.stop.hidden !== noStop) cell.stop.hidden = noStop;
 
+      cell.low = false;
       if (cell.batteryEl) {
         const battery = cell.batteryEl;
         const level = this._numberOf(blind.battery);
@@ -3254,7 +4223,8 @@ class NormanShadesCard extends HTMLElement {
         const title = level === null ? this._t("battery_unknown") : this._t("battery", { value: shown });
         if (battery.title !== title) battery.title = title;
         setAttr(battery, "aria-label", title);
-        if (kind === "low" || kind === "critical") lowBattery += 1;
+        cell.low = kind === "low" || kind === "critical";
+        if (cell.low) lowBattery += 1;
       }
       if (cell.refreshEl) {
         // Greyed out while the blind's Request status button is unavailable, as it is with the blind.
@@ -3262,11 +4232,14 @@ class NormanShadesCard extends HTMLElement {
         if (cell.refreshEl.disabled !== off) cell.refreshEl.disabled = off;
       }
 
-      if ((states[0].shown ?? 0) > 0) open += 1;
+      cell.open = (states[0].shown ?? 0) > 0;
+      cell.moving = isMoving;
+      if (cell.open) open += 1;
       if (isMoving) moving += 1;
     }
 
     this._patchSummary(this._cells.length, open, moving, lowBattery);
+    this._patchRoomLines();
 
     // Redraw when the next move window closes, even if no state changes by then: a blind that
     // missed its move should stop reading "Closing" on time, not at the next update.
@@ -3364,9 +4337,15 @@ class NormanShadesCard extends HTMLElement {
   }
 
   _patchSummary(total, open, moving, lowBattery) {
-    const summary = this._summary;
-    if (!summary) return;
-    const parts = [[this._t("shades", { count: total }), ""]];
+    if (this._summary) this._fillCounts(this._summary, total, open, moving, lowBattery);
+  }
+
+  /**
+   * "12 shades · 9 open · 1 moving · 2 low batteries" in `line`, rewritten only when it changes.
+   * A room's line leaves the count out (`counted` false): its windows are right beneath it.
+   */
+  _fillCounts(line, total, open, moving, lowBattery, counted = true) {
+    const parts = counted ? [[this._t("shades", { count: total }), ""]] : [];
     if (total) {
       if (open === 0) parts.push([this._t("all_closed"), ""]);
       else if (open === total) parts.push([this._t(total === 1 ? "one_open" : "all_open"), ""]);
@@ -3376,13 +4355,629 @@ class NormanShadesCard extends HTMLElement {
     if (lowBattery) parts.push([this._t("low_battery", { count: lowBattery }), "warn"]);
 
     const key = parts.map((part) => part.join(":")).join("|");
-    if (summary.dataset.key === key) return;
-    summary.dataset.key = key;
-    summary.innerHTML = "";
+    if (line.dataset.key === key) return;
+    line.dataset.key = key;
+    line.innerHTML = "";
     parts.forEach(([text, kind], index) => {
-      if (index) summary.appendChild(el("span", "sep", " · "));
-      summary.appendChild(el("span", kind || null, text));
+      if (index) line.appendChild(el("span", "sep", " · "));
+      line.appendChild(el("span", kind || null, text));
     });
+  }
+
+  /**
+   * Over the view, each room's own counts under its name; and on the rooms bar, a dot for a room
+   * with a shade moving or one with a low battery, said in the button's name as well.
+   */
+  _patchRoomLines() {
+    for (const { line, cells } of this._roomLines) {
+      if (!line) continue;
+      const count = (test) => cells.filter(test).length;
+      this._fillCounts(line, cells.length, count((cell) => cell.open), count((cell) => cell.moving), 0, false);
+    }
+    for (const tab of this._tabs) {
+      if (!tab.room) continue;
+      const moving = tab.room.cells.filter((cell) => cell.moving).length;
+      const low = tab.room.cells.filter((cell) => cell.low).length;
+      if (tab.live.hidden !== !moving) tab.live.hidden = !moving;
+      if (tab.warn.hidden !== !low) tab.warn.hidden = !low;
+      const said = [
+        tab.room.name,
+        moving ? this._t("moving", { count: moving }) : null,
+        low ? this._t("low_battery", { count: low }) : null,
+      ].filter(Boolean).join(" · ");
+      setAttr(tab.button, "aria-label", said);
+      if (tab.button.title !== said) tab.button.title = said;
+    }
+  }
+
+  /**
+   * Over the view, the temperature and the weather under the heading, from the weather entity
+   * the view follows: "67°" and "Partly cloudy", in Home Assistant's own words for the state.
+   * Hidden while there is no such entity, or it has nothing to say.
+   */
+  _patchHero(weather) {
+    if (!this._hero) return;
+    const { temp, cond } = this._hero;
+    const known = Boolean(weather) && !["unavailable", "unknown"].includes(weather.state);
+    const degrees = known ? Number(weather.attributes?.temperature) : NaN;
+    temp.hidden = Number.isNaN(degrees);
+    if (!temp.hidden) setText(temp, `${Math.round(degrees)}°`);
+    cond.hidden = !known;
+    if (known) setText(cond, this._hass.formatEntityState?.(weather) ?? weather.state);
+    this._syncForecast();
+    this._patchForecast();
+  }
+
+  // ---- the forecast ---------------------------------------------------------------------------
+
+  /**
+   * Over the view, hear the forecast of the weather entity the view follows: Home Assistant's
+   * weather/subscribe_forecast, which sends it now and again whenever it changes. Hourly where
+   * the entity has it (its supported features say), else twice a day, else daily; nothing for
+   * an entity with no forecast, nor while the card is off the page.
+   */
+  _syncForecast() {
+    const entityId = this._hours && this._view?.weatherEntity;
+    const weather = entityId ? this._hass?.states?.[entityId] : null;
+    const features = Number(weather?.attributes?.supported_features) || 0;
+    const type = FORECAST_TYPES.find(([, bit]) => features & bit)?.[0];
+    const connection = this._hass?.connection;
+    const wanted = weather && type && connection && this._connected ? `${entityId} ${type}` : null;
+    if (wanted === (this._forecast?.key ?? null)) return;
+    this._stopForecast();
+    if (!wanted) return;
+    const forecast = { key: wanted, entityId, type, list: null, unsubscribe: null, stopped: false };
+    this._forecast = forecast;
+    // The hours go by between forecasts: one that has passed leaves the strip.
+    forecast.timer = setInterval(() => this._patchForecast(), 5 * 60 * 1000);
+    Promise.resolve()
+      .then(() =>
+        connection.subscribeMessage(
+          (message) => {
+            if (forecast.stopped) return;
+            forecast.list = Array.isArray(message?.forecast) ? message.forecast : [];
+            this._patchForecast();
+          },
+          { type: "weather/subscribe_forecast", forecast_type: type, entity_id: entityId },
+        ),
+      )
+      .then(
+        (unsubscribe) => {
+          if (forecast.stopped) this._unsubscribe(unsubscribe);
+          else forecast.unsubscribe = unsubscribe;
+        },
+        // The entity would not give one after all: the strip stays hidden.
+        () => {},
+      );
+  }
+
+  /** Stop hearing the forecast, if the card is. */
+  _stopForecast() {
+    const forecast = this._forecast;
+    if (!forecast) return;
+    forecast.stopped = true;
+    clearInterval(forecast.timer);
+    this._unsubscribe(forecast.unsubscribe);
+    this._forecast = null;
+  }
+
+  // A subscription's way to stop, which a closed connection can refuse: it is gone either way.
+  _unsubscribe(unsubscribe) {
+    try {
+      Promise.resolve(unsubscribe?.()).catch(() => {});
+    } catch {
+      // Already gone.
+    }
+  }
+
+  /** Draw the forecast's cells, rewritten only when they change; hidden with nothing to say. */
+  _patchForecast() {
+    const box = this._hours;
+    if (!box) return;
+    const cells = this._forecastCells();
+    const hidden = cells.length < 2;
+    if (box.hidden !== hidden) box.hidden = hidden;
+    const key = JSON.stringify(cells);
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    box.innerHTML = "";
+    for (const cell of cells) {
+      const item = el("li");
+      const parts = [el("span", "when", cell.when), haIcon(cell.icon), el("span", "wet", cell.wet), el("span", "deg", cell.deg)];
+      if (cell.low) parts[3].appendChild(el("span", "low", cell.low));
+      for (const part of parts) part.setAttribute("aria-hidden", "true");
+      item.append(el("span", "said", cell.said), ...parts);
+      box.appendChild(item);
+    }
+  }
+
+  /**
+   * The forecast as the strip shows it: now, from the weather entity itself, then what is
+   * ahead -- the next hours, or for a daily forecast the days after today -- each with its
+   * time, its weather's icon (the night's for a clear hour after dark), its chance of rain or
+   * snow when that is worth saying, and its temperature (and a day's low). Empty until the
+   * forecast has come.
+   */
+  _forecastCells() {
+    const forecast = this._forecast;
+    const weather = forecast ? this._hass?.states?.[forecast.entityId] : null;
+    if (!forecast?.list?.length || !weather || ["unavailable", "unknown"].includes(weather.state)) return [];
+    const locale = this._hass.locale || {};
+    const language = locale.language || this._hass.language || "en";
+    const options = {
+      ...(locale.time_format === "12" ? { hour12: true } : locale.time_format === "24" ? { hour12: false } : {}),
+      ...(locale.time_zone === "server" && this._hass.config?.time_zone ? { timeZone: this._hass.config.time_zone } : {}),
+    };
+    const format = (parts) => {
+      try {
+        return new Intl.DateTimeFormat(language, { ...options, ...parts });
+      } catch {
+        return new Intl.DateTimeFormat("en", parts);
+      }
+    };
+    const hours = format({ hour: "numeric" });
+    const days = format({ weekday: "short" });
+    const dayOf = format({ year: "numeric", month: "numeric", day: "numeric" });
+    const night = (at, condition) => {
+      if (condition === "clear-night") return true;
+      const sun = this._view?.sunAt?.(new Date(at));
+      return Boolean(sun) && sun.elevation < -0.83;
+    };
+    const degrees = (value) => (Number.isFinite(Number(value)) && value !== null ? `${Math.round(Number(value))}°` : "");
+    const say = (condition) => this._hass.formatEntityState?.(weather, condition) ?? condition;
+    const cell = (when, condition, temperature, { low, wet, dark } = {}) => {
+      const icon = (dark && NIGHT_ICONS[condition]) || WEATHER_ICONS[condition] || "mdi:weather-cloudy";
+      const chance = Number(wet);
+      const wetText = Number.isFinite(chance) && wet !== null && chance >= FORECAST_WET ? this._pct(chance) : "";
+      const said = [when, condition ? say(condition) : null, degrees(temperature), low !== undefined ? degrees(low) : null,
+        wetText ? this._t("chance", { value: Math.round(chance) }) : null].filter(Boolean).join(", ");
+      return { when, icon, wet: wetText, deg: degrees(temperature), ...(low !== undefined ? { low: degrees(low) } : {}), said };
+    };
+
+    const now = Date.now();
+    const cells = [cell(this._t("now"), weather.state, weather.attributes?.temperature, { dark: night(now, weather.state) })];
+    const today = dayOf.format(new Date(now));
+    for (const entry of forecast.list) {
+      if (cells.length >= FORECAST_CELLS) break;
+      const at = Date.parse(entry?.datetime);
+      if (!Number.isFinite(at)) continue;
+      if (forecast.type === "daily") {
+        if (dayOf.format(new Date(at)) === today || at < now) continue;
+        cells.push(cell(days.format(new Date(at)), entry.condition, entry.temperature,
+          { low: entry.templow ?? null, wet: entry.precipitation_probability ?? null }));
+      } else if (at > now) {
+        const dark = forecast.type === "twice_daily" ? entry.is_daytime === false : night(at, entry.condition);
+        const when = forecast.type === "twice_daily" ? days.format(new Date(at)) : hours.format(new Date(at));
+        cells.push(cell(when, entry.condition, entry.temperature, { wet: entry.precipitation_probability ?? null, dark }));
+      }
+    }
+    return cells;
+  }
+
+  // ---- colors and divided lights --------------------------------------------------------------
+
+  /** The colors a blind can have: a Shutter's paints and stains, any other blind's fabrics. */
+  _colorsOf(blind) {
+    return blind.louvers ? SHUTTER_COLORS : SHADE_COLORS;
+  }
+
+  /** A blind's select for a kind of choice: its color's, or its window's divided lights'. */
+  _choiceEntity(kind, blind) {
+    return kind === "colors" ? blind.color : blind.lights;
+  }
+
+  /** What a blind can choose from, for a kind of choice. */
+  _choicesOf(kind, blind) {
+    return kind === "colors" ? this._colorsOf(blind) : WINDOW_LIGHTS;
+  }
+
+  /**
+   * What is chosen on a select: one just chosen here, while Home Assistant takes it up, else
+   * the select's state, else the default.
+   */
+  _chosen(entityId, choices, fallback) {
+    if (!entityId) return fallback;
+    const state = this._hass?.states?.[entityId]?.state;
+    const pending = this._choicePending.get(entityId);
+    if (pending && (state === pending.value || Date.now() - pending.at > CHOICE_PENDING_MS)) {
+      this._choicePending.delete(entityId);
+    } else if (pending) {
+      return pending.value;
+    }
+    return Object.hasOwn(choices, state) ? state : fallback;
+  }
+
+  /** The color a blind is drawn in. */
+  _colorOf(blind) {
+    return this._chosen(blind.color, this._colorsOf(blind), blind.louvers ? DEFAULT_SHUTTER_COLOR : DEFAULT_SHADE_COLOR);
+  }
+
+  /** The divided lights a blind's window is drawn with. */
+  _lightsOf(blind) {
+    return this._chosen(blind.lights, WINDOW_LIGHTS, DEFAULT_WINDOW_LIGHTS);
+  }
+
+  /** Draw a window in its blind's color, and say the color where choosing shows it. */
+  _paintColor(cell) {
+    const { blind, shade } = cell;
+    const color = this._colorOf(blind);
+    const fallback = blind.louvers ? DEFAULT_SHUTTER_COLOR : DEFAULT_SHADE_COLOR;
+    const drawn = color === fallback ? undefined : color;
+    if (shade.element.dataset.color !== drawn) {
+      if (drawn) shade.element.dataset.color = drawn;
+      else delete shade.element.dataset.color;
+    }
+    const pick = cell.picks.colors;
+    if (!pick) return;
+    if (pick.value !== color) pick.value = color;
+    const swatch = swatchOf(Boolean(blind.louvers), color);
+    for (const part of [cell.colorBadge, cell.choiceNames.colors]) {
+      if (part.style.getPropertyValue?.("--n-swatch") !== swatch) part.style.setProperty?.("--n-swatch", swatch);
+    }
+    setText(cell.choiceNames.colors.lastChild, this._t(`color_${color}`));
+  }
+
+  /** Draw a window's glass with its divided lights, and say them where choosing shows them. */
+  _paintLights(cell) {
+    const lights = this._lightsOf(cell.blind);
+    this._layBars(cell.shade.bars, lights);
+    const pick = cell.picks.lights;
+    if (!pick) return;
+    if (pick.value !== lights) pick.value = lights;
+    setText(cell.choiceNames.lights.lastChild, this._t(`lights_${lights}`));
+  }
+
+  /** Lay a window's glazing bars for its divided lights (WINDOW_LIGHTS), when they change. */
+  _layBars(bars, lights) {
+    if (bars.dataset.lights === lights) return;
+    bars.dataset.lights = lights;
+    bars.innerHTML = "";
+    for (const [way, at, weight, from = 0, to = 100] of WINDOW_LIGHTS[lights] ?? WINDOW_LIGHTS[DEFAULT_WINDOW_LIGHTS]) {
+      const down = way === "down";
+      const bar = el("div", down ? "mullion" : "transom");
+      bar.style[down ? "left" : "top"] = `${at}%`;
+      bar.style[down ? "width" : "height"] = `${weight}%`;
+      bar.style[down ? "top" : "left"] = `${from}%`;
+      bar.style[down ? "height" : "width"] = `${to - from}%`;
+      bars.appendChild(bar);
+    }
+  }
+
+  /** A choice made for one window: drawn at once, and kept on the blind's select. */
+  _choose(cell, kind, value) {
+    const entityId = this._choiceEntity(kind, cell.blind);
+    if (!entityId || !Object.hasOwn(this._choicesOf(kind, cell.blind), value)) return;
+    this._choicePending.set(entityId, { value, at: Date.now() });
+    if (kind === "colors") this._paintColor(cell);
+    else this._paintLights(cell);
+    this._keepChoice([entityId], value);
+  }
+
+  /**
+   * The windows a choice for every window at once goes to: every window with that choice, but
+   * a color only to the shades, not a Shutter, whose colors are paints.
+   */
+  _everyFor(kind) {
+    return this._cells.filter((cell) => cell.picks[kind] && (kind !== "colors" || !cell.blind.louvers));
+  }
+
+  /** A choice made for every window at once. */
+  _chooseEvery(kind, value) {
+    const cells = this._everyFor(kind);
+    if (!cells.length || !Object.hasOwn(kind === "colors" ? SHADE_COLORS : WINDOW_LIGHTS, value)) return;
+    const at = Date.now();
+    for (const cell of cells) {
+      this._choicePending.set(this._choiceEntity(kind, cell.blind), { value, at });
+      if (kind === "colors") this._paintColor(cell);
+      else this._paintLights(cell);
+    }
+    this._keepChoice(cells.map((cell) => this._choiceEntity(kind, cell.blind)), value);
+  }
+
+  // One call for every select; one Home Assistant refuses is drawn as it was, and so is any it
+  // has not taken up once CHOICE_PENDING_MS has passed.
+  _keepChoice(entityIds, value) {
+    const settle = () => {
+      for (const entityId of entityIds) this._choicePending.delete(entityId);
+      this._patch();
+    };
+    Promise.resolve(
+      this._hass.callService("select", "select_option", { entity_id: entityIds.length === 1 ? entityIds[0] : entityIds, option: value }),
+    ).catch(settle);
+    setTimeout(() => this._patch(), CHOICE_PENDING_MS + 100);
+  }
+
+  /** Turn the page to choosing a kind of thing for each window ("colors" or "lights"), or back (null). */
+  _setChoosing(kind) {
+    const was = this._choosing;
+    const item = kind ? this._choiceItems[kind] : null;
+    this._choosing = item && !item.hidden ? kind : null;
+    this._toggleSettings(false);
+    this._syncChoosing();
+    // The bar's Done takes the focus, so nothing scrolls, and gives it back to the settings
+    // button the choosing began from.
+    if (this._choosing && this._choosing !== was) this._choiceDone[this._choosing]?.focus?.({ preventScroll: true });
+    if (was && !this._choosing) this._settingsButton?.focus?.({ preventScroll: true });
+  }
+
+  /**
+   * Each kind's item in the settings menu shows while a window has that to choose, and the
+   * settings button while either does; the page is drawn choosing, or not, as `_choosing` says.
+   */
+  _syncChoosing() {
+    const settings = this._settings;
+    if (!settings) return;
+    for (const [kind, item] of Object.entries(this._choiceItems)) {
+      const any = this._cells.some((cell) => cell.picks[kind]);
+      if (item.hidden !== !any) item.hidden = !any;
+      if (!any && this._choosing === kind) this._choosing = null;
+      const every = this._choiceEvery[kind];
+      if (every) every.hidden = !this._everyFor(kind).length;
+    }
+    const none = Object.values(this._choiceItems).every((item) => item.hidden);
+    if (settings.hidden !== none) settings.hidden = none;
+    if (none) this._toggleSettings(false);
+    const tools = this._tools;
+    if (tools) {
+      const empty = [...(tools.children || [])].every((child) => child.hidden);
+      if (tools.hidden !== empty) tools.hidden = empty;
+    }
+    this._markChoosing(this._card);
+  }
+
+  /**
+   * The page's settings, at the top of the sidebar panel beside the refresh: a button that opens
+   * a menu of what can be chosen for each window, its shade's color and its divided lights, each
+   * of which turns the page to choosing it (_setChoosing). Hidden until a window has something
+   * to choose (_syncChoosing).
+   */
+  _buildSettings() {
+    const group = el("div", "icon-group home-settings");
+    group.hidden = true;
+    const button = this._iconButton(SETTINGS_ICON, this._t("settings"), () => this._toggleSettings());
+    button.classList.add("settings");
+    button.setAttribute("aria-haspopup", "menu");
+    button.setAttribute("aria-expanded", "false");
+    const menu = el("div", "settings-menu");
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", this._t("settings"));
+    menu.hidden = true;
+    this._choiceItems = {};
+    for (const [kind, { icon, words }] of Object.entries(CHOICES)) {
+      const item = el("button", `menu-item ${kind}`);
+      item.type = "button";
+      item.setAttribute("role", "menuitem");
+      item.append(haIcon(icon), el("span", null, this._t(words.button)));
+      item.hidden = true;
+      item.addEventListener("click", () => this._setChoosing(kind));
+      this._choiceItems[kind] = item;
+      menu.appendChild(item);
+    }
+    menu.addEventListener("keydown", (event) => this._settingsKey(event));
+    group.append(button, menu);
+    this._settings = group;
+    this._settingsButton = button;
+    this._settingsMenu = menu;
+    return group;
+  }
+
+  /**
+   * Open the settings menu, or close it (`open` false); with no argument, the other of the two.
+   * Open, its first item takes the focus, and a press anywhere else closes it.
+   */
+  _toggleSettings(open = Boolean(this._settingsMenu?.hidden)) {
+    const menu = this._settingsMenu;
+    if (!menu || menu.hidden === !open) return;
+    menu.hidden = !open;
+    this._settingsButton.setAttribute("aria-expanded", String(open));
+    this._settingsButton.classList.toggle("open", open);
+    this._onOutside ??= (event) => {
+      if (!event.composedPath?.().includes(this._settings)) this._toggleSettings(false);
+    };
+    if (open) {
+      document.addEventListener?.("pointerdown", this._onOutside, true);
+      Object.values(this._choiceItems).find((item) => !item.hidden)?.focus?.({ preventScroll: true });
+    } else {
+      document.removeEventListener?.("pointerdown", this._onOutside, true);
+    }
+  }
+
+  /** The settings menu by the keyboard: up and down go between its items, Escape closes it. */
+  _settingsKey(event) {
+    const items = Object.values(this._choiceItems).filter((item) => !item.hidden);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this._toggleSettings(false);
+      this._settingsButton.focus?.();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const at = items.indexOf(this.shadowRoot?.activeElement ?? event.target);
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      items[(at + step + items.length) % items.length]?.focus?.();
+    } else if (event.key === "Tab") {
+      this._toggleSettings(false);
+    }
+  }
+
+  /** Mark the card with what is being chosen, for the CSS. */
+  _markChoosing(card) {
+    if (!card) return;
+    card.classList.toggle("choosing", Boolean(this._choosing));
+    for (const [kind, { mode }] of Object.entries(CHOICES)) card.classList.toggle(mode, this._choosing === kind);
+  }
+
+  /**
+   * What stands in for the whole-house row while a kind of thing is chosen: what to do, one
+   * for every window at once, and Done.
+   */
+  _buildChoiceBar(kind) {
+    const { icon, words } = CHOICES[kind];
+    const bar = el("div", `choice-bar ${kind}`);
+    const text = el("div", "choice-text");
+    text.append(el("div", "choice-title", this._t(words.button)), el("div", "choice-hint", this._t(words.hint)));
+    const actions = el("div", "choice-actions");
+    const every = el("div", "chip choice-every");
+    every.append(haIcon(icon), el("span", null, this._t(words.every)));
+    const select = el("select");
+    select.setAttribute("aria-label", this._t(words.every));
+    const prompt = el("option", null, this._t(words.every));
+    prompt.value = "";
+    prompt.disabled = true;
+    select.appendChild(prompt);
+    for (const value of Object.keys(kind === "colors" ? SHADE_COLORS : WINDOW_LIGHTS)) {
+      const option = el("option", null, this._t(`${words.option}${value}`));
+      option.value = value;
+      select.appendChild(option);
+    }
+    select.value = "";
+    select.addEventListener("change", () => {
+      const value = select.value;
+      select.value = "";
+      if (value) this._chooseEvery(kind, value);
+    });
+    every.appendChild(select);
+    this._choiceEvery[kind] = every;
+    const done = this._buildChip("mdi:check", this._t("choose_done"), this._t("choose_done"), () => this._setChoosing(null));
+    this._choiceDone[kind] = done;
+    actions.append(every, done);
+    bar.append(text, actions);
+    return bar;
+  }
+
+  // ---- the rooms bar --------------------------------------------------------------------------
+
+  /**
+   * In the sidebar panel, the bar at the foot of a phone's screen: the top of the page, then a
+   * button for each room, which scrolls to it. Hidden with fewer than two rooms to go between,
+   * or with the room headings hidden; the CSS shows it only where Home Assistant says the
+   * screen is narrow.
+   */
+  _buildDock() {
+    const dock = this._dock;
+    if (!dock) return;
+    dock.innerHTML = "";
+    this._tabs = [];
+    const rooms = this._roomLines.filter((room) => room.name !== null && room.name !== undefined);
+    dock.hidden = rooms.length < 2;
+    if (dock.hidden) {
+      this._unwatchScroll();
+      return;
+    }
+    const tab = (label, room, icon) => {
+      const button = el("button", "room-tab");
+      button.type = "button";
+      if (icon) button.appendChild(haIcon(icon));
+      button.appendChild(el("span", null, label));
+      const live = el("i", "dot live");
+      const warn = el("i", "dot warn");
+      live.hidden = true;
+      warn.hidden = true;
+      live.setAttribute("aria-hidden", "true");
+      warn.setAttribute("aria-hidden", "true");
+      button.append(live, warn);
+      const index = this._tabs.length;
+      button.addEventListener("click", () => this._goTo(index));
+      dock.appendChild(button);
+      this._tabs.push({ button, room, live, warn });
+    };
+    tab(this._t("home"), null, "mdi:home-outline");
+    this._tabs[0].button.setAttribute("aria-label", this._t("home_top"));
+    this._tabs[0].button.title = this._t("home_top");
+    for (const room of rooms) tab(room.name, room);
+    this._markTab(0);
+    this._watchScroll();
+  }
+
+  /** Scroll to a room, below the header that stays at the top, or to the top of the page. */
+  _goTo(index) {
+    const tab = this._tabs[index];
+    if (!tab) return;
+    const smooth = !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const target = tab.room ? tab.room.section : this._card;
+    if (tab.room) {
+      const header = this._header?.getBoundingClientRect?.().height ?? 0;
+      target.style.scrollMarginTop = `${Math.round(header + 10)}px`;
+    }
+    // The marking follows the press, not the rooms scrolling past on the way.
+    this._spyHeld = Date.now() + 900;
+    target.scrollIntoView?.({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    this._markTab(index);
+  }
+
+  /** Mark the part of the page in view on the bar, and bring its button into the bar's view. */
+  _markTab(index) {
+    this._tabs.forEach((tab, i) => {
+      const current = tab.button.getAttribute("aria-current") === "true";
+      if (i === index && !current) tab.button.setAttribute("aria-current", "true");
+      else if (i !== index && current) tab.button.removeAttribute("aria-current");
+    });
+    const button = this._tabs[index]?.button;
+    const bar = this._dock;
+    if (!button || !bar?.scrollTo || bar.scrollWidth <= bar.clientWidth) return;
+    const left = Math.max(0, button.offsetLeft - (bar.clientWidth - button.offsetWidth) / 2);
+    if (Math.abs(bar.scrollLeft - left) > 1) bar.scrollTo({ left, behavior: "smooth" });
+  }
+
+  /** The box the page scrolls in: the panel's, found up the tree through its shadow roots. */
+  _scrollBox() {
+    let node = this;
+    while (node) {
+      node = node.assignedSlot || node.parentNode || node.host;
+      if (node?.nodeType !== 1) continue;
+      const overflow = getComputedStyle(node).overflowY;
+      if (overflow === "auto" || overflow === "scroll") return node;
+    }
+    return null;
+  }
+
+  /** Follow the page's scrolling, to mark the room in view on the bar. */
+  _watchScroll() {
+    this._unwatchScroll();
+    if (!this._connected || !this._dock || this._dock.hidden || typeof getComputedStyle !== "function") return;
+    const box = this._scrollBox();
+    if (!box) return;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        this._spy(box);
+      });
+    };
+    box.addEventListener("scroll", onScroll, { passive: true });
+    // The page's parts move without a scroll as well: the forecast arriving, a room's tray
+    // opening, the screen turning.
+    const resize = typeof ResizeObserver === "function" ? new ResizeObserver(onScroll) : null;
+    resize?.observe(this._card);
+    this._scroller = { box, onScroll, resize };
+    onScroll();
+  }
+
+  _unwatchScroll() {
+    if (!this._scroller) return;
+    this._scroller.box.removeEventListener("scroll", this._scroller.onScroll);
+    this._scroller.resize?.disconnect();
+    this._scroller = null;
+  }
+
+  /**
+   * The part of the page in view: the top of the page until it scrolls, then the last room whose
+   * top has come up past a line a third of the way down below the header; at the very end of the
+   * page, the last room, which may be too short to reach the line.
+   */
+  _spy(box) {
+    if (!this._tabs.length || Date.now() < this._spyHeld) return;
+    const header = this._header?.getBoundingClientRect().bottom ?? 0;
+    const view = box.getBoundingClientRect();
+    const line = header + (view.bottom - header) / 3;
+    let active = 0;
+    if (box.scrollTop > 4) {
+      this._tabs.forEach((tab, index) => {
+        if (tab.room && tab.room.section.getBoundingClientRect().top <= line) active = index;
+      });
+      if (box.scrollTop + box.clientHeight >= box.scrollHeight - 2) active = this._tabs.length - 1;
+    }
+    this._markTab(active);
   }
 
   _showMore(entityId) {

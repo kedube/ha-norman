@@ -7,14 +7,16 @@ metadata, and the documentation's cross-links. Pinning them here keeps them hone
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
+import tomllib
 
 import pytest
 import yaml
 
-from custom_components.norman.const import DOMAIN
+from custom_components.norman.const import DOMAIN, SIDEBAR_VIEW_NONE, SIDEBAR_VIEWS
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 COMPONENT = REPO / "custom_components" / DOMAIN
@@ -74,6 +76,7 @@ def test_entity_translation_keys_are_translated() -> None:
     from custom_components.norman.button import BUTTONS, HUB_BUTTONS, ROOM_BUTTONS
     from custom_components.norman.number import HUB_NUMBERS, NUMBERS, ROOM_NUMBERS
     from custom_components.norman.scene import ROOM_SCENE_KEY, SCENE_GROUP_KEY
+    from custom_components.norman.select import SELECTS
     from custom_components.norman.sensor import HUB_SENSORS, SENSORS
 
     strings = _load(COMPONENT / "strings.json")["entity"]
@@ -94,6 +97,41 @@ def test_entity_translation_keys_are_translated() -> None:
     assert button_keys == set(icons)
     # A scene is named as in the Norman app; the translated name is for one saved without.
     assert {ROOM_SCENE_KEY, SCENE_GROUP_KEY} == set(strings["scene"])
+    # A color select names each of its colors, and has an icon.
+    select_keys = {description.translation_key for description in SELECTS}
+    assert select_keys == set(strings["select"])
+    for description in SELECTS:
+        assert set(description.options or ()) == set(
+            strings["select"][description.translation_key]["state"]
+        )
+    assert select_keys == set(_load(COMPONENT / "icons.json")["entity"]["select"])
+
+
+def test_card_draws_the_divided_lights_the_select_offers() -> None:
+    """Each pattern of divided lights the select offers, the card draws and names, in order.
+
+    As with the colors, the card matches the select's state against its own table
+    (WINDOW_LIGHTS), drawing one it does not know as the default, and lists the patterns in that
+    table's order; each pattern's name in every language is the integration's own word for it.
+    """
+    from custom_components.norman.select import (
+        DEFAULT_WINDOW_LIGHTS,
+        WINDOW_LIGHTS,
+        WINDOW_LIGHTS_SELECT,
+    )
+
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    assert _card_table(card, "WINDOW_LIGHTS") == list(WINDOW_LIGHTS)
+    assert f'const DEFAULT_WINDOW_LIGHTS = "{DEFAULT_WINDOW_LIGHTS}";' in card
+    assert f'const KEY_WINDOW_LIGHTS = "{WINDOW_LIGHTS_SELECT.translation_key}";' in card
+
+    for language, said in _card_words().items():
+        states = _load(COMPONENT / "translations" / f"{language}.json")["entity"]["select"][
+            "window_lights"
+        ]
+        assert said["lights"] == states["name"], language
+        for pattern in WINDOW_LIGHTS:
+            assert said[f"lights_{pattern}"] == states["state"][pattern], (language, pattern)
 
 
 def test_observed_fields_are_catalogued() -> None:
@@ -301,7 +339,7 @@ def test_card_matches_the_translation_keys_the_entities_use() -> None:
 
     declared = {
         key
-        for section in ("cover", "number", "sensor", "scene")
+        for section in ("cover", "number", "select", "sensor", "scene")
         for key in strings["entity"][section]
     }
     # The KEY_* constants are exactly what the card matches entities on.
@@ -324,6 +362,68 @@ def test_card_matches_the_translation_keys_the_entities_use() -> None:
         buttons - set(strings["entity"]["button"])
     )
     assert not {key for key in buttons if "report_battery" in key}, "never the battery report"
+
+
+def _card_table(card: str, name: str) -> list[str]:
+    """The keys of one of the card's color tables (``const NAME = { key: ..., }``), in order."""
+    block = re.search(rf"^const {name} = \{{\n(.*?)^\}};", card, re.M | re.S)
+    assert block, f"no {name} in the card"
+    return re.findall(r"^  (\w+): ", block.group(1), re.M)
+
+
+def _card_words() -> dict[str, dict[str, str]]:
+    """The card's words (www/norman-strings.js), by language, as plain ``key: "text"`` pairs."""
+    text = (COMPONENT / "www" / "norman-strings.js").read_text(encoding="utf-8")
+    words: dict[str, dict[str, str]] = {}
+    language = None
+    for line in text.splitlines():
+        if heading := re.fullmatch(r'  "?([\w-]+)"?: \{', line):
+            language = heading.group(1)
+            words[language] = {}
+        elif language and (pair := re.fullmatch(r'    (\w+): (".*"),', line)):
+            words[language][pair.group(1)] = json.loads(pair.group(2))
+    return words
+
+
+def test_card_draws_the_colors_the_selects_offer() -> None:
+    """Each color a blind's select offers, the card draws and names, in the same order.
+
+    The card matches a select's state against its own tables (SHADE_COLORS, SHUTTER_COLORS):
+    a color it does not know is drawn as the default, which a typo would do silently. Its
+    window select lists the colors in its own order, so that has to be the select's too, and
+    each color's name in every language is the integration's own word for that state.
+    """
+    from custom_components.norman.select import (
+        DEFAULT_SHADE_COLOR,
+        DEFAULT_SHUTTER_COLOR,
+        SHADE_COLOR,
+        SHADE_COLORS,
+        SHUTTER_COLOR,
+        SHUTTER_COLORS,
+    )
+
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    assert _card_table(card, "SHADE_COLORS") == list(SHADE_COLORS)
+    assert _card_table(card, "SHUTTER_COLORS") == list(SHUTTER_COLORS)
+    assert f'const DEFAULT_SHADE_COLOR = "{DEFAULT_SHADE_COLOR}";' in card
+    assert f'const DEFAULT_SHUTTER_COLOR = "{DEFAULT_SHUTTER_COLOR}";' in card
+    assert f'const KEY_SHADE_COLOR = "{SHADE_COLOR.translation_key}";' in card
+    assert f'const KEY_SHUTTER_COLOR = "{SHUTTER_COLOR.translation_key}";' in card
+
+    words = _card_words()
+    assert set(words) == {
+        "en",
+        *(path.stem for path in (COMPONENT / "translations").glob("*.json")),
+    }
+    for language, said in words.items():
+        selects = _load(COMPONENT / "translations" / f"{language}.json")["entity"]["select"]
+        for key, colors in (("shade_color", SHADE_COLORS), ("shutter_color", SHUTTER_COLORS)):
+            for color in colors:
+                assert said[f"color_{color}"] == selects[key]["state"][color], (
+                    language,
+                    key,
+                    color,
+                )
 
 
 def test_card_finds_the_hub_by_keys_only_the_hub_has() -> None:
@@ -432,6 +532,185 @@ def test_sidebar_panel_keeps_clear_of_the_safe_areas() -> None:
     assert "handle_safe_area" in (COMPONENT / "frontend.py").read_text(encoding="utf-8")
 
 
+# ---- the sidebar page's view -----------------------------------------------------------
+
+VIEW = COMPONENT / "www" / "view"
+# The pictures each scene ships: the strip of its photograph the windows look out on, and the
+# same part of its map of sky and water.
+SCENE_FILES = (".webp", "-mask.jpg")
+# Every weather and part of the day the page can ask for (pickScene in www/norman-view.js).
+WEATHERS = ("partly", "cloudy", "fog", "rain", "storm", "snow")
+PARTS_OF_DAY = ("dawn", "day", "golden", "sunset", "dusk", "twilight", "night")
+
+
+def _scenes() -> dict[str, dict]:
+    return _load(VIEW / "scenes.json")
+
+
+def test_view_ships_exactly_the_pictures_its_index_lists() -> None:
+    """Each scene in scenes.json has its two pictures, and www/view holds nothing else.
+
+    A scene without a picture is a blank page the first time its weather comes round, months
+    after the release; a picture without a scene is weight on every install for nothing.
+    """
+    expected = {"scenes.json", "moon.jpg"} | {
+        f"{key}{suffix}" for key in _scenes() for suffix in SCENE_FILES
+    }
+    shipped = {path.name for path in VIEW.iterdir()}
+    assert shipped == expected, (
+        f"missing: {sorted(expected - shipped)}; not in the index: {sorted(shipped - expected)}"
+    )
+
+
+def test_view_index_is_built_from_the_scene_table() -> None:
+    """scenes.json is what scripts/build_view.py makes of scripts/view/scenes.toml.
+
+    The table is edited by hand and the index built from it, so each can fall behind the
+    other: the same scenes, credits and motion, and each scene's ``rev`` the hash of the
+    pictures that ship. The page stamps a picture's URL with its rev, and /norman/ is served
+    with long-lived cache headers, so a picture changed without its rev would never reach a
+    browser that has the old one.
+    """
+    table = tomllib.loads((REPO / "scripts" / "view" / "scenes.toml").read_text(encoding="utf-8"))
+    scenes = _scenes()
+    assert set(scenes) == set(table)
+    for key, scene in scenes.items():
+        row = table[key]
+        assert f"{scene['place']}-{scene['when']}" == key
+        assert (scene["by"], scene["license"], scene["title"], scene["where"]) == (
+            row["author"],
+            row["license"],
+            row["title"],
+            row["where"],
+        ), key
+        for name in ("sky", "water", "birds", "light", "rain", "snow", "fog", "storm", "stars"):
+            assert scene["motion"].get(name) == row.get(name), f"{key}: {name}"
+        # The strip is two wide by one high, inside the photograph.
+        left, top, width, height = scene["strip"]
+        assert abs(width * scene["aspect"] / height - 2) < 0.01, f"{key}: the strip is not 2:1"
+        assert left >= 0 and top >= 0 and left + width <= 1.00001 and top + height <= 1.00001, key
+        assert len(scene["colours"]) == 3, f"{key}: no colours for the page behind"
+        digest = hashlib.sha256()
+        for suffix in SCENE_FILES:
+            digest.update((VIEW / f"{key}{suffix}").read_bytes())
+        assert scene["rev"] == digest.hexdigest()[:10], (
+            f"{key}: its pictures changed; run scripts/build_view.py index"
+        )
+
+
+def test_view_photographs_are_free_to_use_and_credited() -> None:
+    """Only CC0 and public-domain photographs ship, each with its author and its source.
+
+    The page cuts each photograph and sets it moving, which a licence that forbids changes
+    would not allow. Neither CC0 nor the public domain asks for attribution, so the page carries
+    none; NOTICE credits every author anyway, and the view option's description in the options
+    form links to it, in every language.
+    """
+    from custom_components.norman.const import PHOTO_CREDITS_URL
+
+    notice = (REPO / "NOTICE").read_text(encoding="utf-8")
+    for key, scene in _scenes().items():
+        assert scene["license"] in {"CC0", "Public domain"}, key
+        assert scene["by"].strip(), f"{key} has no author"
+        assert scene["source"].startswith("https://commons.wikimedia.org/wiki/File:"), key
+        assert scene["by"] in notice, f"NOTICE does not credit {scene['by']} ({key})"
+    assert "NASA" in notice, "NOTICE should credit the map of the moon"
+
+    manifest = _load(COMPONENT / "manifest.json")
+    notice_url = f"{manifest['documentation']}/blob/main/NOTICE"
+    assert notice_url == PHOTO_CREDITS_URL
+    for path in (COMPONENT / "strings.json", *sorted((COMPONENT / "translations").glob("*.json"))):
+        described = _load(path)["options"]["step"]["init"]["data_description"]["sidebar_view"]
+        assert "]({credits})" in described, f"{path.name} does not link the photo credits"
+
+
+def test_view_has_a_photograph_for_every_place_weather_and_hour() -> None:
+    """Whatever the weather and the hour, the page finds a photograph for each place.
+
+    Each place has its own for every part of the day. Weather may be borrowed from another
+    place (only the lake has snow), but some place must have it.
+    """
+    scenes = _scenes()
+    have = {(scene["place"], scene["when"]) for scene in scenes.values()}
+    assert {place for place, _ in have} == set(SIDEBAR_VIEWS)
+    for place in SIDEBAR_VIEWS:
+        missing = [when for when in PARTS_OF_DAY if (place, when) not in have]
+        assert not missing, f"{place} has no photograph for {missing}"
+    for weather in WEATHERS:
+        assert any((place, weather) in have for place in SIDEBAR_VIEWS), weather
+
+
+def test_view_places_are_the_ones_the_option_offers() -> None:
+    """The option's places, the page's and the translations' are the same list.
+
+    A place the option offers and the page does not know shows the first place instead; one
+    without a name in a language shows its key in the dropdown.
+    """
+    view = (COMPONENT / "www" / "norman-view.js").read_text(encoding="utf-8")
+    (places,) = re.findall(r"export const PLACES = (\[[^\]]*\]);", view)
+    assert tuple(json.loads(places)) == SIDEBAR_VIEWS
+    for path in [COMPONENT / "strings.json", *sorted(TRANSLATIONS.glob("*.json"))]:
+        options = _load(path)["selector"]["sidebar_view"]["options"]
+        assert set(options) == {*SIDEBAR_VIEWS, SIDEBAR_VIEW_NONE}, path.name
+
+
+def test_view_knows_every_weather_state_home_assistant_has() -> None:
+    """Each state a weather entity can have is a kind of weather the page has a photograph of.
+
+    A state the page does not know shows the hour's own photograph, clear sky and all, so a
+    state added by a later Home Assistant should be given its weather here.
+    """
+    from homeassistant.components import weather
+
+    states = {
+        value
+        for name, value in vars(weather).items()
+        if name.startswith("ATTR_CONDITION_") and name != "ATTR_CONDITION_CLASS"
+    }
+    assert len(states) >= 15, "Home Assistant's weather states were not found"
+    view = (COMPONENT / "www" / "norman-view.js").read_text(encoding="utf-8")
+    (block,) = re.findall(r"const WEATHER = \{(.*?)\n\};", view, re.S)
+    known = set(re.findall(r'^\s*"?([a-z-]+)"?:', block, re.M))
+    assert states <= known, f"the view does not know {sorted(states - known)}"
+
+
+def test_view_photographs_stay_small() -> None:
+    """The photographs are most of what an install downloads, so their size is pinned.
+
+    The integration was 1 MB before them, and they keep it near 2: only the strip each window
+    looks out on ships, small (scripts/build_view.py), never a photograph to fill a screen. A
+    set that grows past this wants a smaller picture, or a place fewer, not a higher limit.
+    """
+    sizes = {path.name: path.stat().st_size for path in VIEW.iterdir()}
+    heavy = {name: size // 1024 for name, size in sizes.items() if size > 64 * 1024}
+    assert not heavy, f"pictures over 64 KB: {heavy}"
+    total = sum(sizes.values())
+    assert total <= 1024 * 1024, f"www/view is {total / 1e6:.2f} MB"
+
+
+def test_view_modules_are_loaded_at_the_version_stamp() -> None:
+    """The panel loads the view, and the view its birds, at their own ``?v=``, on demand.
+
+    /norman/ is served with long-lived cache headers, so an unstamped import could pair an
+    upgraded panel with the last release's view. Both are imported only when wanted (a plain
+    page loads neither), and neither defines an element: the panel hosts the view itself.
+    """
+    www = COMPONENT / "www"
+    panel = (www / "norman-panel.js").read_text(encoding="utf-8")
+    view = (www / "norman-view.js").read_text(encoding="utf-8")
+    birds = (www / "norman-birds.js").read_text(encoding="utf-8")
+    assert "./norman-view.js?v=" in panel
+    assert "./norman-birds.js?v=" in view
+    assert 'searchParams.get("v")' in view
+    for name, text in (("norman-panel.js", panel), ("norman-view.js", view)):
+        static = re.search(r"""^\s*import\s[^(]*?["']\./norman-(view|birds)\.js""", text, re.M)
+        assert not static, f"{name} imports the view up front; it must load on demand"
+    for name, text in (("norman-view.js", view), ("norman-birds.js", birds)):
+        assert "customElements.define" not in text, f"{name} must not define an element"
+    # The birds are built from the Light Control card's; a change made here would be lost.
+    assert "GENERATED by scripts/build_birds.mjs" in birds
+
+
 def test_probe_script_refuses_write_endpoints() -> None:
     """The endpoint prober must never send anything that could change the hub.
 
@@ -519,10 +798,14 @@ def test_translation_locales_are_complete(locale_file: str) -> None:
     assert not extra, f"{locale_file} has {len(extra)} unknown keys, e.g. {sorted(extra)[:5]}"
 
 
-# Kept in English in every language: the hub's own name in the discovery title, and the name
-# of the hub's PeripheralUID field.
+# Kept in English in every language: the hub's own name in the discovery title, the name of
+# the hub's PeripheralUID field, and a lake's name where the language uses it as it is.
 KEPT_IN_ENGLISH = frozenset(
-    {"config.flow_title", "services.send_hub_command.fields.peripheral_uid.name"}
+    {
+        "config.flow_title",
+        "services.send_hub_command.fields.peripheral_uid.name",
+        "selector.sidebar_view.options.lake",
+    }
 )
 
 
@@ -734,6 +1017,7 @@ def test_entities_doc_lists_the_entities_that_exist() -> None:
     """
     from custom_components.norman.button import BUTTONS
     from custom_components.norman.number import NUMBERS
+    from custom_components.norman.select import SELECTS
     from custom_components.norman.sensor import HUB_SENSORS, SENSORS
 
     text = (REPO / "docs" / "entities.md").read_text(encoding="utf-8")
@@ -743,6 +1027,7 @@ def test_entities_doc_lists_the_entities_that_exist() -> None:
     for platform, descriptions in (
         ("button", BUTTONS),
         ("number", NUMBERS),
+        ("select", SELECTS),
         ("sensor", (*SENSORS, *HUB_SENSORS)),
     ):
         for description in descriptions:
@@ -855,6 +1140,14 @@ def test_documentation_images_exist_and_have_alt_text() -> None:
                 problems.append(f"{name}: missing image {src}")
             elif alt_match is None or not alt_match.group(1).strip():
                 problems.append(f"{name}: {src} has no alt text")
+        # A <picture>'s dark-theme <source>, shown in place of its <img> to a reader in a dark
+        # theme; the <img> beside it carries the alt text for both.
+        for srcset in re.findall(r'<source\s[^>]*srcset="([^"]+)"', text):
+            if (
+                not srcset.startswith(("http://", "https://"))
+                and not (base / srcset).resolve().exists()
+            ):
+                problems.append(f"{name}: missing image {srcset}")
     assert not problems, "documentation image problems:\n  " + "\n  ".join(problems)
 
 
@@ -866,8 +1159,8 @@ def test_documentation_images_are_not_oversized() -> None:
     """
     oversized = [
         f"{image.relative_to(REPO)} is {image.stat().st_size // 1024} KB"
-        for image in sorted((REPO / "images").glob("*.png"))
-        if image.stat().st_size > 600 * 1024
+        for image in sorted((REPO / "images").iterdir())
+        if image.suffix in (".png", ".jpg") and image.stat().st_size > 600 * 1024
     ]
     assert not oversized, (
         "documentation images are too large; downscale them to about 1600 px wide:\n  "

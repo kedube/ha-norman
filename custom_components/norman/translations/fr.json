@@ -47,25 +47,35 @@
     "step": {
       "init": {
         "title": "Options Norman",
-        "description": "Les mises à jour sont envoyées par le hub, et chaque store est relu chaque fois que l'intégration se reconnecte au hub, soit toutes les 5 minutes.",
         "data": {
-          "poll_interval": "Intervalle d'interrogation",
-          "wake_interval": "Intervalle de réveil",
           "control_interval": "Espacement des commandes",
-          "show_sidebar_panel": "Afficher Stores Norman dans la barre latérale"
+          "show_sidebar_panel": "Afficher Stores Norman dans la barre latérale",
+          "sidebar_view": "Vue depuis les fenêtres",
+          "sidebar_view_motion": "Vue animée",
+          "sidebar_view_forecast": "Afficher la météo",
+          "sidebar_view_weather": "Météo pour la vue"
         },
         "data_description": {
-          "poll_interval": "Fréquence de relecture de la position de chaque store depuis le hub, au cas où une notification se serait perdue. Elle relit ce que le hub a en mémoire, sans rien demander aux stores. 0 désactive l'interrogation ; sinon de 10 à 300 secondes, puisque l'intégration relit déjà toutes les 5 minutes.",
-          "wake_interval": "À quelle fréquence demander de se signaler (batterie, position, dernier contact) à chaque store dont le hub est sans nouvelles depuis 24 heures (le seuil de l'app Norman pour un store déconnecté). Les stores connectés ne sont pas sollicités, comme dans l'app. Cela rafraîchit le cache du hub pour ces stores, que l'interrogation ci-dessus ne fait que relire. 0 désactive ; sinon de 600 à 86400 secondes.",
           "control_interval": "Secondes à laisser entre les commandes envoyées au hub. Le hub n'a qu'une radio et ignore sans prévenir les commandes qui arrivent plus vite qu'il ne peut les transmettre ; une scène qui concerne plusieurs stores est donc mise en file d'attente et envoyée commande par commande. Augmentez cette valeur si certains stores manquent encore une commande envoyée en même temps que d'autres ; diminuez-la pour que les grandes scènes se terminent plus vite. La valeur par défaut est de 1,6 seconde.",
-          "show_sidebar_panel": "Affiche la page Stores Norman, avec tous les stores par pièce, dans la barre latérale de Home Assistant. Avec plusieurs hubs, chacun a sa propre entrée. Désactivez l'option pour la retirer ; la carte Stores Norman peut toujours être ajoutée à un tableau de bord."
+          "show_sidebar_panel": "Affiche la page Stores Norman, avec tous les stores par pièce, dans la barre latérale de Home Assistant. Avec plusieurs hubs, chacun a sa propre entrée. Désactivez l'option pour la retirer ; la carte Stores Norman peut toujours être ajoutée à un tableau de bord.",
+          "sidebar_view": "Ce que l'on voit depuis les fenêtres de la page Stores Norman de la barre latérale : une photographie choisie selon l'heure et la météo. Les fenêtres d'une pièce partagent une même vue, et le fond de la page en prend les couleurs. Choisissez la côte de Big Sur ou le lac Tahoe, ou Aucune pour la page simple. Les photographies sont sous CC0 ou dans le domaine public ([crédits photo]({credits})).",
+          "sidebar_view_motion": "Anime la photographie : les nuages et l'eau dérivent, la pluie et la neige tombent, les étoiles scintillent, et des oiseaux, une lune et des étoiles filantes traversent le ciel. Désactivez l'option pour l'afficher fixe. Elle reste fixe aussi sur un appareil réglé pour réduire les animations.",
+          "sidebar_view_forecast": "Affiche la météo en haut de la page Stores Norman : la température, les conditions et les prévisions, les prochaines heures avec leur météo, leur température et leur risque de pluie ou de neige, ou les prochains jours pour une entité météo qui ne prévoit que jour par jour. Désactivez l'option pour retirer la météo ; la page indique toujours combien de stores sont ouverts. Avec la vue sur Aucune, la page n'affiche pas la météo.",
+          "sidebar_view_weather": "L'entité météo que suit la vue, et dont la page affiche la température, les conditions et les prévisions. Laissez vide pour utiliser les prévisions de Home Assistant ou la première entité météo disponible."
         }
       }
     },
     "error": {
-      "poll_interval_out_of_range": "Saisissez 0 pour désactiver l'interrogation, ou une valeur entre 10 et 300 secondes.",
-      "wake_interval_out_of_range": "Saisissez 0 pour désactiver, ou une valeur entre 600 et 86400 secondes.",
       "control_interval_out_of_range": "Saisissez une valeur entre 0,3 et 5 secondes."
+    }
+  },
+  "selector": {
+    "sidebar_view": {
+      "options": {
+        "coast": "Côte de Big Sur",
+        "lake": "Lac Tahoe",
+        "none": "Aucune"
+      }
     }
   },
   "services": {
@@ -296,6 +306,51 @@
       },
       "scene_group": {
         "name": "Groupe de scènes"
+      }
+    },
+    "select": {
+      "shade_color": {
+        "name": "Couleur du store",
+        "state": {
+          "white": "Blanc",
+          "ivory": "Ivoire",
+          "linen": "Lin",
+          "sand": "Sable",
+          "taupe": "Taupe",
+          "gray": "Gris",
+          "slate": "Ardoise",
+          "charcoal": "Anthracite",
+          "navy": "Bleu marine",
+          "sage": "Sauge",
+          "terracotta": "Terre cuite"
+        }
+      },
+      "shutter_color": {
+        "name": "Couleur du volet",
+        "state": {
+          "white": "Blanc",
+          "ivory": "Ivoire",
+          "gray": "Gris",
+          "black": "Noir",
+          "oak": "Chêne",
+          "walnut": "Noyer"
+        }
+      },
+      "window_lights": {
+        "name": "Petits-bois",
+        "state": {
+          "none": "Aucun",
+          "one_over_one": "Une traverse",
+          "side_by_side": "Un montant",
+          "two_over_none": "Deux carreaux en haut",
+          "two_over_two": "En croix",
+          "three_over_none": "Trois carreaux en haut",
+          "four_over_none": "Quatre carreaux en haut",
+          "four_over_four": "Huit carreaux",
+          "six_over_none": "Six carreaux en haut",
+          "six_over_six": "Douze carreaux",
+          "prairie": "Style prairie"
+        }
       }
     }
   },

@@ -15,9 +15,7 @@ from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 from custom_components.norman.const import (
     CONF_CONTROL_INTERVAL,
-    CONF_POLL_INTERVAL,
     CONF_SHOW_SIDEBAR_PANEL,
-    CONF_WAKE_INTERVAL,
     DOMAIN,
 )
 from custom_components.norman.diagnostics import BlindAliases, redact_raw_body
@@ -144,10 +142,8 @@ async def test_diagnostics_include_the_options(
     fake_hub: FakeHub,
     notifications: object,
 ) -> None:
-    """Whether the poll and the wake sweep run, and the command spacing, are in the report."""
+    """The command spacing and the sidebar switch are in the report."""
     options = {
-        CONF_POLL_INTERVAL: 30,
-        CONF_WAKE_INTERVAL: 3600,
         CONF_CONTROL_INTERVAL: 2.0,
         CONF_SHOW_SIDEBAR_PANEL: False,
     }

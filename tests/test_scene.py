@@ -121,7 +121,7 @@ def test_scenes_are_parsed_from_the_strings_the_hub_stores() -> None:
                 {
                     "RoomID": "29550",
                     "SceneList": [
-                        _scene("1", "Home Assistant", _target(15981, 0, 90, 33)),
+                        _scene("1", "Home Assistant", _target(1001, 0, 90, 33)),
                         _scene("x", "No number"),
                         "not a scene",
                     ],
@@ -138,7 +138,7 @@ def test_scenes_are_parsed_from_the_strings_the_hub_stores() -> None:
     assert list(scenes) == ["29550_1"]
     scene = scenes["29550_1"]
     assert (scene.room_id, scene.scene_id, scene.name) == (29550, 1, "Home Assistant")
-    assert scene.targets == {15981: NormanSceneTarget(bottom=0, middle=90, position=0)}
+    assert scene.targets == {1001: NormanSceneTarget(bottom=0, middle=90, position=0)}
     assert list(groups) == [GROUP_ID]
     assert groups[GROUP_ID].scene_keys == ["29550_1"]
     assert groups[GROUP_ID].name == "", "named by its entity's translation instead"

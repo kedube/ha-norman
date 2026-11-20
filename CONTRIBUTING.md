@@ -77,7 +77,25 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
     the previous release's words.
   - `www/norman-panel.js` — the sidebar panel. It hosts the card full screen, passes it Home
     Assistant's `narrow` and the panel's config (`config_entry_id`, with several hubs), and
-    keeps clear of a phone's safe areas itself (it registers with `handle_safe_area`).
+    keeps clear of a phone's safe areas itself (it registers with `handle_safe_area`). With
+    the view option on it also holds the view's stage (the colours behind the page), loads the
+    view and hands it to the card.
+  - `www/norman-view.js` — the view from the sidebar page's windows: which photograph shows
+    for the weather and the sun, the sun's and the moon's positions, where each window looks
+    (a room's windows share one strip of the photograph), the page's colours, and the WebGL 2
+    pass that sets the photograph's own sky and water moving and draws rain, snow, the moon,
+    shooting stars and birds over it, in every window at once. It falls back to the still
+    photograph wherever it cannot draw. Loaded by the panel only when the view is on; it
+    defines no element.
+  - `www/norman-birds.js` — the bird models, **generated** from the
+    [Light Control card](https://github.com/kedube/ha-light-control)'s `src/house/birds.ts` by
+    `scripts/build_birds.mjs`. Change the birds in that card and build again, not here.
+  - `www/view/` — the view's photographs, built by `scripts/build_view.py` from the table in
+    `scripts/view/scenes.toml`: for each scene the strip of the photograph the windows look
+    out on, two wide by one high and small, and the same part of its map of sky and water,
+    plus `scenes.json`, their index. Only CC0 and public-domain photographs can ship; `NOTICE`
+    credits each author. They are most of what the view adds to an install, which
+    `tests/test_repo_consistency.py` pins at 1 MB.
   - `diagnostics.py` — the export, including the raw `hub_traffic` capture.
 - `tests/` contains the pytest suite. Integration tests drive the real code against a fake hub
   registered on `aioclient_mock` (`tests/conftest.py`), so request payloads and error handling
@@ -106,7 +124,12 @@ Formatting is enforced, so run `ruff format .` before committing rather than han
   size with touch, a notch and reduced motion emulated, and measures what they draw: nothing
   past the screen's edges, finger-sized targets, rooms side by side on a wide screen, the
   header staying put. `check_card.mjs` uses stand-ins for the DOM and cannot see any of that.
-  Run it after touching the card's styles; CI runs it in the Layout job.
+  Run it after touching the card's styles; CI runs it in the Layout job. Its browser has no
+  graphics chip there, so with the view on it measures the windows drawn still;
+  `node scripts/check_layout.mjs --serve` serves the same page for a browser of your own,
+  where the view moves, with no Home Assistant running.
+- `scripts/build_view.py` builds the view's photographs (`fetch`, `masks`, `cut`, `index`; its
+  docstring says what each step needs), and `scripts/build_birds.mjs` its birds.
 - `blueprints/automation/norman/` holds the automation blueprints the README offers.
   `tests/test_blueprints.py` sets each one up as an automation and drives it.
 - `custom_components/norman/translations/` holds one file per language. `en.json` is the

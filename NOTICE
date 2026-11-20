@@ -18,6 +18,46 @@ in compliance with the License. You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
+The view from the windows of the Norman Shades page (custom_components/norman/www/view) is
+made of photographs their authors released under CC0, or that are in the public domain as
+works of the United States government. They were found on Wikimedia Commons, and are
+cropped, resized and set moving on the page; none is retouched. scripts/view/scenes.toml
+names each one's file on Commons.
+
+  The coast:
+    Morning haze off Bixby Creek, Big Sur, California: Ian Schneider (CC0)
+    Clear afternoon on the headlands, Big Sur, California: Jakub Gorajek (CC0)
+    Fog lifting off the cliffs, Big Sur, California: U.S. Fish and Wildlife Service (Public domain)
+    Overcast over the coves, Big Sur, California: Thomas Marban (CC0)
+    Sea of fog at golden hour, Big Sur, California: Jesse Collins (CC0)
+    Rain falling at sunset: Andrew Ruiz (CC0)
+    Lightning over the lagoon, Dee Why, New South Wales: Jeremy Bishop (CC0)
+    Late sun through the canyon, Bixby Bridge, Big Sur: Dave Lastovskiy (CC0)
+    Sunset behind the sea stack, Pfeiffer Beach, Big Sur: Vashishtha Jogi (CC0)
+    Blue hour above the fog bank, Big Sur, California: Robson Hatsukami Morgan (CC0)
+    Last light at Bixby Creek, Big Sur, California: James Donovan (CC0)
+    The Milky Way over the coast, Big Sur, California: Robson Hatsukami Morgan (CC0)
+  The lake:
+    Pink light on the boulders, Lake Tahoe, Nevada: Felix Stahlberg (CC0)
+    Clear water at the boulders, Lake Tahoe: Clara Marie (CC0)
+    Clouds building over the Sierra, Lake Tahoe: Artur Westergren (CC0)
+    Bright overcast on Emerald Bay, Lake Tahoe, California: Jad Limcaco (CC0)
+    Fannette Island in fog, Emerald Bay, Lake Tahoe: Etienne Desclides (CC0)
+    Rain coming down across the lake, Yellowstone Lake, Wyoming: National Park Service, Diane Renkin (Public domain)
+    Lightning behind the ridge, Lake Chelan, Washington: National Park Service (Public domain)
+    Snow on the beach, Camp Richardson, Lake Tahoe: Blake Everett (CC0)
+    Golden hour from the east shore, Lake Tahoe, Nevada: Felix Stahlberg (CC0)
+    Sunset over the Sierra crest, Lakeside Beach, Lake Tahoe: Blake Everett (CC0)
+    Blue hour at Bonsai Rock, Lake Tahoe, Nevada: Joseph Albanese (CC0)
+    Last light on Emerald Bay, Lake Tahoe, California: Levi Bare (CC0)
+    Stars in the lake: Wil Stewart (CC0)
+
+The map of the moon is from the CGI Moon Kit of NASA's Scientific Visualization Studio, in
+the public domain.
+
+The birds that cross the view (custom_components/norman/www/norman-birds.js) are the models
+from the Light Control card (https://github.com/kedube/ha-light-control), by the same author.
+
 "Norman" is a trademark of Norman Window Fashions. This project is an unofficial,
 independent work and is not affiliated with, endorsed by, or sponsored by Norman.
 The name is used only to identify the hardware the integration interoperates with.

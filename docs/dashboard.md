@@ -6,7 +6,7 @@ Home Assistant's sidebar as soon as the integration is set up, with nothing to a
 
 <img src="../images/dashboard-card.png" alt="Norman Shades: the hub's name with a summary, a refresh button and the Privacy, View and Favorite presets, then each room with open, stop and close, and a grid of windows showing each shade where it is — cellular shades in ivory, one of them closing, a roller shade on its roll, two-rail shades with the see-through light-filtering fabric above the blackout, a SmartDrape part drawn with its vanes open, a PerfectSheer lowered with its vanes open, a Roman shade part raised with its folds above the hem, and two shutters with their louvers half open and open. Under each window are its name, its state, its battery and a refresh button." width="560">
 
-*Eleven blinds across four rooms. Den_2 is on its way down: the shade is drawn where it is
+*The card on a dashboard: eleven blinds across four rooms. Den_2 is on its way down: the shade is drawn where it is
 going, the dashed line is where it is now, and its Stop button sits on the corner. The two-rail
 blinds in the Front Guest Bedroom show Best privacy (the blackout across the window), both rails
 part-way, and both rails down (the light-filtering fabric across the window, with the view
@@ -24,6 +24,11 @@ Home Assistant app and in a browser alike. On a wide screen the rooms sit side b
 with its buttons beside its blinds. It is there for every user of your Home Assistant, like any
 dashboard.
 
+On a phone a bar at the foot of the screen goes to each room: **Home** for the top of the page,
+then a button for each room. The room in view is marked as you scroll, a blue dot says a shade
+in that room is moving, and an amber one that a battery there is low. It shows wherever there
+are two rooms or more.
+
 It speaks the integration's languages (English, German, Spanish, French, Japanese, and Simplified
 and Traditional Chinese), following each user's language in their Home Assistant profile; any
 other language gets English. The sidebar entry's own title follows the server's language
@@ -37,10 +42,110 @@ a reload of the integration.
   integration's [options](options.md#show-norman-shades-in-the-sidebar); the entry disappears
   straight away. You can still [put it on a dashboard](#on-a-dashboard).
 
+## The view from the windows
+
+On the sidebar page every window looks out on a real place, in place of the drawn sky and
+hills: the **Big Sur coast**, or **Lake Tahoe** if you choose it in the integration's
+[options](options.md#view-from-the-windows). A room's windows look out on one view between
+them, as through openings in one wall, each on the part behind it, so a shade drawn half way
+down hides half of its part. The page behind the rooms takes the photograph's colors, deep in
+Home Assistant's dark theme and pale in its light one: the hub's name, the temperature and the
+weather at the top with the forecast beside them, then the whole-house buttons and each room on
+glass.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../images/sidebar-view-dark.jpg">
+  <img src="../images/sidebar-view-light.jpg" alt="Norman Shades in Home Assistant's sidebar on a sunny morning: the hub's name, 66 degrees and Sunny with the count of shades, the forecast for the next hours beside them, and the refresh and settings buttons; then the Privacy, View and Favorite buttons and the Bedroom, Guest Room, Kitchen, Living Room and Study on glass, each with its open, stop and close buttons and its windows. Through the open windows is the Big Sur coast by day, each window showing its own part of it. The bedroom's shades are navy and sand, the study's shutter oak, and the bedroom's windows are divided six over six while the living room's have no bars." width="720">
+</picture>
+
+*The sidebar page on a sunny morning, on a desktop: in the light theme, or the dark one if you
+are reading this in a dark theme. Each room's windows look out on the coast between them.*
+
+**Which photograph** follows your Home Assistant. The weather decides first, from a weather
+entity ([which one](options.md#weather-for-the-view)): cloud, fog, rain, a thunderstorm and
+snow each have a photograph of their own. Under a clear sky the sun decides, from `sun.sun`:
+early morning, the day, the golden hour, sunset, dusk, twilight and a night of stars. A
+photograph of rain or cloud was taken by day, so after sunset it is shown darker. One
+photograph fades into the next as the weather and the light change.
+
+**The forecast** sits beside the temperature on a wide screen and under it on a phone: now,
+then the hours ahead from the same weather entity, each with its weather, its temperature and,
+at 30% or more, its chance of rain or snow, with the night's icon once the sun is down. An
+entity that forecasts only by the day shows the days ahead instead, each with its high and low,
+and one with no forecast shows none. The hours follow the clock set in your Home Assistant
+profile. To leave the weather off the page, the temperature and conditions with the forecast,
+turn off **Show the weather** in the [options](options.md#show-the-weather); the house's counts
+stay under the hub's name.
+
+**It moves**, where the photograph itself can. The clouds drift and the water runs, by sliding
+the photograph's own sky and water; the land stays still. Rain that is in the photograph falls,
+lightning that is in it flickers, and its stars twinkle. Added to that, in the air: rain and
+snow, fog, birds by day and bats at dusk, shooting stars on a clear night, and the moon on the
+nights it is really up, with its real phase. The birds are the ones from the
+[Light Control card](https://github.com/kedube/ha-light-control).
+
+**Every picture is a real photograph**, cropped and resized and otherwise untouched. All
+twenty-five were released by their authors under CC0 or are in the public domain, so the page
+carries no credit; the repository's [`NOTICE`](../NOTICE) file credits every one, and the
+integration's options link to it, from **View from the windows**. They ship with the integration, so the page needs nothing from the internet: only the
+strip of each that the windows look out on, small enough that together they add under 1 MB.
+
+A few things to know:
+
+- **It needs WebGL 2 to move**, which every current browser and the Home Assistant apps have.
+  Without it the windows show the photograph still, and the page works the same.
+- **Turn the motion off** with **Moving view** in the [options](options.md#moving-view), or
+  with **reduce motion** in your device's accessibility settings. With **reduce transparency**
+  the glass is solid.
+- **A slow device draws less.** If drawing takes too long, the view draws fewer pixels, and
+  then holds the windows still.
+- **It follows Home Assistant's light and dark theme**, the one set in your profile: deep
+  colors, dark glass and white words in the dark theme, pale colors, light glass and dark
+  words in the light theme. Set to **Auto**, it changes when your device does, at once and with
+  no reload. The windows are the same either way: their trim darkens with the light outside,
+  not with the theme. Like Home Assistant's own cards, the page goes by its dark mode, so a
+  custom theme that has no dark mode of its own shows the light page.
+- **Prefer the plain page?** Choose **None** for the view in the
+  [options](options.md#view-from-the-windows). A card on a dashboard is always the plain
+  one.
+
+## Shade colors and divided lights
+
+Each window is drawn in its blind's own color: a fabric for a shade (White, Ivory, Linen, Sand,
+Taupe, Gray, Slate, Charcoal, Navy, Sage or Terracotta) and a paint or a stain for a Shutter
+(White, Ivory, Gray, Black, Oak or Walnut). Every blind starts in the color the card has always
+drawn, ivory for a shade and white for a Shutter.
+
+Each window's glass is divided as the real one is, by its **divided lights**. A double-hung
+window is named for its two sashes, upper over lower: Two over two is a cross, which every
+window starts with as it always has; Four over four is two by two panes in each sash, and Six
+over six three by two. "Over none" divides the upper sash alone: Two, Three, Four or Six over
+none, above a plain lower sash. One over one is the meeting rail alone, across the middle. The
+others are None, for a picture window; Two side by side, a bar down the middle; and Prairie, a
+border of narrow panes round the edge.
+
+To choose them, press the settings button (⚙) beside the refresh at the top of the sidebar
+page, then **Shade colors** or **Divided lights**.
+
+**Shade colors** shows each window's color on a swatch at its corner and its name beneath. Tap
+or click a window to pick its color from a list; it is drawn in it straight away, against the
+view. **Every shade**, in the bar that takes the whole-house buttons' place, colors them all at
+once (Shutters, whose colors are paints, keep theirs), and **Done** goes back to the page.
+
+**Divided lights** works the same way. The shades are drawn out of the way while you choose,
+so each window shows its glass and its bars; tap or click a window to pick its pattern, or use
+**Every window** to give them all one. Dragging a rail waits until you are done with either.
+
+Both are kept on each blind, as its **Shade color** (or **Shutter color**) and its **Divided
+lights** under Configuration on its device page, where they can be set too. So every user and
+every device sees the same windows, and a card on a dashboard draws them as well. On a two-rail
+shade the color is the blackout's; the light-filtering sheer stays white. See
+[Shade color](entities.md#shade-color) and [Divided lights](entities.md#divided-lights).
+
 ## What it shows
 
-The header is named after your **hub** — the name it has in Home Assistant, which the
-integration takes from the Norman app — so two hubs are easy to tell apart. A dashboard card
+The header is named after your **hub**, with the name it has in the Norman app, even if its
+device has been renamed in Home Assistant, so two hubs are easy to tell apart. A dashboard card
 showing the blinds of more than one hub is headed "Shades" instead. Under the name, a summary
 line counts the shades, how many are open, any that are moving, and any low batteries.
 
@@ -172,10 +277,13 @@ not turn the vanes; use the blind's more-info dialog (click its name).
 
 ### The view
 
-The window's view follows the sun (`sun.sun`): blue sky by day, a warm low sun near sunrise and
-sunset, dusk, and a night sky with a moon. On a dark theme the window's trim darkens too. The
-picture is drawn entirely in CSS — no images — so it follows your theme, stays sharp on any
-screen, and scales with the window.
+On the sidebar page each window looks out on [a real photograph](#the-view-from-the-windows),
+moving, and the window's trim darkens with the light outside.
+
+On a dashboard, and on the sidebar page with its view turned off, the window's view follows the
+sun (`sun.sun`): blue sky by day, a warm low sun near sunrise and sunset, dusk, and a night sky
+with a moon. On a dark theme the window's trim darkens too. The shade itself is drawn entirely
+in CSS — no images — in both, so it stays sharp on any screen and scales with the window.
 
 With **reduce motion** turned on in your device's accessibility settings, a shade goes straight to
 its new place instead of sliding, and a moving rail's pull tab shows it in the accent colour
@@ -323,7 +431,7 @@ optional, and the card works with none of them.
 
 ```yaml
 type: custom:norman-shades-card
-title: Norman Hub          # omit to use the hub's own name
+title: Upstairs            # omit to use the hub's own name
 config_entry_id: <id>      # only with more than one hub: show just this one
 hide_picture: false        # list layout: a slider per rail instead of the windows
 hide_battery: false        # hide the battery readings
@@ -342,6 +450,8 @@ middle_label: Middle rail
 
 `title`, the hub and every `hide_*` option above, `hide_refresh` included, are also available in
 the card's visual editor.
+The header names the hub as the Norman app does, even where its device has been renamed in Home
+Assistant; until the hub has given its name, Home Assistant's name for it is used.
 `title` replaces the hub's name in the header, and `title: ""` leaves no heading text at all;
 the visual editor keeps it while other options change, and emptying its title field gives the
 hub's name again. A card added before v0.30 may already have `title: Shades` saved in its

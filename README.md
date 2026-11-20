@@ -19,7 +19,10 @@ sees the change within a second or two.
 [![CI](https://github.com/kedube/ha-norman/actions/workflows/ci.yml/badge.svg)](https://github.com/kedube/ha-norman/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/kedube/ha-norman)](LICENSE)
 
-<img src="images/dashboard-card.png" alt="Norman Shades: blinds grouped by room, each drawn as a window with its own kind of shade, drape or shutter in it, with open, stop and close for each room, Privacy, View and Favorite for the whole house, and a refresh button for the house and each blind." width="560">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/sidebar-view-dark.jpg">
+  <img src="images/sidebar-view-light.jpg" alt="Norman Shades in Home Assistant's sidebar on a sunny morning: the hub's name, the temperature and the weather with the forecast for the hours ahead, refresh and settings buttons, Privacy, View and Favorite for the whole house, then each room on glass with open, stop and close and its windows, each drawn with its own kind of shade, drape or shutter in its own color. Through the open windows is the Big Sur coast, each window showing its own part of it." width="820">
+</picture>
 
 ***Norman Shades**, in Home Assistant's sidebar: drag a shade's pull tab, or a shutter's tilt rod,
 to move it. It finds your blinds by itself and needs no configuration.*
@@ -51,7 +54,7 @@ to move it. It finds your blinds by itself and needs no configuration.*
 |---|---|
 | [docs/dashboard.md](docs/dashboard.md) | **Norman Shades**: what it shows, putting it on a dashboard, and building your own |
 | [docs/entities.md](docs/entities.md) | Every entity, device, attribute, and availability rule |
-| [docs/options.md](docs/options.md) | Polling, wake sweeps, command spacing, and the sidebar entry |
+| [docs/options.md](docs/options.md) | Command spacing, the sidebar entry and its view |
 | [docs/services.md](docs/services.md) | All five actions, and the hub verbs `send_hub_command` can send |
 | [docs/NORMAN_API.md](docs/NORMAN_API.md) | The hub's local API, for contributors |
 
@@ -138,6 +141,11 @@ restart Home Assistant.
 - **Migrations run once, automatically.** Entries created before 0.11 are re-keyed to the
   hub's own identity, and the battery sensor's unique id was migrated in 0.12. Both happen
   silently the first time the new version loads.
+- **The sidebar page has a view.** From the release that added it, the windows on Norman Shades
+  in the sidebar look out on a photograph of the Big Sur coast that follows the hour and the
+  weather, in place of the drawn sky. Choose another place, or **None** for the page as it was,
+  in the integration's [options](docs/options.md#view-from-the-windows). Cards on your
+  dashboards do not change.
 - **Downgrading is safe** as far as the integration is concerned; entities added by a newer
   version simply become unavailable and can be deleted.
 
@@ -148,8 +156,8 @@ with the version you came from and the version you moved to is the fastest way t
 ## Configuration
 
 The only setting needed to get going is the hub's address, and usually Home Assistant finds it
-for you. Three tuning options (polling, wake sweeps, and command spacing) and the sidebar
-entry's switch are described in [docs/options.md](docs/options.md).
+for you. The command spacing, the sidebar entry's switch and its view are described in
+[docs/options.md](docs/options.md).
 
 **Discovered.** The hub announces itself on the local network, so once the integration is
 installed a **Norman Hub (address)** card appears under **Settings → Devices & services →
@@ -173,10 +181,11 @@ makes a DHCP address change self-healing; a **fixed address** (a DHCP reservatio
 is still the simplest setup. Entries created by versions before 0.11 are re-keyed to the hub's
 name automatically on their next load. Several hubs can be added, each as its own entry.
 
-<img src="images/integration.png" alt="The Norman integration page listing one hub and its blinds — cellular, dual-rail cellular, roller, SmartDrape and Shutter — each showing its product type, room and entity count." width="820">
+<img src="images/integration.png" alt="The Norman integration page listing one hub with its rooms and blinds — cellular, dual-rail cellular, roller, Roman, SmartDrape, PerfectSheer and Shutter — each showing its product type, room and entity count." width="820">
 
 *After setup. Every blind the hub knows about appears with the name and room it has in the
-Norman app, and its product type — no manual entity configuration.*
+Norman app, and its product type, and each room is a device of its own — no manual entity
+configuration.*
 
 ### Changing the hub address
 
@@ -211,6 +220,8 @@ Assistant.
 Each cover is named for the rail it drives ("Living Drape Bottom rail", "Living Drape Middle
 rail"; a Shutter's is "Louvers"). Each rail also has a **position slider** (a `number` entity,
 0–100% in steps of 10), which is often easier to place on a dashboard than a cover's own slider.
+A **shade color** (a `select`) says what the real shade looks like, so Norman Shades draws it
+in that color; it stays in Home Assistant and is never sent to the hub.
 
 Each blind also has **buttons** for best privacy, best view, its favorite position, jog up,
 jog down and **request status** (ask a quiet blind to report in), plus, disabled by default,
@@ -228,10 +239,11 @@ the Norman app are Home Assistant **scenes**, a room's on the room's device and 
 on the hub's. Full detail, including availability rules, is in
 [docs/entities.md](docs/entities.md).
 
-<img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons; Diagnostic with battery, connection, last seen and Request status; Activity with the rails' recent moves." width="820">
+<img src="images/blind-device.png" alt="A two-rail blind's device page: Controls with open, stop and close plus a position slider for each rail; Configuration with the five buttons, the shade color and the divided lights; Diagnostic with battery, connection, last seen and Request status; Activity with the rails' recent moves." width="820">
 
 *A two-rail blind. Both rails get their own controls and slider; the five buttons sit under
-Configuration, and the model, firmware and serial number come from the hub.*
+Configuration with the shade's color and its window's divided lights, and the model, firmware
+and serial number come from the hub.*
 
 ### Norman Shades
 
@@ -240,9 +252,19 @@ blind, a room or the whole house report in. **Norman Shades** is in Home Assista
 soon as the integration is set up, one entry per hub, with nothing to install or configure. It
 can also go on any dashboard as a card.
 
-It is [pictured at the top of this page](#unofficial-norman-smart-blinds-for-home-assistant). Full detail,
-options, and how to build the same thing from Home Assistant's own cards are in
-[docs/dashboard.md](docs/dashboard.md).
+In the sidebar its windows look out on a real place: a photograph of the Big Sur coast or Lake
+Tahoe, chosen by the hour and your weather entity, with its clouds and water moving, rain and
+snow falling, and birds, a moon and shooting stars crossing the sky. A room's windows share one
+view, and the page behind takes its colors, deep or pale with Home Assistant's dark or light
+theme, with the forecast for the hours ahead beside the weather
+([the view](docs/dashboard.md#the-view-from-the-windows)). Each shade is drawn in its
+own color and each window's glass divided as the real one is, both chosen on the page
+([shade colors and divided lights](docs/dashboard.md#shade-colors-and-divided-lights)), and on
+a phone a bar at the foot of the screen goes to each room.
+
+The sidebar page is [pictured at the top of this page](#unofficial-norman-smart-blinds-for-home-assistant),
+and the card on a dashboard in [docs/dashboard.md](docs/dashboard.md), with the full detail,
+the options, and how to build the same thing from Home Assistant's own cards.
 
 ### Actions
 
@@ -331,8 +353,7 @@ and paste its address:
   integration never contacts Norman's servers and opens no listening ports.
 - **Push updates.** The integration holds a long-poll connection open to the hub, which
   notifies it whenever a blind's state changes. **Request status** (per blind) and **Refresh
-  blinds** (hub) wake a quiet blind on demand; an optional wake sweep does the same on a timer
-  for blinds the hub has not heard from for 24 hours ([docs/options.md](docs/options.md)).
+  blinds** (a room or the hub) wake a quiet blind on demand.
 - **Commands are paced.** The hub has one radio and drops commands sent faster than it can
   transmit them, so they are queued and spaced ([docs/options.md](docs/options.md#command-spacing)).
 - **Ignored commands are chased.** A blind silent a minute after a command is asked to report
@@ -489,7 +510,7 @@ services → Norman → ⋮ → Download diagnostics**. It contains:
 
 - the last-known state of every blind (names, positions, targets, battery percentage, signal,
   both firmware versions) and whether the last refresh succeeded;
-- the hub's options (poll interval, wake sweep, command spacing, sidebar);
+- the hub's options (command spacing, the sidebar and its view);
 - **`hub`**: what the hub says about itself (model, firmware, an update in progress, the
   pairing window, Wi-Fi signal) and the integration's link to it: whether the notification
   stream is connected, whether the device list reads, and how many moves are in flight;

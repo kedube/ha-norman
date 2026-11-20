@@ -27,6 +27,7 @@ PLATFORMS = [
     Platform.COVER,
     Platform.NUMBER,
     Platform.SCENE,
+    Platform.SELECT,
     Platform.SENSOR,
 ]
 
@@ -37,45 +38,14 @@ HUB_PORT = 10123
 # Per-request timeout for the short command/status endpoints, in seconds.
 REQUEST_TIMEOUT = 10
 
-# How often to re-read `status` even when the hub has pushed nothing.
-#
-# Off by default, and rarely worth switching on. Every change to the hub's cache seen so far
-# came with a notification -- a blind reporting in, a command sent through the hub -- and
-# each one triggers a `status` read. The listener also re-reads `status` every time it
-# cycles the stream (NOTIF_MAX_DURATION, 300 s) or reconnects, so a missed notification is
-# out of date for five minutes at most even with no poll. A poll narrows that window and
-# nothing more: it re-reads the hub's cache and asks the blinds nothing, so a position the
-# hub itself has wrong (a sleeping blind's) stays wrong until the blind reports in, which
-# only a StatusRequest or the wake sweep below brings about. `status` is the hub's
-# lightweight, uncached call (docs/NORMAN_API.md), so the cost is one small local request
-# per interval, and nothing goes out over the radio.
-POLL_DISABLED = 0
-DEFAULT_POLL_INTERVAL = POLL_DISABLED
-# Bounds offered in the options flow, either side of POLL_DISABLED. The floor keeps a
-# misconfigured entry from hammering a hub that answers `status` synchronously. The ceiling
-# is the stream cycle: every refresh restarts the poll's timer, so an interval longer than
-# NOTIF_MAX_DURATION would never fire. A value outside this range (other than 0) falls back
-# to the default, off -- which is also what the 301-3600 s that older releases accepted
-# amounted to.
-MIN_POLL_INTERVAL = 10
-MAX_POLL_INTERVAL = 300
-CONF_POLL_INTERVAL = "poll_interval"
-
-# The wake sweep: on a timer, ask each blind the hub has not heard from for
-# UNRESPONSIVE_AFTER to report in, one StatusRequest each. The app offers a refresh only for
-# a blind it lists as disconnected, never for a connected one, so the sweep leaves connected
-# blinds alone;
-# asking every blind on the hub hourly closed a hub's type 48 roller shades each time (issue
-# #5). The poll above only re-reads the hub's *cache*; a blind that reports in refreshes the
-# cache itself, so its position, battery and last-seen become what it says now. Off by
-# default, and the options form does not suggest a value: saving the form for any other
-# reason used to switch it on at 3600. The floor keeps a sweep from waking a sleeping blind
-# more than a few times an hour.
-WAKE_DISABLED = 0
-DEFAULT_WAKE_INTERVAL = WAKE_DISABLED
-MIN_WAKE_INTERVAL = 600
-MAX_WAKE_INTERVAL = 86400
-CONF_WAKE_INTERVAL = "wake_interval"
+# There is no poll and no timed wake sweep. Every change to the hub's cache seen so far came
+# with a notification -- a blind reporting in, a command sent through the hub -- and each one
+# triggers a `status` read; the listener also re-reads `status` every time it cycles the stream
+# (NOTIF_MAX_DURATION, 300 s) or reconnects, so a missed notification is out of date for five
+# minutes at most. Earlier releases offered both as options, off by default: a poll that
+# only narrowed that window, re-reading the hub's cache, and a sweep that asked each blind
+# unheard-from for a day to report in. Home Assistant's own update_entity action re-reads on
+# any schedule, and Request status or Refresh blinds has blinds report in.
 
 # The move watchdog. The hub answers Error 0 for a command it never transmits, and nothing
 # it says straight away tells the two apart: the reply echoes the command, and the
@@ -140,6 +110,28 @@ CONF_CONTROL_INTERVAL = "control_interval"
 # own entry. Changing it brings the sidebar in line at once, without reloading the entry.
 CONF_SHOW_SIDEBAR_PANEL = "show_sidebar_panel"
 DEFAULT_SHOW_SIDEBAR_PANEL = True
+
+# The view behind the sidebar page: a photograph of a place for the hour and the weather, its
+# sky and water moving, with the card laid over it as frosted glass and every window looking
+# out on it (www/norman-view.js; the photographs are in www/view). The places are the ones
+# there are photographs of; "none" keeps the page the plain card. The view moves unless motion
+# is turned off, and follows the weather entity named here, or one it finds itself; the page
+# shows that entity's weather at the top, its temperature, conditions and forecast, unless the
+# weather is turned off (the option "Show the weather", stored under the key it had when it
+# turned off only the forecast). All four reach the page through the panel's config, so a
+# change shows at once, without a reload.
+CONF_SIDEBAR_VIEW = "sidebar_view"
+SIDEBAR_VIEW_NONE = "none"
+SIDEBAR_VIEWS = ("coast", "lake")
+DEFAULT_SIDEBAR_VIEW = "coast"
+CONF_SIDEBAR_VIEW_MOTION = "sidebar_view_motion"
+DEFAULT_SIDEBAR_VIEW_MOTION = True
+CONF_SIDEBAR_VIEW_FORECAST = "sidebar_view_forecast"
+DEFAULT_SIDEBAR_VIEW_FORECAST = True
+CONF_SIDEBAR_VIEW_WEATHER = "sidebar_view_weather"
+# Who took the photographs the view shows. NOTICE credits every one, and the view option's
+# description in the options form links to it; the page itself carries no credit.
+PHOTO_CREDITS_URL = "https://github.com/kedube/ha-norman/blob/main/NOTICE"
 
 # Pairing. `{"PairingMode": 5}` on control opens the hub's pairing window; status then
 # reports `PairingMode: 5` for ten minutes (22:08:47 to 22:18:48 on 2026-09-18) and 0 after.
@@ -412,8 +404,8 @@ HUB_BUSY_RETRIES = 3
 HUB_BUSY_RETRY_DELAY = 5.0
 
 # A blind is disconnected once the hub has not heard from it for 86400 s, the constant in
-# the Norman app's isDisconnectPeripheral:withHub: check. The connection binary sensor and
-# the wake sweep apply it to the hub's own last-heard time. The app's display can disagree:
+# the Norman app's isDisconnectPeripheral:withHub: check. The connection binary sensor
+# applies it to the hub's own last-heard time. The app's display can disagree:
 # its copy of those times lags the hub's (2026-10-12: a phone listed all 13 blinds as
 # disconnected, a computer 3, and by the hub's times none was; docs/NORMAN_API.md).
 UNRESPONSIVE_AFTER = timedelta(hours=24)

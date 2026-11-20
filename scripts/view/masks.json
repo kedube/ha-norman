@@ -1,0 +1,327 @@
+{
+ "coast-dawn": {
+  "size": [
+   3840,
+   2564
+  ],
+  "horizon": 0.304,
+  "water_top": 0.304,
+  "sky_color": [
+   0.813,
+   0.876,
+   0.914
+  ]
+ },
+ "coast-day": {
+  "size": [
+   3840,
+   2309
+  ],
+  "horizon": 0.251,
+  "water_top": 0.435,
+  "sky_color": [
+   0.507,
+   0.755,
+   0.839
+  ]
+ },
+ "coast-partly": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.611,
+  "water_top": 0.662,
+  "sky_color": [
+   0.595,
+   0.693,
+   0.809
+  ]
+ },
+ "coast-cloudy": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.365,
+  "water_top": 0.365,
+  "sky_color": [
+   0.615,
+   0.65,
+   0.77
+  ]
+ },
+ "coast-fog": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.885,
+  "water_top": 1.0,
+  "sky_color": [
+   0.867,
+   0.791,
+   0.699
+  ]
+ },
+ "coast-rain": {
+  "size": [
+   3840,
+   2556
+  ],
+  "horizon": 0.679,
+  "water_top": 0.75,
+  "sky_color": [
+   0.557,
+   0.448,
+   0.483
+  ]
+ },
+ "coast-storm": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.639,
+  "water_top": 0.658,
+  "sky_color": [
+   0.444,
+   0.377,
+   0.472
+  ]
+ },
+ "coast-golden": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.22,
+  "water_top": 0.426,
+  "sky_color": [
+   0.919,
+   0.932,
+   0.946
+  ]
+ },
+ "coast-sunset": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.572,
+  "water_top": 0.572,
+  "sky_color": [
+   0.816,
+   0.841,
+   0.786
+  ]
+ },
+ "coast-dusk": {
+  "size": [
+   3840,
+   2727
+  ],
+  "horizon": 0.316,
+  "water_top": 0.417,
+  "sky_color": [
+   0.914,
+   0.915,
+   0.944
+  ]
+ },
+ "coast-twilight": {
+  "size": [
+   3840,
+   2391
+  ],
+  "horizon": 0.421,
+  "water_top": 0.412,
+  "sky_color": [
+   0.426,
+   0.418,
+   0.665
+  ]
+ },
+ "coast-night": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.732,
+  "water_top": 0.732,
+  "sky_color": [
+   0.24,
+   0.297,
+   0.331
+  ]
+ },
+ "lake-dawn": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.268,
+  "water_top": 0.312,
+  "sky_color": [
+   0.905,
+   0.624,
+   0.565
+  ]
+ },
+ "lake-day": {
+  "size": [
+   3264,
+   2160
+  ],
+  "horizon": 0.346,
+  "water_top": 0.484,
+  "sky_color": [
+   0.759,
+   0.781,
+   0.844
+  ]
+ },
+ "lake-partly": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.391,
+  "water_top": 0.568,
+  "sky_color": [
+   0.625,
+   0.672,
+   0.854
+  ]
+ },
+ "lake-cloudy": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.297,
+  "water_top": 0.395,
+  "sky_color": [
+   0.995,
+   0.996,
+   0.999
+  ]
+ },
+ "lake-fog": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 1.0,
+  "water_top": 1.0,
+  "sky_color": [
+   0.804,
+   0.833,
+   0.848
+  ]
+ },
+ "lake-rain": {
+  "size": [
+   3840,
+   2545
+  ],
+  "horizon": 0.415,
+  "water_top": 0.446,
+  "sky_color": [
+   0.488,
+   0.587,
+   0.811
+  ]
+ },
+ "lake-storm": {
+  "size": [
+   3648,
+   2736
+  ],
+  "horizon": 0.665,
+  "water_top": 0.816,
+  "sky_color": [
+   0.196,
+   0.177,
+   0.202
+  ]
+ },
+ "lake-snow": {
+  "size": [
+   3840,
+   2553
+  ],
+  "horizon": 0.262,
+  "water_top": 0.499,
+  "sky_color": [
+   0.825,
+   0.857,
+   0.897
+  ]
+ },
+ "lake-golden": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.275,
+  "water_top": 0.375,
+  "sky_color": [
+   0.777,
+   0.548,
+   0.465
+  ]
+ },
+ "lake-sunset": {
+  "size": [
+   3840,
+   2553
+  ],
+  "horizon": 0.391,
+  "water_top": 0.526,
+  "sky_color": [
+   0.762,
+   0.711,
+   0.747
+  ]
+ },
+ "lake-dusk": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.359,
+  "water_top": 0.531,
+  "sky_color": [
+   0.562,
+   0.658,
+   0.775
+  ]
+ },
+ "lake-twilight": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.461,
+  "water_top": 0.494,
+  "sky_color": [
+   0.436,
+   0.443,
+   0.473
+  ]
+ },
+ "lake-night": {
+  "size": [
+   3840,
+   2560
+  ],
+  "horizon": 0.65,
+  "water_top": 0.738,
+  "sky_color": [
+   0.123,
+   0.238,
+   0.354
+  ]
+ }
+}

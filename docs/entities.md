@@ -1,8 +1,8 @@
 # Entities
 
 Per blind the integration creates a **cover** (two for two-rail blinds), a **position slider**
-per rail, six to eight **buttons** depending on the product, four **diagnostic sensors**, and a
-**connection** sensor, all on one **device**. The hub gets a device of its own carrying four
+per rail, a **color** and **divided lights** for its window, six to eight **buttons** depending on the product,
+four **diagnostic sensors**, and a **connection** sensor, all on one **device**. The hub gets a device of its own carrying four
 diagnostic sensors, a pairing-mode sensor, a push-updates sensor, a slider per rail for every
 blind at once, and nine buttons. Each of the hub's
 **rooms** gets a device too, with a slider per rail and eight buttons that act on the whole room
@@ -12,6 +12,7 @@ blind at once, and nine buttons. Each of the hub's
 |---|---|---|---|
 | Cover | Bottom rail (Louvers on a Shutter); Middle rail on two-rail blinds | — | — |
 | Number | Bottom rail position (not on a Shutter); Middle rail position on two-rail blinds | Bottom rail position, Middle rail position, when a blind in the room has that rail | All blinds bottom rail position, All blinds middle rail position |
+| Select | Shade color (Shutter color on a Shutter), Divided lights | — | — |
 | Button | Best privacy, Best view, Favorite position, Jog up, Jog down, Request status; Calibration\* on every type but a SmartDrape; Find top\* on dual-rail cellular shades | Stop, Best privacy, Best view, Favorite position, Jog up, Jog down, Refresh blinds, Report battery levels (may close shades) | All blinds best privacy, All blinds best view, All blinds favorite position, All blinds stop, All blinds jog up, All blinds jog down, Refresh blinds, Report battery levels (may close shades), Start pairing |
 | Sensor | Battery, Last seen, Signal strength\*, Firmware version\* | — | MAC address, Time zone, Wi-Fi network, Wi-Fi signal\* |
 | Binary sensor | Connection | — | Pairing mode, Push updates |
@@ -21,9 +22,9 @@ blind at once, and nine buttons. Each of the hub's
 <img src="../images/blind-device.png" alt="A two-rail blind's device page in Home Assistant, showing the Controls, Configuration and Diagnostic sections and the Activity timeline." width="820">
 
 *Everything in that table, on one blind's device page. **Controls** holds the covers and
-sliders, **Configuration** the five buttons that move or set something, and **Diagnostic** the
-sensors plus the Request status button — Home Assistant sorts them by the entity category each
-one declares.*
+sliders, **Configuration** the five buttons that move or set something with the blind's color
+and its window's divided lights, and **Diagnostic** the sensors plus the Request status button —
+Home Assistant sorts them by the entity category each one declares.*
 
 ## Devices
 
@@ -205,17 +206,16 @@ app. It also refreshes after every command it sends and every time the long-poll
 reconnected.
 
 The long-poll is reconnected every 5 minutes, so a notification that goes missing leaves a
-blind out of date for 5 minutes at most. Optional polling shortens that:
-**Settings → Devices & services → Norman → Configure**. **0 (the default) disables polling**;
-10 to 300 seconds re-reads every blind's position on that interval. See
-[options.md](options.md#poll-interval).
+blind out of date for 5 minutes at most. There is no poll on top of that
+([options.md](options.md#polling-and-wake-sweeps)).
 
-Polling does not help a blind whose radio sleeps. The hub only hears from a battery blind when
+Re-reading the hub does not help a blind whose radio sleeps. The hub only hears from a battery blind when
 it wakes -- after a day of silence its [Connection](#connection) sensor turns off, though a
 command still wakes it and works -- and until then the hub's own copy of its position is out
 of date, so re-reading that copy changes nothing. A stale position makes `is_closed` answer
 about the past, which quietly breaks automations that check state before acting ("close it if
-it isn't closed"). **Request status** or the [wake sweep](#wake-sweep) has the blind report in.
+it isn't closed"). **Request status**, or **Refresh blinds** for a room or the hub, has the
+blind report in.
 See [docs/NORMAN_API.md](NORMAN_API.md#post-nmv1notification) for the mechanics.
 
 **Best privacy** and **Best view** are the app's own buttons, per blind: privacy puts the
@@ -247,6 +247,46 @@ finer movement use the **Jog** buttons (the motor's own fine-tune) or the
 
 They sit in the device page's **Controls** group beside the covers, so a two-rail blind shows
 its two covers and its two sliders together, with the buttons below the divider.
+
+## Shade color
+
+| Entity | Blinds | Colors |
+|---|---|---|
+| Shade color | every blind but a Shutter | White, Ivory (the default), Linen, Sand, Taupe, Gray, Slate, Charcoal, Navy, Sage, Terracotta |
+| Shutter color | a Shutter | White (the default), Ivory, Gray, Black, Oak, Walnut |
+
+What the real shade looks like, so the [Norman Shades card and page](dashboard.md#shade-colors-and-divided-lights)
+draw it in its own color: a fabric for a shade, a paint or a stain for a Shutter. On a two-rail
+shade the color is the blackout's; the light-filtering sheer stays white. Choose it here, under
+the device page's **Configuration**, or from the settings button at the top of the Norman
+Shades page in the sidebar, which sets these same entities.
+
+The hub keeps no color for a blind, so nothing is sent to it. Home Assistant keeps the choice
+and restores it at start, and the select stays available while the hub is out of reach, so the
+shades keep their colors then. The defaults are the colors the card has always drawn. Hiding
+the select keeps the shade's color on the card; disabling it draws the shade in the default.
+
+## Divided lights
+
+| Entity | Blinds | Patterns |
+|---|---|---|
+| Divided lights | every blind | None, One over one, Two side by side, Two over none, Two over two (the default), Three over none, Four over none, Four over four, Six over none, Six over six, Prairie |
+
+How the glass of the blind's window is divided, so the
+[Norman Shades card and page](dashboard.md#shade-colors-and-divided-lights) draw its glazing
+bars as the real window has them. A double-hung window's pattern is named for its sashes,
+upper over lower, with its meeting rail across the middle: two over two is a cross, four over
+four two by two panes in each sash and six over six three by two, and "over none" divides the
+upper sash alone, above a plain lower one. One over one is the meeting rail alone. The others
+are none, for a picture window; two side by side, one bar down the middle, for a pair of
+casements; and Prairie, a border of narrow panes round the edge. Choose it here, under the
+device page's **Configuration**, or from the settings button at the top of the Norman Shades
+page in the sidebar, which sets these same entities.
+
+Like the color, it is Home Assistant's alone: nothing is sent to the hub, the choice is restored
+at start, and the select stays available while the hub is out of reach. Two over two is the
+glass the card has always drawn. Hiding the select keeps the pattern on the card; disabling it
+draws the window two over two.
 
 ## Buttons
 
@@ -346,21 +386,6 @@ instance during a refresh sweep.
 
 Moves sent while the battery-report sweep is running have been answered with the hub's
 `Error 2`; the integration retries a move a few times, five seconds apart, before failing it.
-
-### Wake sweep
-
-**Settings → Devices & services → Norman → Configure** has a second interval next to the poll:
-the **wake sweep**. Every interval it sends a status request to each blind whose
-**Connection** sensor is off — not heard from for 24 hours, the Norman app's threshold for
-disconnected — so the hub's own cache for that blind is refreshed rather than merely re-read.
-The poll cannot do that: on 2026-09-18 the hub reported every two-rail blind's middle rail at
-100, and when the blinds reported in several read 0; nothing had moved, the
-cache was stale. Connected blinds are left alone, as the app leaves them, so a sweep sends
-nothing while every blind is connected. Until issue
-[#5](https://github.com/kedube/ha-norman/issues/5) it sent `ReportBatteryLevel`, which
-closed one hub's type 48 roller shades every time it ran. Off by default, and the form no longer
-suggests a value. The floor is ten minutes, because a sweep can wake a sleeping blind's radio;
-an hour is a sensible value.
 
 ### Firmware version
 
@@ -515,10 +540,10 @@ automation:
 
 ### Hub sensors
 
-<img src="../images/hub-device.png" alt="The hub's device page: the all-blinds preset buttons and Start pairing under Configuration; MAC address, pairing mode, Refresh blinds, time zone and Wi-Fi network under Diagnostic; a pairing window opening and closing under Activity; and every blind under Connected devices." width="820">
+<img src="../images/hub-device.png" alt="The hub's device page: the all-blinds sliders and stop under Controls; the all-blinds presets, jogs and Start pairing under Configuration; MAC address, pairing mode, push updates, Refresh blinds, Report battery levels, time zone and Wi-Fi network under Diagnostic; the sliders' recent moves under Activity; and the rooms and blinds under Connected devices." width="820">
 
-*The hub's own device. Every blind is listed under **Connected devices** because each one is
-linked to the hub with `via_device`, so removing the hub removes them together.*
+*The hub's own device. Every room and blind is listed under **Connected devices** because each
+one is linked to the hub with `via_device`, so removing the hub removes them together.*
 
 
 The hub device has its own diagnostic sensors:
@@ -535,7 +560,7 @@ And two binary sensors:
 | Binary sensor | Source | Notes |
 |---|---|---|
 | Pairing mode | `PairingMode` in status | **On** while the hub's pairing window is open (status reports `5`; it lasts ten minutes after **Start pairing** or the app opens it), **off** at `0`. |
-| Push updates | the hub's notification stream | Connectivity. **On** while the stream is connected, so a move at a remote, in the Norman app or from Home Assistant shows at once; **off** from a failed connection until the hub answers again, when nothing arrives until it reconnects (every 15 seconds) or a poll, which is off by default ([Data updates](#data-updates)). Unknown until the first connection has an answer. The stream is re-opened every five minutes on purpose, which leaves it on. Available while the hub is not answering, which is when it matters. |
+| Push updates | the hub's notification stream | Connectivity. **On** while the stream is connected, so a move at a remote, in the Norman app or from Home Assistant shows at once; **off** from a failed connection until the hub answers again, when nothing arrives until it reconnects (every 15 seconds; [Data updates](#data-updates)). Unknown until the first connection has an answer. The stream is re-opened every five minutes on purpose, which leaves it on. Available while the hub is not answering, which is when it matters. |
 
 ## Removing a blind
 

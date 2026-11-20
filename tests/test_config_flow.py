@@ -19,21 +19,22 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 
 from custom_components.norman.const import (
     CONF_CONTROL_INTERVAL,
-    CONF_POLL_INTERVAL,
     CONF_SHOW_SIDEBAR_PANEL,
-    CONF_WAKE_INTERVAL,
+    CONF_SIDEBAR_VIEW,
+    CONF_SIDEBAR_VIEW_FORECAST,
+    CONF_SIDEBAR_VIEW_MOTION,
+    CONF_SIDEBAR_VIEW_WEATHER,
     DEFAULT_CONTROL_INTERVAL,
-    DEFAULT_POLL_INTERVAL,
     DEFAULT_SHOW_SIDEBAR_PANEL,
-    DEFAULT_WAKE_INTERVAL,
+    DEFAULT_SIDEBAR_VIEW,
+    DEFAULT_SIDEBAR_VIEW_FORECAST,
+    DEFAULT_SIDEBAR_VIEW_MOTION,
     DOMAIN,
     MAX_CONTROL_INTERVAL,
-    MAX_POLL_INTERVAL,
-    MAX_WAKE_INTERVAL,
     MIN_CONTROL_INTERVAL,
-    MIN_WAKE_INTERVAL,
-    POLL_DISABLED,
-    WAKE_DISABLED,
+    PHOTO_CREDITS_URL,
+    SIDEBAR_VIEW_NONE,
+    SIDEBAR_VIEWS,
 )
 
 from .const import HUB_HOST, HUB_THING_NAME, HUB_URL, MOCK_CONFIG
@@ -405,6 +406,14 @@ async def test_zeroconf_discovery_unknown_error_aborts(hass: HomeAssistant) -> N
     assert result["reason"] == "unknown"
 
 
+# What the options form stores for the sidebar page's view when its fields are left alone.
+VIEW_DEFAULTS = {
+    CONF_SIDEBAR_VIEW: DEFAULT_SIDEBAR_VIEW,
+    CONF_SIDEBAR_VIEW_MOTION: DEFAULT_SIDEBAR_VIEW_MOTION,
+    CONF_SIDEBAR_VIEW_FORECAST: DEFAULT_SIDEBAR_VIEW_FORECAST,
+}
+
+
 async def _open_options(hass: HomeAssistant, entry: MockConfigEntry) -> dict:
     """Start the options flow for ``entry``."""
     entry.add_to_hass(hass)
@@ -413,54 +422,9 @@ async def _open_options(hass: HomeAssistant, entry: MockConfigEntry) -> dict:
     return await hass.config_entries.options.async_init(entry.entry_id)
 
 
-@pytest.mark.parametrize("value", [POLL_DISABLED, 10, 30, MAX_POLL_INTERVAL])
-async def test_options_flow_stores_the_poll_interval(hass: HomeAssistant, value: int) -> None:
-    """0 (off) and every in-range value are accepted and stored as an int."""
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
-    result = await _open_options(hass, entry)
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "init"
-
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={CONF_POLL_INTERVAL: value}
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    # The wake sweep field keeps its 0 default when only the poll is given, and the sidebar
-    # entry stays on.
-    assert entry.options == {
-        CONF_POLL_INTERVAL: value,
-        CONF_WAKE_INTERVAL: WAKE_DISABLED,
-        CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
-        CONF_SHOW_SIDEBAR_PANEL: True,
-    }
-    assert isinstance(entry.options[CONF_POLL_INTERVAL], int)
-
-
-@pytest.mark.parametrize("value", [1, 9])
-async def test_options_flow_rejects_the_gap_between_off_and_the_floor(
-    hass: HomeAssistant, value: int
-) -> None:
-    """A value between "off" and the floor is refused rather than silently corrected.
-
-    Without this the form would accept, say, 1 second, and the coordinator would quietly
-    substitute the default -- leaving the options page showing a number that is not the one
-    in force. The selector cannot express the gap, so the step handler checks it and the
-    form comes back with an error.
-    """
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
-    result = await _open_options(hass, entry)
-
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={CONF_POLL_INTERVAL: value}
-    )
-    assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {CONF_POLL_INTERVAL: "poll_interval_out_of_range"}
-    assert entry.options == {}
-
-
-@pytest.mark.parametrize("value", [-1, MAX_POLL_INTERVAL + 1, 3600])
+@pytest.mark.parametrize("value", [0.0, MIN_CONTROL_INTERVAL - 0.1, MAX_CONTROL_INTERVAL + 1])
 async def test_options_flow_rejects_values_outside_the_selector(
-    hass: HomeAssistant, value: int
+    hass: HomeAssistant, value: float
 ) -> None:
     """Anything beyond the selector's own bounds is refused by the schema."""
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
@@ -468,20 +432,20 @@ async def test_options_flow_rejects_values_outside_the_selector(
 
     with pytest.raises(InvalidData):
         await hass.config_entries.options.async_configure(
-            result["flow_id"], user_input={CONF_POLL_INTERVAL: value}
+            result["flow_id"], user_input={CONF_CONTROL_INTERVAL: value}
         )
     assert entry.options == {}
 
 
 async def test_options_flow_defaults_to_the_current_value(hass: HomeAssistant) -> None:
     """The form is seeded with what is configured, so saving twice is not destructive."""
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_POLL_INTERVAL: 120})
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_CONTROL_INTERVAL: 2.5})
     result = await _open_options(hass, entry)
 
     schema = result["data_schema"].schema
-    key = next(k for k in schema if str(k) == CONF_POLL_INTERVAL)
-    assert key.description["suggested_value"] == 120
-    assert key.default() == DEFAULT_POLL_INTERVAL
+    key = next(k for k in schema if str(k) == CONF_CONTROL_INTERVAL)
+    assert key.description["suggested_value"] == 2.5
+    assert key.default() == DEFAULT_CONTROL_INTERVAL
 
 
 async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssistant) -> None:
@@ -510,38 +474,6 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
 
     assert converted == [
         {
-            "name": CONF_POLL_INTERVAL,
-            "required": True,
-            "default": DEFAULT_POLL_INTERVAL,
-            # No suggestion: a suggested value is submitted with the form.
-            "description": {"suggested_value": POLL_DISABLED},
-            "selector": {
-                "number": {
-                    "min": float(POLL_DISABLED),
-                    "max": float(MAX_POLL_INTERVAL),
-                    "step": 1.0,
-                    "unit_of_measurement": "seconds",
-                    "mode": "box",
-                }
-            },
-        },
-        {
-            "name": CONF_WAKE_INTERVAL,
-            "required": True,
-            "default": DEFAULT_WAKE_INTERVAL,
-            # No suggestion: a suggested value is submitted with the form (issue #5).
-            "description": {"suggested_value": WAKE_DISABLED},
-            "selector": {
-                "number": {
-                    "min": float(WAKE_DISABLED),
-                    "max": float(MAX_WAKE_INTERVAL),
-                    "step": 1.0,
-                    "unit_of_measurement": "seconds",
-                    "mode": "box",
-                }
-            },
-        },
-        {
             "name": CONF_CONTROL_INTERVAL,
             "required": True,
             "default": DEFAULT_CONTROL_INTERVAL,
@@ -564,107 +496,97 @@ async def test_options_schema_is_serializable_for_the_frontend(hass: HomeAssista
             "description": {"suggested_value": DEFAULT_SHOW_SIDEBAR_PANEL},
             "selector": {"boolean": {}},
         },
+        {
+            "name": CONF_SIDEBAR_VIEW,
+            "required": True,
+            "default": DEFAULT_SIDEBAR_VIEW,
+            "description": {"suggested_value": DEFAULT_SIDEBAR_VIEW},
+            "selector": {
+                "select": {
+                    # The places, then "none"; their names come from the translations.
+                    "options": [*SIDEBAR_VIEWS, SIDEBAR_VIEW_NONE],
+                    "translation_key": CONF_SIDEBAR_VIEW,
+                    "mode": "dropdown",
+                    "multiple": False,
+                    "custom_value": False,
+                    "sort": False,
+                }
+            },
+        },
+        {
+            "name": CONF_SIDEBAR_VIEW_MOTION,
+            "required": True,
+            "default": DEFAULT_SIDEBAR_VIEW_MOTION,
+            "description": {"suggested_value": DEFAULT_SIDEBAR_VIEW_MOTION},
+            "selector": {"boolean": {}},
+        },
+        {
+            "name": CONF_SIDEBAR_VIEW_FORECAST,
+            "required": True,
+            "default": DEFAULT_SIDEBAR_VIEW_FORECAST,
+            "description": {"suggested_value": DEFAULT_SIDEBAR_VIEW_FORECAST},
+            "selector": {"boolean": {}},
+        },
+        {
+            # Optional, with nothing suggested: left empty, the page finds a weather entity.
+            "name": CONF_SIDEBAR_VIEW_WEATHER,
+            "required": False,
+            "optional": True,
+            "selector": {"entity": {"domain": ["weather"], "multiple": False, "reorder": False}},
+        },
     ]
 
 
-@pytest.mark.parametrize("value", [WAKE_DISABLED, MIN_WAKE_INTERVAL, 3600, MAX_WAKE_INTERVAL])
-async def test_options_flow_stores_the_wake_interval(hass: HomeAssistant, value: int) -> None:
-    """0 (off) and every in-range wake interval are accepted and stored as an int."""
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
-    result = await _open_options(hass, entry)
-
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={CONF_POLL_INTERVAL: 0, CONF_WAKE_INTERVAL: value}
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {
-        CONF_POLL_INTERVAL: 0,
-        CONF_WAKE_INTERVAL: value,
-        CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
-        CONF_SHOW_SIDEBAR_PANEL: True,
-    }
-    assert isinstance(entry.options[CONF_WAKE_INTERVAL], int)
-
-
-@pytest.mark.parametrize("value", [1, MIN_WAKE_INTERVAL - 1])
-async def test_options_flow_rejects_a_wake_interval_below_the_floor(
-    hass: HomeAssistant, value: int
-) -> None:
-    """The gap between "off" and the floor is refused, with the error on the wake field.
-
-    The floor is ten minutes: a sweep can wake a sleeping blind's radio, so it should not
-    run more than a few times an hour.
-    """
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
-    result = await _open_options(hass, entry)
-
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={CONF_POLL_INTERVAL: 0, CONF_WAKE_INTERVAL: value}
-    )
-    assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {CONF_WAKE_INTERVAL: "wake_interval_out_of_range"}
-    assert entry.options == {}
-
-
-async def test_options_form_suggests_neither_a_poll_nor_a_wake_sweep(
+async def test_options_form_suggests_the_defaults(
     hass: HomeAssistant,
 ) -> None:
-    """A fresh entry is offered both intervals at 0, off.
+    """A fresh entry is offered the defaults, and nothing else.
 
     Command spacing has no "off" value, so its suggestion is simply its default; the sidebar
-    entry is on.
+    entry is on, with its view on the coast and moving. No weather entity is suggested: the
+    page finds one itself.
     """
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     result = await _open_options(hass, entry)
 
     schema = result["data_schema"].schema
-    suggested = {str(k): k.description["suggested_value"] for k in schema}
+    suggested = {str(k): k.description["suggested_value"] for k in schema if k.description}
     assert suggested == {
-        CONF_POLL_INTERVAL: POLL_DISABLED,
-        CONF_WAKE_INTERVAL: WAKE_DISABLED,
         CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
         CONF_SHOW_SIDEBAR_PANEL: True,
+        **VIEW_DEFAULTS,
     }
+    assert CONF_SIDEBAR_VIEW_WEATHER in {str(k) for k in schema}
+    # The view option's description links to the photographs' credits.
+    assert result["description_placeholders"] == {"credits": PHOTO_CREDITS_URL}
 
 
-async def test_saving_the_untouched_form_leaves_polling_and_the_wake_sweep_off(
+async def test_saving_the_untouched_form_stores_only_the_change(
     hass: HomeAssistant,
 ) -> None:
-    """Submitting the form as first shown stores no poll and no wake sweep (issue #5).
+    """Submitting the form as first shown stores the defaults beside the one change made.
 
-    The frontend submits a field's suggested value unless the user clears it. The form used
-    to suggest 3600 for the sweep and 60 for the poll, so opening Configure to change
-    anything else switched both on, and on a hub of type 48 roller shades the sweep closed
-    every shade.
+    The frontend submits a field's suggested value unless the user clears it. The form once
+    suggested a wake sweep and a poll, so opening Configure to change anything else switched
+    both on, and on a hub of type 48 roller shades the sweep closed every shade (issue #5).
     """
     entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
     result = await _open_options(hass, entry)
-    as_shown = {str(k): k.description["suggested_value"] for k in result["data_schema"].schema}
+    as_shown = {
+        str(k): k.description["suggested_value"]
+        for k in result["data_schema"].schema
+        if k.description
+    }
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], user_input={**as_shown, CONF_CONTROL_INTERVAL: 2.0}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options[CONF_POLL_INTERVAL] == POLL_DISABLED
-    assert entry.options[CONF_WAKE_INTERVAL] == WAKE_DISABLED
-
-
-async def test_a_poll_saved_over_the_ceiling_is_shown_as_off(hass: HomeAssistant) -> None:
-    """Releases before the ceiling came down to 300 stored up to 3600.
-
-    The coordinator runs such a value as off, so the form shows 0 rather than a number its
-    own selector would refuse when the form is saved.
-    """
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_POLL_INTERVAL: 3600})
-    result = await _open_options(hass, entry)
-    key = next(k for k in result["data_schema"].schema if str(k) == CONF_POLL_INTERVAL)
-    assert key.description["suggested_value"] == POLL_DISABLED
-
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={CONF_POLL_INTERVAL: key.description["suggested_value"]}
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options[CONF_POLL_INTERVAL] == POLL_DISABLED
+    assert entry.options == {
+        CONF_CONTROL_INTERVAL: 2.0,
+        CONF_SHOW_SIDEBAR_PANEL: True,
+        **VIEW_DEFAULTS,
+    }
 
 
 async def test_options_flow_turns_the_sidebar_entry_off(hass: HomeAssistant) -> None:
@@ -673,7 +595,7 @@ async def test_options_flow_turns_the_sidebar_entry_off(hass: HomeAssistant) -> 
     result = await _open_options(hass, entry)
 
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={CONF_POLL_INTERVAL: 0, CONF_SHOW_SIDEBAR_PANEL: False}
+        result["flow_id"], user_input={CONF_SHOW_SIDEBAR_PANEL: False}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_SHOW_SIDEBAR_PANEL] is False
@@ -685,12 +607,90 @@ async def test_options_saved_before_the_sidebar_toggle_show_it_on(hass: HomeAssi
     The other fields are seeded from what is stored, so this one must not come back blank,
     which would read as "off" to someone who never chose that.
     """
-    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_POLL_INTERVAL: 120})
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_CONTROL_INTERVAL: 2.0})
     result = await _open_options(hass, entry)
 
     schema = result["data_schema"].schema
     key = next(k for k in schema if str(k) == CONF_SHOW_SIDEBAR_PANEL)
     assert key.default() is True
+
+
+async def test_options_flow_stores_the_view(hass: HomeAssistant) -> None:
+    """The place, whether it moves, the forecast and the weather entity are all stored."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_SIDEBAR_VIEW: "lake",
+            CONF_SIDEBAR_VIEW_MOTION: False,
+            CONF_SIDEBAR_VIEW_FORECAST: False,
+            CONF_SIDEBAR_VIEW_WEATHER: "weather.lakehouse",
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_SIDEBAR_VIEW] == "lake"
+    assert entry.options[CONF_SIDEBAR_VIEW_MOTION] is False
+    assert entry.options[CONF_SIDEBAR_VIEW_FORECAST] is False
+    assert entry.options[CONF_SIDEBAR_VIEW_WEATHER] == "weather.lakehouse"
+
+
+async def test_options_flow_turns_the_view_off(hass: HomeAssistant) -> None:
+    """ "None" is a choice like the places: the page goes back to the plain card."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={CONF_SIDEBAR_VIEW: SIDEBAR_VIEW_NONE}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_SIDEBAR_VIEW] == SIDEBAR_VIEW_NONE
+
+
+async def test_options_flow_refuses_a_place_there_are_no_photographs_of(
+    hass: HomeAssistant,
+) -> None:
+    """The view is one of the places that ship, or none: anything else is refused."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG)
+    result = await _open_options(hass, entry)
+
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={CONF_SIDEBAR_VIEW: "desert"}
+        )
+    assert entry.options == {}
+
+
+async def test_clearing_the_weather_entity_forgets_it(hass: HomeAssistant) -> None:
+    """A weather entity chosen earlier is shown, and goes when its field is cleared.
+
+    The frontend leaves a cleared optional field out of what it submits. The entity must not
+    linger in the options then: an absent key is what tells the page to find one itself.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=MOCK_CONFIG,
+        options={CONF_SIDEBAR_VIEW_WEATHER: "weather.lakehouse"},
+    )
+    result = await _open_options(hass, entry)
+    key = next(k for k in result["data_schema"].schema if str(k) == CONF_SIDEBAR_VIEW_WEATHER)
+    assert key.description["suggested_value"] == "weather.lakehouse"
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input={})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert CONF_SIDEBAR_VIEW_WEATHER not in entry.options
+
+
+async def test_options_saved_before_the_view_show_it_on(hass: HomeAssistant) -> None:
+    """Options stored by an older release have no view keys; the form offers the defaults."""
+    entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG, options={CONF_CONTROL_INTERVAL: 2.0})
+    result = await _open_options(hass, entry)
+
+    defaults = {
+        str(k): k.default() for k in result["data_schema"].schema if str(k) in VIEW_DEFAULTS
+    }
+    assert defaults == VIEW_DEFAULTS
 
 
 @pytest.mark.parametrize(

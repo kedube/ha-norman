@@ -23,7 +23,15 @@ from homeassistant.loader import async_get_integration
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.norman.const import CONF_SHOW_SIDEBAR_PANEL, DOMAIN
+from custom_components.norman.const import (
+    CONF_SHOW_SIDEBAR_PANEL,
+    CONF_SIDEBAR_VIEW,
+    CONF_SIDEBAR_VIEW_FORECAST,
+    CONF_SIDEBAR_VIEW_MOTION,
+    CONF_SIDEBAR_VIEW_WEATHER,
+    DOMAIN,
+    SIDEBAR_VIEW_NONE,
+)
 from custom_components.norman.frontend import (
     PANEL_ELEMENT,
     PANEL_ICON,
@@ -67,9 +75,25 @@ def _sidebar(hass: HomeAssistant) -> dict[str, frontend.Panel]:
     return dict(hass.data.get(frontend.DATA_PANELS, {}))
 
 
-def _pinned(panel: frontend.Panel) -> dict[str, str]:
-    """The card config a panel carries, without panel_custom's own bookkeeping."""
+# What a panel carries for the page's view when the hub's view options are left alone, and
+# the keys the view's part of the config can have (www/norman-panel.js reads them).
+DEFAULT_VIEW = {"view": "coast", "view_motion": True}
+VIEW_KEYS = ("view", "view_motion", "weather_entity")
+
+
+def _pinned(panel: frontend.Panel) -> dict[str, str | bool]:
+    """The config a panel carries, without panel_custom's own bookkeeping."""
     return {k: v for k, v in (panel.config or {}).items() if k != "_panel_custom"}
+
+
+def _hub(panel: frontend.Panel) -> dict[str, str | bool]:
+    """The card's part of a panel's config: the hub it is pinned to, if any."""
+    return {k: v for k, v in _pinned(panel).items() if k not in VIEW_KEYS}
+
+
+def _view(panel: frontend.Panel) -> dict[str, str | bool]:
+    """The view's part of a panel's config."""
+    return {k: v for k, v in _pinned(panel).items() if k in VIEW_KEYS}
 
 
 async def test_one_hub_gets_a_plain_entry(hass: HomeAssistant) -> None:
@@ -87,7 +111,7 @@ async def test_one_hub_gets_a_plain_entry(hass: HomeAssistant) -> None:
     assert custom["name"] == PANEL_ELEMENT
     # Stamped like the card, so an upgrade never serves a cached old panel.
     assert custom["module_url"] == f"{WWW_URL_BASE}/norman-panel.js?v={VERSION}"
-    assert _pinned(panel) == {}  # nothing pinned: the card shows the only hub
+    assert _pinned(panel) == DEFAULT_VIEW  # no hub pinned: the card shows the only one
 
 
 @pytest.mark.parametrize(
@@ -174,7 +198,7 @@ async def test_several_hubs_each_get_an_entry_pinned_to_their_hub(hass: HomeAssi
     for entry in (second, first, third):
         await async_add_entry_panel(hass, entry)
 
-    assert {url: (p.sidebar_title, _pinned(p)) for url, p in _sidebar(hass).items()} == {
+    assert {url: (p.sidebar_title, _hub(p)) for url, p in _sidebar(hass).items()} == {
         PANEL_URL_PATH: ("Norman Hub (192.168.1.50)", {"config_entry_id": "a"}),
         f"{PANEL_URL_PATH}-2": ("Norman Hub (192.168.1.50) 2", {"config_entry_id": "b"}),
         f"{PANEL_URL_PATH}-3": ("Cabin", {"config_entry_id": "c"}),
@@ -184,20 +208,20 @@ async def test_several_hubs_each_get_an_entry_pinned_to_their_hub(hass: HomeAssi
 async def test_a_second_hub_turns_the_plain_entry_into_a_pinned_one(hass: HomeAssistant) -> None:
     first, second = _entry(hass, "a", "Home"), _entry(hass, "b", "Cabin")
     await async_add_entry_panel(hass, first)
-    assert _pinned(_sidebar(hass)[PANEL_URL_PATH]) == {}
+    assert _hub(_sidebar(hass)[PANEL_URL_PATH]) == {}
 
     await async_add_entry_panel(hass, second)
     sidebar = _sidebar(hass)
     assert sidebar[PANEL_URL_PATH].sidebar_title == "Home"
-    assert _pinned(sidebar[PANEL_URL_PATH]) == {"config_entry_id": "a"}
-    assert _pinned(sidebar[f"{PANEL_URL_PATH}-2"]) == {"config_entry_id": "b"}
+    assert _hub(sidebar[PANEL_URL_PATH]) == {"config_entry_id": "a"}
+    assert _hub(sidebar[f"{PANEL_URL_PATH}-2"]) == {"config_entry_id": "b"}
 
     # Back to one hub: back to the plain entry.
     await async_remove_entry_panel(hass, second)
     sidebar = _sidebar(hass)
     assert list(sidebar) == [PANEL_URL_PATH]
     assert sidebar[PANEL_URL_PATH].sidebar_title == PANEL_TITLE
-    assert _pinned(sidebar[PANEL_URL_PATH]) == {}
+    assert _hub(sidebar[PANEL_URL_PATH]) == {}
 
 
 async def test_a_hub_without_the_panel_still_counts_as_another_hub(hass: HomeAssistant) -> None:
@@ -210,7 +234,125 @@ async def test_a_hub_without_the_panel_still_counts_as_another_hub(hass: HomeAss
 
     sidebar = _sidebar(hass)
     assert list(sidebar) == [PANEL_URL_PATH]
-    assert _pinned(sidebar[PANEL_URL_PATH]) == {"config_entry_id": "a"}
+    assert _hub(sidebar[PANEL_URL_PATH]) == {"config_entry_id": "a"}
+
+
+async def test_the_view_options_reach_the_page(hass: HomeAssistant) -> None:
+    """The place, whether it moves and the weather entity go to the page in the panel's config,
+    and the weather turned off goes as the card's own hide_weather."""
+    entry = _entry(
+        hass,
+        "a",
+        **{
+            CONF_SIDEBAR_VIEW: "lake",
+            CONF_SIDEBAR_VIEW_MOTION: False,
+            CONF_SIDEBAR_VIEW_FORECAST: False,
+            CONF_SIDEBAR_VIEW_WEATHER: "weather.lakehouse",
+        },
+    )
+    await async_add_entry_panel(hass, entry)
+
+    assert _pinned(_sidebar(hass)[PANEL_URL_PATH]) == {
+        "view": "lake",
+        "view_motion": False,
+        "weather_entity": "weather.lakehouse",
+        "hide_weather": True,
+    }
+
+
+@pytest.mark.parametrize("view", [SIDEBAR_VIEW_NONE, "desert"])
+async def test_without_a_view_the_page_is_the_plain_card(hass: HomeAssistant, view: str) -> None:
+    """ "None" leaves the view out of the config altogether, and so does a place this release
+    has no photographs of (one stored by a later release, then downgraded)."""
+    entry = _entry(
+        hass,
+        "a",
+        **{
+            CONF_SIDEBAR_VIEW: view,
+            CONF_SIDEBAR_VIEW_MOTION: False,
+            CONF_SIDEBAR_VIEW_FORECAST: False,
+        },
+    )
+    await async_add_entry_panel(hass, entry)
+
+    assert _pinned(_sidebar(hass)[PANEL_URL_PATH]) == {}
+
+
+async def test_each_hub_keeps_its_own_view(hass: HomeAssistant) -> None:
+    home = _entry(hass, "a", "Home")
+    cabin = _entry(hass, "b", "Cabin", **{CONF_SIDEBAR_VIEW: "lake"})
+    for entry in (home, cabin):
+        await async_add_entry_panel(hass, entry)
+
+    sidebar = _sidebar(hass)
+    assert _pinned(sidebar[PANEL_URL_PATH]) == {"config_entry_id": "a", **DEFAULT_VIEW}
+    assert _pinned(sidebar[f"{PANEL_URL_PATH}-2"]) == {
+        "config_entry_id": "b",
+        "view": "lake",
+        "view_motion": True,
+    }
+
+
+async def test_changing_the_view_updates_the_page_without_a_reload(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Saving another place registers the panel again with it, and the hub stays connected:
+    a reload would drop the notification stream and every move being watched."""
+    hass.http = MagicMock(async_register_static_paths=AsyncMock())
+
+    async with loaded(hass, mock_config_entry):
+        assert _view(_sidebar(hass)[PANEL_URL_PATH]) == DEFAULT_VIEW
+        coordinator = mock_config_entry.runtime_data
+
+        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+        shown = {
+            str(k): k.description["suggested_value"]
+            for k in result["data_schema"].schema
+            if k.description
+        }
+        await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={**shown, CONF_SIDEBAR_VIEW: "lake", CONF_SIDEBAR_VIEW_MOTION: False},
+        )
+        await hass.async_block_till_done()
+
+        assert mock_config_entry.state is ConfigEntryState.LOADED
+        assert mock_config_entry.runtime_data is coordinator
+        assert _view(_sidebar(hass)[PANEL_URL_PATH]) == {"view": "lake", "view_motion": False}
+
+
+async def test_turning_the_weather_off_updates_the_page_without_a_reload(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """The weather is on until it is turned off, which registers the panel again with the
+    card told to leave it out; the hub stays connected, as for any other view option."""
+    hass.http = MagicMock(async_register_static_paths=AsyncMock())
+
+    async with loaded(hass, mock_config_entry):
+        assert "hide_weather" not in _pinned(_sidebar(hass)[PANEL_URL_PATH])
+        coordinator = mock_config_entry.runtime_data
+
+        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+        shown = {
+            str(k): k.description["suggested_value"]
+            for k in result["data_schema"].schema
+            if k.description
+        }
+        assert shown[CONF_SIDEBAR_VIEW_FORECAST] is True
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={**shown, CONF_SIDEBAR_VIEW_FORECAST: False}
+        )
+        await hass.async_block_till_done()
+
+        assert mock_config_entry.state is ConfigEntryState.LOADED
+        assert mock_config_entry.runtime_data is coordinator
+        assert _pinned(_sidebar(hass)[PANEL_URL_PATH]) == {**DEFAULT_VIEW, "hide_weather": True}
 
 
 async def test_a_sidebar_failure_never_fails_setup(

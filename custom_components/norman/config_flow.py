@@ -18,9 +18,14 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
 )
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.helpers.typing import UNDEFINED
@@ -36,22 +41,22 @@ except ImportError:  # pragma: no cover - Home Assistant < 2026.9
 from .api import NormanApiClient, NormanApiError, NormanConnectionError
 from .const import (
     CONF_CONTROL_INTERVAL,
-    CONF_POLL_INTERVAL,
     CONF_SHOW_SIDEBAR_PANEL,
-    CONF_WAKE_INTERVAL,
+    CONF_SIDEBAR_VIEW,
+    CONF_SIDEBAR_VIEW_FORECAST,
+    CONF_SIDEBAR_VIEW_MOTION,
+    CONF_SIDEBAR_VIEW_WEATHER,
     DEFAULT_CONTROL_INTERVAL,
-    DEFAULT_POLL_INTERVAL,
     DEFAULT_SHOW_SIDEBAR_PANEL,
-    DEFAULT_WAKE_INTERVAL,
+    DEFAULT_SIDEBAR_VIEW,
+    DEFAULT_SIDEBAR_VIEW_FORECAST,
+    DEFAULT_SIDEBAR_VIEW_MOTION,
     DOMAIN,
     MAX_CONTROL_INTERVAL,
-    MAX_POLL_INTERVAL,
-    MAX_WAKE_INTERVAL,
     MIN_CONTROL_INTERVAL,
-    MIN_POLL_INTERVAL,
-    MIN_WAKE_INTERVAL,
-    POLL_DISABLED,
-    WAKE_DISABLED,
+    PHOTO_CREDITS_URL,
+    SIDEBAR_VIEW_NONE,
+    SIDEBAR_VIEWS,
     default_title,
     is_default_title,
 )
@@ -69,31 +74,11 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 # converts it field by field and understands only selectors and a handful of known
 # validators. A plain function anywhere in here (say a vol.All(..., _check) wrapper) fails
 # that conversion while the form is being built, which surfaces as a bare 500 and a dialog
-# that never opens. So the range is expressed by the selector alone, and the one rule it
-# cannot express -- "0, or 10 to 300", with a gap -- is enforced in the step handler.
+# that never opens. So a range is expressed by the selector alone, and checked again in the
+# step handler.
 OPTIONS_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_POLL_INTERVAL, default=DEFAULT_POLL_INTERVAL): NumberSelector(
-            NumberSelectorConfig(
-                min=POLL_DISABLED,
-                max=MAX_POLL_INTERVAL,
-                step=1,
-                unit_of_measurement="seconds",
-                mode=NumberSelectorMode.BOX,
-            )
-        ),
-        vol.Required(CONF_WAKE_INTERVAL, default=DEFAULT_WAKE_INTERVAL): NumberSelector(
-            NumberSelectorConfig(
-                min=WAKE_DISABLED,
-                max=MAX_WAKE_INTERVAL,
-                step=1,
-                unit_of_measurement="seconds",
-                mode=NumberSelectorMode.BOX,
-            )
-        ),
-        # Unlike the two above there is no "off" value here: the hub always needs a gap
-        # between control sends, so the selector's range is the whole rule and the step
-        # handler has nothing extra to check.
+        # The hub always needs a gap between control sends, so there is no "off" here.
         vol.Required(CONF_CONTROL_INTERVAL, default=DEFAULT_CONTROL_INTERVAL): NumberSelector(
             NumberSelectorConfig(
                 min=MIN_CONTROL_INTERVAL,
@@ -106,6 +91,26 @@ OPTIONS_SCHEMA = vol.Schema(
         vol.Required(
             CONF_SHOW_SIDEBAR_PANEL, default=DEFAULT_SHOW_SIDEBAR_PANEL
         ): BooleanSelector(),
+        # The sidebar page's view: which place, whether it moves, whether the page shows the
+        # forecast, and the weather it follows. The weather entity is optional, and so has no
+        # default: left empty, the page finds one itself, and a suggested value can be cleared
+        # again.
+        vol.Required(CONF_SIDEBAR_VIEW, default=DEFAULT_SIDEBAR_VIEW): SelectSelector(
+            SelectSelectorConfig(
+                options=[*SIDEBAR_VIEWS, SIDEBAR_VIEW_NONE],
+                translation_key=CONF_SIDEBAR_VIEW,
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Required(
+            CONF_SIDEBAR_VIEW_MOTION, default=DEFAULT_SIDEBAR_VIEW_MOTION
+        ): BooleanSelector(),
+        vol.Required(
+            CONF_SIDEBAR_VIEW_FORECAST, default=DEFAULT_SIDEBAR_VIEW_FORECAST
+        ): BooleanSelector(),
+        vol.Optional(CONF_SIDEBAR_VIEW_WEATHER): EntitySelector(
+            EntitySelectorConfig(domain="weather")
+        ),
     }
 )
 
@@ -281,15 +286,12 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class NormanOptionsFlow(OptionsFlow):
-    """Let the user tune the two safety nets, the command spacing, and the sidebar entry.
+    """Let the user tune the command spacing and the sidebar page.
 
-    Updates are pushed, and the listener re-reads every blind each time it cycles the
-    stream, so the poll only shortens how long a missed notification goes unnoticed. The
-    wake sweep goes further: it asks each blind the hub has not heard from for a day to report
-    in, which refreshes the hub's own cache (positions, battery, last seen) for that blind
-    rather than re-reading it. The poll costs one request per interval; the sweep one per
-    disconnected blind, and none while every blind is connected. The sidebar toggle adds or
-    removes the "Norman Shades" panel (frontend.py).
+    The command spacing is the gap left between commands sent to the hub. The sidebar toggle
+    adds or removes the "Norman Shades" panel (frontend.py), and the view options choose the
+    photograph behind it, whether it moves, whether the page shows the weather, and the weather
+    entity it follows. There is no poll and no timed wake sweep (const.py).
     """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -297,55 +299,50 @@ class NormanOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # The selector bounds the value to 0-300; the gap between "off" and the floor
-            # is checked here because a schema-level validator would not survive being
-            # serialized for the frontend (see OPTIONS_SCHEMA).
-            seconds = int(user_input[CONF_POLL_INTERVAL])
-            wake = int(user_input.get(CONF_WAKE_INTERVAL, DEFAULT_WAKE_INTERVAL))
-            if seconds != POLL_DISABLED and not MIN_POLL_INTERVAL <= seconds <= MAX_POLL_INTERVAL:
-                errors[CONF_POLL_INTERVAL] = "poll_interval_out_of_range"
-            if wake != WAKE_DISABLED and not MIN_WAKE_INTERVAL <= wake <= MAX_WAKE_INTERVAL:
-                errors[CONF_WAKE_INTERVAL] = "wake_interval_out_of_range"
+            # The selector bounds the value; a schema-level validator would not survive being
+            # serialized for the frontend (see OPTIONS_SCHEMA), so it is checked again here.
             control = float(user_input.get(CONF_CONTROL_INTERVAL, DEFAULT_CONTROL_INTERVAL))
             if not MIN_CONTROL_INTERVAL <= control <= MAX_CONTROL_INTERVAL:
                 errors[CONF_CONTROL_INTERVAL] = "control_interval_out_of_range"
             if not errors:
-                return self.async_create_entry(
-                    data={
-                        CONF_POLL_INTERVAL: seconds,
-                        CONF_WAKE_INTERVAL: wake,
-                        CONF_CONTROL_INTERVAL: control,
-                        CONF_SHOW_SIDEBAR_PANEL: bool(
-                            user_input.get(CONF_SHOW_SIDEBAR_PANEL, DEFAULT_SHOW_SIDEBAR_PANEL)
-                        ),
-                    }
-                )
+                data: dict[str, Any] = {
+                    CONF_CONTROL_INTERVAL: control,
+                    CONF_SHOW_SIDEBAR_PANEL: bool(
+                        user_input.get(CONF_SHOW_SIDEBAR_PANEL, DEFAULT_SHOW_SIDEBAR_PANEL)
+                    ),
+                    CONF_SIDEBAR_VIEW: str(user_input.get(CONF_SIDEBAR_VIEW, DEFAULT_SIDEBAR_VIEW)),
+                    CONF_SIDEBAR_VIEW_MOTION: bool(
+                        user_input.get(CONF_SIDEBAR_VIEW_MOTION, DEFAULT_SIDEBAR_VIEW_MOTION)
+                    ),
+                    CONF_SIDEBAR_VIEW_FORECAST: bool(
+                        user_input.get(CONF_SIDEBAR_VIEW_FORECAST, DEFAULT_SIDEBAR_VIEW_FORECAST)
+                    ),
+                }
+                # Stored only when one is chosen: a cleared field must not leave the last
+                # entity behind, and an absent key is what "find one" means.
+                if weather := user_input.get(CONF_SIDEBAR_VIEW_WEATHER):
+                    data[CONF_SIDEBAR_VIEW_WEATHER] = str(weather)
+                return self.async_create_entry(data=data)
 
-        # An entry that has never been configured is offered the defaults, both intervals
-        # off. A suggested value is submitted with the form, so suggesting anything else
-        # switches it on for whoever saves the form to change something else: suggesting
-        # 3600 did that to the wake sweep (issue #5), and 60 to the poll. Options saved
-        # before the sidebar toggle existed lack its key, so the form falls back to its
-        # default: on.
+        # An entry that has never been configured is offered the defaults. A suggested value is
+        # submitted with the form, so it must be the default: anything else would change the
+        # option for whoever saves the form to change something else. Options saved before the
+        # sidebar toggle existed lack its key, so the form falls back to its default: on.
         suggested = (
             user_input
             or self.config_entry.options
             or {
-                CONF_POLL_INTERVAL: POLL_DISABLED,
-                CONF_WAKE_INTERVAL: WAKE_DISABLED,
                 CONF_CONTROL_INTERVAL: DEFAULT_CONTROL_INTERVAL,
                 CONF_SHOW_SIDEBAR_PANEL: DEFAULT_SHOW_SIDEBAR_PANEL,
+                CONF_SIDEBAR_VIEW: DEFAULT_SIDEBAR_VIEW,
+                CONF_SIDEBAR_VIEW_MOTION: DEFAULT_SIDEBAR_VIEW_MOTION,
+                CONF_SIDEBAR_VIEW_FORECAST: DEFAULT_SIDEBAR_VIEW_FORECAST,
             }
         )
-        # Releases before the ceiling came down to 300 stored up to 3600. The coordinator
-        # runs those as off (const.py), so the form shows them as off too, rather than a
-        # number its own selector would refuse when the form is saved.
-        poll = suggested.get(CONF_POLL_INTERVAL)
-        if isinstance(poll, int | float) and poll > MAX_POLL_INTERVAL:
-            suggested = {**suggested, CONF_POLL_INTERVAL: POLL_DISABLED}
-
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, suggested),
             errors=errors,
+            # The view option's description links to the photographs' credits.
+            description_placeholders={"credits": PHOTO_CREDITS_URL},
         )

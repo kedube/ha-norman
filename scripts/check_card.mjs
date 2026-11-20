@@ -45,8 +45,10 @@ const mk = (tag) => {
     className: "",
     appendChild(c){ this.children.push(c); return c; },
     append(...c){ this.children.push(...c); },
+    prepend(...c){ this.children.unshift(...c); },
     addEventListener(ev,fn){ (this._on ||= {})[ev] = fn; },
     setAttribute(k,v){ this.attrs[k]=String(v); }, getAttribute(k){ return this.attrs[k]; },
+    removeAttribute(k){ delete this.attrs[k]; },
     remove(){}, querySelector(){ return null; }, querySelectorAll(){ return []; },
     get firstChild(){ return this.children[0]; },
     get lastChild(){ return this.children[this.children.length-1]; },
@@ -113,7 +115,7 @@ const entities = {
 };
 const hass = {
   entities,
-  devices: { d1:{ name:"Front_Bedroom_1", area_id:"a1" }, d2:{ name:"Den_1", area_id:"a2" }, hub:{ name:"Norman Hub", area_id:null } },
+  devices: { d1:{ name:"Front_Bedroom_1", area_id:"a1" }, d2:{ name:"Den_1", area_id:"a2" }, hub:{ name:"Lakehouse Shades", area_id:null } },
   areas: { a1:{ name:"Front Bedroom" }, a2:{ name:"Den" } },
   states: {
     "cover.front_bedroom_1_bottom_rail": { state:"open", attributes:{ current_position:60 } },
@@ -372,7 +374,7 @@ check("_build drops presets when hidden", countIn({ hide_room_presets:true }, "r
     },
     devices: {
       ...hass.devices,
-      hub: { name:"Norman Hub", area_id:"a2" },
+      hub: { name:"Lakehouse Shades", area_id:"a2" },
       r2: { name:"Den", area_id:"a2" },
       r3: { name:"Loft", area_id:"a3" },
     },
@@ -549,7 +551,7 @@ check("_build drops presets when hidden", countIn({ hide_room_presets:true }, "r
 const headerTextOf = (cfg, h = hass) => byClass(rendered(cfg, h).shadowRoot, "header-text")[0]?.textContent ?? null;
 {
   const c = new Card(); c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = hass;
-  check("_hubName returns the hub device's name", c._hubName() === "Norman Hub", String(c._hubName()));
+  check("_hubName returns the hub device's name", c._hubName() === "Lakehouse Shades", String(c._hubName()));
 }
 {
   // Each of the hub's rooms is a device too, with sliders and buttons but no cover. Listed
@@ -564,16 +566,31 @@ const headerTextOf = (cfg, h = hass) => byClass(rendered(cfg, h).shadowRoot, "he
     devices: { r1:{ name:"Den", area_id:"a2" }, ...hass.devices },
   };
   const c = new Card(); c._hass = withRoom; c.setConfig({ type:"custom:norman-shades-card" }); c._hass = withRoom;
-  check("a room device is not taken for the hub", c._hubName() === "Norman Hub", String(c._hubName()));
+  check("a room device is not taken for the hub", c._hubName() === "Lakehouse Shades", String(c._hubName()));
   check("...nor drawn as a blind", c._collectBlinds().length === 2, JSON.stringify(c._collectBlinds().map(b => b.name)));
 }
-check("with no title the header shows the hub name", headerTextOf({}) === "Norman Hub", String(headerTextOf({})));
+check("with no title the header shows the hub name", headerTextOf({}) === "Lakehouse Shades", String(headerTextOf({})));
 check("an explicit title still wins", headerTextOf({ title:"Upstairs" }) === "Upstairs");
 // A user who deliberately blanks the title should get a blank header, not the hub name.
 check("an explicit empty title is respected", headerTextOf({ title:"" }) === "", JSON.stringify(headerTextOf({ title:"" })));
 {
-  const renamed = { ...hass, devices: { ...hass.devices, hub:{ name:"Norman Hub", name_by_user:"Hallway Hub", area_id:null } } };
-  check("a user-renamed hub wins over the app's name", headerTextOf({}, renamed) === "Hallway Hub");
+  // The hub is named as the Norman app has it (the device's own name, which the integration keeps
+  // in step with the app), even where its device has been renamed in Home Assistant.
+  const hubAs = (device) => ({ ...hass, devices: { ...hass.devices, hub:{ area_id:null, ...device } } });
+  const renamed = hubAs({ name:"Lakehouse Shades", name_by_user:"Norman Hub" });
+  check("the Norman app's name wins over a rename in Home Assistant", headerTextOf({}, renamed) === "Lakehouse Shades",
+        headerTextOf({}, renamed));
+  // Until the hub has said its name the device has the entry's placeholder: a name given in Home
+  // Assistant is better, and with none the placeholder is still a name.
+  const unread = hubAs({ name:"Norman Hub (192.168.1.50)", name_by_user:"Hallway Hub" });
+  check("until the hub has said its name, a rename in Home Assistant names it", headerTextOf({}, unread) === "Hallway Hub",
+        headerTextOf({}, unread));
+  const placeholder = hubAs({ name:"Norman Hub (192.168.1.50)" });
+  check("...and with none, the placeholder does", headerTextOf({}, placeholder) === "Norman Hub (192.168.1.50)",
+        headerTextOf({}, placeholder));
+  const unnamed = hubAs({ name:null, name_by_user:"Hallway Hub" });
+  check("a device with no name of its own is named as in Home Assistant", headerTextOf({}, unnamed) === "Hallway Hub",
+        headerTextOf({}, unnamed));
 }
 {
   const noHub = { ...hass, devices: { d1:hass.devices.d1, d2:hass.devices.d2 } };
@@ -606,7 +623,7 @@ check("a configured title always wins, even 'Shades'", headerTextOf({ title:"Sha
   c._hass = empty; c.setConfig({ type:"custom:norman-shades-card" }); c.hass = empty;
   check("before the registry loads the header falls back", byClass(c.shadowRoot, "header-text")[0].textContent === "Shades");
   c.hass = hass;
-  check("the header fills in once devices arrive", byClass(c.shadowRoot, "header-text")[0].textContent === "Norman Hub");
+  check("the header fills in once devices arrive", byClass(c.shadowRoot, "header-text")[0].textContent === "Lakehouse Shades");
 }
 check("the stub config does not hardcode a title",
       Card.getStubConfig().title === undefined, JSON.stringify(Card.getStubConfig()));
@@ -672,7 +689,7 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
   check("...and names that hub", cabin._hubName() === "Cabin Hub", String(cabin._hubName()));
   const home = scoped({ config_entry_id:"home" });
   check("the other hub's card shows the other hub",
-        home._collectBlinds().length === 2 && home._hubName() === "Norman Hub", String(home._hubName()));
+        home._collectBlinds().length === 2 && home._hubName() === "Lakehouse Shades", String(home._hubName()));
   [...cabin._buildHomeControls().children, ...cabin._buildRoomPresets("Den", cabin._collectBlinds()).children].forEach(b => b._on?.click?.());
   check("a pinned card's presets go to its hub",
         svc.length === 6 && svc.every(x => x[1] === "room_command" && x[2].config_entry_id === "cabin"),
@@ -701,7 +718,7 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
         `${headerTextOf({ title:"Upstairs" }, h)} ${headerTextOf({ config_entry_id:"cabin" }, h)}`);
   const cabinFirst = { ...h, entities: { "sensor.cabin_hub_wi_fi_network": h.entities["sensor.cabin_hub_wi_fi_network"], ...hass.entities } };
   check("an unpinned card showing one hub's blinds names that hub, though another is listed first",
-        headerTextOf({}, cabinFirst) === "Norman Hub", headerTextOf({}, cabinFirst));
+        headerTextOf({}, cabinFirst) === "Lakehouse Shades", headerTextOf({}, cabinFirst));
   const presetsOf = (room) => byClass(byClass(both.shadowRoot, "room")
     .find((r) => byClass(r, "room-name")[0]?.textContent === room), "room-presets")[0].children;
   svc.length = 0;
@@ -1038,7 +1055,7 @@ check("home controls drop out when hidden", countIn({ hide_home_controls:true },
   check("...and none of Home Assistant's bookkeeping in its config",
         hosted && !("_panel_custom" in hosted._config) && hosted._config.type === "custom:norman-shades-card",
         JSON.stringify(hosted?._config));
-  check("...drawn straight away", byClass(hosted.shadowRoot, "header-text")[0]?.textContent === "Norman Hub");
+  check("...drawn straight away", byClass(hosted.shadowRoot, "header-text")[0]?.textContent === "Lakehouse Shades");
   p.panel = { url_path:"norman-shades", config:{ config_entry_id:"home", _panel_custom:{} } };
   check("a hub pinned by the integration reaches the card", hosted._config.config_entry_id === "home");
   check("...and the card redraws for it", byClass(hosted.shadowRoot, "header-text").length === 1);
@@ -2261,12 +2278,13 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   c._hass = hass; c.setConfig({ type:"custom:norman-shades-card" }); c.hass = hass;
   const [header] = byClass(c.shadowRoot, "header");
   const [tools] = byClass(c.shadowRoot, "tools");
-  check("in the panel the header holds the menu, the name and the refresh",
-        JSON.stringify(childClasses(header)) === '["icon-btn menu","titles","icon-group home-refresh"]',
+  check("in the panel the header holds the menu, the name, the refresh and the settings",
+        JSON.stringify(childClasses(header)) === '["icon-btn menu","titles","icon-group home-refresh","icon-group home-settings"]',
         JSON.stringify(childClasses(header)));
-  check("...and the presets and scene groups have a row of their own",
+  check("...and the presets and the scene groups have a row of their own",
         JSON.stringify(childClasses(tools)) === '["segmented home-buttons","segmented home-scenes"]',
         JSON.stringify(childClasses(tools)));
+  check("...the settings hidden while no window has anything to choose", byClass(c.shadowRoot, "home-settings")[0]?.hidden === true);
   const dashboard = rendered();
   check("on a dashboard the presets stay in the header",
         !byClass(dashboard.shadowRoot, "tools").length &&
@@ -2274,7 +2292,8 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   const plainPanel = new Card();
   plainPanel.setAttribute("panel", "");
   plainPanel._hass = hass; plainPanel.setConfig({ type:"custom:norman-shades-card", hide_home_controls:true }); plainPanel.hass = hass;
-  check("with the house controls hidden there is no empty row", !byClass(plainPanel.shadowRoot, "tools").length);
+  check("with the house controls hidden, and no colors to choose, there is no empty row",
+        byClass(plainPanel.shadowRoot, "tools")[0]?.hidden === true);
 
   // The battery opens its details, so it is a button: reachable by keyboard, announced as one.
   const [battery] = byClass(dashboard.shadowRoot, "battery");
@@ -2300,6 +2319,850 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   check("...one of its own entities does", regrouped === 1, String(regrouped));
   quiet.hass = { ...quiet._hass, entities: { ...quiet._hass.entities } };
   check("...and so does a new entity registry", regrouped === 2, String(regrouped));
+}
+
+// ---- the sidebar page's view ---------------------------------------------------------------
+// The view itself is drawn with WebGL, which only a browser has (scripts/check_layout.mjs opens
+// one). Here: which photograph it picks, where it puts the sun and the moon, and what the card
+// and the panel do with it.
+{
+  const fs = await import("node:fs");
+  const viewUrl = new URL("file://" + process.cwd() + "/custom_components/norman/www/norman-view.js");
+  viewUrl.searchParams.set("v", "test");
+  const View = await import(viewUrl.href);
+  const scenes = JSON.parse(fs.readFileSync(new URL("./view/scenes.json", viewUrl), "utf8"));
+  const pick = (place, state, elevation, rising = false) =>
+    View.pickScene(scenes, place, View.conditionOf(state), elevation, rising);
+
+  check("an unavailable weather entity says nothing about the weather",
+        View.conditionOf("unavailable") === null && View.conditionOf(undefined) === null);
+  check("wind does not show in a photograph: a windy day is clear, a windy cloudy one cloudy",
+        View.conditionOf("windy") === "clear" && View.conditionOf("windy-variant") === "cloudy");
+
+  // The part of the day, from the sun.
+  const phases = [[40, false, "day"], [40, true, "day"], [10, false, "golden"], [10, true, "dawn"], [2, false, "sunset"],
+    [2, true, "dawn"], [-3, false, "dusk"], [-3, true, "dusk"], [-9, false, "twilight"], [-20, true, "night"]];
+  check("the sun's height, and whether it is rising, give the part of the day",
+        phases.every(([el, rising, phase]) => View.phaseOf(el, rising) === phase),
+        JSON.stringify(phases.map(([el, rising]) => View.phaseOf(el, rising))));
+
+  check("a clear afternoon is the place's own day", pick("coast", "sunny", 40).key === "coast-day" && pick("lake", "sunny", 40).key === "lake-day");
+  check("partly cloudy changes the middle of the day only",
+        pick("coast", "partlycloudy", 40).key === "coast-partly" && pick("coast", "partlycloudy", 2).key === "coast-sunset");
+  check("the weather decides before the hour: rain is the rain photograph by day and by night",
+        pick("lake", "rainy", 40).key === "lake-rain" && pick("lake", "pouring", -30).key === "lake-rain");
+  check("a clear night is the night sky, whatever Home Assistant calls it",
+        pick("coast", "clear-night", -30).key === "coast-night" && pick("coast", "sunny", -30).key === "coast-night");
+  check("with no weather entity the sun alone decides", pick("lake", undefined, 10, true).key === "lake-dawn");
+  check("the coast borrows the lake's snow", pick("coast", "snowy", 20).key === "lake-snow");
+  check("an unknown place is still given a photograph", Boolean(scenes[pick("desert", "sunny", 40).key]));
+  const dim = (state, elevation) => pick("coast", state, elevation).dim;
+  check("a daytime photograph of weather is darkened once the sun is down",
+        dim("cloudy", 30) === 0 && dim("cloudy", -3) > 0 && dim("cloudy", -20) > dim("cloudy", -3));
+  check("...one taken at night is not", dim("lightning", -20) === 0 && scenes["coast-storm"].tone === "night");
+  check("...and neither is the hour's own photograph", dim("sunny", -20) === 0 && dim("sunny", -3) === 0);
+  {
+    const lost = [];
+    for (const place of View.PLACES) {
+      for (const state of [undefined, "sunny", "clear-night", "partlycloudy", "cloudy", "fog", "rainy", "pouring", "hail",
+        "lightning", "lightning-rainy", "snowy", "snowy-rainy", "windy", "windy-variant", "exceptional", "unavailable"]) {
+        for (let elevation = -40; elevation <= 70; elevation += 2.5) {
+          for (const rising of [true, false]) {
+            const { key, dim: darkened } = pick(place, state, elevation, rising);
+            if (!scenes[key] || !(darkened >= 0 && darkened < 1)) lost.push(`${place} ${state} ${elevation}`);
+          }
+        }
+      }
+    }
+    check("every place, weather and height of the sun has a photograph", lost.length === 0, lost.slice(0, 5).join("; "));
+  }
+
+  // The sun and the moon, against positions worked out with another library (astral) for Big Sur.
+  const BIG_SUR = [36.27, -121.81];
+  const closeTo = (value, wanted, within) => Math.abs((((value - wanted + 540) % 360) + 360) % 360 - 180) <= within;
+  {
+    const morning = View.sunPosition(new Date("2026-11-16T18:00:00Z"), ...BIG_SUR);
+    const evening = View.sunPosition(new Date("2026-11-16T02:00:00Z"), ...BIG_SUR);
+    check("the sun is where it should be in the morning, rising",
+          closeTo(morning.azimuth, 149.52, 0.2) && closeTo(morning.elevation, 28.83, 0.2) && morning.rising === true,
+          JSON.stringify(morning));
+    check("...and after sunset, going down",
+          closeTo(evening.azimuth, 255.85, 0.2) && closeTo(evening.elevation, -12.51, 0.2) && evening.rising === false,
+          JSON.stringify(evening));
+    const moon = View.moonPosition(new Date("2026-11-16T02:00:00Z"), ...BIG_SUR);
+    // Seen from the ground the moon stands up to a degree lower than from the Earth's centre.
+    check("the moon is where it should be", closeTo(moon.azimuth, 193.87, 0.5) && closeTo(moon.elevation, 32.89, 1.2), JSON.stringify(moon));
+    const newMoon = View.moonPosition(new Date("2026-11-09T07:02:00Z"), ...BIG_SUR).phase;
+    const fullMoon = View.moonPosition(new Date("2026-11-24T14:53:00Z"), ...BIG_SUR).phase;
+    check("its phase is new at new moon and full at full moon",
+          Math.min(newMoon, 1 - newMoon) < 0.01 && Math.abs(fullMoon - 0.5) < 0.01, `${newMoon} ${fullMoon}`);
+    // The light on it: from behind at new moon, from the viewer's side at full, and from the side
+    // the sun went down on for an evening crescent in the west.
+    const lightAt = (iso) => {
+      const date = new Date(iso);
+      return View.moonLight(View.sunPosition(date, ...BIG_SUR), View.moonPosition(date, ...BIG_SUR));
+    };
+    const crescent = lightAt("2026-11-12T02:00:00Z");
+    check("a new moon is lit from behind and a full moon from the front",
+          lightAt("2026-11-09T07:02:00Z")[2] < -0.99 && lightAt("2026-11-24T14:53:00Z")[2] > 0.99);
+    check("an evening crescent is lit from below, on the side the sun set",
+          crescent[2] < 0 && crescent[1] < 0 && crescent[0] > 0, JSON.stringify(crescent));
+  }
+
+  // Where windows look: a room's windows share one strip of the photograph, as openings in one
+  // wall, each on the part behind it. Laid out as the card lays them out on a desktop: windows
+  // 92 by 121 pixels, 40 apart, three to a row.
+  {
+    const living = new View.LivingView(mk("div"));
+    const box = (left, top) => ({ left, top, width: 92, height: 121, right: left + 92, bottom: top + 121 });
+    const pane = (group, left, top = 0) => ({ group, canvas: { getBoundingClientRect: () => box(left, top), width: 0, height: 0 } });
+    living.setPanes([pane(0, 0), pane(0, 132), pane(0, 264), pane(1, 600), pane(2, 900), pane(2, 1032),
+      pane(3, 0, 400), pane(3, 132, 400), pane(3, 264, 400), pane(3, 0, 600)]);
+    const slots = living._panes.map((p) => p.slot);
+    const near = (a, b) => Math.abs(a - b) < 1e-6;
+    const [first, middle, last] = slots;
+    check("three windows in a room look out on the whole strip between them, side by side",
+          near(first[0], 0) && near(last[0] + last[1], 1) && near(first[1], middle[1]) &&
+          middle[0] > first[0] + first[1] && last[0] > middle[0] + middle[1], JSON.stringify(slots.slice(0, 3)));
+    check("...each on as much of it as its width, the wall between hiding the rest",
+          near(first[1], 92 / 356) && near(middle[0], 132 / 356), JSON.stringify(first));
+    check("a window alone in its room looks out on the middle of the strip, its full height",
+          near(slots[3][0] + slots[3][1] / 2, 0.5) && near(slots[3][2], 1), JSON.stringify(slots[3]));
+    check("two windows share it, the strip as tall as a window",
+          near(slots[4][2], 1) && near(slots[4][0] + slots[5][0] + slots[5][1], 1), JSON.stringify(slots.slice(4, 6)));
+    const sunset = scenes["coast-sunset"];
+    const horizon = (sunset.motion.horizon - sunset.strip[1]) / sunset.strip[3];
+    const [, top, , band] = View.lookOf(sunset, first);
+    check("a row of windows looks out at the horizon, a little above the middle of each",
+          near(top + 0.45 * band, horizon) || top === 0 || near(top + band, 1), `${top} ${band} ${horizon}`);
+    check("a room's windows all look out at the same height", JSON.stringify(View.lookOf(sunset, middle)[1]) === JSON.stringify(top));
+    const upper = View.lookOf(sunset, slots[6]);
+    const lower = View.lookOf(sunset, slots[9]);
+    check("a room with a second row of windows looks out through it lower down, as a lower window would",
+          near(upper[1], 0) && near(lower[1] + lower[3], 1) && near(upper[0], lower[0]), `${upper} ${lower}`);
+    check("a window that is not drawn looks out on nothing",
+          (() => { living.setPanes([{ group: 0, canvas: { getBoundingClientRect: () => ({ width: 0, height: 0 }) } }]); return living._panes[0].slot === null; })());
+    living.destroy();
+  }
+  check("the page behind takes a photograph's colours, deepened under white words",
+        /^radial-gradient\(.*rgb\(\d+, \d+, \d+\).*linear-gradient\(to bottom, rgb/.test(View.groundOf(["#7ec0d6", "#207797", "#1b5c70"])),
+        View.groundOf(["#7ec0d6", "#207797", "#1b5c70"]));
+  {
+    const lightness = (css) => css.match(/rgb\((\d+), (\d+), (\d+)\)/g).map((rgb) => rgb.match(/\d+/g).map(Number))
+      .map(([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
+    const day = lightness(View.groundOf(["#ffffff", "#ffffff", "#ffffff"]));
+    const night = lightness(View.groundOf(["#ffffff", "#ffffff", "#ffffff"], 0.6));
+    check("...never so light that white words are lost on it, even from a white photograph", Math.max(...day) <= 112.5,
+          JSON.stringify(day));
+    check("...and darker when a daytime photograph is shown after dark", night.every((value, i) => value < day[i]), JSON.stringify(night));
+
+    // In Home Assistant's light theme the same colours are paled, under the light theme's dark
+    // words: its own colours, read from the card's styles.
+    const lightDay = lightness(View.groundOf(["#7ec0d6", "#207797", "#1b5c70"], 0, true));
+    const lightNight = lightness(View.groundOf(["#7ec0d6", "#207797", "#1b5c70"], 0.6, true));
+    const black = lightness(View.groundOf(["#000000", "#000000", "#000000"], 0.6, true));
+    const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+    check("in the light theme the page's colours are paled, and a little dimmer after dark but still pale",
+          Math.min(...lightDay) >= 176 && mean(lightNight) < mean(lightDay) - 3 && Math.min(...lightNight) >= 176,
+          JSON.stringify([lightDay, lightNight]));
+    check("...never so dark that the dark words are lost on it, even from a black photograph", Math.min(...black) >= 176,
+          JSON.stringify(black));
+    const cardSource = fs.readFileSync(new URL("./norman-shades-card.js", viewUrl), "utf8");
+    const lightTokens = cardSource.slice(cardSource.indexOf(":host([panel][view][light]) {"));
+    const token = (name) => lightTokens.match(new RegExp(`--${name}: ([^;]+);`))[1];
+    const rgbHex = (hex) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+    const colourOf = (css) => (css.startsWith("#") ? [...rgbHex(css), 1] : css.match(/[\d.]+/g).map(Number));
+    const linear = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const lum = ([r, g, b]) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    const contrastOn = ([r, g, b, a], ground) => {
+      const [high, low] = [lum([r, g, b].map((v, i) => v * a + ground[i] * (1 - a))), lum(ground)].sort((p, q) => q - p);
+      return (high + 0.05) / (low + 0.05);
+    };
+    const words = { fg: colourOf(token("n-fg")), muted: colourOf(token("n-muted")), faint: colourOf(token("n-faint")) };
+    const worst = { fg: 99, muted: 99, faint: 99 };
+    for (const scene of Object.values(scenes)) {
+      for (const dim of [0, 0.34, 0.6]) {
+        const stops = View.groundOf(scene.colours, dim, true).match(/rgb\((\d+), (\d+), (\d+)\)/g).map((rgb) => rgb.match(/\d+/g).map(Number));
+        for (const [kind, colour] of Object.entries(words)) {
+          for (const ground of stops) worst[kind] = Math.min(worst[kind], contrastOn(colour, ground));
+        }
+      }
+    }
+    check("...where for every photograph, by day and after dark, the words stand out: 7:1, and 4.5:1 for the grey ones",
+          worst.fg >= 7 && worst.muted >= 4.5 && worst.faint >= 4.5, JSON.stringify(worst));
+  }
+  check("every scene has its colours for the page", Object.values(scenes).every((scene) =>
+        Array.isArray(scene.colours) && scene.colours.length === 3 && scene.colours.every((c) => /^#[0-9a-f]{6}$/.test(c))));
+
+  // --- the card over the view ---
+  const weatherState = (state, temperature) => ({ state, attributes: { temperature } });
+  const WORDS = { partlycloudy: "Partly cloudy", rainy: "Rainy" };
+  const withWeather = (state, temperature, h = hass) => ({ ...h, formatEntityState: (s) => WORDS[s.state] ?? s.state,
+    states: { ...h.states, "weather.forecast_home": weatherState(state, temperature) } });
+  const fakeView = (over = {}) => ({
+    weatherEntity: "weather.forecast_home",
+    scene: { by: "Vashishtha Jogi", where: "Pfeiffer Beach, Big Sur", license: "CC0" },
+    panes: null, listeners: [],
+    subscribe(listener) { this.listeners.push(listener); return () => { this.listeners = this.listeners.filter((l) => l !== listener); }; },
+    setPanes(panes) { this.panes = panes; },
+    changed() { for (const listener of this.listeners) listener(); },
+    ...over,
+  });
+  const overView = (h, view, cfg = {}) => {
+    const c = new Card();
+    c.setAttribute("panel", ""); c.setAttribute("view", "");
+    c.setConfig({ type:"custom:norman-shades-card", ...cfg });
+    if (view) c.view = view;
+    c.hass = h;
+    return c;
+  };
+  const textIn = (c, name) => byClass(c.shadowRoot, name)[0]?.textContent;
+  const classes = (el) => (el?.children || []).map((child) => String(child.className));
+
+  const view = fakeView();
+  const c = overView(withWeather("partlycloudy", 66.6), view);
+  const [header] = byClass(c.shadowRoot, "header");
+  const [hero] = byClass(c.shadowRoot, "hero");
+  check("over the view the header keeps the menu, the name, the refresh and the settings",
+        JSON.stringify(classes(header)) === '["icon-btn menu","titles","icon-group home-refresh","icon-group home-settings"]',
+        JSON.stringify(classes(header)));
+  check("...and the counts move under the weather, the forecast beside them",
+        JSON.stringify(classes(byClass(c.shadowRoot, "titles")[0])) === '["header-text"]' &&
+          JSON.stringify(classes(hero)) === '["now","hours"]' &&
+          JSON.stringify(classes(byClass(hero, "now")[0])) === '["temp","cond","summary"]',
+        JSON.stringify([classes(hero), classes(byClass(hero, "now")[0])]));
+  check("it says the temperature, rounded, and the weather in Home Assistant's words",
+        textIn(c, "temp") === "67°" && textIn(c, "cond") === "Partly cloudy", `${textIn(c, "temp")} ${textIn(c, "cond")}`);
+  const views = byClass(c.shadowRoot, "view");
+  check("every window looks out on the photograph: a canvas under its glazing bars",
+        views.length === 2 && views.every((v) => v.children[0].tagName === "canvas" && v.children[0].className === "photo" &&
+          v.children[0].attrs["aria-hidden"] === "true"), JSON.stringify(views.map(classes)));
+  check("the view is handed each window's canvas", view.panes?.length === 2 &&
+        view.panes.every((pane, index) => pane.canvas === views[index].children[0]));
+  check("...each with the room it is in", JSON.stringify(view.panes.map((pane) => pane.group)) === "[0,1]",
+        JSON.stringify(view.panes.map((pane) => pane.group)));
+  check("the photograph is not credited on the page: NOTICE credits it, linked from the options",
+        byClass(c.shadowRoot, "credit").length === 0);
+  check("each room says how many of its shades are open", byClass(c.shadowRoot, "room-line").length === 2 &&
+        byClass(c.shadowRoot, "room-line").every((line) => line.children.map((part) => part.textContent).join("") === "open"),
+        JSON.stringify(byClass(c.shadowRoot, "room-line").map((line) => line.children.map((part) => part.textContent))));
+
+  // Windows in one room are handed as one room: two, then three.
+  {
+    const oneRoom = { ...withWeather("rainy", 50), devices: { ...hass.devices, d2: { ...hass.devices.d2, area_id: "a1" } } };
+    const two = fakeView();
+    overView(oneRoom, two);
+    check("two windows in a room are handed as one room", JSON.stringify(two.panes.map((pane) => pane.group)) === "[0,0]",
+          JSON.stringify(two.panes.map((pane) => pane.group)));
+    const three = fakeView();
+    overView({ ...oneRoom,
+      entities: { ...oneRoom.entities, "cover.office_bottom_rail": { platform:"norman", device_id:"d3", translation_key:"bottom_rail" } },
+      devices: { ...oneRoom.devices, d3: { name:"Office", area_id:"a1" } },
+      states: { ...oneRoom.states, "cover.office_bottom_rail": { state:"open", attributes:{ current_position:10 } } } }, three);
+    check("...and so are three", JSON.stringify(three.panes.map((pane) => pane.group)) === "[0,0,0]",
+          JSON.stringify(three.panes.map((pane) => pane.group)));
+  }
+
+  // The weather follows its entity, and a change elsewhere in the house still leaves the card alone.
+  c.hass = withWeather("rainy", 51.2);
+  check("the weather follows its entity", textIn(c, "temp") === "51°" && textIn(c, "cond") === "Rainy");
+  let regrouped = 0;
+  const collect = c._collectBlinds.bind(c);
+  c._collectBlinds = () => { regrouped += 1; return collect(); };
+  c.hass = { ...c._hass, states: { ...c._hass.states, "sensor.outdoor_temperature": { state:"21" } } };
+  check("...and a change elsewhere in the house does not redraw the card", regrouped === 0, String(regrouped));
+  c.hass = withWeather("unavailable", undefined);
+  const hidden = (name) => byClass(c.shadowRoot, name)[0]?.hidden;
+  check("an unavailable weather entity hides the temperature and the weather", hidden("temp") === true && hidden("cond") === true);
+  c.hass = { ...withWeather("rainy", 51.2), states: { ...hass.states } };
+  check("...as does a weather entity that is gone", hidden("temp") === true && hidden("cond") === true);
+
+  // Before the view has loaded the card is already built for it, and takes it when it comes.
+  {
+    const early = overView(withWeather("partlycloudy", 60), null);
+    check("before the view arrives the card is built for it, the weather waiting",
+          byClass(early.shadowRoot, "photo").length === 2 && byClass(early.shadowRoot, "temp")[0].hidden === true);
+    const late = fakeView();
+    early.view = late;
+    check("...and takes it when it comes", late.panes?.length === 2 && textIn(early, "temp") === "60°");
+    early.view = null;
+    check("a view taken away stops being heard from", late.listeners.length === 0);
+  }
+
+  // Without the view, nothing of it is drawn.
+  {
+    const plain = new Card();
+    plain.setAttribute("panel", "");
+    plain.setConfig({ type:"custom:norman-shades-card" }); plain.hass = withWeather("rainy", 50);
+    const dashboard = new Card();
+    dashboard.setAttribute("view", "");
+    dashboard.setConfig({ type:"custom:norman-shades-card" }); dashboard.hass = withWeather("rainy", 50);
+    const none = (card) => ["photo", "hero", "room-line"].every((name) => byClass(card.shadowRoot, name).length === 0);
+    check("the plain sidebar page draws nothing of the view", none(plain) && byClass(plain.shadowRoot, "sun").length === 2);
+    check("...and neither does a card on a dashboard", none(dashboard));
+  }
+
+  // --- the panel and its view ---
+  // The panel reads the view's index with fetch, which Node will not do for a file: stand in for it.
+  const Panel = els.get("norman-panel");
+  const fetchWas = globalThis.fetch;
+  const warn = console.warn;
+  const settle = async (done) => { for (let i = 0; i < 200 && !done(); i += 1) await new Promise((resolve) => setTimeout(resolve, 5)); };
+  try {
+    globalThis.fetch = async (url) => ({ ok: true, status: 200, json: async () => JSON.parse(fs.readFileSync(new URL(url), "utf8")) });
+    const p = new Panel();
+    p.hass = { ...withWeather("snowy", 28), states: { ...withWeather("snowy", 28).states, "sun.sun": { state: "above_horizon", attributes: { elevation: 30, azimuth: 200, rising: false } } } };
+    p.panel = { url_path:"norman-shades", config:{ config_entry_id:"home", view:"lake", view_motion:false, weather_entity:"weather.forecast_home", _panel_custom:{} } };
+    check("a panel with a view is marked for it at once", p.hasAttribute("view"));
+    await settle(() => p._card && p._view);
+    const hosted = p._card;
+    check("the panel makes the view the integration asked for", p._view instanceof View.LivingView && p._view.place === "lake" &&
+          p._view.motion === false && p._view.weatherEntity === "weather.forecast_home");
+    check("...and keeps the view's settings out of the card's config",
+          JSON.stringify(hosted?._config) === '{"type":"custom:norman-shades-card","config_entry_id":"home"}', JSON.stringify(hosted?._config));
+    check("...marks the card, and hands it the view", hosted?.hasAttribute("view") && hosted.view === p._view);
+    // Home Assistant's theme: this hass says nothing of it, as its light theme says darkMode false.
+    const lumas = (css) => css.match(/rgb\((\d+), (\d+), (\d+)\)/g).map((rgb) => rgb.match(/\d+/g).map(Number))
+      .map(([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b);
+    check("in Home Assistant's light theme the panel, the card and the view's colours take the light look",
+          p.hasAttribute("light") && hosted.hasAttribute("light") && p._view.light === true &&
+            lumas(p._view._ground).every((l) => l >= 176), p._view._ground);
+    const lightGround = p._view._ground;
+    const heroWas = byClass(hosted.shadowRoot, "hero")[0];
+    p.hass = { ...p.hass, themes: { darkMode: true } };
+    check("...and Home Assistant turning dark turns them dark at once, the card not drawn again",
+          !p.hasAttribute("light") && !hosted.hasAttribute("light") && p._view.light === false &&
+            lumas(p._view._ground).every((l) => l <= 112.5) &&
+            p._view._grounds.every((layer) => layer.style.transitionDuration === "0s") &&
+            heroWas !== undefined && byClass(hosted.shadowRoot, "hero")[0] === heroWas, p._view._ground);
+    p.hass = { ...p.hass, themes: { darkMode: false } };
+    check("...and light again, as it was", p.hasAttribute("light") && hosted.hasAttribute("light") && p._view._ground === lightGround);
+    check("the view follows the weather: snow at the lake", p._view.scene?.place === "lake" && p._view.scene.when === "snow",
+          JSON.stringify(p._view.scene && [p._view.scene.place, p._view.scene.when]));
+    check("a weather entity is found when none is named", (() => {
+      const found = new View.LivingView(mk("div"));
+      found.scenes = scenes;
+      found.configure({ place: "coast", motion: false, weatherEntity: null });
+      found.hass = { states: { "weather.zurich": weatherState("fog", 9), "weather.home": weatherState("rainy", 12), "light.kitchen": { state: "on" } } };
+      return found.weatherEntity === "weather.home" && found.scene.when === "rain";
+    })());
+    p.panel = { url_path:"norman-shades", config:{ config_entry_id:"home", view:"coast", view_motion:true, _panel_custom:{} } };
+    check("another place reaches the view without a new one being made", p._view.place === "coast" && p._view.motion === true &&
+          hosted.view === p._view && p._view.scene.when === "snow" && p._view.scene.place === "lake");
+    p.panel = { url_path:"norman-shades", config:{ config_entry_id:"home", view:"coast", view_motion:true, hide_weather:true, _panel_custom:{} } };
+    check("the weather turned off goes to the card, which is drawn again without it",
+          JSON.stringify(hosted._config) === '{"type":"custom:norman-shades-card","config_entry_id":"home","hide_weather":true}' &&
+            byClass(hosted.shadowRoot, "hero").length === 1 && byClass(hosted.shadowRoot, "summary").length === 1 &&
+            ["temp", "cond", "hours"].every((name) => byClass(hosted.shadowRoot, name).length === 0) &&
+            hosted.view === p._view && p._view.place === "coast", JSON.stringify(hosted._config));
+    p.panel = { url_path:"norman-shades", config:{ config_entry_id:"home", view:"coast", view_motion:true, _panel_custom:{} } };
+    check("...and turned on again, the weather is back",
+          ["temp", "cond", "hours"].every((name) => byClass(hosted.shadowRoot, name).length === 1));
+    const viewWas = p._view;
+    p.panel = { url_path:"norman-shades", config:{ config_entry_id:"home", view:"none", _panel_custom:{} } };
+    check("the view turned off leaves the plain page", !p.hasAttribute("view") && !hosted.hasAttribute("view") && p._view === null &&
+          hosted.view === null && byClass(hosted.shadowRoot, "hero").length === 0);
+    check("...and the view is let go of", viewWas !== null && hosted._viewOff === null);
+
+    // Without its photographs the page is the plain card, which works as it always has.
+    globalThis.fetch = async () => { throw new Error("offline"); };
+    console.warn = () => {};
+    const q = new Panel();
+    q.hass = withWeather("snowy", 28);
+    q.panel = { url_path:"norman-shades", config:{ view:"coast", _panel_custom:{} } };
+    await settle(() => q._card && q._viewFailed);
+    check("when the view cannot load, the page is the plain card", q._viewFailed === true && !q.hasAttribute("view") &&
+          !q._card.hasAttribute("view") && byClass(q._card.shadowRoot, "hero").length === 0 &&
+          byClass(q._card.shadowRoot, "header-text")[0]?.textContent === "Lakehouse Shades");
+  } finally {
+    globalThis.fetch = fetchWas;
+    console.warn = warn;
+  }
+}
+
+// ---- each blind's color ------------------------------------------------------------------------
+// The integration keeps a color on each blind as a select (select.py): a fabric for a shade, a
+// paint or a stain for a Shutter. The card draws each window in it, and in the sidebar panel
+// lets each be chosen; a dashboard card draws them but offers no choosing.
+{
+  const fs = await import("node:fs");
+  const selectPy = fs.readFileSync(new URL("../select.py", url), "utf8");
+  const listed = (name) => [...new RegExp(`^${name} = \\(([^)]*)\\)`, "ms").exec(selectPy)[1].matchAll(/"(\w+)"/g)]
+    .map((match) => match[1]);
+  const FABRICS = listed("SHADE_COLORS");
+  const PAINTS = listed("SHUTTER_COLORS");
+  const colorHass = (colors, base = hass) => {
+    const reg = { ...base.entities };
+    const states = { ...base.states };
+    for (const [device, slug, key, color] of colors) {
+      reg[`select.${slug}_${key}`] = { platform:"norman", device_id:device, translation_key:key };
+      states[`select.${slug}_${key}`] = { state:color };
+    }
+    return { ...base, entities:reg, states };
+  };
+  const painted = (c) => byClass(c.shadowRoot, "win").map((win) => win.dataset.color ?? "");
+  const panelCard = (h) => {
+    const c = new Card();
+    c.setAttribute("panel", "");
+    c.setConfig({ type:"custom:norman-shades-card" });
+    c.hass = h;
+    return c;
+  };
+  // A kind's parts, by their classes: its pick over each window, its name beneath, its bar.
+  const ofKind = (root, part, kind) => byClass(root, part).filter((x) => String(x.className).split(" ").includes(kind));
+  const fbColor = "select.front_bedroom_1_shade_color";
+  const denColor = "select.den_1_shade_color";
+  const h1 = colorHass([["d1", "front_bedroom_1", "shade_color", "navy"], ["d2", "den_1", "shade_color", "ivory"]]);
+
+  const dash = rendered({}, h1);
+  check("each blind is found with its color", JSON.stringify(dash._collectBlinds().map((b) => b.color)) ===
+        JSON.stringify([fbColor, denColor]), JSON.stringify(dash._collectBlinds().map((b) => b.color)));
+  check("a window is drawn in its blind's color, the default as it always was",
+        JSON.stringify(painted(dash)) === '["","navy"]', JSON.stringify(painted(dash)));
+  check("a dashboard card draws the colors but offers no choosing",
+        byClass(dash.shadowRoot, "pick").length === 0 && byClass(dash.shadowRoot, "home-settings").length === 0);
+  dash.hass = colorHass([["d1", "front_bedroom_1", "shade_color", "sage"], ["d2", "den_1", "shade_color", "plaid"]]);
+  check("a color changed in Home Assistant is drawn, and one the card does not know is the default",
+        JSON.stringify(painted(dash)) === '["","sage"]', JSON.stringify(painted(dash)));
+  {
+    // Hiding the color tidies the device page; the shade keeps its color. A disabled one is gone.
+    const hiddenColor = colorHass([["d1", "front_bedroom_1", "shade_color", "navy"]]);
+    hiddenColor.entities[fbColor] = { ...hiddenColor.entities[fbColor], hidden: true };
+    check("a hidden color still colors its shade", JSON.stringify(painted(rendered({}, hiddenColor))) === '["","navy"]');
+    const disabled = { ...hiddenColor, entities: { ...hiddenColor.entities } };
+    delete disabled.entities[fbColor];
+    check("...and a blind whose color is disabled is drawn in the default",
+          JSON.stringify(painted(rendered({}, disabled))) === '["",""]');
+  }
+
+  const pc = panelCard(h1);
+  check("in the panel the settings show once a blind has a color, with an item for the colors",
+        byClass(pc.shadowRoot, "home-settings")[0]?.hidden === false && pc._choiceItems.colors.hidden === false);
+  check("...and none for the divided lights while no window has them", pc._choiceItems.lights.hidden === true);
+  const picks = ofKind(pc.shadowRoot, "pick", "colors");
+  check("each window has a color select over it, set to its color", picks.length === 2 &&
+        picks[0].value === "ivory" && picks[1].value === "navy", JSON.stringify(picks.map((pick) => pick.value)));
+  check("...offering the select's fabrics, in its order", JSON.stringify(picks[1].children.map((option) => option.value)) ===
+        JSON.stringify(FABRICS) && FABRICS.length === 11, JSON.stringify(picks[1].children.map((option) => option.value)));
+  check("...each in the user's words", picks[1].children.map((option) => option.textContent).join(",") ===
+        "White,Ivory,Linen,Sand,Taupe,Gray,Slate,Charcoal,Navy,Sage,Terracotta");
+  check("...named for its blind", picks[1].attrs["aria-label"] === "Color of Front_Bedroom_1", picks[1].attrs["aria-label"]);
+  check("...with the color's name to say beneath it", ofKind(pc.shadowRoot, "choice-name", "colors")[1]?.lastChild.textContent === "Navy");
+  check("choosing waits for the settings", !pc._card.classList.contains("coloring"));
+  const settings = pc._settingsButton;
+  check("...a button at the top beside the refresh, which opens a menu",
+        byClass(byClass(pc.shadowRoot, "header")[0], "settings")[0] === settings && settings.attrs["aria-label"] === "Settings" &&
+          settings.attrs["aria-haspopup"] === "menu" && pc._settingsMenu.hidden === true);
+  settings._on.click();
+  const colorItem = pc._choiceItems.colors;
+  check("...the menu open, with the colors in it", pc._settingsMenu.hidden === false && settings.attrs["aria-expanded"] === "true" &&
+        colorItem.children[1].textContent === "Shade colors" && colorItem.attrs.role === "menuitem");
+  pc._settingsMenu._on.keydown({ key:"Escape", target:colorItem, preventDefault() {} });
+  check("...which Escape closes", pc._settingsMenu.hidden === true && settings.attrs["aria-expanded"] === "false");
+  settings._on.click();
+  colorItem._on.click();
+  check("the colors item turns the page to choosing them, and closes the menu",
+        pc._card.classList.contains("coloring") && pc._settingsMenu.hidden === true);
+
+  calls.length = 0;
+  picks[1].value = "sand";
+  picks[1]._on.change();
+  check("a color chosen for a window goes to its blind's select", calls.length === 1 &&
+        JSON.stringify(calls[0]) === JSON.stringify(["select", "select_option", { entity_id:fbColor, option:"sand" }]),
+        JSON.stringify(calls));
+  check("...and the window is drawn in it at once, its name with it",
+        painted(pc)[1] === "sand" && ofKind(pc.shadowRoot, "choice-name", "colors")[1].lastChild.textContent === "Sand");
+  pc.hass = { ...h1, states: { ...h1.states, "sensor.den_1_battery": { state:"13" } } };
+  check("...and stays drawn in it while Home Assistant takes it up", painted(pc)[1] === "sand", painted(pc)[1]);
+  pc.hass = colorHass([["d1", "front_bedroom_1", "shade_color", "sand"], ["d2", "den_1", "shade_color", "ivory"]]);
+  check("...until the select says so itself", painted(pc)[1] === "sand" && pc._choicePending.size === 0);
+
+  calls.length = 0;
+  const [bar] = ofKind(pc.shadowRoot, "choice-bar", "colors");
+  const [every] = byClass(bar, "choice-every");
+  const everySelect = every.children.find((child) => child.tagName === "select");
+  check("the bar colors every shade at once, from the same fabrics",
+        JSON.stringify(everySelect.children.slice(1).map((option) => option.value)) === JSON.stringify(FABRICS) &&
+          everySelect.children[0].value === "" && everySelect.children[0].disabled === true);
+  everySelect.value = "charcoal";
+  everySelect._on.change();
+  check("...in one call to every select", calls.length === 1 && JSON.stringify(calls[0]) ===
+        JSON.stringify(["select", "select_option", { entity_id:[denColor, fbColor], option:"charcoal" }]), JSON.stringify(calls));
+  check("...every window drawn in it at once, and the bar ready for another",
+        JSON.stringify(painted(pc)) === '["charcoal","charcoal"]' && everySelect.value === "", JSON.stringify(painted(pc)));
+
+  let prevented = false;
+  let threw = false;
+  try {
+    byClass(pc.shadowRoot, "win")[1]._on.pointerdown({ pointerType:"mouse", button:0, pointerId:1, clientX:5, clientY:5,
+      target:{ classList:{ contains:() => false } }, preventDefault() { prevented = true; } });
+  } catch {
+    threw = true;
+  }
+  check("while colors are chosen a press on a window does not take hold of a rail", !prevented && !threw);
+  const done = byClass(bar, "chip").find((chip) => chip !== every);
+  done._on.click();
+  check("Done ends the choosing", !pc._card.classList.contains("coloring"));
+
+  // A Shutter's colors are paints and stains, and "every shade" leaves it alone.
+  const withShutter = colorHass([["d1", "front_bedroom_1", "shade_color", "sage"], ["d3", "study_shutter", "shutter_color", "walnut"]]);
+  withShutter.entities["cover.study_shutter_louvers"] = { platform:"norman", device_id:"d3", translation_key:"louvers" };
+  withShutter.devices = { ...hass.devices, d3: { name:"Study Shutter", area_id:"a2", model_id:"1/0" } };
+  withShutter.states["cover.study_shutter_louvers"] = { state:"open", attributes:{ current_tilt_position:50, target_tilt:50 } };
+  const sc = panelCard(withShutter);
+  const shutterWin = byClass(sc.shadowRoot, "win").find((win) => win.classList.contains("shutter"));
+  check("a Shutter is drawn in its paint or stain", shutterWin?.dataset.color === "walnut", String(shutterWin?.dataset.color));
+  const shutterPick = ofKind(shutterWin, "pick", "colors")[0];
+  check("...offered the select's paints and stains", JSON.stringify(shutterPick?.children.map((option) => option.value)) ===
+        JSON.stringify(PAINTS) && shutterPick.children.map((option) => option.textContent).join(",") ===
+        "White,Ivory,Gray,Black,Oak,Walnut", JSON.stringify(shutterPick?.children.map((option) => option.value)));
+  calls.length = 0;
+  sc._setChoosing("colors");
+  const scEvery = byClass(ofKind(sc.shadowRoot, "choice-bar", "colors")[0], "choice-every")[0].children.find((child) => child.tagName === "select");
+  scEvery.value = "linen";
+  scEvery._on.change();
+  check("...and left alone when every shade is colored", calls.length === 1 &&
+        JSON.stringify(calls[0][2].entity_id) === JSON.stringify(fbColor) && shutterWin.dataset.color === "walnut",
+        JSON.stringify(calls));
+  check("a blind without a color to choose has nothing over its window",
+        byClass(sc.shadowRoot, "win").filter((win) => !byClass(win, "pick").length).length === 1);
+  const german = panelCard({ ...h1, locale:{ language:"de" } });
+  check("the colors are in the user's language", ofKind(german.shadowRoot, "choice-name", "colors")[1]?.lastChild.textContent === "Marineblau" &&
+        ofKind(german.shadowRoot, "pick", "colors")[1].attrs["aria-label"] === "Farbe von Front_Bedroom_1");
+  const listPanel = new Card();
+  listPanel.setAttribute("panel", "");
+  listPanel.setConfig({ type:"custom:norman-shades-card", hide_picture:true });
+  listPanel.hass = h1;
+  check("with sliders instead of windows there is nothing to color", byClass(listPanel.shadowRoot, "home-settings")[0]?.hidden === true);
+}
+
+// ---- each window's divided lights ----------------------------------------------------------------
+// The integration keeps each window's divided lights as a select too (select.py): the glazing bars
+// the card draws across its glass, two over two as it always was. In the sidebar panel they are
+// chosen as the colors are; a dashboard card draws them but offers no choosing.
+{
+  const fs = await import("node:fs");
+  const selectPy = fs.readFileSync(new URL("../select.py", url), "utf8");
+  const PATTERNS = [.../^WINDOW_LIGHTS = \(([^)]*)\)/ms.exec(selectPy)[1].matchAll(/"(\w+)"/g)].map((match) => match[1]);
+  const lightsHass = (lights, base = hass) => {
+    const reg = { ...base.entities };
+    const states = { ...base.states };
+    for (const [device, slug, pattern] of lights) {
+      reg[`select.${slug}_divided_lights`] = { platform:"norman", device_id:device, translation_key:"window_lights" };
+      states[`select.${slug}_divided_lights`] = { state:pattern };
+    }
+    return { ...base, entities:reg, states };
+  };
+  const panelCard = (h) => {
+    const c = new Card();
+    c.setAttribute("panel", "");
+    c.setConfig({ type:"custom:norman-shades-card" });
+    c.hass = h;
+    return c;
+  };
+  const ofKind = (root, part, kind) => byClass(root, part).filter((x) => String(x.className).split(" ").includes(kind));
+  // Each window's glazing bars, read back from those laid in it: upright ones by where they stand
+  // across the glass, the others by how far down.
+  const barsOf = (c) => byClass(c.shadowRoot, "bars").map((bars) => bars.children
+    .map((bar) => (bar.className === "mullion" ? `down ${bar.style.left}` : `across ${bar.style.top}`)).join(", "));
+  const fbLights = "select.front_bedroom_1_divided_lights";
+  const denLights = "select.den_1_divided_lights";
+
+  check("with no divided lights chosen every window is two over two, as it always was",
+        JSON.stringify(barsOf(rendered())) === JSON.stringify(["down 50%, across 50%", "down 50%, across 50%"]), JSON.stringify(barsOf(rendered())));
+  const h2 = lightsHass([["d1", "front_bedroom_1", "six_over_six"], ["d2", "den_1", "none"]]);
+  const dash = rendered({}, h2);
+  check("each blind is found with its divided lights", JSON.stringify(dash._collectBlinds().map((b) => b.lights)) ===
+        JSON.stringify([fbLights, denLights]), JSON.stringify(dash._collectBlinds().map((b) => b.lights)));
+  check("each window is drawn with its own: none, and six over six",
+        JSON.stringify(barsOf(dash)) === JSON.stringify(["", "down 33.33%, down 66.67%, across 25%, across 50%, across 75%"]),
+        JSON.stringify(barsOf(dash)));
+  check("...the meeting rail heavier than the bars across each sash", byClass(dash.shadowRoot, "bars")[1].children
+        .filter((bar) => bar.className === "transom").map((bar) => bar.style.height).join(" ") === "2% 2.8% 2%");
+  dash.hass = lightsHass([["d1", "front_bedroom_1", "prairie"], ["d2", "den_1", "stained_glass"]]);
+  check("divided lights changed in Home Assistant are drawn, and ones the card does not know are the default",
+        JSON.stringify(barsOf(dash)) === JSON.stringify(["down 50%, across 50%", "down 13%, down 87%, across 12%, across 88%"]),
+        JSON.stringify(barsOf(dash)));
+  check("a dashboard card offers no choosing", byClass(dash.shadowRoot, "pick").length === 0);
+  {
+    // "Over none" divides the upper sash alone: its bars reach down to the meeting rail.
+    const sashes = rendered({}, lightsHass([["d1", "front_bedroom_1", "six_over_none"], ["d2", "den_1", "four_over_four"]]));
+    const [den, front] = byClass(sashes.shadowRoot, "bars");
+    const reach = (bars) => bars.children.map((bar) => (bar.className === "mullion"
+      ? `down ${bar.style.left} ${bar.style.top}+${bar.style.height}` : `across ${bar.style.top} ${bar.style.left}+${bar.style.width}`)).join(", ");
+    check("six over none divides the upper sash alone, three across and two down, above the meeting rail",
+          reach(front) === "down 33.33% 0%+50%, down 66.67% 0%+50%, across 25% 0%+100%, across 50% 0%+100%", reach(front));
+    check("four over four divides both sashes, two across and two down each",
+          reach(den) === "down 50% 0%+100%, across 25% 0%+100%, across 50% 0%+100%, across 75% 0%+100%", reach(den));
+  }
+  {
+    const hidden = lightsHass([["d1", "front_bedroom_1", "none"]]);
+    hidden.entities[fbLights] = { ...hidden.entities[fbLights], hidden: true };
+    check("hidden divided lights still divide the glass", barsOf(rendered({}, hidden))[1] === "", JSON.stringify(barsOf(rendered({}, hidden))));
+  }
+
+  const pc = panelCard(lightsHass([["d1", "front_bedroom_1", "six_over_six"], ["d2", "den_1", "two_over_two"]]));
+  const lightsItem = pc._choiceItems.lights;
+  check("in the panel the settings menu has the divided lights once a window has them, and not the colors",
+        lightsItem.hidden === false && lightsItem.children[1].textContent === "Divided lights" && pc._choiceItems.colors.hidden === true);
+  const picks = ofKind(pc.shadowRoot, "pick", "lights");
+  check("each window has a select of divided lights over it, set to its own", picks.length === 2 &&
+        picks[0].value === "two_over_two" && picks[1].value === "six_over_six", JSON.stringify(picks.map((pick) => pick.value)));
+  check("...offering the select's patterns, in its order, in the user's words",
+        JSON.stringify(picks[1].children.map((option) => option.value)) === JSON.stringify(PATTERNS) && PATTERNS.length === 11 &&
+          picks[1].children.map((option) => option.textContent).join(",") === "None,One over one,Two side by side,Two over none," +
+          "Two over two,Three over none,Four over none,Four over four,Six over none,Six over six,Prairie");
+  check("...named for its blind", picks[1].attrs["aria-label"] === "Divided lights of Front_Bedroom_1", picks[1].attrs["aria-label"]);
+  pc._settingsButton._on.click();
+  lightsItem._on.click();
+  check("the divided lights item turns the page to choosing them, not colors",
+        pc._card.classList.contains("lighting") && pc._card.classList.contains("choosing") && !pc._card.classList.contains("coloring"));
+  calls.length = 0;
+  picks[0].value = "none";
+  picks[0]._on.change();
+  check("divided lights chosen for a window go to its blind's select, drawn at once and named",
+        JSON.stringify(calls[0]) === JSON.stringify(["select", "select_option", { entity_id:denLights, option:"none" }]) &&
+          barsOf(pc)[0] === "" && ofKind(pc.shadowRoot, "choice-name", "lights")[0].lastChild.textContent === "None", JSON.stringify(calls));
+  calls.length = 0;
+  const [bar] = ofKind(pc.shadowRoot, "choice-bar", "lights");
+  const [every] = byClass(bar, "choice-every");
+  const everySelect = every.children.find((child) => child.tagName === "select");
+  everySelect.value = "one_over_one";
+  everySelect._on.change();
+  check("...and for every window at once, in one call", calls.length === 1 && JSON.stringify(calls[0]) ===
+        JSON.stringify(["select", "select_option", { entity_id:[denLights, fbLights], option:"one_over_one" }]) &&
+          JSON.stringify(barsOf(pc)) === JSON.stringify(["across 50%", "across 50%"]), JSON.stringify([calls, barsOf(pc)]));
+  byClass(bar, "chip").find((chip) => chip !== every)._on.click();
+  check("Done ends the choosing", !pc._card.classList.contains("lighting") && !pc._card.classList.contains("choosing"));
+  const german = panelCard({ ...lightsHass([["d1", "front_bedroom_1", "two_over_two"]]), locale:{ language:"de" } });
+  check("the divided lights are in the user's language",
+        ofKind(german.shadowRoot, "pick", "lights")[0]?.children.map((option) => option.textContent)[4] === "Sprossenkreuz");
+}
+
+// ---- the forecast ---------------------------------------------------------------------------------
+// Over the view the card subscribes to the weather entity's forecast, as Home Assistant's own
+// weather card does, and shows now and the hours ahead beside the weather.
+{
+  const subscriptions = [];
+  let refuse = false;
+  const connection = {
+    subscribeMessage(callback, message) {
+      if (refuse) return Promise.reject(new Error("not supported"));
+      const sub = { callback, message, closed: false };
+      subscriptions.push(sub);
+      return Promise.resolve(() => { sub.closed = true; return Promise.resolve(); });
+    },
+  };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const at = (hours) => new Date(Date.now() + hours * 3600e3).toISOString();
+  const hourly = [
+    { datetime: at(-0.5), condition: "sunny", temperature: 58 },
+    ...Array.from({ length: 10 }, (_, i) => ({ datetime: at(i + 1), condition: i === 2 ? "rainy" : "partlycloudy",
+      temperature: 61 + i, precipitation_probability: i === 2 ? 40 : 10 })),
+  ];
+  const WORDS = { partlycloudy: "Partly cloudy", rainy: "Rainy", sunny: "Sunny" };
+  const withForecast = (features, extra = {}) => ({ ...hass, connection,
+    formatEntityState: (state, value) => WORDS[value ?? state.state] ?? value ?? state.state,
+    states: { ...hass.states, "weather.forecast_home": { state:"partlycloudy",
+      attributes:{ temperature:66.6, supported_features:features } } }, ...extra });
+  // The sun is down from five and a half hours on.
+  const fakeView = () => ({ weatherEntity:"weather.forecast_home", scene:null, listeners:[],
+    subscribe(listener) { this.listeners.push(listener); return () => {}; }, setPanes() {},
+    sunAt: (date) => ({ elevation: date.getTime() > Date.now() + 5.5 * 3600e3 ? -10 : 20 }) });
+  const overView = (h, view) => {
+    const c = new Card();
+    c.setAttribute("panel", ""); c.setAttribute("view", "");
+    c.setConfig({ type:"custom:norman-shades-card" });
+    c.view = view;
+    c.hass = h;
+    return c;
+  };
+  const textOf = (cell, name) => byClass(cell, name)[0]?.textContent;
+  const iconOf = (cell) => cell.children.find((child) => child.tagName === "ha-icon")?.attrs.icon;
+
+  const view = fakeView();
+  const c = overView(withForecast(3), view);
+  check("the forecast waits until the card is on the page", subscriptions.length === 0);
+  c.connectedCallback();
+  await tick();
+  check("...then asks for the weather entity's hourly forecast", subscriptions.length === 1 &&
+        JSON.stringify(subscriptions[0].message) ===
+          JSON.stringify({ type:"weather/subscribe_forecast", forecast_type:"hourly", entity_id:"weather.forecast_home" }),
+        JSON.stringify(subscriptions.map((sub) => sub.message)));
+  const [hours] = byClass(c.shadowRoot, "hours");
+  check("...and shows nothing until it comes", hours.hidden === true && hours.attrs["aria-label"] === "Forecast");
+  subscriptions[0].callback({ type:"hourly", forecast:hourly });
+  const cells = hours.children;
+  check("now and the seven hours after it", hours.hidden === false && cells.length === 8 && textOf(cells[0], "when") === "Now",
+        String(cells.length));
+  check("now is the weather entity's own", textOf(cells[0], "deg") === "67°" && iconOf(cells[0]) === "mdi:weather-partly-cloudy");
+  check("an hour already begun is left out", textOf(cells[1], "deg") === "61°" && /^\d{1,2} (AM|PM)$/.test(textOf(cells[1], "when")),
+        `${textOf(cells[1], "when")} ${textOf(cells[1], "deg")}`);
+  check("a chance of rain worth saying is said, and a small one is not",
+        textOf(cells[3], "wet") === "40%" && iconOf(cells[3]) === "mdi:weather-rainy" && textOf(cells[2], "wet") === "");
+  check("...and said to a screen reader with the hour's weather",
+        / Rainy, 63°, 40% chance of rain or snow$/.test(textOf(cells[3], "said")), textOf(cells[3], "said"));
+  check("an hour after dark has the night's icon", iconOf(cells[6]) === "mdi:weather-night-partly-cloudy" &&
+        iconOf(cells[5]) === "mdi:weather-partly-cloudy", `${iconOf(cells[5])} ${iconOf(cells[6])}`);
+  const before = cells[1];
+  c.hass = { ...c._hass, states: { ...c._hass.states, "sensor.outdoor": { state:"1" } } };
+  check("a change elsewhere leaves the forecast as it was", hours.children[1] === before);
+
+  c.disconnectedCallback();
+  await tick();
+  check("off the page, the card stops hearing it", subscriptions[0].closed === true && c._forecast === null);
+  c.connectedCallback();
+  await tick();
+  check("...and hears it again when it is back", subscriptions.length === 2 && !subscriptions[1].closed);
+
+  // Another weather entity: the old forecast stops and the new one is asked for.
+  c.hass = { ...c._hass, states: { ...c._hass.states, "weather.home": { state:"rainy", attributes:{ temperature:50, supported_features:1 } } } };
+  view.weatherEntity = "weather.home";
+  for (const listener of view.listeners) listener();
+  await tick();
+  check("another weather entity: the old forecast stops, the new one's daily forecast is asked for",
+        subscriptions[1].closed === true && subscriptions.length === 3 &&
+          subscriptions[2].message.entity_id === "weather.home" && subscriptions[2].message.forecast_type === "daily",
+        JSON.stringify(subscriptions.map((sub) => [sub.message.entity_id, sub.message.forecast_type, sub.closed])));
+  const day = (days) => new Date(Date.now() + days * 86400e3).toISOString();
+  subscriptions[2].callback({ type:"daily", forecast:[
+    { datetime: day(0), condition:"rainy", temperature:52, templow:41 },
+    { datetime: day(1), condition:"sunny", temperature:71, templow:45, precipitation_probability:0 },
+    { datetime: day(2), condition:"rainy", temperature:55, templow:44, precipitation_probability:80 },
+  ] });
+  const daily = byClass(c.shadowRoot, "hours")[0].children;
+  check("a daily forecast shows the days after today, each with its low",
+        daily.length === 3 && textOf(daily[1], "low") === "45°" && /^[A-Z][a-z]{2}$/.test(textOf(daily[1], "when")) &&
+          textOf(daily[2], "wet") === "80%", JSON.stringify(daily.map((cell) => [textOf(cell, "when"), textOf(cell, "deg")])));
+
+  // A 24-hour clock, from the user's profile.
+  {
+    const clock = overView(withForecast(2, { locale:{ language:"en", time_format:"24" } }), fakeView());
+    clock.connectedCallback();
+    await tick();
+    subscriptions.at(-1).callback({ type:"hourly", forecast:hourly });
+    const when = textOf(byClass(clock.shadowRoot, "hours")[0].children[1], "when");
+    check("the hours follow the user's 24-hour clock", /^\d{2}$/.test(when), when);
+    clock.disconnectedCallback();
+  }
+  // No forecast to give: nothing is asked for, and nothing shows.
+  {
+    const count = subscriptions.length;
+    const none = overView(withForecast(0), fakeView());
+    none.connectedCallback();
+    await tick();
+    check("an entity with no forecast is not asked for one", subscriptions.length === count &&
+          byClass(none.shadowRoot, "hours")[0].hidden === true);
+    refuse = true;
+    const refused = overView(withForecast(2), fakeView());
+    refused.connectedCallback();
+    await tick();
+    await tick();
+    check("a forecast refused leaves the strip hidden", byClass(refused.shadowRoot, "hours")[0].hidden === true);
+    refuse = false;
+  }
+  check("a card on a dashboard has no forecast", byClass(rendered().shadowRoot, "hours").length === 0);
+  // Turned off in the integration's options, the panel passes hide_weather: no temperature, no
+  // conditions and no forecast strip, and nothing is asked for; the house's counts stay.
+  {
+    const count = subscriptions.length;
+    const off = new Card();
+    off.setAttribute("panel", ""); off.setAttribute("view", "");
+    off.setConfig({ type:"custom:norman-shades-card", hide_weather:true });
+    off.view = fakeView();
+    off.hass = withForecast(3);
+    off.connectedCallback();
+    await tick();
+    check("with the weather turned off there is no temperature, conditions or forecast, and no forecast is asked for",
+          ["temp", "cond", "hours"].every((name) => byClass(off.shadowRoot, name).length === 0) &&
+            subscriptions.length === count && off._forecast === null);
+    const [hero] = byClass(off.shadowRoot, "hero");
+    const [now] = byClass(off.shadowRoot, "now");
+    const said = findAll(byClass(off.shadowRoot, "summary")[0], (el) => el._text !== undefined).map((el) => String(el._text)).join("");
+    check("...while the house's counts stay at the top, alone",
+          hero?.children.length === 1 && hero.children[0] === now && now.children.length === 1 &&
+            now.children[0].className === "summary" && said.includes("2 shades"), said);
+    off.disconnectedCallback();
+  }
+}
+
+// ---- the rooms bar --------------------------------------------------------------------------------
+// On a phone the sidebar page has a bar at the foot of the screen that goes to each room.
+{
+  const narrowPanel = (h, cfg = {}) => {
+    const c = new Card();
+    c.setAttribute("panel", "");
+    c.setConfig({ type:"custom:norman-shades-card", ...cfg });
+    c.narrow = true;
+    c.hass = h;
+    return c;
+  };
+  const labelOf = (tab) => tab.children.find((child) => child.tagName === "span").textContent;
+  const moving = { ...hass, states: { ...hass.states,
+    "cover.front_bedroom_1_bottom_rail": { state:"open", attributes:{ current_position:60, target_position:90 } },
+    "number.front_bedroom_1_bottom_rail_position": { state:"60" } } };
+  const p = narrowPanel(moving);
+  const [bar] = byClass(p.shadowRoot, "rooms-bar");
+  const tabs = byClass(bar, "room-tab");
+  check("the rooms bar goes to the top of the page and to each room", bar?.hidden === false && bar.tagName === "nav" &&
+        bar.attrs["aria-label"] === "Rooms" && JSON.stringify(tabs.map(labelOf)) === '["Home","Den","Front Bedroom"]',
+        JSON.stringify(tabs.map(labelOf)));
+  check("...the top of the page marked to begin with", tabs[0].attrs["aria-current"] === "true" &&
+        tabs[1].attrs["aria-current"] === undefined && tabs[0].attrs["aria-label"] === "Back to the top");
+  const dots = (tab) => byClass(tab, "dot").filter((dot) => !dot.hidden).map((dot) => dot.className);
+  check("a room with a low battery has a dot for it, and says so", JSON.stringify(dots(tabs[1])) === '["dot warn"]' &&
+        tabs[1].attrs["aria-label"] === "Den · 1 low battery", `${JSON.stringify(dots(tabs[1]))} ${tabs[1].attrs["aria-label"]}`);
+  check("...and one with a shade moving", JSON.stringify(dots(tabs[2])) === '["dot live"]' &&
+        tabs[2].attrs["aria-label"] === "Front Bedroom · 1 moving", `${JSON.stringify(dots(tabs[2]))} ${tabs[2].attrs["aria-label"]}`);
+  p.hass = hass;
+  check("...the dot gone once it stops", JSON.stringify(dots(tabs[2])) === "[]" && tabs[2].attrs["aria-label"] === "Front Bedroom");
+
+  let scrolled = null;
+  const room = p._roomLines.find((line) => line.name === "Front Bedroom");
+  room.section.scrollIntoView = (options) => { scrolled = options; };
+  p._header.getBoundingClientRect = () => ({ top: 0, bottom: 68, height: 68 });
+  tabs[2]._on.click();
+  check("a room's button scrolls to it, clear of the header", scrolled?.block === "start" &&
+        room.section.style.scrollMarginTop === "78px" && tabs[2].attrs["aria-current"] === "true" &&
+        tabs[0].attrs["aria-current"] === undefined, JSON.stringify([scrolled, room.section.style.scrollMarginTop]));
+  let top = null;
+  p._card.scrollIntoView = (options) => { top = options; };
+  tabs[0]._on.click();
+  check("...and Home to the top of the page", top?.block === "start" && tabs[0].attrs["aria-current"] === "true");
+
+  // As the page scrolls: the last room whose top has passed a third of the way down.
+  p._spyHeld = 0;
+  const [den, fb] = p._roomLines;
+  const box = { scrollTop: 400, clientHeight: 844, scrollHeight: 3000, getBoundingClientRect: () => ({ top: 0, bottom: 844 }) };
+  den.section.getBoundingClientRect = () => ({ top: 300 });
+  fb.section.getBoundingClientRect = () => ({ top: 900 });
+  p._spy(box);
+  check("the room in view is marked as the page scrolls", tabs[1].attrs["aria-current"] === "true");
+  den.section.getBoundingClientRect = () => ({ top: -400 });
+  fb.section.getBoundingClientRect = () => ({ top: 200 });
+  p._spy(box);
+  check("...and the next as it comes up", tabs[2].attrs["aria-current"] === "true" && tabs[1].attrs["aria-current"] === undefined);
+  den.section.getBoundingClientRect = () => ({ top: 500 });
+  fb.section.getBoundingClientRect = () => ({ top: 1200 });
+  box.scrollTop = 0;
+  p._spy(box);
+  check("...and the top of the page above the first", tabs[0].attrs["aria-current"] === "true");
+  den.section.getBoundingClientRect = () => ({ top: -900 });
+  fb.section.getBoundingClientRect = () => ({ top: 600 });
+  box.scrollTop = 3000 - 844;
+  p._spy(box);
+  check("...and the last room at the very end, short as it may be", tabs[2].attrs["aria-current"] === "true");
+
+  const single = narrowPanel({ ...hass, devices: { ...hass.devices, d2: { ...hass.devices.d2, area_id: "a1" } } });
+  check("with one room there is no bar", byClass(single.shadowRoot, "rooms-bar")[0]?.hidden === true);
+  const noHeadings = narrowPanel(hass, { hide_room_names: true });
+  check("...nor with the room headings hidden", byClass(noHeadings.shadowRoot, "rooms-bar")[0]?.hidden === true);
+  check("a card on a dashboard has no rooms bar", byClass(rendered().shadowRoot, "rooms-bar").length === 0);
+  const german = narrowPanel({ ...hass, locale: { language: "de" } });
+  const germanTabs = byClass(byClass(german.shadowRoot, "rooms-bar")[0], "room-tab");
+  check("the bar is in the user's language", labelOf(germanTabs[0]) === "Zuhause" &&
+        germanTabs[0].attrs["aria-label"] === "Zurück nach oben" &&
+        byClass(german.shadowRoot, "rooms-bar")[0].attrs["aria-label"] === "Räume");
 }
 
 console.log(fail===0 ? "\nALL PASS" : `\n${fail} FAILED`);

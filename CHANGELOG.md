@@ -5,6 +5,76 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **The windows of Norman Shades look out on a real place.** On the sidebar page each window
+  shows a real photograph of the Big Sur coast, or of Lake Tahoe, in place of the drawn sky and
+  hills, chosen by your weather entity and the height of the sun: early morning, day, golden
+  hour, sunset, dusk, twilight and a night of stars, and cloud, fog, rain, thunderstorm and
+  snow. A room's windows look out on one view between them, each on the part behind it. The
+  page behind the rooms takes the photograph's colors, with the temperature and the weather
+  under the hub's name and each room on glass, three windows across. On by default; **View
+  from the windows** in the integration's options picks the place, or **None** for the page as
+  it was ([the view](docs/dashboard.md#the-view-from-the-windows)).
+- **In Home Assistant's light theme and its dark one.** In the dark theme the page's colors are
+  deep, under dark glass and white words; in the light theme they are pale, under light glass
+  and dark words, every word clear against them. It switches at once when Home Assistant does,
+  from your profile or, with an automatic theme, with your device, and needs no reload.
+- **The view moves.** The photograph's own clouds drift and its water runs, while the land stays
+  still. Rain and lightning that are in a photograph fall and flicker, and its stars twinkle.
+  Rain, snow and fog are added in the air, with birds by day, shooting stars at night, and the
+  moon on the nights it is up, in its real phase. It needs WebGL 2; without it, with **Moving
+  view** turned off, or on a device set to reduce motion, the photograph is shown still.
+- **Four options for it, per hub:** the place, whether it moves, whether the page shows the
+  weather, and the weather entity it follows, which is found by itself when left empty. All
+  four apply without a reload ([Options](docs/options.md#view-from-the-windows)).
+- **The photographs ship with the integration**, so the page needs nothing from the internet.
+  All 25 are CC0 or in the public domain, credited in `NOTICE`, which the options link to from
+  **View from the windows**; the page itself carries no credit. Only the strip
+  of each that the windows show ships, small: together they add under 1 MB.
+- **The forecast, beside the weather.** Over the view, now and the hours ahead from the same
+  weather entity sit beside the temperature, or under it on a phone: each hour's weather, its
+  temperature and, at 30% or more, its chance of rain or snow, with the night's icon after
+  dark. An entity that forecasts only by the day shows the days ahead, with each day's high
+  and low ([the forecast](docs/dashboard.md#the-view-from-the-windows)). On by default; turn
+  off **Show the weather** in the options to leave the weather off the page, the temperature
+  and conditions with the forecast, and keep only the house's counts under the hub's name
+  ([Show the weather](docs/options.md#show-the-weather)).
+- **Each shade in its own color.** Every blind has a new **Shade color** (a Shutter, **Shutter
+  color**) under Configuration: eleven fabrics for a shade, white to navy and terracotta, and
+  white, ivory, gray, black, oak or walnut for a Shutter. The card and the sidebar page draw
+  each window's shade in it; on a two-rail shade it is the blackout's, and the sheer stays
+  white. The default is the cloth the card has always drawn, so nothing changes until a color
+  is chosen ([Shade colors](docs/dashboard.md#shade-colors-and-divided-lights)).
+- **Choose the colors on the page.** On the sidebar page, the settings button beside the
+  refresh at the top, then **Shade colors**, turns every window into a button: tap one to pick
+  its color from a list and it is drawn in it at once, against the view, or give every shade
+  one color at once. The colors are kept on the blinds, so every user and every device sees
+  them.
+- **Each window's divided lights.** Every blind also has **Divided lights** under
+  Configuration, the glazing bars across its window's glass: none, one over one, two side by
+  side, two, three, four or six over none (the upper sash alone divided), two over two, four over
+  four, six over six or prairie. The card and the sidebar page draw them; two over two is the
+  glass the card has always drawn. On the sidebar page, **Divided lights** in the settings menu
+  draws the shades out of the way so each window shows its glass, and lets you pick each
+  window's pattern, or one for every window at once
+  ([Divided lights](docs/dashboard.md#shade-colors-and-divided-lights)).
+- **A rooms bar on a phone.** On the sidebar page on a phone, a bar at the foot of the screen
+  goes to the top of the page or to any room, marks the room in view as you scroll, and dots a
+  room with a shade moving or a low battery.
+- **The hub is named as in the Norman app.** The heading of the sidebar page and of a card
+  shows the hub's name from the Norman app, even where the hub's device has been renamed in
+  Home Assistant. Until the hub has given its name, Home Assistant's name for it is used.
+- **A card on a dashboard is unchanged**, apart from drawing each shade in its color, each
+  window's divided lights, and naming the hub as the Norman app does.
+- **No poll interval or wake sweep options.** Both were off by default, and neither is needed:
+  the hub pushes every change it hears of, and the integration re-reads every blind each time
+  it reconnects to the hub, every 5 minutes. A hub that had either set keeps working without
+  them, and the saved values are dropped. To re-read more often, Home Assistant's own way to
+  poll on a schedule is an automation that updates a cover; **Request status** and **Refresh
+  blinds** have blinds report in ([Polling and wake sweeps](docs/options.md#polling-and-wake-sweeps)).
+  Every option now applies without a reload.
+
 ## 0.96 — 2026-11-15
 
 - **Norman Shades uses a wide screen.** On a desktop, a tablet or a phone held sideways, the
