@@ -5,7 +5,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
-## Unreleased
+## 1.00 — 2026-11-20
 
 - **Shutters turn all the way, past horizontal** ([#7](https://github.com/kedube/ha-norman/issues/7)).
   A Shutter's tilt reached only from shut to horizontal, so its louvers could not be turned
