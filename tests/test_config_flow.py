@@ -247,6 +247,39 @@ async def test_reconfigure_rejects_a_different_hub(
     assert mock_config_entry.data[CONF_HOST] == HUB_HOST
 
 
+@pytest.mark.parametrize(
+    ("reply", "unique_id"),
+    [
+        ({"Error": 0}, "192.168.1.99"),
+        ({"Error": 0, "ThingName": HUB_THING_NAME}, HUB_THING_NAME),
+    ],
+    ids=["without-a-thing-name", "added-before-0.11"],
+)
+async def test_reconfigure_moves_an_entry_keyed_by_its_address(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, reply: dict, unique_id: str
+) -> None:
+    """An entry keyed by its old address moves, and takes the key its hub gives at the new one.
+
+    A hub that answers without a ThingName is keyed by its address, and so is an entry from
+    before 0.11 that has not been set up since; neither key can match the hub at a new one.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN, title=f"Norman Hub ({HUB_HOST})", data=MOCK_CONFIG, unique_id=HUB_HOST
+    )
+    entry.add_to_hass(hass)
+    aioclient_mock.post("http://192.168.1.99:10123/NM/v1/registration", json=reply)
+
+    result = await entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input={CONF_HOST: "192.168.1.99"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_HOST] == "192.168.1.99"
+    assert entry.unique_id == unique_id
+
+
 async def test_reconfigure_errors(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_config_entry: MockConfigEntry
 ) -> None:

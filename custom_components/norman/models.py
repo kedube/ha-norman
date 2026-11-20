@@ -23,8 +23,13 @@ def parse_last_update(raw: Any) -> datetime | None:
     try:
         value = float(raw)
     except (TypeError, ValueError):
-        parsed = dt_util.parse_datetime(str(raw)) if isinstance(raw, str) else None
-        return dt_util.as_utc(parsed) if parsed else None
+        if not isinstance(raw, str):
+            return None
+        try:
+            parsed = dt_util.parse_datetime(raw)
+            return dt_util.as_utc(parsed) if parsed else None
+        except (ValueError, OverflowError):
+            return None
     if value <= 0:
         return None
     if value > 1e11:  # milliseconds since the epoch

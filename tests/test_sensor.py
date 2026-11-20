@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.norman.const import DOMAIN
 from custom_components.norman.sensor import parse_last_update
 
-from .conftest import HUB_MAC, FakeHub, settle
+from .conftest import HUB_MAC, FakeHub, loaded, settle
 from .const import HUB_SSID, UID_BEDROOM, UID_LIVING, UID_STATUS_ONLY
 
 
@@ -38,6 +38,10 @@ def sensor_entity_id(hass: HomeAssistant, uid: int, key: str) -> str:
         (True, None),
         ("soon", None),
         (1e30, None),
+        # Written as a time, but none: 30 February, a 13th month, before year 1 in UTC.
+        ("2026-02-30T10:00:00", None),
+        ("2026-13-01 10:00", None),
+        ("0001-01-01T00:00:00+01:00", None),
     ],
 )
 def test_parse_last_update(raw: object, expected: datetime | None) -> None:
@@ -146,6 +150,24 @@ async def test_missing_values_are_unknown(
         "unknown"
     )
     assert hass.states.get(sensor_entity_id(hass, UID_STATUS_ONLY, "last_seen")).state == "unknown"
+
+
+async def test_a_report_time_that_is_no_date_is_unknown(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Last seen, and the Connection sensor that reads the same time, are unknown, not failing."""
+    from .test_binary_sensor import connection_entity_id
+
+    fake_hub.peripheral_status(UID_LIVING)["Timestamp"] = "2026-02-30T10:00:00"
+
+    async with loaded(hass, mock_config_entry):
+        last_seen = hass.states.get(sensor_entity_id(hass, UID_LIVING, "last_seen"))
+        connection = hass.states.get(connection_entity_id(hass, UID_LIVING))
+        assert last_seen is not None and last_seen.state == "unknown"
+        assert connection is not None and connection.state == "unknown"
 
 
 async def test_sensors_follow_hub_updates(

@@ -106,8 +106,9 @@ follows the sun alone and the page shows no weather.
 Earlier releases had two more options here, both off by default: a **poll interval** and a
 **wake sweep interval**. Neither is needed. The hub pushes every change it hears of, and the
 integration re-reads every blind each time it reconnects to the hub, every 5 minutes, so a
-notification that goes missing leaves a blind out of date for 5 minutes at most. A hub that had
-either set keeps working as before, without them.
+notification that goes missing leaves a blind out of date for 5 minutes at most, and a read
+that fails is tried again every 15 seconds until one succeeds. A hub that had either set keeps
+working as before, without them.
 
 To re-read the hub more often, use Home Assistant's own way to
 [poll on a schedule](https://www.home-assistant.io/common-tasks/general/#defining-a-custom-polling-interval):

@@ -85,8 +85,11 @@ does not work well.
 ### POST /NM/v1/registration
 
 Announces the client and returns the hub's identity. Called once per client before
-`GetAllPeripheral` (which needs the `ThingName`), and by the config flow to validate the
-address the user typed.
+`GetAllPeripheral` (which needs the `ThingName`), by the config flow to validate the address
+the user typed, and after every connection failure, before the hub is read or listened to
+again: two hubs can come back from a power cut at each other's address. An entry that finds
+another configured hub at its address does not run it; that hub's entry is moved to the
+address, and this one to the address the other hub left.
 
 Request:
 
@@ -739,7 +742,8 @@ Response stream, as observed:
 - Parsing is done by `JsonStreamParser` in `api.py`: an incremental UTF-8 decoder (a multi-byte
   character can be split across two reads) feeding a scanner that tracks string and escape
   state, so braces inside names and nested objects do not break framing. Unparseable segments
-  are logged at debug level and skipped; an object that never closes is discarded once the
+  are logged at debug level and skipped. An object cut short is dropped at the next `{` or `"`
+  that JSON cannot have where it appears, and one that never closes is discarded once the
   buffer exceeds `NOTIF_MAX_BUFFER` (64 KiB).
 
 ## Known endpoint surface
@@ -1388,9 +1392,11 @@ before any parsing happens, and the last complete response per endpoint is kept 
 unique id, and every key in `SENSITIVE_HUB_KEYS` (`ThingName`, `GeoLoc`, `Latitude`,
 `Longitude`, `WiFiSSID`, `NetworkID`, `TimeZone`, `CustomDeviceName`) are removed by key inside
 JSON bodies, and the host and `ThingName` are additionally replaced by value anywhere they
-appear in text. A `PeripheralUID` is the blind's serial number, so each becomes an alias
+appear in text, as is every IPv4 or IPv6 address in a recorded error. A `PeripheralUID` is
+the blind's serial number, so each becomes an alias
 (`blind_1`, `blind_2`, …, `BlindAliases` in `diagnostics.py`), the same for a blind throughout
-the export: in its device and scene entries, in `PeripheralList`s, and in requests and replies.
+the export: in its device and scene entries, in `PeripheralList`s, and in requests and replies,
+including a stream chunk that begins partway through a key.
 The export also carries the entry's options and a `frontend` block with the
 card's expected and registered versions. The `norman.get_hub_data` action returns live
 `GetAllPeripheral` and `status` payloads for the same purpose, with the same sensitive keys
@@ -1412,6 +1418,9 @@ log keeps only the start of each reply.
 - The integration only ever connects *to* the hub; it opens no listening ports.
 - The host is validated as an IP address or hostname before use and the URL is built with
   `yarl` (so a value like `hub/../x` or `hub:80` cannot redirect requests elsewhere).
+- A reply is read up to 1 MB (`MAX_REPLY_BYTES`; a thirteen-blind device list is about 55 KB).
+  A larger one is refused rather than read whole, so a broken hub, or a device answering in its
+  place, cannot hold up Home Assistant or exhaust its memory.
 - Diagnostics exports redact the hub address, the entry's unique id, and the hub's identity,
   location, Wi-Fi SSID, time zone and custom name (`SENSITIVE_HUB_KEYS`). The hub's own name is
   redacted; **blind** names and positions are not, because they are what bug reports need.

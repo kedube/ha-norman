@@ -260,7 +260,14 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_host"
             elif unique_id := await self._async_validate_host(host, errors):
                 await self.async_set_unique_id(unique_id)
-                self._abort_if_unique_id_mismatch(reason="wrong_hub")
+                # An entry keyed by its old address (a hub that gave no ThingName, or one
+                # added before 0.11) takes the new key; one keyed by a ThingName needs that hub.
+                owner = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, unique_id)
+                if owner not in (None, entry) or (
+                    entry.unique_id not in (None, entry.data[CONF_HOST])
+                    and entry.unique_id != unique_id
+                ):
+                    return self.async_abort(reason="wrong_hub")
                 # A title the integration gave follows the address; one chosen in Home
                 # Assistant, or taken from the hub's name, stays. A loaded hub reloads
                 # itself when either changes (its update listener); one waiting to retry
@@ -272,6 +279,7 @@ class NormanConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
                 return update(
                     entry,
+                    unique_id=unique_id,
                     data_updates={CONF_HOST: host},
                     title=default_title(host) if is_default_title(entry.title) else UNDEFINED,
                 )

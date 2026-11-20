@@ -49,11 +49,11 @@ def parse_devices(device_info: dict[str, Any], status_data: dict[str, Any]) -> N
     room_list = results.get("RoomList") if isinstance(results, dict) else None
     for room in dicts(room_list):
         room_id = room.get("RoomID")
-        room_name = room.get("RoomName", "")
+        room_name = str(room.get("RoomName") or "")
 
         for group in dicts(room.get("GroupList")):
             group_id = group.get("GroupID")
-            group_name = group.get("GroupName", "")
+            group_name = str(group.get("GroupName") or "")
 
             for peripheral in dicts(group.get("PeripheralList")):
                 peripheral_uid = parse_uid(peripheral.get("PeripheralUID"))
@@ -64,7 +64,7 @@ def parse_devices(device_info: dict[str, Any], status_data: dict[str, Any]) -> N
                 module_detail = parse_int(peripheral.get("ModuleDetail"))
                 devices[peripheral_uid] = NormanPeripheralData(
                     id=peripheral_uid,
-                    name=peripheral.get("PeripheralName") or f"Norman {peripheral_uid}",
+                    name=str(peripheral.get("PeripheralName") or f"Norman {peripheral_uid}"),
                     type=cover_type(module_type, module_detail),
                     room_id=parse_int(room_id),
                     room_name=room_name,
@@ -203,7 +203,7 @@ def parse_int(raw: Any) -> int | None:
         return None
     try:
         return int(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

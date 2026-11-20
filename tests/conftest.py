@@ -91,13 +91,14 @@ def mock_config_entry() -> MockConfigEntry:
 class FakeHub:
     """Register the hub's endpoints on ``aioclient_mock`` and record control calls.
 
-    Mutate ``devices`` / ``status`` to change what later requests return; the endpoints
-    read them on every call.
+    Mutate ``registration``, ``devices`` or ``status`` to change what later requests
+    return; the endpoints read them on every call.
     """
 
     def __init__(self, aioclient_mock: AiohttpClientMocker) -> None:
         """Wire up every endpoint with default (healthy) responses."""
         self.mock = aioclient_mock
+        self.registration: dict[str, Any] = dict(REGISTRATION_RESPONSE)
         self.devices: dict[str, Any] = devices_payload()
         self.status: dict[str, Any] = status_payload()
         self.control_response: dict[str, Any] = {"Error": 0}
@@ -110,11 +111,14 @@ class FakeHub:
         self._register()
 
     def _register(self) -> None:
-        self.mock.post(f"{HUB_URL}/NM/v1/registration", json=REGISTRATION_RESPONSE)
+        self.mock.post(f"{HUB_URL}/NM/v1/registration", side_effect=self._registration)
         self.mock.post(f"{HUB_URL}/NM/v1/GetAllPeripheral", side_effect=self._devices)
         self.mock.post(f"{HUB_URL}/NM/v1/status", side_effect=self._status)
         self.mock.post(f"{HUB_URL}/NM/v1/control", side_effect=self._control)
         self.mock.post(f"{HUB_URL}/NM/v1/notification", side_effect=self._notification)
+
+    async def _registration(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        return AiohttpClientMockResponse(method, url, json=self.registration)
 
     async def _devices(self, method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
         return AiohttpClientMockResponse(method, url, json=self.devices)
@@ -191,16 +195,22 @@ def fake_hub(aioclient_mock: AiohttpClientMocker) -> FakeHub:
     return FakeHub(aioclient_mock)
 
 
+# Put on ``notifications`` for the hub to answer the stream and then send nothing.
+CONNECTED = "connected"
+
+
 @pytest.fixture
 def notifications() -> AsyncGenerator[asyncio.Queue]:
     """Replace the hub's notification long-poll with a queue.
 
     Put a dict to deliver a notification, an exception to simulate the stream dropping,
-    or ``None`` to simulate the periodic reconnect (the listener returning normally).
+    ``None`` to simulate the periodic reconnect (the listener returning normally), or
+    ``CONNECTED`` for the hub to answer and then keep quiet, as it does while nothing changes;
+    a notification has the hub read, ``CONNECTED`` does not.
 
-    The stream counts as connected (``on_connect``) once the first dict or ``None`` arrives,
-    as the real one does once the hub answers; an exception before that is a connection that
-    never opened.
+    The stream counts as connected (``on_connect``) once the first dict, ``None`` or
+    ``CONNECTED`` arrives, as the real one does once the hub answers; an exception before
+    that is a connection that never opened.
     """
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -217,6 +227,8 @@ def notifications() -> AsyncGenerator[asyncio.Queue]:
                 on_connect()
             if item is None:
                 return
+            if item == CONNECTED:
+                continue
             yield item
 
     with patch.object(NormanApiClient, "async_listen_notifications", fake_listen):

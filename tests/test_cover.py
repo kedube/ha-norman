@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import json
 from typing import Any
 from unittest.mock import patch
@@ -45,6 +46,7 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -60,6 +62,8 @@ from custom_components.norman.const import (
     HUB_CMD_STOP,
     HUB_COMMAND_TRIGGER,
     MOVE_ATTEMPTS,
+    MOVE_REPORT_WAIT,
+    MOVE_TIMEOUT,
     MOVE_WINDOW,
 )
 from custom_components.norman.coordinator import NormanCoordinator
@@ -961,6 +965,75 @@ async def test_cancelling_a_watch_mid_read_leaves_the_hub_available(
     coordinator.async_supersede()
 
 
+async def test_a_move_sent_after_the_entry_unloads_is_not_watched(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A move still waiting its turn when the entry unloads starts no watch once it is sent.
+
+    The unload has cancelled the entry's tasks, so nothing would cancel the watch, and the
+    old coordinator no longer reads the hub: the watch would ask the blind to report in,
+    send the move again and report it failed, all for an entry that is gone.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    api = coordinator.api
+    events = async_capture_events(hass, EVENT_COMMAND_FAILED)
+    with (
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
+    ):
+        # Another command is being sent, so the move waits its turn.
+        await api._control_lock.acquire()
+        move = hass.async_create_task(coordinator.async_move_blind(UID_LIVING, 10, None))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert await hass.config_entries.async_unload(init_integration.entry_id)
+        sent = len(fake_hub.control_calls)
+
+        api._control_lock.release()
+        async with asyncio.timeout(5):
+            await move
+        watch = coordinator._move_watchers.get(UID_LIVING)
+        if watch is not None:
+            async with asyncio.timeout(5):
+                await watch
+        await hass.async_block_till_done()
+
+    assert watch is None
+    assert fake_hub.control_calls[sent + 1 :] == [], "sent after the move itself"
+    assert not events
+
+
+async def test_a_move_queued_over_a_reload_does_not_undo_a_later_one(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The user moves a blind after a reload; a move queued before the reload does not undo it.
+
+    Sent after the reload, the queued move is not watched by the old entry, whose coordinator
+    no longer reads the hub: it would see the blind never move, and send it back.
+    """
+    old: NormanCoordinator = init_integration.runtime_data
+    await old.api._control_lock.acquire()
+    move = hass.async_create_task(old.async_move_blind(UID_LIVING, 10, None))
+    for _ in range(10):
+        await asyncio.sleep(0)
+    assert await hass.config_entries.async_reload(init_integration.entry_id)
+    new: NormanCoordinator = init_integration.runtime_data
+    old.api._control_lock.release()
+    async with asyncio.timeout(5):
+        await move
+
+    await new.async_move_blind(UID_LIVING, 80, None)
+    _reports_in(fake_hub, UID_LIVING, 80)
+    await new.async_refresh()
+    # Past the time a watch gives a blind to move, and then to report in.
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=MOVE_TIMEOUT + 1))
+    await settle(hass)
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=MOVE_REPORT_WAIT + 1))
+    await settle(hass)
+
+    assert _rails_sent(fake_hub)[-1] == (80, 80)
+
+
 def _slider(hass: HomeAssistant, uid: int, rail: str) -> str:
     entity_id = er.async_get(hass).async_get_entity_id(
         "number", DOMAIN, f"{uid}_{rail}_rail_position"
@@ -1325,6 +1398,51 @@ async def test_a_move_after_stopping_a_blind_at_rest_does_not_wait(
     coordinator.async_supersede()
 
 
+@pytest.mark.parametrize(
+    "slider",
+    [
+        pytest.param(lambda hass, entry: _slider(hass, UID_LIVING, "middle"), id="blind"),
+        pytest.param(
+            lambda hass, entry: er.async_get(hass).async_get_entity_id(
+                "number", DOMAIN, f"{entry.entry_id}_1_room_middle_rail_position"
+            ),
+            id="room",
+        ),
+    ],
+)
+async def test_a_stop_while_a_move_waits_for_the_stopped_blind_drops_the_move(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub, slider: Any
+) -> None:
+    """A move waiting for a stopped blind to report is dropped if the blind is stopped again.
+
+    The last command the blind was given is the stop, from its own slider or its room's.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    _hub_takes_moves(fake_hub, stopped_at=None)
+    entity_id = slider(hass, init_integration)
+    assert entity_id
+
+    await _slide(hass, "bottom", 0)
+    await _stop(hass)  # on the way from 40 to 0, before the blind has said where it stopped
+    move = hass.async_create_task(
+        hass.services.async_call(
+            "number", "set_value", {ATTR_ENTITY_ID: entity_id, "value": 70}, blocking=True
+        )
+    )
+    for _ in range(25):
+        await asyncio.sleep(0)
+    assert not move.done(), "the move should wait for the stopped blind's report"
+    await _stop(hass)
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=MOVE_REPORT_WAIT + 1))
+    async with asyncio.timeout(5):
+        await move
+    await hass.async_block_till_done()
+
+    sent = [c for c in fake_hub.control_calls if HUB_CMD_STOP in c or "BottomRailPosition" in c]
+    assert HUB_CMD_STOP in sent[-1], f"sent after the last stop: {sent[-1]}"
+    coordinator.async_supersede()
+
+
 async def test_a_stop_goes_ahead_of_the_moves_waiting_their_turn(
     hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
 ) -> None:
@@ -1448,3 +1566,31 @@ async def test_a_target_the_blind_never_reaches_stops_reading_as_a_move(
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert hass.states.get(entity_id).state == CoverState.OPEN
+
+
+async def test_a_command_sent_again_to_a_target_the_blind_missed_reads_as_a_move(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A blind that missed a close, closed again once its battery is changed, reads closing.
+
+    The hub's target has stood since the first close, so it does not change; the cover reads
+    closing from the new command all the same, for as long as any other move would.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    entity_id = cover_entity_id(hass, UID_LIVING)
+    fake_hub.set_position(UID_LIVING, target_bottom=0)
+    await _heard(hass, notifications, UID_LIVING)
+    freezer.tick(MOVE_WINDOW + 1)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id).state == CoverState.OPEN
+
+    await _call(hass, COVER_DOMAIN, SERVICE_CLOSE_COVER)
+    await settle(hass)
+
+    assert hass.states.get(entity_id).state == CoverState.CLOSING
+    coordinator.async_supersede()

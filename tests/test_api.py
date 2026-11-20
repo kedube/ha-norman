@@ -4,22 +4,29 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import pytest
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.test_util.aiohttp import (
+    AiohttpClientMocker,
+    AiohttpClientMockResponse,
+    mock_stream,
+)
 
 from custom_components.norman.api import (
+    MAX_REPLY_BYTES,
     JsonStreamParser,
     NormanApiClient,
     NormanApiError,
     NormanConnectionError,
 )
 
-from .const import HUB_HOST, HUB_LATITUDE, HUB_SSID, HUB_THING_NAME, HUB_URL
+from .conftest import FakeHub, loaded
+from .const import HUB_HOST, HUB_LATITUDE, HUB_SSID, HUB_THING_NAME, HUB_URL, UID_LIVING
 
 REGISTRATION = f"{HUB_URL}/NM/v1/registration"
 GET_ALL = f"{HUB_URL}/NM/v1/GetAllPeripheral"
@@ -105,6 +112,56 @@ async def test_a_reply_with_a_bad_byte_is_still_read(
     assert status["Name"] == "Caf�"
 
 
+async def test_an_oversized_reply_is_refused_partway(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A reply over ``MAX_REPLY_BYTES`` is an API error, and is not read to its end.
+
+    The hub is an unauthenticated plain-HTTP device: a broken one, or one posing as it, sets
+    the size of what the client reads and parses on the event loop.
+    """
+    body = b'{"Error":0,"Pad":"' + b"x" * (4 * MAX_REPLY_BYTES) + b'"}'
+    stream = mock_stream(body)
+    aioclient_mock.post(STATUS, content=body)
+
+    with (
+        patch.object(
+            AiohttpClientMockResponse, "content", new_callable=PropertyMock, return_value=stream
+        ),
+        pytest.raises(NormanApiError),
+    ):
+        await client.async_get_status()
+
+    unread = len(await stream.read())
+    assert len(body) - unread < 2 * MAX_REPLY_BYTES
+
+
+async def test_a_reply_nested_past_the_recursion_limit_is_not_a_crash(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """However deep a reply is nested, callers see it or one of the client's own errors.
+
+    ``json.loads`` reads 20,000 levels; walking a large reply to redact it for the traffic
+    recorder goes far past Python's recursion limit.
+    """
+    depth = 20_000
+    aioclient_mock.post(
+        STATUS, text='{"Error":0,"Pad":' + '{"a":' * depth + "1" + "}" * depth + "}"
+    )
+
+    escaped = False
+    try:
+        await client.async_get_status()
+    except (NormanApiError, NormanConnectionError):
+        pass
+    except RecursionError:
+        # Failed below rather than here, where the RecursionError would be chained to the
+        # failure: pytest takes minutes to render a traceback that deep.
+        escaped = True
+    if escaped:
+        pytest.fail("RecursionError escaped the client")
+
+
 @pytest.mark.parametrize(
     "exc",
     [aiohttp.ClientConnectionError("refused"), aiohttp.ClientOSError(), TimeoutError()],
@@ -152,6 +209,32 @@ async def test_get_devices_status_error(
 
     with pytest.raises(NormanApiError, match="busy"):
         await client.async_get_devices()
+
+
+async def test_get_devices_reads_a_status_code_spelled_as_a_string(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """``{"code": "0"}`` is a successful read, as ``"Error": "0"`` is."""
+    aioclient_mock.post(REGISTRATION, json={"Error": 0, "ThingName": HUB_THING_NAME})
+    aioclient_mock.post(GET_ALL, json={"status": {"code": "0"}, "results": {"RoomList": []}})
+
+    assert (await client.async_get_devices())["results"] == {"RoomList": []}
+
+
+async def test_blinds_keep_their_names_and_rooms_when_the_status_code_is_a_string(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """The device list read with ``"code": "0"`` names the blinds and their rooms."""
+    fake_hub.devices["status"]["code"] = "0"
+
+    async with loaded(hass, mock_config_entry) as entry:
+        coordinator = entry.runtime_data
+        assert coordinator.has_device_list
+        assert coordinator.data[UID_LIVING].name == "Living Drape"
+        assert coordinator.data[UID_LIVING].room_name == "Living Room"
 
 
 @pytest.mark.parametrize(
@@ -207,6 +290,22 @@ async def test_set_position_error(
     aioclient_mock.post(CONTROL, json={"Error": 1})
     with pytest.raises(NormanApiError, match="Control request failed"):
         await client.async_set_position(1001, 25, 75)
+
+
+async def test_a_busy_reply_spelled_as_a_string_is_waited_out(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``{"Error": "2"}`` is the same busy hub as ``{"Error": 2}``: the command goes again."""
+    monkeypatch.setattr("custom_components.norman.api.HUB_BUSY_RETRY_DELAY", 0)
+    replies = [{"Error": "2"}, {"Error": 0}]
+
+    async def _busy_then_done(method, url, data):  # noqa: ANN001
+        return AiohttpClientMockResponse(method, url, json=replies.pop(0))
+
+    aioclient_mock.post(CONTROL, side_effect=_busy_then_done)
+
+    assert await client.async_set_position(1001, 0, 0) is True
+    assert aioclient_mock.call_count == 2
 
 
 # ---- notification stream parser --------------------------------------------------------
@@ -271,6 +370,26 @@ def test_parser_caps_unterminated_buffer() -> None:
     assert parser.feed(b'{"fresh":1}') == [{"fresh": 1}]
 
 
+@pytest.mark.parametrize(
+    "cut_short",
+    [b'{"Status":17888', b'{"Status":1788827049000,"Periph'],
+    ids=["outside-a-string", "inside-a-string"],
+)
+def test_parser_recovers_from_an_object_cut_short(cut_short: bytes) -> None:
+    """A notification the hub cut short does not swallow the whole ones after it.
+
+    Each still arrives as it comes, not when the buffer cap or the stream's cycle clears it.
+    """
+    parser = JsonStreamParser()
+    assert parser.feed(b'{"Error":"Success."}' + cut_short) == [{"Error": "Success."}]
+    assert parser.feed(b'{"Status":1788827049448,"PeripheralList":[1001]}') == [
+        {"Status": 1788827049448, "PeripheralList": [1001]}
+    ]
+    assert parser.feed(b'{"Status":1788827049999,"PeripheralList":[1002]}') == [
+        {"Status": 1788827049999, "PeripheralList": [1002]}
+    ]
+
+
 # ---- notification stream ---------------------------------------------------------------
 
 
@@ -298,6 +417,30 @@ async def test_listen_yields_only_state_changes_then_reports_eof(
         {"Status": 1, "PeripheralList": [1]},
         {"UpdateTime": {"room": 2}, "Timestamp": 3},
         {"PeripheralList": []},
+    ]
+
+
+async def test_listen_delivers_the_notifications_after_one_cut_short(
+    client: NormanApiClient, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Through the stream reader, the notifications after a truncated one arrive."""
+    aioclient_mock.post(
+        NOTIFICATION,
+        text=(
+            '{"Error":"Success."}{"Status":17888'
+            '{"Status":1788827049448,"PeripheralList":[1001]}'
+            '{"UpdateTime":{"peripheral":1788831865},"Timestamp":1788831865000}'
+        ),
+    )
+
+    received = []
+    with pytest.raises(NormanConnectionError, match="closed by hub"):
+        async for notification in client.async_listen_notifications():
+            received.append(notification)
+
+    assert received == [
+        {"Status": 1788827049448, "PeripheralList": [1001]},
+        {"UpdateTime": {"peripheral": 1788831865}, "Timestamp": 1788831865000},
     ]
 
 
@@ -393,6 +536,23 @@ async def test_debug_log_redacts_the_hubs_identity(
     for secret in (HUB_THING_NAME, HUB_SSID, HUB_LATITUDE):
         assert secret not in caplog.text
     assert HUB_THING_NAME in client.traffic.as_dict()["exchanges"][0]["response"]
+
+
+async def test_debug_log_redacts_a_thing_name_sent_as_a_number(
+    client: NormanApiClient,
+    aioclient_mock: AiohttpClientMocker,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A hub that names itself with a number is blanked too, and its requests still work.
+
+    Debug logging is what gets turned on to troubleshoot.
+    """
+    caplog.set_level(logging.DEBUG, logger="custom_components.norman.api")
+    aioclient_mock.post(REGISTRATION, json={"Error": 0, "ThingName": 880042137})
+    aioclient_mock.post(GET_ALL, json={"status": {"code": 0}, "results": {"RoomList": []}})
+
+    assert (await client.async_get_devices())["results"] == {"RoomList": []}
+    assert "880042137" not in caplog.text
 
 
 # ---- traffic recorder ------------------------------------------------------------------

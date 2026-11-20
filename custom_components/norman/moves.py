@@ -171,6 +171,7 @@ class MoveTracker:
     api: NormanApiClient
     config_entry: NormanConfigEntry
     data: NormanDevices
+    _shutdown_requested: bool
 
     if TYPE_CHECKING:
 
@@ -208,6 +209,8 @@ class MoveTracker:
         self._headings: dict[int, tuple[_Rails, datetime]] = {}
         self._heading_timer: CALLBACK_TYPE | None = None
         entry.async_on_unload(self._async_cancel_heading_timer)
+        # Each blind's last takeover by a stop, a jog or a preset (async_supersede).
+        self._takeovers: dict[int, int] = {}
 
     def _still_holds(self, device_ids: Iterable[int], serial: int) -> Callable[[], bool]:
         """The check a command for these blinds, taken over as ``serial``, is sent under."""
@@ -343,10 +346,11 @@ class MoveTracker:
             self.async_cancel_move_watch(device_id)
             self.async_forget_move(device_id)
             self._claims[device_id] = self._move_serial
+            self._takeovers[device_id] = self._move_serial
             self._unsettled[device_id] = (self._sighting(device_id), aimed)
         return self._move_serial
 
-    async def async_settle(self, device_ids: Iterable[int]) -> None:
+    async def async_settle(self, device_ids: Iterable[int]) -> set[int]:
         """Before a move works out where these blinds' other rails are heading: read the hub.
 
         A blind taken over by a stop, a jog or a preset (``async_supersede``) has no move
@@ -361,13 +365,15 @@ class MoveTracker:
         position when it does. A preset's target is the hub's from the moment it accepts
         it, so an aimed blind is only read. Each takeover is settled once.
         """
+        device_ids = list(device_ids)
+        takeovers = {device_id: self._takeovers.get(device_id) for device_id in device_ids}
         marks = {
             device_id: self._unsettled[device_id]
             for device_id in device_ids
             if device_id in self._unsettled
         }
         if not marks:
-            return
+            return set()
         await self._async_watch_read()
         waiting = {
             device_id: before
@@ -386,6 +392,8 @@ class MoveTracker:
         for device_id, mark in marks.items():
             if self._unsettled.get(device_id) is mark:
                 del self._unsettled[device_id]
+        # The blinds a stop, a jog or a preset took over while this waited.
+        return {d for d, t in takeovers.items() if self._takeovers.get(d) != t}
 
     def _halted_on_the_way(self, device_id: int, before: _Sighting) -> bool:
         """Whether a halted blind has not reported since, with the hub's target not reached."""
@@ -467,11 +475,18 @@ class MoveTracker:
         serial: int | None = None,
         targets_read: Awaitable[None] | None = None,
     ) -> None:
+        if self._shutdown_requested:
+            # The entry unloaded while this command was being sent. Its tasks were cancelled
+            # then, and nothing would cancel a watch started now.
+            return
         if serial is not None and not self.holds(device_id, serial):
             # A stop or a newer command took the blind over while this one waited to be
             # sent. Its watch would read the new heading as a command that never arrived.
             return
         self.async_cancel_move_watch(device_id)
+        # A command just went out: the blind sets off again, even for a target it missed.
+        if (known := self._headings.get(device_id)) is not None:
+            self._headings[device_id] = (known[0], dt_util.utcnow())
         start = self._sighting(device_id)
         self._move_watchers[device_id] = self.config_entry.async_create_background_task(
             self.hass,

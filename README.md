@@ -177,9 +177,10 @@ Assistant and the hub on the same network segment (mDNS does not cross routers o
 The hub identifies itself by a stable name, so re-adding the same hub by a different address
 updates the existing entry instead of creating a duplicate, and a discovered announcement from a
 hub that is already set up refreshes its stored address rather than offering it again. That
-makes a DHCP address change self-healing; a **fixed address** (a DHCP reservation) in your router
-is still the simplest setup. Entries created by versions before 0.11 are re-keyed to the hub's
-name automatically on their next load. Several hubs can be added, each as its own entry.
+makes a DHCP address change self-healing, even two hubs trading addresses; a **fixed address**
+(a DHCP reservation) in your router is still the simplest setup. Entries created by versions
+before 0.11 are re-keyed to the hub's name automatically on their next load. Several hubs can be
+added, each as its own entry.
 
 <img src="images/integration.png" alt="The Norman integration page listing one hub with its rooms and blinds — cellular, dual-rail cellular, roller, Roman, SmartDrape, PerfectSheer and Shutter — each showing its product type, room and entity count." width="820">
 
@@ -468,9 +469,9 @@ Enter just the address: `192.168.1.50` or `norman-hub.local`, without `http://`,
 path.
 
 **All covers show *unavailable*.**
-The last status read from the hub failed. The integration retries on its own: the log will show
-one error when the hub goes away and one info line when it is back. If the hub is powered and
-reachable but this persists, restart the hub.
+The last status read from the hub failed. The integration reads it again every 15 seconds until
+it answers: the log will show one error when the hub goes away and one info line when it is
+back. If the hub is powered and reachable but this persists, restart the hub.
 
 **A change made with the remote or the app takes a long time to show up.**
 The push channel is down and the integration is running on command-time refreshes only. Look
@@ -502,6 +503,12 @@ Raise the **Command spacing** option — see [docs/options.md](docs/options.md#c
 
 **The hub's address changed.**
 Use [Reconfigure](#changing-the-hub-address).
+
+**A hub is retrying setup: "Another configured Norman hub answers at the address of …".**
+Two hubs have traded addresses, which a router can do after a power cut. An entry never runs
+another configured hub: each moves to where its own hub answers, as soon as the other entry
+finds it at its address or the hub next announces itself, and waits until then. A fixed address
+for each hub (a DHCP reservation) keeps it from happening.
 
 ## Diagnostics
 

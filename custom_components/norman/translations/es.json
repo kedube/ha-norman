@@ -417,6 +417,12 @@
     },
     "scene_failed": {
       "message": "No se pudo ejecutar la escena {name}: {error}"
+    },
+    "another_hub_at_address": {
+      "message": "Otro Norman Hub configurado responde en la dirección de {hub}"
+    },
+    "position_not_a_number": {
+      "message": "La posición debe ser un número de 0 a 100"
     }
   }
 }

@@ -7,12 +7,14 @@ import re
 
 import aiohttp
 from homeassistant.core import HomeAssistant
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.components.diagnostics import (
     get_diagnostics_for_config_entry,
 )
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
+from custom_components.norman.api import NormanApiClient, NormanConnectionError
 from custom_components.norman.const import (
     CONF_CONTROL_INTERVAL,
     CONF_SHOW_SIDEBAR_PANEL,
@@ -33,6 +35,9 @@ from .const import (
     UID_LIVING,
     UID_STATUS_ONLY,
 )
+
+# The stream reader itself, kept before the ``notifications`` fixture replaces it.
+_REAL_LISTEN = NormanApiClient.async_listen_notifications
 
 
 async def test_diagnostics_redacts_network_details(
@@ -75,6 +80,21 @@ async def test_diagnostics_include_scrubbed_hub_traffic(
     assert get_all["request"]["ThingName"] == "**REDACTED**"
     assert HUB_THING_NAME not in str(diagnostics)
     assert HUB_HOST not in str(diagnostics)
+
+
+async def test_a_thing_name_sent_as_a_number_is_blanked_too(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: object,
+) -> None:
+    """A hub that names itself with a number: the export downloads, without the number."""
+    fake_hub.registration["ThingName"] = 880042137
+    async with loaded(hass, mock_config_entry) as entry:
+        diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+
+    assert "880042137" not in str(diagnostics)
 
 
 async def test_diagnostics_redact_location_and_network_inside_raw_bodies(
@@ -156,14 +176,24 @@ async def test_diagnostics_include_the_options(
     assert diagnostics["entry"]["options"] == options
 
 
+@pytest.mark.parametrize(
+    "resolved",
+    [("10.0.0.7", 10123), ("2001:db8:85a3::8a2e:370:7334", 10123, 0, 0)],
+    ids=["ipv4", "ipv6"],
+)
 async def test_a_failed_request_does_not_name_the_hubs_address(
     hass: HomeAssistant,
     hass_client: ClientSessionGenerator,
     init_integration: MockConfigEntry,
     fake_hub: FakeHub,
+    resolved: tuple,
 ) -> None:
-    """Connection errors name the hub's address, and an address it resolved to."""
-    fake_hub.status_exc = aiohttp.ClientConnectionError("Connect call failed ('10.0.0.7', 10123)")
+    """Connection errors name the hub's address, and an address it resolved to.
+
+    A hub added by host name on a dual-stack network may resolve to an IPv6 address, and a
+    global one names the home network's prefix.
+    """
+    fake_hub.status_exc = aiohttp.ClientConnectionError(f"Connect call failed {resolved}")
     await init_integration.runtime_data.async_refresh()
 
     diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, init_integration)
@@ -171,7 +201,7 @@ async def test_a_failed_request_does_not_name_the_hubs_address(
     errors = [e["error"] for e in diagnostics["hub_traffic"]["exchanges"] if e.get("error")]
     assert errors
     assert HUB_HOST not in str(errors)
-    assert "10.0.0.7" not in str(errors)
+    assert resolved[0] not in str(errors)
 
 
 def test_text_cut_mid_value_loses_its_identifying_fields() -> None:
@@ -230,6 +260,42 @@ def test_ids_in_text_that_does_not_parse_are_aliased() -> None:
         '{"Status":1788827049448,"PeripheralList":["blind_1","blind_2"]}'
         '{"PeripheralUID":"blind_1","Bottom'
     )
+
+
+async def test_a_blind_id_a_stream_read_cut_from_its_key_is_aliased(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+) -> None:
+    """The stream is recorded as read, ``READ_CHUNK_SIZE`` bytes at a time.
+
+    A burst of notifications is cut wherever a read ends, here inside a ``PeripheralList``
+    key: the id after the cut, with no key before it, is aliased all the same.
+    """
+    ack = '{"Error":"Success."}'
+    one = f'{{"Status":1788827049448,"PeripheralList":[{UID_BEDROOM}]}}'
+    two = f'{{"Status":1788827049448,"PeripheralList":[{UID_BEDROOM},{UID_STATUS_ONLY}]}}'
+    edit = '{"UpdateTime":{"room":1788830696},"Timestamp":1788830696000}'
+    last = f'{{"Status":1788827049448,"PeripheralList":[{UID_LIVING}]}}'
+    # Long enough before the last notification for the first read to end inside its key.
+    fake_hub.notification_body = ack + one * 11 + two * 5 + edit * 3 + last
+    api = init_integration.runtime_data.api
+
+    with pytest.raises(NormanConnectionError, match="closed by hub"):
+        async for _ in _REAL_LISTEN(api):
+            pass
+
+    chunks = [
+        e["response"]
+        for e in api.traffic.as_dict()["exchanges"]
+        if e["kind"] == "stream" and e["response"]
+    ]
+    assert len(chunks) == 2 and chunks[1].startswith('eralList":['), "a read ends in the key"
+    diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, init_integration)
+    export = json.dumps(diagnostics, ensure_ascii=False)
+    for uid in (UID_LIVING, UID_BEDROOM, UID_STATUS_ONLY):
+        assert not re.search(rf"(?<![\w.]){uid}(?![\w.])", export), f"{uid} left in the export"
 
 
 async def test_diagnostics_describe_the_hub_and_its_link(

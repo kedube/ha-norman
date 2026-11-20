@@ -3,18 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
+from datetime import timedelta
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 from homeassistant.components import frontend
-from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntryDisabler, ConfigEntryState
-from homeassistant.const import CONF_HOST
+from homeassistant.config_entries import (
+    SOURCE_IGNORE,
+    SOURCE_ZEROCONF,
+    ConfigEntryDisabler,
+    ConfigEntryState,
+)
+from homeassistant.const import ATTR_ENTITY_ID, CONF_HOST
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.discovery_flow import DiscoveryKey
+from homeassistant.util import dt as dt_util
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.norman.const import (
@@ -35,6 +46,7 @@ from .const import (
     UID_LIVING,
     UID_STATUS_ONLY,
 )
+from .test_config_flow import _discovery
 
 
 async def test_setup_creates_devices_and_unloads_cleanly(
@@ -136,9 +148,14 @@ async def test_setup_retries_when_first_refresh_fails(
 
 
 async def test_legacy_host_unique_id_is_migrated_to_thing_name(
-    hass: HomeAssistant, fake_hub: FakeHub, notifications
+    hass: HomeAssistant, fake_hub: FakeHub, notifications, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Entries from before 0.11 were keyed by address; setup re-keys them by hub identity."""
+    """Entries from before 0.11 were keyed by address; setup re-keys them by hub identity.
+
+    The log says so without the ThingName, which the client's debug log and diagnostics
+    keep out too.
+    """
+    caplog.set_level(logging.INFO, logger="custom_components.norman")
     legacy = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: HUB_HOST}, unique_id=HUB_HOST)
     legacy.add_to_hass(hass)
 
@@ -146,6 +163,7 @@ async def test_legacy_host_unique_id_is_migrated_to_thing_name(
     await hass.async_block_till_done()
 
     assert legacy.unique_id == HUB_THING_NAME
+    assert HUB_THING_NAME not in caplog.text
 
 
 async def test_unique_id_migration_leaves_a_duplicate_hub_alone(
@@ -155,7 +173,10 @@ async def test_unique_id_migration_leaves_a_duplicate_hub_alone(
     notifications,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """If another entry already owns the ThingName, warn rather than create a clash."""
+    """If another entry already owns the ThingName, warn rather than create a clash.
+
+    The warning, shown by default, names the entry rather than the hub's ThingName.
+    """
     mock_config_entry.add_to_hass(hass)  # already keyed by HUB_THING_NAME
     legacy = MockConfigEntry(
         domain=DOMAIN, data={CONF_HOST: "192.168.1.99"}, unique_id="192.168.1.99"
@@ -173,6 +194,7 @@ async def test_unique_id_migration_leaves_a_duplicate_hub_alone(
 
     assert legacy.unique_id == "192.168.1.99"
     assert "also configured under another entry" in caplog.text
+    assert HUB_THING_NAME not in caplog.text
 
 
 async def test_remove_device_only_for_blinds_the_hub_dropped(
@@ -323,6 +345,38 @@ async def test_new_command_spacing_reaches_the_running_client(
         coordinator.async_supersede()
 
 
+async def test_command_spacing_saved_while_the_hub_sets_up_reaches_the_client(
+    hass: HomeAssistant,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Options saved before setup has added the listener that applies them are applied too.
+
+    Here the form is saved while setup looks up the hub's MAC address. The autouse fixture
+    zeroes pacing for every other test, so this one restores the real helper.
+    """
+    from custom_components.norman import _async_resolve_mac
+
+    monkeypatch.undo()
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=MOCK_CONFIG,
+        options={CONF_CONTROL_INTERVAL: 1.6},
+        unique_id=HUB_THING_NAME,
+    )
+
+    async def _saved_meanwhile(hass: HomeAssistant, host: str) -> str | None:
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, CONF_CONTROL_INTERVAL: 2.5}
+        )
+        return await _async_resolve_mac(hass, host)
+
+    with patch("custom_components.norman._async_resolve_mac", _saved_meanwhile):
+        async with loaded(hass, entry):
+            assert entry.runtime_data.api.control_interval == 2.5
+
+
 @pytest.mark.parametrize(
     ("host", "argument"),
     [("192.168.1.50", "ip"), ("2001:db8::50", "ip6"), ("norman-hub.local", "hostname")],
@@ -443,3 +497,114 @@ async def test_a_new_address_reloads_the_hub_once(
     assert init_integration.state is ConfigEntryState.LOADED
     # The flow checks the new address once, and one setup registers once more.
     assert len(fake_hub.calls_to("/registration")) == registrations + 2
+
+
+# --- two hubs that trade addresses ----------------------------------------------------------
+
+OTHER_HOST = "192.168.1.51"
+CABIN_THING_NAME = "NormanHub-CABIN9"
+
+
+@pytest.fixture
+async def traded_addresses(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> AsyncGenerator[tuple[MockConfigEntry, MockConfigEntry]]:
+    """The cabin's and the home's entries, set up after their hubs traded addresses.
+
+    The home hub answers at the cabin's address, and nothing yet at the home's.
+    """
+    aioclient_mock.post(
+        f"http://{OTHER_HOST}:10123/NM/v1/registration", exc=aiohttp.ClientConnectionError()
+    )
+    cabin = MockConfigEntry(
+        domain=DOMAIN,
+        title="Cabin",
+        data={CONF_HOST: HUB_HOST},
+        unique_id=CABIN_THING_NAME,
+        entry_id="cabin",
+    )
+    home = MockConfigEntry(
+        domain=DOMAIN,
+        title="Home",
+        data={CONF_HOST: OTHER_HOST},
+        unique_id=HUB_THING_NAME,
+        entry_id="home",
+    )
+    cabin.add_to_hass(hass)
+    home.add_to_hass(hass)
+    await hass.config_entries.async_setup(cabin.entry_id)
+    await hass.async_block_till_done()
+    yield cabin, home
+    for entry in (cabin, home):
+        if entry.state.recoverable:
+            await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_two_hubs_that_traded_addresses_are_each_set_up_at_their_own(
+    hass: HomeAssistant, traded_addresses: tuple[MockConfigEntry, MockConfigEntry]
+) -> None:
+    """After a power cut the router may hand two hubs each other's address.
+
+    An entry that finds another configured hub at its address does not run it: that hub's
+    entry is moved there, where it answers, and this one to the address that hub left.
+    """
+    cabin, home = traded_addresses
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=5))
+    await hass.async_block_till_done()
+
+    assert home.data[CONF_HOST] == HUB_HOST
+    assert home.state is ConfigEntryState.LOADED
+    assert cabin.data[CONF_HOST] == OTHER_HOST
+    assert cabin.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_an_entry_does_not_command_another_hub_at_its_address(
+    hass: HomeAssistant,
+    traded_addresses: tuple[MockConfigEntry, MockConfigEntry],
+    fake_hub: FakeHub,
+) -> None:
+    """The cabin's buttons do not reach the home hub that answers at the cabin's address.
+
+    Its hub-wide and room buttons are keyed by its entry, so they would command whatever hub
+    the entry ran: "All blinds: best privacy" would close the home's blinds.
+    """
+    cabin, _ = traded_addresses
+    button = er.async_get(hass).async_get_entity_id(
+        "button", DOMAIN, f"{cabin.entry_id}_all_best_privacy"
+    )
+    if button is not None and hass.states.get(button) is not None:
+        await hass.services.async_call("button", "press", {ATTR_ENTITY_ID: button}, blocking=True)
+
+    assert not [call for call in fake_hub.control_calls if "Switch" in call]
+
+
+async def test_a_hub_announced_at_another_entrys_address_is_recorded_on_its_own(
+    hass: HomeAssistant, traded_addresses: tuple[MockConfigEntry, MockConfigEntry]
+) -> None:
+    """The home hub announces itself at the cabin's old address.
+
+    The home entry is where that hub answers, and the announcement is recorded on it, not on
+    the cabin's entry.
+    """
+    cabin, home = traded_addresses
+    key = DiscoveryKey(
+        domain="zeroconf",
+        key=("_nien_made._tcp.local.", "NienMadeLocal._nien_made._tcp.local."),
+        version=1,
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF, "discovery_key": key},
+        data=_discovery(HUB_HOST),
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert home.data[CONF_HOST] == HUB_HOST
+    assert key in home.discovery_keys["zeroconf"]
+    assert key not in cabin.discovery_keys.get("zeroconf", ())

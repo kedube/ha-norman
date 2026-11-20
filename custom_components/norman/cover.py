@@ -249,7 +249,8 @@ class NormanCoverBase(NormanRailMixin, CoverEntity):
 
     async def async_nudge_position(self, step: int) -> None:
         """Move the cover by ``step`` relative to where it is heading (or is)."""
-        await self.coordinator.async_settle([self._device_id])
+        if await self.coordinator.async_settle([self._device_id]):
+            return
         new_pos = clamp_position(self._target_or_current_bottom() + step)
         await self.async_set_cover_position(position=new_pos)
 
@@ -310,7 +311,8 @@ class NormanBlind(NormanCoverBase):
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Move the tilt by ``step`` relative to where it is heading (or is)."""
-        await self.coordinator.async_settle([self._device_id])
+        if await self.coordinator.async_settle([self._device_id]):
+            return
         new_tilt = clamp_position(self._target_or_current_middle() + step)
         await self.async_set_cover_tilt_position(tilt_position=new_tilt)
 
@@ -367,7 +369,8 @@ class NormanDrape(NormanBlind):
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Open or close the vanes by ``step``, at least one stop for any step."""
-        await self.coordinator.async_settle([self._device_id])
+        if await self.coordinator.async_settle([self._device_id]):
+            return
         level = _vane_level(self._target_or_current_middle())
         await self._async_set_vanes(_nudged(level, step, VANE_LEVELS))
 
@@ -473,7 +476,8 @@ class NormanShutter(NormanCoverBase):
 
     async def async_nudge_tilt(self, step: int) -> None:
         """Open or close the louvers by ``step``, at least one step for any step."""
-        await self.coordinator.async_settle([self._device_id])
+        if await self.coordinator.async_settle([self._device_id]):
+            return
         level = _louver_level(self._target_or_current_louvers())
         position = _louver_position(_nudged(level, step, LOUVER_LEVELS))
         await self._async_set_louvers(position, "move")
@@ -561,7 +565,8 @@ class NormanMiddleRailCover(NormanCoverBase):
 
     async def async_nudge_position(self, step: int) -> None:
         """Move the middle rail by ``step`` relative to where it is heading (or is)."""
-        await self.coordinator.async_settle([self._device_id])
+        if await self.coordinator.async_settle([self._device_id]):
+            return
         await self.async_set_cover_position(
             position=clamp_position(self._target_or_current_middle() + step)
         )

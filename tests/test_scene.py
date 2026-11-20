@@ -8,8 +8,14 @@ import json
 from typing import Any
 from unittest.mock import patch
 
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.components.scene import DOMAIN as SCENE_DOMAIN
-from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_ON, STATE_UNAVAILABLE
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    SERVICE_STOP_COVER,
+    SERVICE_TURN_ON,
+    STATE_UNAVAILABLE,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
@@ -17,7 +23,7 @@ from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.norman.const import DOMAIN, MOVE_ATTEMPTS
+from custom_components.norman.const import DOMAIN, HUB_CMD_STOP, MOVE_ATTEMPTS
 from custom_components.norman.coordinator import (
     NormanCoordinator,
     hub_identifier,
@@ -27,7 +33,7 @@ from custom_components.norman.diagnostics import async_get_config_entry_diagnost
 from custom_components.norman.models import NormanSceneTarget
 from custom_components.norman.parsing import parse_scenes
 
-from .conftest import FakeHub, loaded, settle
+from .conftest import FakeHub, cover_entity_id, loaded, settle
 from .const import UID_BEDROOM, UID_LIVING
 
 LIVING_ROOM = 1
@@ -313,6 +319,52 @@ async def test_a_scene_replaces_a_move_in_flight(
     assert coordinator.commanded_rails(UID_LIVING) == (0, 90)
 
 
+async def test_a_scene_changed_in_the_app_since_it_was_read_is_not_undone(
+    hass: HomeAssistant, with_scenes: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """The hub runs a scene as it is saved now, which may be newer than the copy last read.
+
+    Each blind is watched for where the hub sent it, not for where the copy says, so a blind
+    that went where the scene now says is not sent back to the old positions.
+    """
+    coordinator: NormanCoordinator = with_scenes.runtime_data
+    # Saved again in the app with the drape fully open, and not read since.
+    fake_hub.devices["results"]["RoomList"][0]["SceneList"] = [
+        _scene("1", "Evening", _target(UID_LIVING, 100, 100, 33))
+    ]
+    orig = fake_hub._control
+
+    async def _hub(method, url, data):  # noqa: ANN001
+        body = json.loads(data) if isinstance(data, str | bytes) else data
+        rails = None
+        if "SetToScene" in body:  # run as saved now
+            rails = (100, 100)
+        elif body.get("PeripheralUID") == UID_LIVING and "BottomRailPosition" in body:
+            rails = (body["BottomRailPosition"], body["MiddleRailPosition"])
+        if rails is not None:  # the drape goes there, and says so
+            fake_hub.set_position(UID_LIVING, bottom=rails[0], middle=rails[1])
+            fake_hub.peripheral_status(UID_LIVING)["Timestamp"] += 5
+        return await orig(method, url, data)
+
+    with (
+        patch.object(fake_hub, "_control", _hub),
+        patch("custom_components.norman.moves.MOVE_TIMEOUT", 0),
+        patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0),
+    ):
+        fake_hub.mock.clear_requests()
+        fake_hub._register()
+        await _run(hass, _entity_id(hass, with_scenes, f"{LIVING_ROOM}_scene_1"))
+        if task := coordinator._move_watchers.get(UID_LIVING):
+            await task
+        await hass.async_block_till_done()
+
+    assert [_stripped(call) for call in fake_hub.control_calls] == [
+        {"RoomID": LIVING_ROOM, "SetToScene": 1}
+    ]
+    drape = fake_hub.peripheral_status(UID_LIVING)
+    assert (drape["BottomRailPosition"], drape["MiddleRailPosition"]) == (100, 100)
+
+
 # --- following the app ----------------------------------------------------------------------
 
 
@@ -500,3 +552,48 @@ async def test_a_scene_refused_as_busy_is_not_retried_once_its_blind_is_taken_ov
 
     assert len([call for call in fake_hub.control_calls if "SetToScene" in call]) == 1
     assert UID_LIVING not in coordinator._move_watchers
+
+
+async def _stop(hass: HomeAssistant, entity_id: str) -> None:
+    await hass.services.async_call(
+        COVER_DOMAIN, SERVICE_STOP_COVER, {ATTR_ENTITY_ID: entity_id}, blocking=True
+    )
+
+
+async def test_a_blind_stopped_while_its_scene_waits_is_left_out_of_it(
+    hass: HomeAssistant, with_scenes: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """A scene first waits for a stopped blind to report where it stopped.
+
+    Stopped again meanwhile, that blind stays where the stop left it. The scene's other
+    blinds are sent their own positions one by one, since the hub's request for the scene
+    would move it too.
+    """
+    coordinator: NormanCoordinator = with_scenes.runtime_data
+    living = cover_entity_id(hass, UID_LIVING)
+    await coordinator.async_move_blind(UID_LIVING, 0, None)
+    fake_hub.set_position(UID_LIVING, target_bottom=0)  # the hub took the move
+    await _stop(hass, living)  # stopped on the way, before it has reported where
+    before = len(fake_hub.control_calls)
+
+    with patch("custom_components.norman.moves.MOVE_REPORT_WAIT", 0.5):
+        bedtime = hass.async_create_task(
+            _run(hass, _entity_id(hass, with_scenes, f"scene_group_{GROUP_ID}"))
+        )
+        for _ in range(25):
+            await asyncio.sleep(0)
+        assert not bedtime.done(), "the scene should wait for the stopped blind's report"
+        await _stop(hass, living)
+        async with asyncio.timeout(5):
+            await bedtime
+        await hass.async_block_till_done()
+
+    sent = [_stripped(call) for call in fake_hub.control_calls[before:]]
+    assert not [call for call in sent if any(key.startswith("SetToScene") for key in call)]
+    living_calls = [call for call in sent if call.get("PeripheralUID") == UID_LIVING]
+    assert living_calls
+    assert all(HUB_CMD_STOP in call for call in living_calls)
+    assert any(
+        call.get("PeripheralUID") == UID_BEDROOM and call.get("BottomRailPosition") == 100
+        for call in sent
+    )

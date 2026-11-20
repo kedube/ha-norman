@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import asdict
+import ipaddress
 import json
 import re
 from typing import Any
@@ -29,11 +30,28 @@ HUB_TO_REDACT = {"custom_name", "wifi_ssid", "mac_address", "time_zone"}
 # An IPv4 address: a failed connection's error can name the address a host name resolved to,
 # which is not among the values the entry knows.
 _IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_IPV6_CANDIDATE = re.compile(r"[0-9A-Fa-f]*(?::[0-9A-Fa-f.]*){2,8}(?:%[\w.-]+)?")
+
+
+def _without_addresses(text: str) -> str:
+    """``text`` with every IPv6 and IPv4 address blanked."""
+
+    def ipv6(match: re.Match[str]) -> str:
+        try:
+            ipaddress.IPv6Address(match.group())
+        except ValueError:
+            return match.group()
+        return REDACTED
+
+    return _IPV4.sub(REDACTED, _IPV6_CANDIDATE.sub(ipv6, text))
+
 
 # A blind's id in reply text that does not parse: a PeripheralUID value, quoted or not, and
 # the ids in a notification's PeripheralList, up to a list cut off at the end of the text.
 _UID_VALUE = re.compile(r'("PeripheralUID"\s*:\s*)"?(\d+)"?')
 _UID_LIST = re.compile(r'("PeripheralList"\s*:\s*\[)([\d\s,]*)(?=\]|$)')
+# A bare number: a known blind's id whose key a read boundary cut off (a stream chunk).
+_BARE_NUMBER = re.compile(r"(?<![\w.])\d+(?![\w.])")
 
 
 def _as_uid(raw: Any) -> int | None:
@@ -94,9 +112,17 @@ class BlindAliases:
     def text(self, text: str) -> str:
         """The same for reply text that does not parse, matched key by key."""
         text = _UID_VALUE.sub(lambda m: f'{m.group(1)}"{self.value(m.group(2))}"', text)
-        return _UID_LIST.sub(
+        text = _UID_LIST.sub(
             lambda m: (
                 m.group(1) + re.sub(r"\d+", lambda uid: f'"{self.value(uid.group())}"', m.group(2))
+            ),
+            text,
+        )
+        return _BARE_NUMBER.sub(
+            lambda m: (
+                f'"{self._aliases[int(m.group())]}"'
+                if int(m.group()) in self._aliases
+                else m.group()
             ),
             text,
         )
@@ -153,7 +179,7 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a config entry."""
     coordinator = entry.runtime_data
     api = coordinator.api
-    secrets = [value for value in (api.host, api.thing_name) if value]
+    secrets = [str(value) for value in (api.host, api.thing_name) if value]
     devices = coordinator.data or {}
     aliases = blind_aliases(coordinator)
 
@@ -169,7 +195,7 @@ async def async_get_config_entry_diagnostics(
             exchange["response"] = redact_raw_body(exchange["response"], secrets, aliases)
         if exchange.get("error"):
             # A connection error names the hub's address.
-            exchange["error"] = _IPV4.sub(REDACTED, _without_secrets(exchange["error"], secrets))
+            exchange["error"] = _without_addresses(_without_secrets(exchange["error"], secrets))
     traffic = async_redact_data(traffic, TO_REDACT)
 
     return {

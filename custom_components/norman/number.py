@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 import logging
+import math
 
 from homeassistant.components.number import DOMAIN as NUMBER_DOMAIN
 from homeassistant.components.number import (
@@ -23,7 +24,7 @@ from homeassistant.components.number import (
 )
 from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import NormanApiError, NormanConnectionError
@@ -211,8 +212,21 @@ class NormanNumber(NormanRailMixin, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Move this rail, leaving the other one where it is heading."""
-        bottom, middle = self.entity_description.position_fn(int(value))
+        bottom, middle = self.entity_description.position_fn(_position(value))
         await self._async_set_position(bottom=bottom, middle=middle, action="move")
+
+
+def _position(value: float) -> int:
+    """A slider's value as a hub position.
+
+    Home Assistant checks a number against the slider's range, which NaN passes, as every
+    comparison with it is false; it is refused here rather than failing at ``int()``.
+    """
+    if not math.isfinite(value):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="position_not_a_number"
+        )
+    return int(value)
 
 
 class NormanScopeNumber(NormanScopeEntity, NumberEntity):
@@ -255,7 +269,7 @@ class NormanScopeNumber(NormanScopeEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Move this rail on every blind in scope that has one."""
-        position = int(value)
+        position = _position(value)
         bottom, middle = _BLIND_NUMBERS[self.entity_description.rail].position_fn(position)
         try:
             await self.coordinator.async_move_room(self._room_id, bottom, middle)

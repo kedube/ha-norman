@@ -5,15 +5,21 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+from typing import Any
 from unittest.mock import patch
 
 import aiohttp
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import ATTR_ENTITY_ID, CONF_HOST, SERVICE_CLOSE_COVER
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
+import orjson
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.norman.api import NormanApiClient, NormanConnectionError
 from custom_components.norman.const import (
@@ -35,7 +41,7 @@ from custom_components.norman.coordinator import (
 from custom_components.norman.entity import hub_identifier
 from custom_components.norman.parsing import cover_type, parse_devices
 
-from .conftest import HUB_MAC, FakeHub, cover_entity_id, loaded, settle
+from .conftest import CONNECTED, HUB_MAC, FakeHub, cover_entity_id, loaded, settle
 from .const import (
     HUB_HOST,
     HUB_SSID,
@@ -51,6 +57,12 @@ from .const import (
 )
 
 process = parse_devices
+
+
+def _name_the_drape(device_list: dict[str, Any], name: object) -> None:
+    """Name the Living Drape in a device list, as a rename in the Norman app does."""
+    drape = device_list["results"]["RoomList"][0]["GroupList"][0]["PeripheralList"][0]
+    drape["PeripheralName"] = name
 
 
 def test_process_data_merges_devices_and_status() -> None:
@@ -104,7 +116,18 @@ def test_process_data_skips_malformed_uids() -> None:
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
-    [("55", 55), (150, 100), (-3, 0), ("x", None), (None, None), (True, None), (7.9, 7)],
+    [
+        ("55", 55),
+        (150, 100),
+        (-3, 0),
+        ("x", None),
+        (None, None),
+        (True, None),
+        (7.9, 7),
+        # The hub's 1e999 reads as infinity, which no int can hold.
+        (float("inf"), None),
+        (float("-inf"), None),
+    ],
 )
 def test_process_data_normalises_positions(raw: object, expected: int | None) -> None:
     """Positions are coerced to ints in 0-100, or None when unusable."""
@@ -191,6 +214,37 @@ def test_process_data_keeps_good_records_alongside_malformed_ones() -> None:
     assert devices[42].name == "Good blind"
     assert devices[42].room_name == "Den"
     assert devices[42].bottom_rail_position == 60
+
+
+def test_process_data_drops_only_the_field_holding_infinity() -> None:
+    """The hub's 1e999 reads as infinity: that field is unusable, the rest of the record is not."""
+    status = {
+        "Peripherals": [
+            {"PeripheralUID": UID_LIVING, "BottomRailPosition": 40, "RssiMean": float("inf")}
+        ]
+    }
+    devices = process(devices_payload(), status)
+
+    assert devices[UID_LIVING].bottom_rail_position == 40
+    assert devices[UID_LIVING].signal_strength is None
+
+
+@pytest.mark.parametrize("field", ["BottomRailPosition", "RssiMean"])
+async def test_infinity_in_one_blinds_status_leaves_the_hub_available(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub, field: str
+) -> None:
+    """One blind's 1e999 does not fail the hub's update.
+
+    A failed update marks every entity on the hub unavailable.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    fake_hub.peripheral_status(UID_LIVING)[field] = orjson.Fragment(b"1e999")
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert coordinator.last_update_success
+    assert hass.states.get(cover_entity_id(hass, UID_BEDROOM)).state != "unavailable"
 
 
 def test_battery_level_is_a_clamped_percentage() -> None:
@@ -344,6 +398,14 @@ def test_process_data_defaults_missing_names() -> None:
     assert process(info, {})[5].name == "Norman 5"
 
 
+def test_process_data_reads_a_name_sent_as_a_number_as_text() -> None:
+    """A blind named 12 in the app may arrive as the number 12; its name is the text "12"."""
+    devices = devices_payload()
+    _name_the_drape(devices, 12)
+
+    assert process(devices, status_payload())[UID_LIVING].name == "12"
+
+
 async def test_undocumented_fields_are_logged_once_each(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,
@@ -477,6 +539,28 @@ async def test_documented_fields_are_not_logged(
     assert not [r.getMessage() for r in caplog.records if "undocumented" in r.getMessage()]
 
 
+@pytest.mark.parametrize("scalar", [1, True])
+async def test_debug_logging_skips_a_scalar_where_a_list_belongs(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+    scalar: object,
+) -> None:
+    """With debug logging on, the check for undocumented fields skips a section that is not a
+    list, as reading the device list does: turning debug logging on takes no hub offline."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    fake_hub.devices["results"]["SceneGroupList"] = scalar
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.norman.coordinator"):
+        await notifications.put({"UpdateTime": {"room": 1}})
+        await settle(hass)
+
+    assert coordinator.last_update_success, repr(coordinator.last_exception)
+    assert hass.states.get(cover_entity_id(hass, UID_LIVING)).state != "unavailable"
+
+
 # ---- listener loop ---------------------------------------------------------------------
 
 
@@ -532,6 +616,68 @@ async def test_app_edits_re_read_the_device_list_and_rename_devices(
     assert init_integration.runtime_data.hub.custom_name == "Lakehouse Shade Hub"
 
 
+async def _let_run() -> None:
+    """Let the listener and the refresh it asks for run, leaving the debouncer's cooldown be."""
+    for _ in range(60):
+        await asyncio.sleep(0)
+
+
+async def test_an_app_edit_announced_while_the_device_list_is_read_is_read_as_well(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Three renames in the Norman app, a few seconds apart.
+
+    The third is announced while the device list is being read for the second, and that
+    read answers with the list as it was before the third: the list is read again for it.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    read = NormanApiClient.async_get_devices
+    answer = asyncio.Event()
+    answer.set()
+    reading = asyncio.Event()
+
+    async def slow_read(self: NormanApiClient, *, validate: bool = True) -> dict[str, Any]:
+        # The hub answers with the list as it is now; the answer takes a moment to arrive.
+        reply = await read(self, validate=validate)
+        if not answer.is_set():
+            reading.set()
+            await answer.wait()
+        return reply
+
+    with patch.object(NormanApiClient, "async_get_devices", slow_read):
+        # Read at once; the refresh debouncer's cooldown starts.
+        _name_the_drape(fake_hub.devices, "Office_1")
+        await notifications.put({"UpdateTime": {"peripheral": 1}})
+        await _let_run()
+        assert coordinator.data[UID_LIVING].name == "Office_1"
+
+        # Inside the cooldown: read once it is over.
+        _name_the_drape(fake_hub.devices, "Office_2")
+        await notifications.put({"UpdateTime": {"peripheral": 2}})
+        await _let_run()
+        answer.clear()
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
+        await asyncio.wait_for(reading.wait(), 5)
+
+        # Announced while that read is out.
+        _name_the_drape(fake_hub.devices, "Office_3")
+        await notifications.put({"UpdateTime": {"peripheral": 3}})
+        await _let_run()
+        answer.set()
+        await _let_run()
+        assert coordinator.data[UID_LIVING].name == "Office_2"
+
+        # The refresh the third announcement asked for, once the cooldown is over.
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
+        await _let_run()
+        await hass.async_block_till_done()
+
+    assert coordinator.data[UID_LIVING].name == "Office_3"
+
+
 async def test_user_renames_in_home_assistant_win_over_app_renames(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,
@@ -551,6 +697,24 @@ async def test_user_renames_in_home_assistant_win_over_app_renames(
     device = _device(hass, init_integration, str(UID_LIVING))
     assert device.name == "Office_1"
     assert device.name_by_user == "My Drape"
+
+
+async def test_a_blinds_new_firmware_reaches_its_device_page(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """The device page shows the version the blind reports now, as the Firmware version
+    sensor does: a single-rail blind's radio firmware, which is what the app shows."""
+    fake_hub.peripheral_status(UID_LIVING)["FirmwareVersion"] = "0.6.0.1"
+    fake_hub.peripheral_status(UID_BEDROOM)["RfFirmwareVersion"] = "0.3.21"
+
+    await notifications.put({"PeripheralList": [UID_LIVING, UID_BEDROOM]})
+    await settle(hass)
+
+    assert _device(hass, init_integration, str(UID_LIVING)).sw_version == "0.6.0.1"
+    assert _device(hass, init_integration, str(UID_BEDROOM)).sw_version == "0.3.21"
 
 
 async def test_schedule_edits_do_not_re_read_the_device_list(
@@ -761,18 +925,8 @@ async def test_a_stream_back_for_a_quiet_cycle_ends_the_outage(
     assert any(r.levelno == logging.INFO and "restored" in r.message for r in caplog.records)
 
 
-async def test_blinds_sharing_a_remote_channel_are_warned_about_once(
-    hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-    fake_hub: FakeHub,
-    notifications: asyncio.Queue,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Two blinds on one channel move together on each one's preset; the log says so once.
-
-    A preset goes to every blind on the channels its GroupID names: on real hardware GroupID
-    3 reached the blinds on channels 1 and 2 of a room, and not the one on 4.
-    """
+def _pair_a_sheer_on_the_drapes_channel(fake_hub: FakeHub) -> None:
+    """Pair the Living Sheer on the group, the remote channel, the Living Drape is on."""
     group = fake_hub.devices["results"]["RoomList"][0]["GroupList"][0]
     group["PeripheralList"].append(
         {
@@ -785,12 +939,43 @@ async def test_blinds_sharing_a_remote_channel_are_warned_about_once(
     fake_hub.status["Peripherals"].append(
         {"PeripheralUID": 1009, "BottomRailPosition": 50, "MiddleRailPosition": 0}
     )
+
+
+async def test_blinds_sharing_a_remote_channel_are_warned_about_once(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Two blinds on one channel move together on each one's preset; the log says so once.
+
+    A preset goes to every blind on the channels its GroupID names: on real hardware GroupID
+    3 reached the blinds on channels 1 and 2 of a room, and not the one on 4.
+    """
+    _pair_a_sheer_on_the_drapes_channel(fake_hub)
     async with loaded(hass, mock_config_entry) as entry:
         await entry.runtime_data.async_refresh()
 
     warnings = [r.message for r in caplog.records if "share remote channel" in r.message]
     assert len(warnings) == 1
     assert "Living Drape, Living Sheer" in warnings[0]
+
+
+async def test_a_name_sent_as_a_number_beside_a_shared_channel_keeps_the_hub_available(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """The blinds on a shared channel are named in a sorted list, which a name sent as a
+    number joins as text: the hub's update does not fail."""
+    _pair_a_sheer_on_the_drapes_channel(fake_hub)
+    _name_the_drape(fake_hub.devices, 12)
+
+    async with loaded(hass, mock_config_entry) as entry:
+        assert entry.runtime_data.last_update_success
+        assert hass.states.get(cover_entity_id(hass, UID_BEDROOM)).state != "unavailable"
 
 
 async def test_hub_outage_makes_entities_unavailable_until_it_recovers(
@@ -809,6 +994,77 @@ async def test_hub_outage_makes_entities_unavailable_until_it_recovers(
     await notifications.put({"PeripheralList": []})
     await settle(hass)
     assert hass.states.get(cover_entity_id(hass, UID_LIVING)).state == "open"
+
+
+async def test_a_failed_read_is_tried_again_while_the_stream_is_quiet(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """One failed read (a Wi-Fi blip, a busy hub) does not leave the blinds unavailable.
+
+    Nothing polls the hub, and with the stream up but quiet no notification asks for a read;
+    meanwhile Home Assistant drops every command to an unavailable blind without an error.
+    The hub is read again within a minute, and a command then reaches it.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    cover = cover_entity_id(hass, UID_LIVING)
+    await notifications.put(CONNECTED)
+    await settle(hass)
+    fake_hub.status_exc = aiohttp.ClientConnectionError("blip")
+    await coordinator.async_refresh()
+    fake_hub.status_exc = None
+    assert hass.states.get(cover).state == "unavailable"
+    reads = len(fake_hub.calls_to("/NM/v1/status"))
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=60))
+    await settle(hass)
+
+    assert len(fake_hub.calls_to("/NM/v1/status")) > reads
+    assert hass.states.get(cover).state != "unavailable"
+    sent = len(fake_hub.control_calls)
+    await hass.services.async_call(
+        COVER_DOMAIN, SERVICE_CLOSE_COVER, {ATTR_ENTITY_ID: cover}, blocking=True
+    )
+    assert any(
+        call.get("PeripheralUID") == UID_LIVING and call.get("BottomRailPosition") == 0
+        for call in fake_hub.control_calls[sent:]
+    )
+    coordinator.async_supersede()
+
+
+async def test_a_stream_back_after_a_failed_read_brings_the_blinds_back(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """The hub restarts: the read before the stream reconnects fails, and the hub is back once
+    the stream is.
+
+    A stream that answers is no read of the hub, and it may stay quiet; the hub is read again
+    all the same, so Push updates is not on while every blind reads unavailable.
+    """
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    await notifications.put(CONNECTED)
+    await settle(hass)
+
+    with patch("custom_components.norman.coordinator.RECONNECT_INTERVAL", 0):
+        fake_hub.status_exc = aiohttp.ClientConnectionError("restarting")
+        await notifications.put(NormanConnectionError("hub restarting"))
+        await settle(hass)
+        assert not coordinator.last_update_success
+
+        fake_hub.status_exc = None
+        await notifications.put(CONNECTED)
+        await settle(hass)
+        assert coordinator.push_connected
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=60))
+    await settle(hass)
+
+    assert hass.states.get(cover_entity_id(hass, UID_LIVING)).state != "unavailable"
 
 
 async def test_cycling_the_stream_catches_a_missed_notification(
@@ -972,3 +1228,95 @@ async def test_a_hub_wide_command_takes_over_blinds_with_no_move(
     serial = coordinator.async_supersede()
 
     assert all(coordinator.holds(uid, serial) for uid in coordinator.data)
+
+
+# --- two hubs that trade addresses ----------------------------------------------------------
+
+OTHER_HOST = "192.168.1.51"
+CABIN_THING_NAME = "NormanHub-CABIN9"
+
+
+def _cabin(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> MockConfigEntry:
+    """A second hub's entry, configured but not set up, at an address where nothing answers."""
+    aioclient_mock.post(
+        f"http://{OTHER_HOST}:10123/NM/v1/registration", exc=aiohttp.ClientConnectionError()
+    )
+    cabin = MockConfigEntry(
+        domain=DOMAIN,
+        title="Cabin",
+        data={CONF_HOST: OTHER_HOST},
+        unique_id=CABIN_THING_NAME,
+        entry_id="cabin",
+    )
+    cabin.add_to_hass(hass)
+    return cabin
+
+
+async def test_a_hub_back_after_an_outage_is_asked_who_it_is(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """Its own hub answers: the stream reconnects as before, after one registration."""
+    registrations = len(fake_hub.calls_to("/NM/v1/registration"))
+
+    with patch("custom_components.norman.coordinator.RECONNECT_INTERVAL", 0):
+        await notifications.put(NormanConnectionError("hub restarting"))
+        await settle(hass)
+        await notifications.put({"PeripheralList": [UID_LIVING]})
+        await settle(hass)
+
+    assert len(fake_hub.calls_to("/NM/v1/registration")) == registrations + 1
+    assert init_integration.state is ConfigEntryState.LOADED
+    assert init_integration.runtime_data.push_connected
+
+
+async def test_another_hub_answering_after_an_outage_is_not_run(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+    notifications: asyncio.Queue,
+) -> None:
+    """After a power cut the router may hand two hubs each other's address.
+
+    Back after the outage, the hub is asked who it is before the stream reconnects. Another
+    configured hub is not run: its entry is moved here, where it answers, and this one to the
+    address that hub left.
+    """
+    cabin = _cabin(hass, aioclient_mock)
+    fake_hub.registration = {"Error": 0, "ThingName": CABIN_THING_NAME}
+
+    with patch("custom_components.norman.coordinator.RECONNECT_INTERVAL", 0):
+        await notifications.put(NormanConnectionError("power cut"))
+        await settle(hass)
+
+    assert cabin.data[CONF_HOST] == HUB_HOST
+    assert init_integration.data[CONF_HOST] == OTHER_HOST
+    assert init_integration.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_another_hub_answering_a_read_after_an_outage_is_not_read(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    init_integration: MockConfigEntry,
+    fake_hub: FakeHub,
+) -> None:
+    """The same when a read is the first to reach the address after the outage."""
+    coordinator: NormanCoordinator = init_integration.runtime_data
+    cabin = _cabin(hass, aioclient_mock)
+    fake_hub.status_exc = aiohttp.ClientConnectionError("power cut")
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+
+    fake_hub.status_exc = None
+    fake_hub.registration = {"Error": 0, "ThingName": CABIN_THING_NAME}
+    reads = len(fake_hub.calls_to("/NM/v1/status"))
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert len(fake_hub.calls_to("/NM/v1/status")) == reads, "the other hub was read"
+    assert cabin.data[CONF_HOST] == HUB_HOST
+    assert init_integration.data[CONF_HOST] == OTHER_HOST
+    assert init_integration.state is ConfigEntryState.SETUP_RETRY

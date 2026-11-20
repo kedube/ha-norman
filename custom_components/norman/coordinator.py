@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
+from datetime import timedelta
 import functools
 import logging
 import time
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_IGNORE, ConfigEntry, ConfigEntryState
+from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
@@ -49,9 +51,12 @@ from .models import (
     NormanSceneTarget,
 )
 from .moves import MoveTracker, has_bottom_rail, has_middle_rail, rails_to_send
-from .parsing import parse_devices, parse_scenes
+from .parsing import dicts, parse_devices, parse_int, parse_scenes
 
 _LOGGER = logging.getLogger(__name__)
+
+# How soon a failed read of the hub is tried again; reads stop once one succeeds.
+_READ_RETRY = timedelta(seconds=RECONNECT_INTERVAL)
 DEVICE_LIST_RETRY_INTERVAL = 60  # seconds after a failed configuration read
 
 type NormanConfigEntry = ConfigEntry[NormanCoordinator]
@@ -112,6 +117,43 @@ def _control_interval(entry: NormanConfigEntry) -> float:
     return seconds
 
 
+@callback
+def async_another_hub_answered(
+    hass: HomeAssistant, entry: ConfigEntry, host: str, thing_name: str | None
+) -> bool:
+    """Whether another configured hub answered at ``host``, the address ``entry`` asked.
+
+    Two hubs can trade addresses: after a power cut the router may hand their leases out in
+    a new order, and each entry would then reach, and command, the other's hub. What
+    answered is recorded as discovery would record it: the other hub's entry moves to
+    ``host``, where its hub is. Unless something has moved this entry already, it moves to
+    the address the other hub left, where its own hub most likely is. Every move is checked
+    again here when the entry sets up, so an entry never runs a hub that is not its own.
+    """
+    if not thing_name or entry.unique_id in (None, host, thing_name):
+        return False
+    other = hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, thing_name)
+    if other is None:
+        return False
+    if other.source != SOURCE_IGNORE and (left := other.data.get(CONF_HOST)) != host:
+        _async_move_entry(hass, other, host)
+        if left and entry.data.get(CONF_HOST) == host:
+            _async_move_entry(hass, entry, left)
+    return True
+
+
+@callback
+def _async_move_entry(hass: HomeAssistant, entry: ConfigEntry, host: str) -> None:
+    """Point ``entry`` at ``host``.
+
+    A loaded entry reloads itself when its address changes (its update listener), and one
+    being set up is retried at the new address; one waiting to retry setup is reloaded now.
+    """
+    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_HOST: host})
+    if entry.state is ConfigEntryState.SETUP_RETRY:
+        hass.config_entries.async_schedule_reload(entry.entry_id)
+
+
 class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
     """Norman data update coordinator.
 
@@ -158,6 +200,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         # True while the notification stream is known to be down, so that the outage is
         # logged once at error level rather than on every reconnect attempt.
         self._listener_offline = False
+        # Set by a connection failure: the hub is asked who it is before it is used again.
+        self._hub_unconfirmed = False
         # Whether the hub's notification stream is connected, for the Push updates sensor:
         # None until the first attempt has an answer, True once the hub answers, False once
         # a connection fails. The stream's routine cycle (NOTIF_MAX_DURATION) leaves it on,
@@ -363,7 +407,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         moved (``async_watch_move``). Raises the client's errors; a move that could not be
         sent leaves no record behind.
         """
-        await self.async_settle([device_id])
+        if await self.async_settle([device_id]):
+            return  # a stop, a jog or a preset took the blind over while this move waited
         data = (self.data or {}).get(device_id)
         rails = rails_to_send(
             data.type if data else None, self.heading_rails(device_id), bottom, middle
@@ -420,16 +465,16 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         command took one of its blinds over while it waited is sent to the rest blind by
         blind instead, at once.
         """
-        await self.async_settle(self.blinds_in(room_id))
+        taken = await self.async_settle(self.blinds_in(room_id))
         blinds = self.blinds_in(room_id)
         moves = {
             device_id: rails_to_send(device.type, self.heading_rails(device_id), bottom, middle)
             for device_id, device in blinds.items()
-            if _reaches(device.type, bottom, middle)
+            if device_id not in taken and _reaches(device.type, bottom, middle)
         }
         if not moves:
             return
-        rails = self._shared_rails(blinds, moves)
+        rails = None if taken else self._shared_rails(blinds, moves)
         if rails is None:
             await self._async_move_each(moves)
             return
@@ -634,10 +679,12 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         asked at the request's turn and before a busy hub's retry: whether the scene still
         holds every one of its blinds. Dropped, the scene is sent blind by blind to the rest.
         """
-        await self.async_settle(targets)
+        taken = await self.async_settle(targets)
         devices = self.data or {}
         targets = {
-            device_id: target for device_id, target in targets.items() if device_id in devices
+            device_id: target
+            for device_id, target in targets.items()
+            if device_id in devices and device_id not in taken
         }
         serial = self.async_supersede(targets, aimed=True)
         moves: dict[int, tuple[int, int]] = {}
@@ -656,9 +703,15 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         serials = {
             device_id: self.async_note_move(device_id, *rails) for device_id, rails in moves.items()
         }
+        if taken:
+            # A stop, a jog or a preset took some of its blinds over while the scene waited:
+            # the hub's scene request would move those too, so the rest go blind by blind.
+            await self._async_move_each(moves, serials, frozenset(louvers))
+            return
         claims: dict[int, int | None] = {
             device_id: serials.get(device_id, serial) for device_id in targets
         }
+        before = {device_id: self._hub_target(device_id) for device_id in moves}
         try:
             sent = await send(lambda: self._holds_all(claims))
         except BaseException:
@@ -668,6 +721,22 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         if not sent:
             await self._async_move_each(moves, serials, frozenset(louvers))
             return
+        # The hub records each blind's stored position as its target on accepting the scene.
+        # Watch for that rather than this copy of the scene, which an edit in the app may
+        # have outdated; and read the scenes again if it has.
+        await self._async_watch_read()
+        for device_id, rails in list(moves.items()):
+            recorded = self._hub_target(device_id)
+            if recorded is None or recorded == before[device_id]:
+                continue
+            bottom, middle = recorded
+            if bottom is None:
+                continue
+            hub_rails = (bottom, rails[1] if middle is None else middle)
+            if hub_rails != rails:
+                moves[device_id] = hub_rails
+                serials[device_id] = self.async_note_move(device_id, *hub_rails)
+                self._device_info_stale = True
         for device_id, rails in moves.items():
             if device_id in louvers:
                 self.async_watch_louvers(device_id, rails[0], serials[device_id])
@@ -687,6 +756,33 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
             )
         )
 
+    async def _async_confirm_hub(self) -> bool:
+        """Whether the hub at this entry's address is still its own; asked after an outage.
+
+        Two hubs can come back from a power cut at each other's address. After a connection
+        failure the hub is asked who it is before it is read or listened to again. If it is
+        another configured hub, the entries are pointed where their hubs answer
+        (``async_another_hub_answered``) and this one reloads, so it never commands a hub
+        that is not its own. Raises the client's ``NormanConnectionError``.
+        """
+        if not self._hub_unconfirmed:
+            return True
+        try:
+            thing_name = await self.api.async_validate_connection()
+        except NormanApiError:
+            thing_name = None  # an answer that does not say who it is: carry on as before
+        if not async_another_hub_answered(self.hass, self.config_entry, self.api.host, thing_name):
+            self._hub_unconfirmed = False
+            return True
+        _LOGGER.warning(
+            "Another configured Norman hub answers at the address of %s; reloading it",
+            self.config_entry.title,
+        )
+        if self.config_entry.data.get(CONF_HOST) == self.api.host:
+            # Not moved (a moved entry reloads itself): stop running the other hub now.
+            self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+        return False
+
     async def listen_notifications(self) -> None:
         """Continuously listen for hub notifications and refresh data on change.
 
@@ -698,6 +794,8 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
             # list is large, and the hub's reader for it is the part that fails.
             reread = True
             try:
+                if not await self._async_confirm_hub():
+                    return
                 async for notification in self.api.async_listen_notifications(
                     on_connect=functools.partial(self._async_set_push_connected, True)
                 ):
@@ -721,6 +819,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
                     await self.async_request_refresh()
             except NormanConnectionError as err:
                 self._async_set_push_connected(False)
+                self._hub_unconfirmed = True
                 if not self._listener_offline:
                     self._listener_offline = True
                     _LOGGER.error(
@@ -776,6 +875,31 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         return any(key != "schedule" for key in update)
 
     async def _async_update_data(self) -> NormanDevices:
+        """Read the hub, and while reads fail, read it again every ``RECONNECT_INTERVAL``.
+
+        The hub pushes its changes, so nothing polls; but after a failed read nothing else
+        would read it again until a notification or the stream's next cycle.
+        """
+        self.update_interval = _READ_RETRY
+        try:
+            confirmed = await self._async_confirm_hub()
+        except NormanConnectionError as err:
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="connect_failed",
+                translation_placeholders={"hub": self.config_entry.title, "error": str(err)},
+            ) from err
+        if not confirmed:
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="another_hub_at_address",
+                translation_placeholders={"hub": self.config_entry.title},
+            )
+        devices = await self._async_read_hub()
+        self.update_interval = None
+        return devices
+
+    async def _async_read_hub(self) -> NormanDevices:
         """Fetch data from API.
 
         Returns:
@@ -790,9 +914,12 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
             # "Request process fail." Keep the last good tree, or use status-only
             # placeholders on first setup, and retry the structure read next refresh.
             if self._device_info_stale and time.monotonic() >= self._next_device_info_retry:
+                # Cleared before the read: an app edit announced while it runs sets it again.
+                self._device_info_stale = False
                 try:
                     self._device_info = await self.api.async_get_devices()
                 except (NormanConnectionError, NormanApiError) as err:
+                    self._device_info_stale = True
                     self._next_device_info_retry = time.monotonic() + DEVICE_LIST_RETRY_INTERVAL
                     if not self._device_info_error_logged:
                         _LOGGER.warning(
@@ -803,7 +930,6 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
                     else:
                         _LOGGER.debug("Norman hub device list still unavailable: %s", err)
                 else:
-                    self._device_info_stale = False
                     self._next_device_info_retry = 0.0
                     if self._device_info_error_logged:
                         _LOGGER.info("Norman hub device list restored")
@@ -815,6 +941,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
             # Status is the lightweight call that carries positions
             status_data = await self.api.async_get_status()
         except NormanConnectionError as err:
+            self._hub_unconfirmed = True
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="connect_failed",
@@ -941,6 +1068,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         """
         registry = dr.async_get(self.hass)
         wanted = {str(device_id): data.name for device_id, data in devices.items()}
+        firmware = {
+            str(device_id): data.display_firmware_version for device_id, data in devices.items()
+        }
         for room_id, room_name in rooms_of(devices).items():
             wanted[room_identifier(self.config_entry, room_id)] = room_name
         # A room holding only scenes is named after them.
@@ -961,6 +1091,9 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
             for domain, identifier in device.identifiers:
                 if domain != DOMAIN:
                     continue
+                version = firmware.get(identifier)
+                if version and device.sw_version != version:
+                    registry.async_update_device(device.id, sw_version=version)
                 name = wanted.get(identifier)
                 if name and device.name != name:
                     if identifier == hub_identifier(self.config_entry):
@@ -995,7 +1128,7 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
         self.hub.firmware_version = self.api.hub_firmware_version or self.hub.firmware_version
         self.hub.wifi_ssid = self.api.hub_wifi_ssid or self.hub.wifi_ssid
         rssi = status_data.get("WiFiRSSI")
-        self.hub.wifi_rssi = int(rssi) if isinstance(rssi, int | float) else None
+        self.hub.wifi_rssi = parse_int(rssi) if isinstance(rssi, int | float) else None
         ota = status_data.get("OTA")
         self.hub.ota_in_progress = bool(ota) if ota is not None else None
         pairing = status_data.get("PairingMode")
@@ -1015,30 +1148,30 @@ class NormanCoordinator(DataUpdateCoordinator[NormanDevices], MoveTracker):
             results = payload.get("results")
             top: dict[str, Any] = results if isinstance(results, dict) else payload
             self._note_unknown("hub", KNOWN_HUB_FIELDS, top)
-            for peripheral in top.get("Peripherals") or []:
+            for peripheral in dicts(top.get("Peripherals")):
                 if isinstance(peripheral, dict):
                     self._note_unknown("peripheral", KNOWN_PERIPHERAL_FIELDS, peripheral)
-            for scene_group in top.get("SceneGroupList") or []:
+            for scene_group in dicts(top.get("SceneGroupList")):
                 if not isinstance(scene_group, dict):
                     continue
                 self._note_unknown("scene group", KNOWN_SCENE_GROUP_FIELDS, scene_group)
-                for item in scene_group.get("SceneList") or []:
+                for item in dicts(scene_group.get("SceneList")):
                     if isinstance(item, dict):
                         self._note_unknown("scene group item", KNOWN_SCENE_GROUP_ITEM_FIELDS, item)
-            for room in top.get("RoomList") or []:
+            for room in dicts(top.get("RoomList")):
                 if not isinstance(room, dict):
                     continue
-                for scene in room.get("SceneList") or []:
+                for scene in dicts(room.get("SceneList")):
                     if not isinstance(scene, dict):
                         continue
                     self._note_unknown("scene", KNOWN_SCENE_FIELDS, scene)
-                    for target in scene.get("PeripheralList") or []:
+                    for target in dicts(scene.get("PeripheralList")):
                         if isinstance(target, dict):
                             self._note_unknown("scene target", KNOWN_SCENE_TARGET_FIELDS, target)
-                for group in room.get("GroupList") or []:
+                for group in dicts(room.get("GroupList")):
                     if not isinstance(group, dict):
                         continue
-                    for peripheral in group.get("PeripheralList") or []:
+                    for peripheral in dicts(group.get("PeripheralList")):
                         if isinstance(peripheral, dict):
                             self._note_unknown("peripheral", KNOWN_PERIPHERAL_FIELDS, peripheral)
 

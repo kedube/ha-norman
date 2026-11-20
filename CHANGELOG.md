@@ -74,6 +74,47 @@ version heading and publishes it as the release's Highlights.
   poll on a schedule is an automation that updates a cover; **Request status** and **Refresh
   blinds** have blinds report in ([Polling and wake sweeps](docs/options.md#polling-and-wake-sweeps)).
   Every option now applies without a reload.
+- **A move no longer comes back after the hub's entry reloads.** A command still waiting to be
+  sent when the entry reloaded (from the integration page, after the hub's address changed, or
+  by an automation) went out anyway and was watched by the entry that had unloaded: a minute
+  later it sent the old move again, over any newer one, and reported it failed.
+- **A stop wins over a move waiting for its blind to report.** After a stop, a blind's next move
+  waits up to 10 seconds for the blind to report where it stopped. A stop, a jog or a preset in
+  that time now drops the waiting move, as it drops one waiting to be sent; before, the move went
+  out after the stop. A scene leaves that blind out and sends its other blinds one by one
+  ([Data updates](docs/entities.md#data-updates)).
+- **A scene changed in the Norman app is no longer undone.** Each blind a scene moves is watched
+  until it gets there. It was watched for Home Assistant's copy of the scene, which an edit in
+  the app could have outdated, so a minute after the hub ran the changed scene the old positions
+  were sent. It is now watched for the position the hub records when it runs the scene, and the
+  scenes are read again ([Scenes](docs/entities.md#scenes)).
+- **Two hubs that trade addresses no longer run each other's blinds.** After a power cut a router
+  can hand two hubs each other's address. Each entry then ran, and commanded, the other hub, until
+  it was fixed by hand. An entry now asks the hub who it is when it sets up and after every
+  connection failure; finding another configured hub, it does not run it, and each entry is
+  moved to where its own hub answers.
+- **Blinds come back within 15 seconds of a failed read.** One failed read of the hub left every
+  blind unavailable, and Home Assistant skipped commands to them, until the next notification,
+  up to 5 minutes later. A failed read is now tried again every 15 seconds until the hub
+  answers; nothing polls while reads succeed.
+- **A notification cut short no longer silences the hub.** The notifications after it were held
+  back until the stream was next reconnected, up to 5 minutes later; reading now starts again at
+  the next one.
+- **Smaller fixes.**
+  - A blind sent again to a position it failed to reach reads as opening or closing again.
+  - A hub entry keyed by its address (added before 0.11, or for a hub that gave no name) can be
+    reconfigured to a new address.
+  - Options saved while a hub is starting take effect.
+  - A rename made in the Norman app while the device list was being read is no longer missed.
+  - A blind's device page follows its firmware version.
+- **Diagnostics and the log keep more to themselves.** A blind's serial number split across two
+  reads of the notification stream, and an IPv6 address in an error, are now redacted from the
+  diagnostics download, and the hub's identity is no longer written to the log.
+- **Sturdier against unusual replies.** A reply over 1 MB is refused rather than read whole. A
+  number too large to use, a name sent as a number, an error code sent as text, an impossible
+  date or a deeply nested reply now reads as an unknown value or a failed read, instead of
+  making every blind unavailable; with debug logging on, a list field holding a single value did
+  too. A slider set to NaN is refused before anything is sent.
 
 ## 0.96 — 2026-11-15
 

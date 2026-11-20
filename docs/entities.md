@@ -176,7 +176,9 @@ closer together ([Options](options.md)). A stop goes ahead of every other comman
 a command whose blind a stop or a newer command took over while it waited is not sent at all.
 After a stop, a jog or a preset, the next move of a blind reads the hub first, so a two-rail
 blind's other rail is sent where the blind actually stopped
-([`control`](NORMAN_API.md#post-nmv1control)).
+([`control`](NORMAN_API.md#post-nmv1control)). A blind not heard from since it stopped is given
+up to 10 seconds to report where; a stop, a jog or a preset in that time drops the move, and a
+scene waiting for it leaves that blind out and sends its other blinds one by one.
 
 A room-wide or hub-wide preset (a room's or the hub's Best privacy, Best view or Favorite
 button, or `norman.room_command`) goes to every blind in one request, which the hub carries
@@ -203,7 +205,8 @@ The event's data, for automations that want to notify someone or try something e
 Updates are pushed. The integration holds a long-poll open to the hub and refreshes every
 cover whenever the hub reports a change, including changes made with a remote or the Norman
 app. It also refreshes after every command it sends and every time the long-poll is
-reconnected.
+reconnected. A read that fails is tried again every 15 seconds until the hub answers, and the
+covers are unavailable until then.
 
 The long-poll is reconnected every 5 minutes, so a notification that goes missing leaves a
 blind out of date for 5 minutes at most. There is no poll on top of that
@@ -472,9 +475,11 @@ that blind. That is quicker than a Home Assistant scene setting the same covers,
 command per blind, about 1.6 seconds apart. **Every blind the scene sends is then watched**, as
 a move is ([data updates](#data-updates)): the hub acknowledging a scene does not mean every
 blind went, and in its one test a scene group left a blind where it was. A blind that has not
-moved a minute later is asked to report in and, if it still has not, sent the position the scene
-stored for it on its own, not the whole scene again: up to three sends, then the
-`norman_command_failed` event.
+moved a minute later is asked to report in and, if it still has not, sent its position in the
+scene on its own, not the whole scene again: up to three sends, then the
+`norman_command_failed` event. The check aims at the position the hub records for each blind
+when it runs the scene, as for a preset, so a scene changed in the Norman app runs as changed
+even before Home Assistant has read the change, which it then reads at once.
 
 A scene added, renamed or deleted in the Norman app follows the next time the hub's device list
 is read: at once if the hub announces the change, otherwise within 5 minutes. A deleted scene's

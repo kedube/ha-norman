@@ -417,6 +417,12 @@
     },
     "scene_failed": {
       "message": "シーン {name} を実行できませんでした: {error}"
+    },
+    "another_hub_at_address": {
+      "message": "{hub} のアドレスで、設定済みの別の Norman Hub が応答しています"
+    },
+    "position_not_a_number": {
+      "message": "位置は 0 から 100 までの数値で指定してください"
     }
   }
 }

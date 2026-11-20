@@ -417,6 +417,12 @@
     },
     "scene_failed": {
       "message": "无法运行场景 {name}：{error}"
+    },
+    "another_hub_at_address": {
+      "message": "{hub} 的地址上应答的是另一台已配置的 Norman Hub"
+    },
+    "position_not_a_number": {
+      "message": "位置必须是 0 到 100 之间的数字"
     }
   }
 }

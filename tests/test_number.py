@@ -14,7 +14,7 @@ from homeassistant.components.number import (
 )
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -107,6 +107,22 @@ async def test_slider_failure_names_the_blind(
     with pytest.raises(HomeAssistantError, match="Living Drape") as excinfo:
         await _set(hass, number_entity_id(hass, UID_LIVING, "bottom_rail_position"), 50)
     assert excinfo.value.translation_key == "move_failed"
+
+
+async def test_a_slider_set_to_nan_is_refused_before_the_hub(
+    hass: HomeAssistant, init_integration: MockConfigEntry, fake_hub: FakeHub
+) -> None:
+    """NaN passes Home Assistant's range check, as every comparison with it is false.
+
+    The slider refuses it with a translated validation error, and sends the hub nothing.
+    """
+    sent = len(fake_hub.control_calls)
+
+    with pytest.raises(ServiceValidationError) as excinfo:
+        await _set(hass, number_entity_id(hass, UID_LIVING, "bottom_rail_position"), float("nan"))
+
+    assert excinfo.value.translation_key == "position_not_a_number"
+    assert fake_hub.control_calls[sent:] == []
 
 
 async def test_slider_and_cover_agree(

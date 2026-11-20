@@ -42,6 +42,7 @@ from .const import (
 from .coordinator import (
     NormanConfigEntry,
     NormanCoordinator,
+    async_another_hub_answered,
     room_identifier,
     rooms_of,
 )
@@ -87,6 +88,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
             translation_placeholders={"hub": entry.title, "error": str(err)},
         ) from err
 
+    if async_another_hub_answered(hass, entry, api.host, thing_name):
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="another_hub_at_address",
+            translation_placeholders={"hub": entry.title},
+        )
     _async_migrate_unique_id(hass, entry, thing_name)
     await _async_migrate_entity_unique_ids(hass, entry)
 
@@ -123,6 +130,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NormanConfigEntry) -> bo
     # A changed poll or wake interval is applied by reloading: both are read from the
     # options at construction / setup.
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+    # Options saved while the hub was being set up found no listener to apply them.
+    coordinator.api.control_interval = norman_coordinator._control_interval(entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # With the hub's device list unreadable, rooms are named after their blinds' areas,
@@ -308,8 +317,8 @@ def _async_migrate_unique_id(
     if hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, thing_name):
         _LOGGER.warning(
             "Norman hub %s is also configured under another entry; remove one of them",
-            thing_name,
+            entry.title,
         )
         return
-    _LOGGER.info("Migrating Norman config entry unique id from host to hub %s", thing_name)
+    _LOGGER.info("Migrating Norman config entry %s from a host-based unique id", entry.title)
     hass.config_entries.async_update_entry(entry, unique_id=thing_name)

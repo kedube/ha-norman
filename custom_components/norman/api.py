@@ -61,6 +61,8 @@ ENDPOINT_NOTIFICATION = "/NM/v1/notification"
 # (TRAFFIC_BODY_LIMIT) for diagnostics; a log line only needs the start.
 LOG_BODY_LIMIT = 500
 REDACTED = "**REDACTED**"
+# Far above any real reply (a thirteen-blind GetAllPeripheral is about 55 KB).
+MAX_REPLY_BYTES = 1024 * 1024
 
 
 def _redact_for_log(value: Any) -> Any:
@@ -97,10 +99,10 @@ def redact_hub_text(text: str) -> str:
     """
     try:
         data = json.loads(text)
-    except json.JSONDecodeError:
+        if isinstance(data, dict | list):
+            return json.dumps(_redact_for_log(data), ensure_ascii=False, separators=(",", ":"))
+    except (json.JSONDecodeError, RecursionError):
         return _SENSITIVE_VALUE.sub(rf'\1"{REDACTED}"', text)
-    if isinstance(data, dict | list):
-        return json.dumps(_redact_for_log(data), ensure_ascii=False, separators=(",", ":"))
     return text
 
 
@@ -263,6 +265,7 @@ class JsonStreamParser:
         self._depth = 0
         self._in_string = False
         self._escaped = False
+        self._last = ""  # last significant character outside a string
 
     def _reset(self) -> None:
         self._buffer = ""
@@ -270,6 +273,7 @@ class JsonStreamParser:
         self._depth = 0
         self._in_string = False
         self._escaped = False
+        self._last = ""
 
     def feed(self, chunk: bytes) -> list[dict[str, Any]]:
         """Consume a chunk of bytes and return every object it completed."""
@@ -286,6 +290,7 @@ class JsonStreamParser:
                     self._buffer = self._buffer[self._pos - 1 :]
                     self._pos = 1
                     self._depth = 1
+                    self._last = "{"
                 continue
 
             if self._in_string:
@@ -295,7 +300,24 @@ class JsonStreamParser:
                     self._escaped = True
                 elif char == '"':
                     self._in_string = False
-            elif char == '"':
+                    self._last = '"'
+                continue
+            if char.isspace():
+                continue
+            if char in '{"' and self._last not in ("{", ",", ":", "["):
+                # JSON has no object or string here: the object before it was cut short.
+                # Start again at the latest "{" -- this one, or one a cut string swallowed.
+                start = self._buffer.rfind("{", 1, self._pos)
+                if start < 0:
+                    self._depth = 0
+                    continue
+                self._buffer = self._buffer[start:]
+                self._pos = 1
+                self._depth = 1
+                self._last = "{"
+                continue
+            self._last = char
+            if char == '"':
                 self._in_string = True
             elif char == "{":
                 self._depth += 1
@@ -433,6 +455,7 @@ class NormanApiClient:
         started = time.monotonic()
         status: int | None = None
         text: str | None = None
+        oversized = False
         try:
             async with self._session.post(
                 self.base_url.with_path(endpoint),
@@ -440,9 +463,17 @@ class NormanApiClient:
                 timeout=ClientTimeout(total=REQUEST_TIMEOUT),
             ) as response:
                 status = response.status
+                raw = bytearray()
+                async for piece in response.content.iter_chunked(64 * 1024):
+                    raw += piece
+                    if len(raw) > MAX_REPLY_BYTES:
+                        oversized = True
+                        break
                 # Not strict: one bad byte (a name the firmware cut mid-character) would
                 # raise UnicodeDecodeError, past the error mapping callers rely on.
-                text = await response.text(errors="replace")
+                text = bytes(raw[: TRAFFIC_BODY_LIMIT if oversized else None]).decode(
+                    "utf-8", errors="replace"
+                )
         except TimeoutError as err:
             # aiohttp's total timeout raises a bare TimeoutError, which is *not* a
             # ClientError, so it needs its own clause or it escapes as an unexpected error.
@@ -453,6 +484,11 @@ class NormanApiClient:
             error = f"Failed to connect to Norman hub at {self.host}: {err}"
             self._record(endpoint, payload, status, text, error, started)
             raise NormanConnectionError(error) from err
+
+        if oversized:
+            error = f"Reply from Norman hub for {endpoint} is over {MAX_REPLY_BYTES} bytes"
+            self._record(endpoint, payload, status, text, error, started)
+            raise NormanApiError(error)
 
         if status >= 400:
             error = f"Hub returned HTTP {status} for {endpoint}"
@@ -494,7 +530,7 @@ class NormanApiClient:
         )
         if not _LOGGER.isEnabledFor(logging.DEBUG):
             return
-        secrets = (self._thing_name,) if self._thing_name else ()
+        secrets = (str(self._thing_name),) if self._thing_name else ()
         _LOGGER.debug(
             "POST %s %s -> %s %s%s",
             endpoint,
@@ -514,7 +550,8 @@ class NormanApiClient:
         error = data.get("Error", 0)
         if error in (0, "0", None) or (isinstance(error, str) and error.lower().startswith("succ")):
             return
-        raise NormanApiError(f"{what} failed with error code: {error}", code=error)
+        code = int(error) if isinstance(error, str) and error.strip().isdigit() else error
+        raise NormanApiError(f"{what} failed with error code: {error}", code=code)
 
     async def async_validate_connection(self) -> str | None:
         """Register with the hub and return its ThingName.
@@ -558,7 +595,7 @@ class NormanApiClient:
         if not validate:
             return data
         status = data.get("status")
-        if isinstance(status, dict) and status.get("code", 0) != 0:
+        if isinstance(status, dict) and status.get("code", 0) not in (0, "0", None):
             raise NormanApiError(f"GetAllPeripheral failed: {status.get('error', 'Unknown error')}")
         # Without a RoomList the reply names no rooms or blinds. Taking it as an empty house
         # would rename every device to its placeholder, so it counts as a failed read.
