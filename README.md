@@ -215,7 +215,7 @@ Assistant.
 | Entity property | Meaning |
 |---|---|
 | `current_position` | Bottom rail: 0 closed, 100 open |
-| `current_tilt_position` | The middle rail as tilt; on a SmartDrape, PerfectSheer or Shutter, how open its vanes or louvers are: 0–100 |
+| `current_tilt_position` | The middle rail as tilt; on a SmartDrape or PerfectSheer, how open its vanes are: 0–100; on a Shutter, its louvers' whole turn: 0 shut, 50 horizontal, 100 turned as far as they go the other way |
 | `target_position`, `target_tilt` (attributes) | Where each rail is heading while the blind moves |
 
 Each cover is named for the rail it drives ("Living Drape Bottom rail", "Living Drape Middle
@@ -397,12 +397,13 @@ sidebar entry per user). Any other language gets English.
 | Roller Shade, Roman Shade | 48, 49 / 1, 2 | Cover with position only, `shade` device class. |
 | PerfectSheer | 48, 49 / 3 | One `shade` cover: the shade as position, its vanes as tilt. The vanes open only with the shade fully down, so opening them lowers the shade first. |
 | SmartDrape | 80 / 1 | One `curtain` cover: how far it is drawn as position, the vanes as tilt, in the app's seven stops. |
-| Shutter | 1 | One `shutter` cover, **Louvers**: how open the louvers are as tilt, in five steps; open and close turn them. |
+| Shutter | 1 | One `shutter` cover, **Louvers**: the louvers' whole turn as tilt, in the hub's eight stops, 50 horizontal; open and close turn them. |
 | Anything else | other | Treated as two-rail, and a warning asks you to report the type. |
 
 **Tested on:** cellular shades (32/2 and 33/3) in day-to-day use, a Roller Shade and a
-SmartDrape by their owner ([#2](https://github.com/kedube/ha-norman/issues/2)), and three
-Roller Shades in [#5](https://github.com/kedube/ha-norman/issues/5). The other rows
+SmartDrape by their owner ([#2](https://github.com/kedube/ha-norman/issues/2)), three
+Roller Shades in [#5](https://github.com/kedube/ha-norman/issues/5), and PerfectTilt
+shutters in [#7](https://github.com/kedube/ha-norman/issues/7) (shut to horizontal). The other rows
 follow the Norman app itself (ShadeAuto 0.8.33): the controls it shows for each product and the
 values it sends. Nobody has reported them from a hub yet, so if you have one, a
 `norman.get_hub_data` response in an issue confirms it — as it does for anything that logs the
@@ -414,9 +415,10 @@ unknown-type warning or behaves differently from its row.
   integration: anyone on the LAN can control the blinds. Keep the hub on a trusted network.
 - **Use the hub from Home Assistant or from Apple Home (HomeKit), not both.** Controlling the
   same hub from both does not work well.
-- **Several products are known only from the Norman app**: the Shutter (`ModuleType` 1), the
-  MRS2 rollers (49), and the Roman Shade and top-down/bottom-up cellular details (48/2,
-  32/3–5). See [Supported devices](#supported-devices).
+- **Several products are known only from the Norman app**: the MRS2 rollers (49), and the
+  Roman Shade and top-down/bottom-up cellular details (48/2, 32/3–5). A Shutter's louvers
+  (`ModuleType` 1) have turned from shut to horizontal on real shutters, but not yet past
+  horizontal. See [Supported devices](#supported-devices).
 - **The Norman app's battery report can close shades.** Its `ReportBatteryLevel` command closed
   roller shades in [#5](https://github.com/kedube/ha-norman/issues/5) and nine two-rail cellular
   shades on another hub. **Refresh blinds** now uses `StatusRequest` instead. A separate

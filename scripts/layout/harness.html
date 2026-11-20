@@ -96,7 +96,9 @@ const blind = ({ name, area, model, kind, bottom = 0, middle, target, tilt, batt
   const updated = moving ? now - 5000 : undefined;
   if (kind === "shutter") {
     ent(`cover.${slug}_louvers`, id, "louvers", tilt ? "open" : "closed",
-      { current_tilt_position: tilt, target_tilt: tilt, louver_position: 7 - Math.round(tilt / 25) }, { updated });
+      // The cover's tilt for each louver Position, 0-7 (SHUTTER_TILTS in const.py).
+      { current_tilt_position: tilt, target_tilt: tilt, louver_position: [100, 83, 67, 50, 38, 25, 13, 0].indexOf(tilt) },
+      { updated });
   } else {
     const attributes = { current_position: bottom, target_position: target ?? bottom };
     if (tilt !== undefined || middle !== undefined) {
@@ -130,7 +132,7 @@ blind({ name: "Bedroom East", area: "bedroom", model: "33/4", kind: "two", botto
 blind({ name: "Bedroom West", area: "bedroom", model: "33/4", kind: "two", bottom: 0, middle: 0, battery: 81, color: "navy" });
 blind({ name: "Bedroom Drape", area: "bedroom", model: "80/1", kind: "drape", bottom: 30, tilt: 67, stack: "split", battery: 77, color: "sand" });
 blind({ name: "Study Sheer", area: "study", model: "48/3", kind: "sheer", bottom: 0, tilt: 100, battery: 63, color: "gray" });
-blind({ name: "Study Shutter", area: "study", model: "1/0", kind: "shutter", tilt: 50, battery: 58, color: "oak" });
+blind({ name: "Study Shutter", area: "study", model: "1/0", kind: "shutter", tilt: 25, battery: 58, color: "oak" });
 blind({ name: "Guest Window", area: "guest", model: "32/2", kind: "one", bottom: 50, battery: 12, color: "terracotta" });
 blind({ name: "Guest Skylight Over The Reading Nook", area: "guest", model: "32/2", kind: "one", bottom: 0, battery: 25, lights: "none" });
 devices.room_living = { id: "room_living", name: "Living Room", area_id: "living", config_entry_id: ENTRY };

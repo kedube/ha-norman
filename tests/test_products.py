@@ -447,14 +447,16 @@ def test_perfectsheer_is_never_sent_open_vanes_on_a_raised_shade(
     ("position", "tilt", "state"),
     [
         (7, 0, CoverState.CLOSED),
-        (6, 25, CoverState.OPEN),
-        (4, 75, CoverState.OPEN),
-        (3, 100, CoverState.OPEN),
-        (2, 75, CoverState.OPEN),
-        (0, 25, CoverState.OPEN),
+        (6, 13, CoverState.OPEN),
+        (5, 25, CoverState.OPEN),
+        (4, 38, CoverState.OPEN),
+        (3, 50, CoverState.OPEN),
+        (2, 67, CoverState.OPEN),
+        (1, 83, CoverState.OPEN),
+        (0, 100, CoverState.OPEN),
     ],
 )
-async def test_shutter_louvers_read_as_how_open_they_are(
+async def test_shutter_tilt_is_the_louvers_whole_turn(
     hass: HomeAssistant,
     init_with_every_product: MockConfigEntry,
     fake_hub: FakeHub,
@@ -462,9 +464,10 @@ async def test_shutter_louvers_read_as_how_open_they_are(
     tilt: int,
     state: str,
 ) -> None:
-    """7 is shut, 3 horizontal; below 3 the louvers turn the other way and close again.
+    """7 is shut (0), 3 horizontal (50), 0 as far as they turn the other way (100) (issue #7).
 
-    Position 0, as far as they turn that way, still lets light in, so it is not "closed".
+    Every Position reads differently, so each can be told apart and reached. Position 0 still
+    lets light in, so it is not "closed".
     """
     shown = await _show(
         hass,
@@ -497,10 +500,14 @@ async def test_shutter_is_named_for_its_louvers(
         (SERVICE_CLOSE_COVER, {}, 7),
         (SERVICE_OPEN_COVER_TILT, {}, 3),
         (SERVICE_CLOSE_COVER_TILT, {}, 7),
-        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 50}, 5),
-        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 60}, 5),
-        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 100}, 3),
         (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 0}, 7),
+        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 25}, 5),
+        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 50}, 3),
+        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 60}, 2),
+        # Halfway between 67 and 83: the higher Position.
+        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 75}, 2),
+        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 90}, 1),
+        (SERVICE_SET_COVER_TILT_POSITION, {ATTR_TILT_POSITION: 100}, 0),
     ],
 )
 async def test_shutter_commands_send_the_louver_position(
@@ -511,7 +518,10 @@ async def test_shutter_commands_send_the_louver_position(
     data: dict[str, Any],
     position: int,
 ) -> None:
-    """A Shutter is sent ``Position`` alone, as the app does -- never rail fields."""
+    """A Shutter is sent ``Position`` alone, as the app does -- never rail fields.
+
+    A tilt turns the louvers to the Position nearest it, past horizontal as well (issue #7).
+    """
     await _call(hass, UID_SHUTTER, service, **data)
 
     sent = _louvers_sent(fake_hub, UID_SHUTTER)
@@ -530,7 +540,12 @@ async def test_a_shutter_has_no_position_to_set(
 
 @pytest.mark.parametrize(
     ("service", "step", "position"),
-    [("nudge_tilt", 10, 6), ("nudge_tilt", -10, 7), ("nudge_position", 50, 5)],
+    [
+        ("nudge_tilt", 10, 6),
+        ("nudge_tilt", -10, 7),
+        ("nudge_tilt", 100, 0),
+        ("nudge_position", 50, 3),
+    ],
 )
 async def test_shutter_nudges_turn_the_louvers(
     hass: HomeAssistant,
@@ -546,17 +561,32 @@ async def test_shutter_nudges_turn_the_louvers(
     assert _louvers_sent(fake_hub, UID_SHUTTER)[-1]["Position"] == position
 
 
-async def test_louvers_turning_open_read_as_opening(
+@pytest.mark.parametrize(
+    ("position", "target", "state"),
+    [
+        (7, 3, CoverState.OPENING),
+        (0, 3, CoverState.OPENING),
+        (3, 7, CoverState.CLOSING),
+        (3, 0, CoverState.CLOSING),
+    ],
+)
+async def test_louvers_turning_towards_horizontal_read_as_opening(
     hass: HomeAssistant,
     init_with_every_product: MockConfigEntry,
     fake_hub: FakeHub,
+    position: int,
+    target: int,
+    state: str,
 ) -> None:
-    """Shut (7) and heading for horizontal (3): the Shutter is opening."""
-    fake_hub.peripheral_status(UID_SHUTTER)["TargetPosition"] = 3
+    """Louvers heading for horizontal are opening, from either side, and away from it closing.
+
+    Turning from Position 0 to 3 raises no tilt -- it falls from 100 to 50 -- but opens them.
+    """
+    fake_hub.peripheral_status(UID_SHUTTER).update(Position=position, TargetPosition=target)
     await init_with_every_product.runtime_data.async_refresh()
     await hass.async_block_till_done()
 
-    assert hass.states.get(cover_entity_id(hass, UID_SHUTTER)).state == CoverState.OPENING
+    assert hass.states.get(cover_entity_id(hass, UID_SHUTTER)).state == state
 
 
 async def test_quick_louver_nudges_add_up(
@@ -580,7 +610,7 @@ async def test_quick_louver_nudges_add_up(
         fake_hub.mock.clear_requests()
         fake_hub._register()
         for _ in range(3):
-            await _nudge(hass, UID_SHUTTER, "nudge_tilt", 25)
+            await _nudge(hass, UID_SHUTTER, "nudge_tilt", 10)
 
     assert [c["Position"] for c in _louvers_sent(fake_hub, UID_SHUTTER)] == [6, 5, 4]
     init_with_every_product.runtime_data.async_supersede()

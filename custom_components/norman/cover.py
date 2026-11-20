@@ -43,6 +43,7 @@ from .const import (
     SERVICE_NUDGE_TILT,
     SHUTTER_CLOSED,
     SHUTTER_OPEN,
+    SHUTTER_TILTS,
 )
 from .coordinator import NormanConfigEntry, NormanCoordinator
 from .entity import (
@@ -65,12 +66,10 @@ NUDGE_SCHEMA: VolDictType = {
     vol.Required(ATTR_STEP): vol.All(vol.Coerce(int), vol.Range(min=-100, max=100))
 }
 
-# How open a SmartDrape's vanes or a Shutter's louvers can be, in steps from closed: the
-# drape's seven vane stops fold to four (closed, a third, two thirds, open) and the Shutter's
-# eight louver positions to five (closed, a quarter ... open). The cover's tilt is the step
-# as a percentage.
+# How open a SmartDrape's vanes can be, in steps from closed: its seven vane stops fold to
+# four (closed, a third, two thirds, open). The cover's tilt is the step as a percentage. A
+# Shutter's tilt is its louvers' whole turn instead (SHUTTER_TILTS).
 VANE_LEVELS = MSD_VANE_OPEN_STOP
-LOUVER_LEVELS = SHUTTER_CLOSED - SHUTTER_OPEN
 
 
 def _percent(level: int, levels: int) -> int:
@@ -100,16 +99,23 @@ def _vane_raw(level: int) -> int:
     return MSD_VANE_STOPS[len(MSD_VANE_STOPS) - 1 - level]
 
 
-def _louver_level(position: int) -> int:
-    """How open a Shutter's louvers are, 0-4: 7 closed, 3 horizontal, 0 tilted the other way."""
+def _louver_position(tilt: int) -> int:
+    """The louver Position whose tilt is nearest ``tilt``; a tie goes to the higher Position."""
+    return min(
+        range(SHUTTER_CLOSED, -1, -1),
+        key=lambda position: abs(SHUTTER_TILTS[position] - clamp_position(tilt)),
+    )
+
+
+def _louver_openness(position: int) -> int:
+    """How open the louvers are, in steps: 0 shut (7), 4 horizontal (3), 1 at 0.
+
+    Position 0 is turned nearly shut the other way, and still lets light in, so it counts a
+    step open. Only the direction of a turn is read from this: towards horizontal is opening.
+    """
     if position >= SHUTTER_OPEN:
         return SHUTTER_CLOSED - position
-    return LOUVER_LEVELS - (SHUTTER_OPEN - position)
-
-
-def _louver_position(level: int) -> int:
-    """The Position for a louver level, on the side "Fully Close" and calibration use."""
-    return SHUTTER_CLOSED - level
+    return position + 1
 
 
 async def async_setup_entry(
@@ -396,10 +402,10 @@ class NormanShutter(NormanCoverBase):
 
     A Shutter has no rails. The hub reports its louvers as ``Position`` 0-7: 7 fully closed,
     3 horizontal, 0 as far as they turn the other way, which still lets light in. The tilt is
-    how open they are -- 0, 25, 50, 75 or 100 -- so both sides of horizontal read the same;
-    a tilt sent from here turns them on the 7-3 side, the one the app's "Fully Close" and
-    calibration start from. Open and close turn the louvers too, so "open the shutters" does
-    what it says.
+    their whole turn, in the hub's eight steps (SHUTTER_TILTS): 0 shut, 50 horizontal and 100
+    at Position 0, so every Position can be reached from here (issue #7). A tilt sent turns
+    them to the Position nearest it. Open and close turn the louvers too, horizontal and shut,
+    so "open the shutters" does what it says.
     """
 
     _attr_translation_key = "louvers"
@@ -427,18 +433,21 @@ class NormanShutter(NormanCoverBase):
 
     @property
     def current_cover_tilt_position(self) -> int | None:
-        """How open the louvers are, 0-100."""
+        """Where the louvers are in their turn, 0 (shut) through 50 (horizontal) to 100."""
         data = self._data
         if data is None or data.position is None:
             return None
-        return _percent(_louver_level(data.position), LOUVER_LEVELS)
+        return SHUTTER_TILTS[data.position]
 
     def _now_and_target(self) -> tuple[int | None, int | None]:
-        """How open the louvers are and how open they are turning, in steps."""
+        """How open the louvers are and how open they are turning, in steps.
+
+        Opening is turning towards horizontal, from either side; closing is turning away.
+        """
         data = self._data
         if data is None or data.position is None or data.target_position is None:
             return None, None
-        return _louver_level(data.position), _louver_level(data.target_position)
+        return _louver_openness(data.position), _louver_openness(data.target_position)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -446,9 +455,7 @@ class NormanShutter(NormanCoverBase):
         data = self._data
         target = data.target_position if data else None
         return {
-            ATTR_TARGET_TILT: None
-            if target is None
-            else _percent(_louver_level(target), LOUVER_LEVELS),
+            ATTR_TARGET_TILT: None if target is None else SHUTTER_TILTS[target],
             ATTR_LOUVER_POSITION: data.position if data else None,
         }
 
@@ -461,7 +468,7 @@ class NormanShutter(NormanCoverBase):
         await self._async_set_louvers(SHUTTER_CLOSED, "close")
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
-        """Turn the louvers horizontal."""
+        """Turn the louvers horizontal (tilt 50)."""
         await self._async_set_louvers(SHUTTER_OPEN, "open")
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
@@ -469,18 +476,22 @@ class NormanShutter(NormanCoverBase):
         await self._async_set_louvers(SHUTTER_CLOSED, "close")
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
-        """Open the louvers to the step nearest ``tilt_position``."""
-        tilt = kwargs[ATTR_TILT_POSITION]
-        position = _louver_position(_level(tilt, LOUVER_LEVELS))
+        """Turn the louvers to the Position nearest ``tilt_position``."""
+        position = _louver_position(kwargs[ATTR_TILT_POSITION])
         await self._async_set_louvers(position, "move")
 
     async def async_nudge_tilt(self, step: int) -> None:
-        """Open or close the louvers by ``step``, at least one step for any step."""
+        """Turn the louvers by ``step`` of tilt, at least one Position for any step.
+
+        A positive step raises the tilt, from shut through horizontal towards Position 0.
+        """
         if await self.coordinator.async_settle([self._device_id]):
             return
-        level = _louver_level(self._target_or_current_louvers())
-        position = _louver_position(_nudged(level, step, LOUVER_LEVELS))
-        await self._async_set_louvers(position, "move")
+        position = self._target_or_current_louvers()
+        target = _louver_position(SHUTTER_TILTS[position] + step)
+        if target == position and step:
+            target += -1 if step > 0 else 1
+        await self._async_set_louvers(max(0, min(SHUTTER_CLOSED, target)), "move")
 
     async def async_nudge_position(self, step: int) -> None:
         """A Shutter's only motion is its louvers, so a position nudge turns them."""

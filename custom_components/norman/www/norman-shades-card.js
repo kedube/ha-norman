@@ -265,16 +265,60 @@ const clampToStep = (value, step = STEP) => Math.round(clamp(Number(value) || 0)
 // (`config_entry_id`); older ones list them (`config_entries`).
 const entriesOf = (device) =>
   device?.config_entry_id ? [device.config_entry_id] : device?.config_entries || [];
-// A Shutter's louvers open in five steps (closed, a quarter ... fully open), so they move in 25s.
-const LOUVER_STEP = 25;
+// A Shutter's louvers stop at the hub's eight Positions, 7 (shut) to 0. The cover's tilt for
+// each, by Position, is their whole turn: 0 shut, 50 horizontal (Position 3), and 100 at 0,
+// as far as they turn the other way (SHUTTER_TILTS in const.py).
+const LOUVER_TILTS = [100, 83, 67, 50, 38, 25, 13, 0];
+// The same stops from shut, which a drag, a key or the list's slider moves between.
+const LOUVER_STOPS = [...LOUVER_TILTS].reverse();
+const LOUVER_HORIZONTAL = 50;
+const LOUVER_OPEN_POSITION = 3;
 const LOUVER_COUNT = 9;
-// How far the louvers turn at fully open: nearly edge-on, as a real louver stops short.
+// How far the louvers turn at horizontal: nearly edge-on, as a real louver stops short.
 const LOUVER_OPEN_DEG = 78;
-// The part of the opening a drag has to cover to take the louvers from closed to open.
+// The part of the opening a drag has to cover to turn the louvers through their whole turn.
 const LOUVER_TRAVEL_PCT = 70;
-// Below this raw Position the hub reports the louvers turned the other way (the app's 0-2).
-const LOUVER_HORIZONTAL = 3;
-const stepOf = (rail) => (rail.louvers ? LOUVER_STEP : STEP);
+/** The louver stop nearest `value`, as a tilt; a tie goes to the one nearer shut. */
+const louverStop = (value) => {
+  const tilt = clamp(Number(value) || 0);
+  return LOUVER_STOPS.reduce((best, stop) => (Math.abs(stop - tilt) < Math.abs(best - tilt) ? stop : best));
+};
+/** The louvers' Position for a tilt, 7 (shut) to 0, in between two while a drag is between their stops. */
+const louverPosition = (value) => {
+  const tilt = clamp(Number(value) || 0);
+  for (let position = LOUVER_TILTS.length - 1; position > 0; position -= 1) {
+    const low = LOUVER_TILTS[position];
+    const high = LOUVER_TILTS[position - 1];
+    if (tilt <= high) return position - (tilt - low) / (high - low);
+  }
+  return 0;
+};
+/**
+ * How open the louvers are at a tilt, 0 (shut) to 1 (horizontal), and which way they lean:
+ * -1 past horizontal. Position 0 is turned nearly shut the other way and still lets light in,
+ * so it is a step of the four between shut and horizontal open (cover.py's _louver_openness).
+ */
+const louverTurn = (value) => {
+  const position = louverPosition(value);
+  const past = position < LOUVER_OPEN_POSITION;
+  const steps = past ? position + 1 : LOUVER_TILTS.length - 1 - position;
+  return { open: steps / (LOUVER_TILTS.length - 1 - LOUVER_OPEN_POSITION), lean: past ? -1 : 1 };
+};
+/** Where `value` lands on `rail`: a louver stop, or a rail's 10% step. */
+const snapOf = (rail, value) => (rail.louvers ? louverStop(value) : clampToStep(value));
+/** `steps` stops on from `value` on `rail` (back when negative), within its range. */
+const stepFrom = (rail, value, steps) => {
+  if (!rail.louvers) return clampToStep((Number(value) || 0) + steps * STEP);
+  const index = LOUVER_STOPS.indexOf(louverStop(value)) + steps;
+  return LOUVER_STOPS[Math.max(0, Math.min(LOUVER_STOPS.length - 1, index))];
+};
+// The list layout's slider for `rail` takes 0-100 in 10% steps, or for a Shutter's louvers
+// the index of their stop, 0 (shut) to 7, so that it moves one stop at a time.
+const sliderMax = (rail) => (rail.louvers ? LOUVER_STOPS.length - 1 : 100);
+const sliderValueOf = (rail, value) =>
+  String(rail.louvers ? LOUVER_STOPS.indexOf(louverStop(value)) : clampToStep(value));
+const sliderPosition = (rail, raw) =>
+  rail.louvers ? LOUVER_STOPS[Math.round(clamp(Number(raw) || 0, 0, sliderMax(rail)))] : clampToStep(raw);
 
 // A roller shade's fabric winds onto a roll at the top: thickest with the shade up, thinnest
 // with it down. In percent of the opening's height. Fully up, the roll's underside is where a
@@ -2513,7 +2557,7 @@ class NormanShadesCard extends HTMLElement {
   _railsOf(blind) {
     if (blind.louvers) {
       // A Shutter has no rails: its one control is the louvers, which the cover exposes as
-      // tilt -- how open they are, 0 (shut) to 100 (horizontal).
+      // tilt -- their whole turn, 0 (shut) through 50 (horizontal) to 100.
       return [
         {
           key: "louvers",
@@ -3374,8 +3418,8 @@ class NormanShadesCard extends HTMLElement {
    *
    * The louvers turn about their long axis, so how open they are is drawn as a rotation:
    * flat and overlapping when shut, nearly edge-on with the view between them when open.
-   * They lean the other way when the hub reports them turned past horizontal (its
-   * Positions 0-2, which a remote or the app can choose).
+   * Dragging the rod up on from horizontal turns them past it, leaning the other way (the
+   * hub's Positions 0-2).
    */
   _buildShutter(blind, rails) {
     const element = el("div", "win shutter");
@@ -3594,7 +3638,7 @@ class NormanShadesCard extends HTMLElement {
       const sign = shade.drape && press.side === "right" ? 1 : -1;
       const value = clamp(press.start + sign * (delta / press.travel) * 100);
       this._dragTo(shade, press.index, value);
-      const step = clampToStep(value, stepOf(shade.rails[press.index]));
+      const step = snapOf(shade.rails[press.index], value);
       this._showBubble(shade, press.index, step);
       if (press.step !== null && step !== press.step) navigator.vibrate?.(4);
       press.step = step;
@@ -3615,7 +3659,7 @@ class NormanShadesCard extends HTMLElement {
       shade.dragValues = {};
       // A rail with no value is never written: clampToStep would make it 0 and close the blind.
       if (commit && value !== undefined) {
-        this._move(shade.rails, index, clampToStep(value, stepOf(shade.rails[index])));
+        this._move(shade.rails, index, snapOf(shade.rails[index], value));
       } else if (keys) {
         // The drag was called off, but the keys' move it took over still stands.
         this._move(shade.rails, keys.index, keys.value);
@@ -3643,8 +3687,9 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /**
-   * Arrow keys move a rail a step; the write goes out once the keys stop. On a drape the
-   * left and right arrows move its edge that way, so the one towards its stack opens it.
+   * Arrow keys move a rail a step, or a Shutter's louvers a stop; the write goes out once the
+   * keys stop. On a drape the left and right arrows move its edge that way, so the one towards
+   * its stack opens it.
    *
    * A blind gathers one rail's keys at a time: keys on its other rail first send the move
    * gathered so far, which would otherwise be dropped with the timer and the drawing it shares.
@@ -3654,17 +3699,16 @@ class NormanShadesCard extends HTMLElement {
    */
   _onKey(shade, index, event, side) {
     if (shade.disabled || event.altKey || event.ctrlKey || event.metaKey) return;
-    const step = stepOf(shade.rails[index]);
     const activeSide = shade.drape ? side || shade.parts[0].side : null;
     const across = shade.drape && activeSide !== "right" ? -1 : 1;
-    // How far each key moves the rail; Home and End go all the way, to closed and to open.
+    // How many steps each key moves the rail; Home and End go all the way, to 0 and to 100.
     const moves = {
-      ArrowUp: step,
-      ArrowRight: across * step,
-      ArrowDown: -step,
-      ArrowLeft: -across * step,
-      PageUp: 3 * step,
-      PageDown: -3 * step,
+      ArrowUp: 1,
+      ArrowRight: across,
+      ArrowDown: -1,
+      ArrowLeft: -across,
+      PageUp: 3,
+      PageDown: -3,
       Home: -100,
       End: 100,
     };
@@ -3673,12 +3717,12 @@ class NormanShadesCard extends HTMLElement {
     if (shade.pressing) return;
     if (shade.drape) shade.activeSide = activeSide;
     if (shade.keyMove && shade.keyMove.index !== index) this._sendKeys(shade);
-    const value = clampToStep((this._shadeValue(shade, index) ?? 0) + moves[event.key], step);
+    const value = stepFrom(shade.rails[index], this._shadeValue(shade, index) ?? 0, moves[event.key]);
     this._dragTo(shade, index, value);
     this._showBubble(shade, index, value);
     // A screen reader says the new value now, not when the keys' move is sent.
     shade.zones.forEach((zone, i) => {
-      if (Number(zone.dataset?.index ?? i) === index) this._sayValue(zone, value);
+      if (Number(zone.dataset?.index ?? i) === index) this._sayValue(zone, value, Boolean(shade.louvers));
     });
     clearTimeout(shade.keyTimer);
     shade.keyMove = { index, value };
@@ -3918,18 +3962,13 @@ class NormanShadesCard extends HTMLElement {
   }
 
   /**
-   * Turn every louver to how open the Shutter is drawn: 0 flat (shut), 100 nearly edge-on.
-   * The tilt rod rides with them, a little lower as they open.
+   * Turn every louver to where the Shutter is drawn in its turn: flat when shut, nearly
+   * edge-on at horizontal (tilt 50), and past it leaning the other way, back towards flat, to
+   * a step short of shut at Position 0 (tilt 100). The tilt rod rides with them, a little
+   * lower as they open.
    */
   _drawLouvers(shade) {
-    const open = (this._shadeValue(shade, 0) ?? 0) / 100;
-    // The side the louvers lean: the hub's own Position says when they are turned past
-    // horizontal. While a drag or a sent value is showing, they turn the way the
-    // integration sends them.
-    const cover = this._hass?.states?.[shade.rails[0].coverId];
-    const raw = cover?.attributes?.louver_position;
-    const showingHub = shade.dragValues[0] === undefined && !this._pending.has(shade.rails[0].coverId);
-    const lean = showingHub && typeof raw === "number" && raw < LOUVER_HORIZONTAL ? -1 : 1;
+    const { open, lean } = louverTurn(this._shadeValue(shade, 0) ?? 0);
     const angle = round3(lean * open * LOUVER_OPEN_DEG);
     for (const louver of shade.louverEls) louver.style.transform = `rotateX(${angle}deg)`;
     shade.railEls[0].style.transform = `translate(-50%, ${round3(open * 6)}%)`;
@@ -3995,15 +4034,15 @@ class NormanShadesCard extends HTMLElement {
     return rails.length > 1 ? this._t("blind_rail", { name: blind.name, rail: rail.label }) : blind.name;
   }
 
-  /** The list layout's control for one rail of `blind`: a plain range input, in 10% steps. */
+  /** The list layout's control for one rail of `blind`: a plain range input, in 10% steps or louver stops. */
   _buildSlider(blind, rails, rail) {
     const row = el("label", "slider");
     const label = el("span", "slider-label", rail.louvers || rails.length > 1 ? rail.short : this._t("position"));
     const input = el("input");
     input.type = "range";
     input.min = "0";
-    input.max = "100";
-    input.step = String(stepOf(rail));
+    input.max = String(sliderMax(rail));
+    input.step = rail.louvers ? "1" : String(STEP);
     input.setAttribute("aria-label", this._railName(blind, rails, rail));
     const value = el("span", "slider-value");
     // `holding` while a pointer is down on it and `keyTimer` while arrow keys are gathering a
@@ -4043,7 +4082,7 @@ class NormanShadesCard extends HTMLElement {
       if (!cancelled && !unavailable && input.value !== slider.pressedAt) return;
       const resend = !cancelled && !unavailable && slider.moved && this._railState(rail).stale;
       if (slider.keyMove !== null) send(slider.keyMove);
-      else if (resend) send(clampToStep(input.value, stepOf(rail)));
+      else if (resend) send(sliderPosition(rail, input.value));
       else this._patchSlider(slider, unavailable);
     };
     input.addEventListener("pointerup", () => release(false));
@@ -4057,11 +4096,11 @@ class NormanShadesCard extends HTMLElement {
     });
     input.addEventListener("input", () => {
       if (slider.holding) slider.moved = true;
-      value.textContent = this._pct(clampToStep(input.value, stepOf(rail)));
-      input.style.setProperty?.("--n-fill", `${input.value}%`);
+      value.textContent = this._pct(sliderPosition(rail, input.value));
+      input.style.setProperty?.("--n-fill", `${round3((100 * Number(input.value)) / sliderMax(rail))}%`);
     });
     input.addEventListener("change", () => {
-      const position = clampToStep(input.value, stepOf(rail));
+      const position = sliderPosition(rail, input.value);
       slider.holding = false;
       if (!slider.keys) {
         send(position);
@@ -4278,15 +4317,26 @@ class NormanShadesCard extends HTMLElement {
       }
       shade.railEls[index].classList.toggle("moving", state.moving);
       const zone = shade.zones[index];
-      this._sayValue(zone, Math.round(this._shadeValue(shade, index) ?? 0));
+      this._sayValue(zone, Math.round(this._shadeValue(shade, index) ?? 0), Boolean(shade.louvers));
       setAttr(zone, "aria-disabled", String(unavailable));
     });
   }
 
-  /** Where a rail's grab zone says the rail is, to assistive technology. */
-  _sayValue(zone, value) {
+  /** Where a rail's grab zone says the rail is, to assistive technology; a Shutter's in its words. */
+  _sayValue(zone, value, louvers = false) {
     setAttr(zone, "aria-valuenow", String(value));
-    setAttr(zone, "aria-valuetext", this._t("percent_open", { value }));
+    setAttr(zone, "aria-valuetext", louvers ? this._louverWords(value) : this._t("percent_open", { value }));
+  }
+
+  /**
+   * A Shutter's louvers in a word or two: "Closed" shut, "Open" horizontal, otherwise the
+   * tilt -- not how open they are, which past horizontal falls as the tilt rises.
+   */
+  _louverWords(tilt) {
+    const value = Math.round(tilt);
+    if (value <= 0) return this._t("closed");
+    if (value === LOUVER_HORIZONTAL) return this._t("open");
+    return this._t("tilt_percent", { value });
   }
 
   _patchSlider(slider, unavailable) {
@@ -4298,24 +4348,29 @@ class NormanShadesCard extends HTMLElement {
     if (input.disabled !== unavailable) input.disabled = unavailable;
     if (slider.keyTimer) return;
     const shown = this._railValue(rail);
-    const position = String(clampToStep(shown ?? 0, stepOf(rail)));
+    const position = sliderValueOf(rail, shown ?? 0);
     if (input.value !== position) input.value = position;
-    const fill = `${shown ?? 0}%`;
+    // A rail's fill shows where the hub has it; a Shutter's, the stop its thumb is on.
+    const fill = rail.louvers ? `${round3((100 * Number(position)) / sliderMax(rail))}%` : `${shown ?? 0}%`;
     if (input.style.getPropertyValue?.("--n-fill") !== fill) input.style.setProperty?.("--n-fill", fill);
     setText(value, shown === null ? "—" : this._pct(shown));
   }
 
   /**
    * A blind's state in a few words. At rest: "Open", "Closed", "60% open" -- or, on a
-   * two-rail blind, "Privacy" for the app's preset and both rails otherwise. On the move:
-   * which way, and where it has got to.
+   * two-rail blind, "Privacy" for the app's preset and both rails otherwise, and on a Shutter
+   * "Tilt 25%" between shut and horizontal. On the move: which way, and where it has got to;
+   * a Shutter's louvers open turning towards horizontal, from either side.
    */
   _statusOf(rails, states, unavailable) {
     if (unavailable) return this._t("unavailable");
     const travelling = states.findIndex((state) => state.moving);
     if (travelling >= 0) {
       const { current, shown } = states[travelling];
-      const verb = shown > current ? "opening" : "closing";
+      const opening = rails[travelling].louvers
+        ? louverTurn(shown).open > louverTurn(current).open
+        : shown > current;
+      const verb = opening ? "opening" : "closing";
       const value = Math.round(current);
       return rails.length > 1
         ? this._t(`${verb}_rail`, { rail: rails[travelling].short, value })
@@ -4325,6 +4380,7 @@ class NormanShadesCard extends HTMLElement {
     if (states.some((state) => state.unconfirmed)) return this._t("unconfirmed");
     const [bottom, middle] = states.map((state) => (state.shown === null ? null : Math.round(state.shown)));
     if (bottom === null) return this._t("position_unknown");
+    if (rails[0].louvers) return this._louverWords(bottom);
     if (rails.length < 2 || middle === null) {
       if (bottom >= 100) return this._t("open");
       if (bottom <= 0) return this._t("closed");

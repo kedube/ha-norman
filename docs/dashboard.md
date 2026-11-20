@@ -188,7 +188,8 @@ is drawn at included: drag its rail away and back, or press ↑ then ↓.
   the page instead, and so does one up or down a SmartDrape's edge, so scrolling past a row of
   windows does not move a blind.
 - **Keyboard:** Tab to a rail, then ↑ / ↓ (10%), Page Up / Page Down (30%), Home (closed) and
-  End (open). The position is sent once you stop pressing keys, because the hub drops commands
+  End (open); on a Shutter's tilt rod ↑ / ↓ move one stop, Page Up / Page Down three, and End
+  goes to 100, past horizontal. The position is sent once you stop pressing keys, because the hub drops commands
   that arrive closer together than about 1.6 seconds. A key held with Alt, Ctrl or ⌘ moves
   nothing, so the browser's shortcuts, such as Alt+← for Back, still work.
 
@@ -229,10 +230,12 @@ On a top-down/bottom-up blind the same two bands read as the open top and the co
 
 A Shutter is drawn as a plantation shutter in its window: a painted frame, a column of louvers
 and the tilt rod down their middle. The louvers turn as they do on the shutter — flat and
-overlapping when shut, nearly edge-on with the view between them when open — and lean the
-other way when the hub reports them turned past horizontal. **Drag the tilt rod** up to open
-them and down to close them, in quarters (shut, 25, 50, 75, open); the keyboard moves them a
-quarter per arrow. The status reads "Closed", "Open" or "50% open".
+overlapping when shut, nearly edge-on with the view between them when horizontal, and leaning
+the other way past it. **Drag the tilt rod** up from shut to open them, on up to turn them past
+horizontal, and down to bring them back: through the hub's eight stops, as the cover's tilt
+(0 shut, 50 horizontal, 100 turned as far as they go the other way). The keyboard moves them a
+stop per arrow, and the list layout's slider a stop at a time. The status reads "Closed",
+"Open" at horizontal, and the tilt otherwise ("Tilt 25%", "Tilt 83%").
 
 The room's open and close turn a Shutter's louvers along with every other blind; Stop sends
 it none, since louvers take no stop.

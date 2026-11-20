@@ -40,7 +40,7 @@ shades, SmartDrape, PerfectSheer and Shutter); single-rail shades are skipped.
 
 | Field | Required | Range | Meaning |
 |---|---|---|---|
-| `step` | yes | -100 … 100 | Positive opens. On a two-rail blind it moves the middle rail; on a SmartDrape, PerfectSheer or Shutter it opens the vanes or louvers. A SmartDrape's vanes and a Shutter's louvers move in stops, and any step moves at least one. |
+| `step` | yes | -100 … 100 | Positive raises the tilt. On a two-rail blind it moves the middle rail; on a SmartDrape or PerfectSheer it opens the vanes. On a Shutter it turns the louvers from shut through horizontal (50) and on past it, towards `Position` 0. A SmartDrape's vanes and a Shutter's louvers move in stops, and any step moves at least one. |
 
 Like `nudge_position`, the step is relative to the current tilt target and clamped.
 

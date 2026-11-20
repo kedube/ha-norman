@@ -98,11 +98,23 @@ shade closes them. Closing the vanes leaves the shade where it is.
 
 **A Shutter is one cover, named Louvers.** It has no rails: the hub reports its louvers as
 `Position` 0–7 — 7 fully closed, 3 horizontal, and 0 as far as they turn the other way, which
-still lets light in. The tilt is how open they are, **0, 25, 50, 75 or 100**, so both sides of
-horizontal read alike; a tilt set here turns them on the 7–3 side, the one the app's "Fully
-Close" and calibration start from. Open and close turn the louvers too (horizontal and shut),
-so "open the shutters" does what it says. The `louver_position` attribute carries the hub's
-own 0–7 value. A Shutter has no stop and no position sliders.
+still lets light in. The tilt is their whole turn, in the hub's eight stops, with **50
+horizontal**:
+
+| `Position` | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+|---|---|---|---|---|---|---|---|---|
+| Tilt | 0 (shut) | 13 | 25 | 38 | 50 (horizontal) | 67 | 83 | 100 |
+
+There are four stops between shut and horizontal and three beyond it, so the steps are
+uneven. A tilt set here turns the louvers to the stop nearest it, on either side of
+horizontal. Open and close turn the louvers too (horizontal and shut), so "open the shutters"
+does what it says; open tilt turns them horizontal as well, to 50 rather than 100. The
+`louver_position` attribute carries the hub's own 0–7 value. A Shutter has no stop and no
+position sliders.
+
+Verified on real hardware ([issue #7](https://github.com/kedube/ha-norman/issues/7),
+PerfectTilt shutters): Positions 7 to 3 turn the louvers from shut, tilted up, to horizontal.
+Positions 2 to 0, past horizontal, have not been sent to a real Shutter yet.
 
 **Upgrading from the fallback.** A blind whose `ModuleType` was unmapped was given two-rail
 entities. Once its type is mapped as something else, the Middle rail cover and the sliders it
@@ -120,7 +132,7 @@ hub reports status for but does not list by name gets `Norman <uid>`.
 |---|---|---|
 | State | bottom rail | `closed` when the position is 0, otherwise `open`; `unknown` if the hub has not reported a position. A Shutter is `closed` only at `Position` 7. |
 | `current_position` | `BottomRailPosition` | 0 = closed, 100 = open, matching Home Assistant's convention. |
-| `current_tilt_position` | `MiddleRailPosition`; a Shutter's `Position` | Two-rail blinds: the middle rail, 0–100. PerfectSheer: how open the vanes are. SmartDrape and Shutter: how open the vanes or louvers are, in their stops (see above). |
+| `current_tilt_position` | `MiddleRailPosition`; a Shutter's `Position` | Two-rail blinds: the middle rail, 0–100. PerfectSheer: how open the vanes are. SmartDrape: how open the vanes are, in their stops. Shutter: where the louvers are in their turn, 0 shut, 50 horizontal, 100 at `Position` 0 (see above). |
 | `target_position` (attribute) | `TargetBottomRailPosition` | Where the bottom rail is heading. Equal to `current_position` when idle. |
 | `target_tilt` (attribute) | `TargetMiddleRailPosition`; a Shutter's `TargetPosition` | Where the tilt is heading, in the same terms as `current_tilt_position`. |
 | `louver_position` (attribute) | `Position` | Shutter only. The hub's own 0–7. |
@@ -132,7 +144,8 @@ for at most 3½ minutes, as long as a move is checked and resent. A blind that m
 leaves the hub showing the target until it next reports in, which can be hours, so past that
 the cover reads open or closed again. A blind can report its arrival a minute or more after it
 stops, unless the move's check asks it first. The Middle rail cover follows the middle rail,
-and a Shutter its louvers.
+and a Shutter its louvers: opening while they turn towards horizontal, from either side, and
+closing while they turn away from it.
 
 ### Availability
 

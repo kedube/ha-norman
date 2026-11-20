@@ -426,6 +426,24 @@ def test_card_draws_the_colors_the_selects_offer() -> None:
                 )
 
 
+def test_card_turns_the_louvers_through_the_tilts_the_cover_reports() -> None:
+    """The card's louver stops are the cover's tilts for the hub's eight Positions.
+
+    The card snaps a drag, a key and its list slider to these tilts and draws the louvers from
+    them, so a table out of step with SHUTTER_TILTS would send tilts between the hub's stops
+    and draw Positions where the hub has none.
+    """
+    from custom_components.norman.const import SHUTTER_CLOSED, SHUTTER_OPEN, SHUTTER_TILTS
+
+    card = (COMPONENT / "www" / "norman-shades-card.js").read_text(encoding="utf-8")
+    table = re.search(r"^const LOUVER_TILTS = \[([\d, ]+)\];$", card, re.M)
+    assert table, "no LOUVER_TILTS in the card"
+    assert [int(tilt) for tilt in table.group(1).split(",")] == list(SHUTTER_TILTS)
+    assert f"const LOUVER_HORIZONTAL = {SHUTTER_TILTS[SHUTTER_OPEN]};" in card
+    assert f"const LOUVER_OPEN_POSITION = {SHUTTER_OPEN};" in card
+    assert len(SHUTTER_TILTS) == SHUTTER_CLOSED + 1
+
+
 def test_card_finds_the_hub_by_keys_only_the_hub_has() -> None:
     """``HUB_KEYS`` must name hub entities, and only hub entities.
 

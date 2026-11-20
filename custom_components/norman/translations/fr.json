@@ -95,7 +95,7 @@
       "fields": {
         "step": {
           "name": "Pas",
-          "description": "Valeur d'inclinaison, de -100 à 100. Une valeur positive ouvre : elle remonte le rail intermédiaire d'un store à deux rails et ouvre les lames d'un SmartDrape ou d'un volet, d'au moins un cran quelle que soit la valeur."
+          "description": "Valeur d'inclinaison, de -100 à 100. Une valeur positive augmente l'inclinaison : elle remonte le rail intermédiaire d'un store à deux rails, ouvre les lames d'un SmartDrape et fait pivoter les lames d'un volet de fermées à horizontales (50), puis au-delà, d'au moins un cran quelle que soit la valeur."
         }
       }
     },

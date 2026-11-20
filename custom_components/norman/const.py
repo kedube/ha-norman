@@ -490,13 +490,17 @@ MSD_STACK_SIDES: dict[str, str] = {
 
 # A Shutter's louvers: Position 0-7. From the app's calibration steps and louver drawings,
 # 7 is fully closed ("Fully Close"), the louvers move down through 3, horizontal and fully
-# open, to 0, the furthest they tilt the other way -- which still lets light through. As for
-# the SmartDrape, the cover's tilt is how open the louvers are, and a tilt the integration
-# sends uses the 7-3 side, the one "Fully Close" and calibration start from.
+# open, to 0, the furthest they tilt the other way -- which still lets light through. On
+# PerfectTilt shutters (issue #7) 7 is shut with the louvers tilted up, and 3 horizontal.
 SHUTTER_CLOSED = 7
 SHUTTER_OPEN = 3
-SHUTTER_LOWEST = 0
 HUB_CMD_SHUTTER_POSITION = "Position"
+# The cover's tilt for each Position, 0 to 7: the louvers' whole turn, 0 shut (7), 50
+# horizontal (3) and 100 turned as far as they go the other way (0), as issue #7 asked. Four
+# steps lie between shut and horizontal and three beyond it, so the steps are 12.5 apart on
+# one side and a third of 50 on the other. A tilt sent is the Position nearest it. The card
+# keeps the same table (LOUVER_TILTS).
+SHUTTER_TILTS: tuple[int, ...] = (100, 83, 67, 50, 38, 25, 13, 0)
 
 ATTR_TARGET_POSITION = "target_position"
 ATTR_TARGET_TILT = "target_tilt"

@@ -5,6 +5,23 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Shutters turn all the way, past horizontal** ([#7](https://github.com/kedube/ha-norman/issues/7)).
+  A Shutter's tilt reached only from shut to horizontal, so its louvers could not be turned
+  down the other side. The tilt is now their whole turn, in the hub's eight stops: **0 shut,
+  50 horizontal, 100 turned as far as they go the other way** (Positions 7, 3 and 0). A tilt
+  set turns them to the nearest stop, on either side. Open, close and open tilt still turn them
+  horizontal or shut. **Changed:** a tilt of 100 used to mean horizontal and now turns the
+  louvers past it, so an automation or scene that sets a Shutter's tilt to 100 to open it
+  should use 50, or `cover.open_cover`. Positions 7 to 3 are verified on PerfectTilt
+  shutters; 2 to 0 have not been sent to a real Shutter yet
+  ([Shutters](docs/entities.md#cover-entities)).
+- **In Norman Shades**, a Shutter's tilt rod drags through all eight stops, from shut up past
+  horizontal, and the keys and the list layout's slider move one stop at a time. The louvers
+  lean the other way past horizontal, and the status reads "Closed", "Open" or the tilt
+  ("Tilt 83%").
+
 ## 0.98 — 2026-11-20
 
 - **Diagnostics no longer name your town.** The weather entity chosen for the sidebar page's

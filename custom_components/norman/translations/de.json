@@ -95,7 +95,7 @@
       "fields": {
         "step": {
           "name": "Schritt",
-          "description": "Neigungsbetrag, -100 bis 100. Positiv öffnet: hebt die mittlere Schiene eines Zweischienen-Rollos an und öffnet die Lamellen eines SmartDrape oder eines Shutters, bei jedem Betrag um mindestens eine Stufe."
+          "description": "Neigungsbetrag, -100 bis 100. Positiv erhöht die Neigung: hebt die mittlere Schiene eines Zweischienen-Rollos an, öffnet die Lamellen eines SmartDrape und dreht die Lamellen eines Shutters von geschlossen über waagerecht (50) hinaus, bei jedem Betrag um mindestens eine Stufe."
         }
       }
     },

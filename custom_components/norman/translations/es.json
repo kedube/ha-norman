@@ -95,7 +95,7 @@
       "fields": {
         "step": {
           "name": "Paso",
-          "description": "Cantidad de inclinación, de -100 a 100. Un valor positivo abre: sube el riel intermedio de una persiana de dos rieles y abre las lamas de un SmartDrape o de una contraventana, al menos una posición con cualquier valor."
+          "description": "Cantidad de inclinación, de -100 a 100. Un valor positivo aumenta la inclinación: sube el riel intermedio de una persiana de dos rieles, abre las lamas de un SmartDrape y gira las lamas de una contraventana desde cerradas, pasando por horizontales (50), hacia el otro lado, al menos una posición con cualquier valor."
         }
       }
     },

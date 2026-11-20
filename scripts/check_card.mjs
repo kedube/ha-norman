@@ -1828,7 +1828,8 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   check("...and one that does not sends the keys' move", valuesOf(tapped.writes) === "[80]", valuesOf(tapped.writes));
 }
 
-// A Shutter: no rails, one cover whose tilt is how open its louvers are.
+// A Shutter: no rails, one cover whose tilt is its louvers' whole turn: 0 shut (Position 7),
+// 50 horizontal (3) and 100 turned as far as they go the other way (0), in the hub's eight stops.
 {
   const sCalls = [];
   const louvers = (tilt, raw) => ({ state: tilt === 0 ? "closed" : "open",
@@ -1840,7 +1841,7 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
     },
     devices: { s1:{ name:"Study Shutter", area_id:"a3" } },
     areas: { a3:{ name:"Study" } },
-    states: { "cover.study_shutter_louvers": louvers(50, 5), "sensor.study_shutter_battery": { state:"80" } },
+    states: { "cover.study_shutter_louvers": louvers(25, 5), "sensor.study_shutter_battery": { state:"80" } },
     callService: (d, s, data) => { sCalls.push([d, s, data]); return Promise.resolve(); },
   };
   const c = new Card();
@@ -1852,7 +1853,7 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
         shutter?.bottomCover === "cover.study_shutter_louvers" && shutter.louvers === true, JSON.stringify(shutter));
   const rails = c._railsOf(shutter);
   check("a Shutter has one control, its louvers", rails.length === 1 && rails[0].louvers && rails[0].label === "Louvers");
-  check("the louvers read the cover's tilt", c._railValue(rails[0]) === 50, String(c._railValue(rails[0])));
+  check("the louvers read the cover's tilt", c._railValue(rails[0]) === 25, String(c._railValue(rails[0])));
 
   const shade = c._buildShade(shutter, rails);
   const angle = () => shade.louverEls[0].style.transform;
@@ -1864,28 +1865,50 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   c._drawShade(shade);
   check("shut louvers lie flat", angle() === "rotateX(0deg)", angle());
   check("...and the window says so", shade.element.classList.contains("shut"));
-  sHass.states["cover.study_shutter_louvers"] = louvers(100, 3);
+  sHass.states["cover.study_shutter_louvers"] = louvers(50, 3);
   c._drawShade(shade);
-  check("open louvers are nearly edge-on", angle() === "rotateX(78deg)", angle());
-  sHass.states["cover.study_shutter_louvers"] = louvers(50, 1);
+  check("horizontal louvers, at 50, are nearly edge-on", angle() === "rotateX(78deg)", angle());
+  sHass.states["cover.study_shutter_louvers"] = louvers(83, 1);
   c._drawShade(shade);
-  check("louvers turned past horizontal lean the other way", angle() === "rotateX(-39deg)", angle());
+  check("louvers turned past horizontal lean the other way, half shut again", angle() === "rotateX(-39deg)", angle());
+  sHass.states["cover.study_shutter_louvers"] = louvers(100, 0);
+  c._drawShade(shade);
+  check("...and at 100, Position 0, stop a step short of shut", angle() === "rotateX(-19.5deg)" &&
+        !shade.element.classList.contains("shut"), angle());
+  shade.dragValues = { 0: 58 };
+  c._drawShade(shade);
+  check("a drag between two stops turns them between the two", angle() === "rotateX(-68.824deg)", angle());
+  shade.dragValues = {};
 
   sCalls.length = 0;
-  c._move(rails, 0, 75);
+  c._move(rails, 0, 67);
   check("moving the louvers sets the cover's tilt",
         sCalls[0]?.[1] === "set_cover_tilt_position" && sCalls[0][2].entity_id === "cover.study_shutter_louvers" &&
-        sCalls[0][2].tilt_position === 75, JSON.stringify(sCalls[0]));
+        sCalls[0][2].tilt_position === 67, JSON.stringify(sCalls[0]));
 
   const rod = shade.zones[0];
   check("the tilt rod is a keyboard slider", rod.attrs.role === "slider" && rod.tabIndex === 0);
   let prevented = false;
   c._onKey(shade, 0, { key: "ArrowUp", preventDefault: () => { prevented = true; } });
-  check("an arrow key moves the louvers a quarter", prevented && shade.dragValues[0] === 100, JSON.stringify(shade.dragValues));
+  check("an arrow key moves the louvers one of the hub's stops", prevented && shade.dragValues[0] === 83,
+        JSON.stringify(shade.dragValues));
+  c._onKey(shade, 0, { key: "PageDown", preventDefault: () => {} });
+  check("...Page Down three, back past horizontal", shade.dragValues[0] === 38, JSON.stringify(shade.dragValues));
+  c._onKey(shade, 0, { key: "End", preventDefault: () => {} });
+  check("...and End all the way, to Position 0", shade.dragValues[0] === 100, JSON.stringify(shade.dragValues));
+  check("...which the rod says in the status's words", rod.attrs["aria-valuetext"] === "Tilt 100%",
+        rod.attrs["aria-valuetext"]);
   clearTimeout(shade.keyTimer);
+  shade.keyMove = null;
+  shade.dragValues = {};
 
-  check("a Shutter's status reads how open its louvers are",
-        c._statusOf(rails, [{ current: 50, target: 50, shown: 50, moving: false }], false) === "50% open");
+  const at = (shown, current = shown) => c._statusOf(rails, [{ current, target: shown, shown, moving: current !== shown }], false);
+  check("a Shutter reads Closed shut, Open horizontal, and its tilt elsewhere, on either side",
+        at(0) === "Closed" && at(50) === "Open" && at(25) === "Tilt 25%" && at(83) === "Tilt 83%" && at(100) === "Tilt 100%",
+        [at(0), at(50), at(25), at(83), at(100)].join(" | "));
+  check("louvers turning towards horizontal are opening, from either side, and away from it closing",
+        at(50, 100) === "Opening · 100%" && at(50, 0) === "Opening · 0%" && at(100, 50) === "Closing · 50%" &&
+        at(0, 13) === "Closing · 13%", [at(50, 100), at(50, 0), at(100, 50), at(0, 13)].join(" | "));
 
   sCalls.length = 0;
   const room = c._buildRoomControls("Study", [shutter, den]);
@@ -1906,7 +1929,18 @@ check("the cell pitch is a single tunable token", /--n-pleat:\s*\d+px/.test(card
   list.setConfig({ type:"custom:norman-shades-card", hide_picture:true });
   list._hass = sHass;
   const slider = list._buildSlider(shutter, rails, rails[0]);
-  check("the list layout's louver slider moves in quarters", slider.input.step === "25", String(slider.input.step));
+  check("the list layout's louver slider moves one of the hub's eight stops at a time",
+        slider.input.max === "7" && slider.input.step === "1", `${slider.input.max} ${slider.input.step}`);
+  sHass.states["cover.study_shutter_louvers"] = louvers(38, 4);
+  list._patchSlider(slider, false);
+  check("...its thumb on the louvers' stop", slider.input.value === "3" && slider.value.textContent === "38%",
+        `${slider.input.value} ${slider.value.textContent}`);
+  sCalls.length = 0;
+  slider.input.value = "6";
+  slider.input._on.input();
+  slider.input._on.change();
+  check("...and a stop picked sends its tilt", sCalls[0]?.[1] === "set_cover_tilt_position" &&
+        sCalls[0][2].tilt_position === 83, JSON.stringify(sCalls));
   check("...and is named for its Shutter, as the tilt rod is",
         slider.input.attrs["aria-label"] === "Study Shutter louvers" && rod.attrs["aria-label"] === "Study Shutter louvers",
         slider.input.attrs["aria-label"]);

@@ -246,8 +246,12 @@ had stopped, 86, 2.8 s after the `MotorStop`, and the hub's target became 86 wit
 
 A **Shutter** (`ModuleType` 1) has no rails. Its louvers are one field, `Position` 0–7 (7 shut,
 3 horizontal, 0 turned fully the other way), sent alone: `{"PeripheralUID": …, "Position": 3}`.
-That is what the app's network library builds for a Shutter; it has not been sent to a real
-one from here. The app's library can also send `Position1` / `Position2` (and read their
+That is what the app's network library builds for a Shutter. Verified on real hardware
+([issue #7](https://github.com/kedube/ha-norman/issues/7), PerfectTilt shutters): Positions 7
+to 3 turn the louvers from shut, tilted up, to horizontal. Positions 2 to 0 have not been sent
+to a real Shutter yet, and no capture of a Shutter's status has been seen. The integration's
+tilt for a Shutter is the louvers' whole turn, 0 at 7, 50 at 3 and 100 at 0, so every
+`Position` can be sent. The app's library can also send `Position1` / `Position2` (and read their
 `Target…` counterparts), a pair for split-panel shutters that no product in the app uses yet.
 
 Real Norman shutters on the older hub, which speaks a different protocol, agree with this
@@ -427,7 +431,7 @@ form has been captured from the app.
 | `MotorFineTuneToUp` / `MotorFineTuneToDown` | Captured from the app | Small position changes on both Office shades | Small position changes in Office and Den; all 13 blinds reported in |
 | `StatusRequest` / `ReportBatteryLevel` | `StatusRequest` confirmed; `ReportBatteryLevel` with only `PeripheralUID` caused a broader sweep in two isolated tests | `ReportBatteryLevel` reached only the addressed Office room in an isolated test; `StatusRequest` with room or room/group fields causes a broader sweep | Both confirmed; an unscoped `StatusRequest` reached all 13 blinds within two minutes |
 | Saved scene `SetToScene` | Not tested | Confirmed with `RoomID` and numeric `SceneID` as the `SetToScene` value | Not tested |
-| Shutter `Position` (0–7) | Built by the app's library; no live Shutter test here | Not tested | Not tested |
+| Shutter `Position` (0–7) | Built by the app's library; 7 to 3 turn PerfectTilt louvers (issue #7), 2 to 0 not yet sent | Not tested | Not tested |
 
 Only cellular shades (module types 32 and 33) have been tested. The position result does not
 establish how a room or hub-wide command would affect a SmartDrape, PerfectSheer, or
@@ -1122,7 +1126,7 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 | `Timestamp` | status | epoch seconds | **used** (last-seen sensor, connection sensor). When the hub last **heard from** the blind: it moves when a blind reports in with nothing changed, not only on a state change. |
 | `MSDStackType` | GetAllPeripheral (type 80 only) | `"left"` | the SmartDrape cover's `stack` attribute: the side it gathers to when open. Only `"left"` has been seen from a hub; the app numbers the sides 1 left, 2 split, 3 right, so `"right"`, `"split"` and the numbers are read too. |
 | `MsdStatus` | status (type 80 only) | `0` | not used; only `0` has been seen |
-| `Position`, `TargetPosition` | status (type 1, from the app) | `0`–`7` | **used**: a Shutter's louvers (7 shut, 3 horizontal). Known from the app's parsers, not yet seen from a hub. |
+| `Position`, `TargetPosition` | status (type 1, from the app) | `0`–`7` | **used**: a Shutter's louvers (7 shut, 3 horizontal). Known from the app's parsers; sent to PerfectTilt shutters in issue #7, whose status has not been captured. |
 | `Position1`, `Position2`, `TargetPosition1`, `TargetPosition2` | status (from the app) | | not used. A split-panel pair the app's library can read and send; no product in ShadeAuto 0.8.33 shows controls for it. |
 | `Angle` | status (from the app) | | not used. Read by the app's library alongside the louvers; its meaning is unknown. |
 | `Mrs2Status` | status (type 49, from the app) | | not used; the MRS2 roller's counterpart of `MsdStatus`. |
@@ -1135,7 +1139,7 @@ These fields were observed with disposable groups in `GetAllSceneGroup` and
 
 | `ModuleType`/`ModuleDetail` | App name (code) | Seen | Behaviour | Integration |
 |---|---|---|---|---|
-| 1 | Shutter (MS4) | app only | louvers as `Position` 0–7; no rails | one `shutter` cover, Louvers: tilt = how open, open/close turn them; no sliders |
+| 1 | Shutter (MS4) | PerfectTilt shutters, issue #7 (no capture yet) | louvers as `Position` 0–7; no rails | one `shutter` cover, Louvers: tilt = the louvers' whole turn, 50 horizontal; open/close turn them; no sliders |
 | 32 / 2 | Cellular Shade (MCS) | real hardware, 4.1.0.4 + `RfFirmwareVersion` | middle rail always 0, target 0 | single-rail cover, position only; one position slider |
 | 32 / 0 | Cellular Shade (MCS) | app only | the app shows one slider | as 32/2 |
 | 32 / 3–5 | Cellular Shade (MCS) | app only | the app shows two sliders: a top-down/bottom-up shade | as 33 |
