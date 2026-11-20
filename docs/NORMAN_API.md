@@ -1397,8 +1397,9 @@ the blind's serial number, so each becomes an alias
 (`blind_1`, `blind_2`, …, `BlindAliases` in `diagnostics.py`), the same for a blind throughout
 the export: in its device and scene entries, in `PeripheralList`s, and in requests and replies,
 including a stream chunk that begins partway through a key.
-The export also carries the entry's options and a `frontend` block with the
-card's expected and registered versions. The `norman.get_hub_data` action returns live
+The export also carries the entry's options, with the weather entity redacted (one is usually
+named after its town, `weather.<town>`), and a `frontend` block with the card's expected and
+registered versions. The `norman.get_hub_data` action returns live
 `GetAllPeripheral` and `status` payloads for the same purpose, with the same sensitive keys
 removed and the same aliases (`show_serial_numbers: true` keeps the real ids). When someone
 reports a new blind type, ask for either of these; the parsed model in
@@ -1422,5 +1423,6 @@ log keeps only the start of each reply.
   A larger one is refused rather than read whole, so a broken hub, or a device answering in its
   place, cannot hold up Home Assistant or exhaust its memory.
 - Diagnostics exports redact the hub address, the entry's unique id, and the hub's identity,
-  location, Wi-Fi SSID, time zone and custom name (`SENSITIVE_HUB_KEYS`). The hub's own name is
-  redacted; **blind** names and positions are not, because they are what bug reports need.
+  location, Wi-Fi SSID, time zone and custom name (`SENSITIVE_HUB_KEYS`), and the weather entity
+  in the options, which is usually named after its town. The hub's own name is redacted;
+  **blind** names and positions are not, because they are what bug reports need.

@@ -529,9 +529,10 @@ services → Norman → ⋮ → Download diagnostics**. It contains:
 
 The hub's address, identity (`ThingName`), location (`GeoLoc`), Wi-Fi network name, time zone,
 custom hub name, MAC address and network id are redacted everywhere, including inside the raw
-bodies; real hubs do send all of these. A blind's id is its serial number, so each blind is
-called `blind_1`, `blind_2` and so on instead, the same everywhere in the file, so the device
-list, the scenes and the raw capture still line up. Everything else is blind state. Because the raw capture may contain
+bodies; real hubs do send all of these. So is the weather entity in the options, which is
+usually named after its town. A blind's id is its serial number, so each blind is called
+`blind_1`, `blind_2` and so on instead, the same everywhere in the file, so the device list,
+the scenes and the raw capture still line up. Everything else is blind state. Because the raw capture may contain
 fields nobody has seen yet, skim it before posting; then attach it to the issue. Reproduce the
 problem shortly before downloading, since the capture is the last 200 exchanges and is not kept
 across restarts.

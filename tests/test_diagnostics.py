@@ -18,6 +18,8 @@ from custom_components.norman.api import NormanApiClient, NormanConnectionError
 from custom_components.norman.const import (
     CONF_CONTROL_INTERVAL,
     CONF_SHOW_SIDEBAR_PANEL,
+    CONF_SIDEBAR_VIEW,
+    CONF_SIDEBAR_VIEW_WEATHER,
     DOMAIN,
 )
 from custom_components.norman.diagnostics import BlindAliases, redact_raw_body
@@ -174,6 +176,35 @@ async def test_diagnostics_include_the_options(
         diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
 
     assert diagnostics["entry"]["options"] == options
+
+
+async def test_the_weather_entity_in_the_options_is_redacted(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    fake_hub: FakeHub,
+    notifications: object,
+) -> None:
+    """A weather entity is usually named after its town, which would name the home's location.
+
+    The export says one is set, not which; the rest of the sidebar options stay as set.
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=MOCK_CONFIG,
+        unique_id=HUB_THING_NAME,
+        options={
+            CONF_SIDEBAR_VIEW: "coast",
+            CONF_SIDEBAR_VIEW_WEATHER: "weather.harbor_point_weather_harbor_point",
+        },
+    )
+    async with loaded(hass, entry):
+        diagnostics = await get_diagnostics_for_config_entry(hass, hass_client, entry)
+
+    assert diagnostics["entry"]["options"] == {
+        CONF_SIDEBAR_VIEW: "coast",
+        CONF_SIDEBAR_VIEW_WEATHER: "**REDACTED**",
+    }
+    assert "harbor_point" not in json.dumps(diagnostics)
 
 
 @pytest.mark.parametrize(

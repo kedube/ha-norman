@@ -14,15 +14,17 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 
 from .api import redact_hub_text
-from .const import SENSITIVE_HUB_KEYS
+from .const import CONF_SIDEBAR_VIEW_WEATHER, SENSITIVE_HUB_KEYS
 from .coordinator import NormanConfigEntry, NormanCoordinator
 from .frontend import async_get_frontend_diagnostics
 
 # The hub address maps the report to a home network; the hub's own payloads carry its
 # location, Wi-Fi name and identity (SENSITIVE_HUB_KEYS). All are redacted wherever they
 # appear: entry data, request payloads, and inside the raw response bodies kept by the
-# traffic recorder. Everything else is blind state, which is what bug reports need.
-TO_REDACT = {CONF_HOST, "unique_id", *SENSITIVE_HUB_KEYS}
+# traffic recorder. So is the weather entity in the options: one is usually named after the
+# place it reports on (weather.<town>), which would name the home's location. Everything
+# else is blind state, which is what bug reports need.
+TO_REDACT = {CONF_HOST, "unique_id", CONF_SIDEBAR_VIEW_WEATHER, *SENSITIVE_HUB_KEYS}
 # The same things about the hub as the integration's own model names them.
 HUB_TO_REDACT = {"custom_name", "wifi_ssid", "mac_address", "time_zone"}
 

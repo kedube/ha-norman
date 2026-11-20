@@ -5,6 +5,13 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **Diagnostics no longer name your town.** The weather entity chosen for the sidebar page's
+  view was exported as set, and one is usually named after the place it reports on
+  (`weather.<town>`), which the export otherwise keeps out with the hub's own location. It is
+  now redacted; the export still shows whether one is set.
+
 ## 0.97 — 2026-11-20
 
 - **The windows of Norman Shades look out on a real place.** On the sidebar page each window
