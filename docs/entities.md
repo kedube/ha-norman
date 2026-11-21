@@ -113,8 +113,9 @@ does what it says; open tilt turns them horizontal as well, to 50 rather than 10
 position sliders.
 
 Verified on real hardware ([issue #7](https://github.com/kedube/ha-norman/issues/7),
-PerfectTilt shutters): Positions 7 to 3 turn the louvers from shut, tilted up, to horizontal.
-Positions 2 to 0, past horizontal, have not been sent to a real Shutter yet.
+PerfectTilt shutters): Positions 7 to 3 turn the louvers from shut, tilted up, to horizontal,
+and with 1.00 (2026-11-21) a tilt of 100 turns them past horizontal to Position 0 and a tilt
+of 50 back to horizontal.
 
 **Upgrading from the fallback.** A blind whose `ModuleType` was unmapped was given two-rail
 entities. Once its type is mapped as something else, the Middle rail cover and the sliders it

@@ -5,6 +5,13 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 **Unreleased** as part of each change; the release workflow rotates that section into a
 version heading and publishes it as the release's Highlights.
 
+## Unreleased
+
+- **A Shutter's whole turn is verified.** On PerfectTilt shutters
+  ([#7](https://github.com/kedube/ha-norman/issues/7)), 1.00's tilt of 100 turns the louvers
+  past horizontal as far as they go, and 50 turns them back to horizontal. The docs no longer
+  call the positions past horizontal untried.
+
 ## 1.00 — 2026-11-20
 
 - **Shutters turn all the way, past horizontal** ([#7](https://github.com/kedube/ha-norman/issues/7)).

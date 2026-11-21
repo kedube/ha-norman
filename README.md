@@ -403,7 +403,7 @@ sidebar entry per user). Any other language gets English.
 **Tested on:** cellular shades (32/2 and 33/3) in day-to-day use, a Roller Shade and a
 SmartDrape by their owner ([#2](https://github.com/kedube/ha-norman/issues/2)), three
 Roller Shades in [#5](https://github.com/kedube/ha-norman/issues/5), and PerfectTilt
-shutters in [#7](https://github.com/kedube/ha-norman/issues/7) (shut to horizontal). The other rows
+shutters in [#7](https://github.com/kedube/ha-norman/issues/7). The other rows
 follow the Norman app itself (ShadeAuto 0.8.33): the controls it shows for each product and the
 values it sends. Nobody has reported them from a hub yet, so if you have one, a
 `norman.get_hub_data` response in an issue confirms it — as it does for anything that logs the
@@ -416,9 +416,8 @@ unknown-type warning or behaves differently from its row.
 - **Use the hub from Home Assistant or from Apple Home (HomeKit), not both.** Controlling the
   same hub from both does not work well.
 - **Several products are known only from the Norman app**: the MRS2 rollers (49), and the
-  Roman Shade and top-down/bottom-up cellular details (48/2, 32/3–5). A Shutter's louvers
-  (`ModuleType` 1) have turned from shut to horizontal on real shutters, but not yet past
-  horizontal. See [Supported devices](#supported-devices).
+  Roman Shade and top-down/bottom-up cellular details (48/2, 32/3–5). See
+  [Supported devices](#supported-devices).
 - **The Norman app's battery report can close shades.** Its `ReportBatteryLevel` command closed
   roller shades in [#5](https://github.com/kedube/ha-norman/issues/5) and nine two-rail cellular
   shades on another hub. **Refresh blinds** now uses `StatusRequest` instead. A separate
